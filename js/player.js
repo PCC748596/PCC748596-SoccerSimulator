@@ -113,6 +113,14 @@ class FootballPlayer {
         // Segundos em que este jogador não pode tocar na bola (ver BallControl).
         this.touchLock = 0;
 
+        // Corrida ao espaço (ver RunIntoSpaceModel/actRunIntoSpace): destino,
+        // prazo, quem tinha a bola ao arrancar e o arrefecimento entre
+        // corridas.
+        this.runTarget = null;
+        this.runTimer = 0;
+        this.runCarrier = null;
+        this.runCooldown = 0;
+
         // markingTarget e o estado MARKING da FSM continuam mortos (ninguém os
         // escreve). A marcação posicional usa os dois campos abaixo e nunca
         // muda de estado na FSM — ver aplicarMarcacaoPosicional em team_bt.js.
@@ -1021,6 +1029,11 @@ class FootballPlayer {
 
     update(dt) {
         if (this.touchLock > 0) this.touchLock = Math.max(0, this.touchLock - dt);
+        // Arrefecimento da corrida ao espaco (ver RunIntoSpaceModel). Corre
+        // aqui e nao na FSM: a FSM so mexe no estado corrente, e o
+        // arrefecimento tem de correr JUSTAMENTE quando ele ja nao esta a
+        // correr.
+        if (this.runCooldown > 0) this.runCooldown = Math.max(0, this.runCooldown - dt);
 
         /*
         Freeze do kickoff: runBehaviorTree/fsm ficavam a correr por jogador

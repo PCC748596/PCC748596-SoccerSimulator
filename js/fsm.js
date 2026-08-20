@@ -410,6 +410,48 @@ class PlayerFSM {
             case 'INTERCEPT':
                 p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult);
                 break;
+
+            /* =============================================================
+               RUN_INTO_SPACE — a corrida ao espaço, sem bola.
+
+               Estado próprio e não um desvio no alvo: a corrida tem de durar
+               (é um compromisso, não uma preferência de posicionamento), e
+               quem a vê no debug tem de perceber que aquilo é uma corrida e
+               não o jogador a ir para o slot.
+
+               Vida da corrida, pedida assim: DURA ATÉ AO PRÓXIMO PASSE. Se a
+               bola vier para quem corre, ele continua — o ramo Receber do BT
+               assume no frame seguinte. Se for para outro, acabou: ficar a
+               correr para um espaço que já não serve para nada é o que faz
+               os jogadores parecerem cegos.
+
+               O `runCarrier` é quem tinha a bola quando a corrida começou.
+               Compará-lo com o portador actual é o que deteta "houve passe"
+               sem precisar de um evento novo.
+               ============================================================= */
+            case 'RUN_INTO_SPACE': {
+                p.runTimer = (p.runTimer || 0) - dt;
+
+                const perdemosABola = (Match.possessionTeam !== p.team);
+                const houvePasse = (Match.ballCarrier && Match.ballCarrier !== p.runCarrier);
+                const passeParaOutro = (Match.intendedReceiver && Match.intendedReceiver !== p);
+                const chegou = p.dynamicTarget &&
+                    p.model.position.distanceTo(p.dynamicTarget) < 1.5;
+
+                if (p.runTimer <= 0 || perdemosABola || houvePasse || passeParaOutro || chegou) {
+                    p.runTimer = 0;
+                    p.runCarrier = null;
+                    // Arrefecimento: sem isto ele reavalia no frame seguinte,
+                    // volta a achar espaço no mesmo sítio e fica a arrancar
+                    // e a parar no lugar.
+                    p.runCooldown = RunIntoSpaceModel.arrefecimento;
+                    p.fsm.changeState('MOVE_TO_POS');
+                    break;
+                }
+
+                p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult);
+                break;
+            }
             /* =============================================================
                CARRY — Condução: carregar a bola com toques à frente.
                O jogador solta a bola num toque curto/médio/longo conforme

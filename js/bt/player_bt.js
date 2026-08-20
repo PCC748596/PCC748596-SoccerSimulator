@@ -1083,6 +1083,145 @@ function alvoDeApoio(p, aFrenteDaBola, ctx) {
 }
 
 // Ocupa a posição que o nível 2 lhe deu.
+/*
+CORRIDA AO ESPACO — arrancar para um espaco livre a frente, sem bola.
+
+Quem ja esta a correr continua (o `runTimer` e a corrida em curso; quem a
+termina e a FSM, ver o case RUN_INTO_SPACE). Quem nao esta tem de cumprir
+tudo isto para arrancar:
+
+  - a equipa tem a bola, e nao sou eu que a tenho
+  - sou medio ou avancado (um central a arrancar para o espaco deixa a linha
+    a descoberto; isso e outra conversa, com outro nome)
+  - estou entre distMin e distMax do portador
+  - o arrefecimento passou (senao arranca e para no lugar, em ciclo)
+  - ha mesmo espaco livre a frente
+
+Ver RunIntoSpaceModel em config.js.
+*/
+function podeCorrerNoEspaco(ctx) {
+    const p = ctx.p;
+    if (typeof RunIntoSpaceModel === 'undefined') return false;
+    if ((p.runTimer || 0) > 0) return true;          // ja vai a caminho
+
+    if (p.role === 'gk' || p.role === 'def') return false;
+    if ((p.runCooldown || 0) > 0) return false;
+
+    const bb = ctx.bb;
+    if (!bb || !bb.isAttacking) return false;
+
+    const portador = Match.ballCarrier;
+    if (!portador || portador === p || portador.team !== p.team) return false;
+
+    const R = RunIntoSpaceModel;
+    const dist = p.model.position.distanceTo(portador.model.position);
+    if (dist < R.distMin || dist > R.distMax) return false;
+
+    return escolherDestinoDeCorrida(p, bb) !== null;
+}
+
+/*
+Onde ir. O SpatialGrid da a celula mais vazia num raio a frente do jogador; o
+destinoDeCorrida (utils.js) decide se ela serve e corta-a a medida (a frente,
+dentro do campo, aquem do fora-de-jogo, com comprimento de corrida).
+
+Devolve { x, z } ou null. Nao muda nada no jogador — e chamado tambem pela
+condicao, que nao pode ter efeitos.
+*/
+function escolherDestinoDeCorrida(p, bb) {
+    const R = RunIntoSpaceModel;
+    const portador = Match.ballCarrier;
+    if (!portador) return null;
+
+    const pos = p.model.position;
+    const cp = portador.model.position;
+    const adversarios = ((p.team === 'TeamA') ? Match.opponents : Match.players)
+        .filter(o => o.role !== 'gk')
+        .map(o => ({ x: o.model.position.x, z: o.model.position.z }));
+
+    /*
+    A PRIMEIRA VERSAO PROCURAVA ESPACO LIVRE E MAIS NADA (SpatialGrid.
+    findFreeSpace a frente do jogador). Media, 10 sementes: os companheiros a
+    10-22 m do portador subiam de 4.4 para 4.3 e os que tinham LINHA LIVRE
+    ficavam nos 1.6-1.7 — ou seja, zero. Correr para um espaco onde ninguem
+    consegue servir a bola nao abre opcao de passe nenhuma; abre so um buraco
+    na formacao.
+
+    Agora o destino tem de cumprir as duas coisas ao mesmo tempo:
+
+        estar livre        sem adversario a menos de `margemDestino`
+        ser servivel       a linha PORTADOR -> destino aberta, e a uma
+                           distancia de passe (10 a 22 m dele)
+
+    A procura e um leque a frente do jogador, no sentido de ataque: tres
+    distancias por cinco angulos. Chega para 15 hipoteses por jogador, num
+    tick que ja e de 15 Hz.
+    */
+    let melhor = null, melhorNota = -Infinity;
+
+    for (const alcance of [8.0, 13.0, 18.0]) {
+        for (const graus of [-50, -25, 0, 25, 50]) {
+            const rad = graus * Math.PI / 180;
+            // Frente do jogador = sentido de ataque dele.
+            const dx = Math.sin(rad) * alcance;
+            const dz = Math.cos(rad) * alcance * p.dirZ;
+
+            const cand = destinoDeCorrida({
+                px: pos.x,
+                pz: pos.z,
+                dirZ: p.dirZ,
+                candidatoX: pos.x + dx,
+                candidatoZ: pos.z + dz,
+                offsideLimitDir: (typeof bb.offsideLimitDir === 'number') ? bb.offsideLimitDir : null,
+                maxCorrida: R.maxCorrida
+            });
+            if (!cand) continue;
+
+            // Distancia de passe a partir de quem tem a bola.
+            const distPasse = Math.hypot(cand.x - cp.x, cand.z - cp.z);
+            if (distPasse < R.passeMin || distPasse > R.passeMax) continue;
+
+            // O destino esta mesmo livre?
+            let maisPerto = Infinity;
+            for (const o of adversarios) {
+                const d = Math.hypot(o.x - cand.x, o.z - cand.z);
+                if (d < maisPerto) maisPerto = d;
+            }
+            if (maisPerto < R.margemDestino) continue;
+
+            // E da para lhe chegar a bola?
+            if (!linhaLivre(cp.x, cp.z, cand.x, cand.z, adversarios, R.margemLinha)) continue;
+
+            // Entre os que servem, o que ganha mais campo e tem mais folga.
+            const ganho = (cand.z - pos.z) * p.dirZ;
+            const nota = ganho + Math.min(maisPerto, 8.0);
+            if (nota > melhorNota) { melhorNota = nota; melhor = cand; }
+        }
+    }
+
+    return melhor;
+}
+
+function actRunIntoSpace(ctx) {
+    const p = ctx.p;
+    const R = RunIntoSpaceModel;
+
+    // Corrida nova: fixa destino, prazo e quem tinha a bola ao arrancar.
+    if (!((p.runTimer || 0) > 0)) {
+        const destino = escolherDestinoDeCorrida(p, ctx.bb);
+        if (!destino) { actHoldPosition(ctx); return; }
+        p.runTarget = { x: destino.x, z: destino.z };
+        p.runTimer = R.duracao;
+        p.runCarrier = Match.ballCarrier;
+    }
+
+    p.dynamicTarget.set(p.runTarget.x, ALTURA_BASE_Y, p.runTarget.z);
+    // Sprint: quem ataca o espaco vai a fundo, senao chega depois da bola.
+    p.speedMult = (7.0 + ((ctx.skillSpeed - 50) / 50) * 1.5) * 1.25 * 0.9;
+    p.apoioAtivo = false;
+    p.fsm.changeState('RUN_INTO_SPACE');
+}
+
 function actHoldPosition(ctx) {
     const p = ctx.p;
     if (p.role === 'gk') {
@@ -1510,6 +1649,19 @@ const PlayerBT = sel('PlayerRoot',
             cruzamento sair) — os cruzamentos morriam sempre por falta de
             gente a atacar a bola.
             */
+            /*
+            Corrida ao espaco. Vem ANTES do AtacarArea e do ocuparPosicao: os
+            dois levam o jogador para uma posicao, e uma corrida ao espaco e
+            justamente o contrario de ocupar a posicao dele.
+
+            Depois do Receber, que tem prioridade: quem vai receber a bola nao
+            arranca para outro sitio.
+            */
+            seq('CorrerNoEspaco',
+                cond('haEspacoAFrente', podeCorrerNoEspaco),
+                act('correrNoEspaco', actRunIntoSpace)
+            ),
+
             seq('AtacarArea',
                 cond('colegaVaiCruzar', (ctx) => {
                     const p = ctx.p;

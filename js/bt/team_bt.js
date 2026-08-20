@@ -765,6 +765,73 @@ function computeBlock(bb) {
 }
 
 /*
+DESLOCAMENTO LATERAL POR CORREDOR — quanto cada jogador desliza conforme o
+corredor onde a bola esta.
+
+Estava inline no slotNoBloco, com tres numeros a mao. Fora daqui nao havia
+maneira de testar o que interessa, que nao e cada numero por si: e a
+DISTANCIA ENTRE ELES depois de todos deslizarem.
+
+    ballCorredor   -1 esquerda, 0 eixo, +1 direita (mundo)
+    pCorredor      o mesmo, para o alvo deste jogador
+    isLateral      LB/RB/LM/RM/LWB/RWB/LW/RW
+    isDefesa       role 'def' — os centrais deslizam com a linha
+    isAttacking    a equipa tem a bola
+    sectorPedido   o painel pediu o corredor onde este jogador esta
+
+Devolve os metros a somar ao x do alvo, ja com sinal do mundo.
+
+O que mudou, e porque (pedido explicito depois de ver em campo):
+
+    lado oposto, lateral   8.0 -> 5.0   fechava demais, ficava no eixo
+    lado oposto, central   3.0 -> 4.0   passa a acompanhar o lateral
+
+O par 8/3 encolhia a distancia entre o lateral e o central do lado oposto em
+5 m de uma vez, e os dois acabavam em cima um do outro. Fechar tem de ser um
+movimento do bloco, nao de um homem so: agora sao 5 e 4, e a distancia entre
+eles so encolhe 1 m.
+
+    mesmo lado, lateral    6.0 -> 4.0   abriam demais
+    corredor central       2.0 -> 3.5 (defesas), 2.0 (o resto)
+
+Pura: sem Match, sem Tatics, sem THREE.
+*/
+function deslocamentoDeCorredor(o) {
+    const ballCorredor = o.ballCorredor;
+    const pCorredor = o.pCorredor;
+
+    if (ballCorredor === 0) {
+        /*
+        Bola no eixo: os corredores fechavam 4 m para dentro. Era o mais
+        perverso dos estreitamentos — quanto MAIS central estava a bola, mais
+        a equipa fechava, o oposto de jogar pelas pontas.
+
+        Quem esta num corredor que o painel pediu nao e puxado: se o senhor
+        ligou a ala, e para haver alguem na ala quando a bola esta no meio,
+        que e exactamente quando a ala serve para alguma coisa.
+        */
+        if (o.sectorPedido) return 0;
+        return -pCorredor * 4.0;
+    }
+
+    if (pCorredor === 0) {
+        // Corredor central: o defesa desliza com a linha, o medio menos —
+        // senao a linha defensiva parte-se ao meio na basculacao.
+        return ballCorredor * (o.isDefesa ? 3.5 : 2.0);
+    }
+
+    if (pCorredor === -ballCorredor) {
+        // Lado oposto: fecha, mas em bloco (ver o comentario acima).
+        return ballCorredor * (o.isLateral ? 5.0 : 4.0);
+    }
+
+    // Mesmo lado da bola: o lateral abre para dar linha de passe pela ala, e
+    // so com bola — sem ela, abrir e deixar o corredor interior a descoberto.
+    if (o.isLateral && o.isAttacking) return ballCorredor * 4.0;
+    return 0;
+}
+
+/*
 Onde este jogador fica dentro do bloco, em metros no mundo.
 
     p.slot.u   0..1 da esquerda para a direita do bloco
@@ -860,33 +927,14 @@ function slotNoBloco(p, bb) {
         ? Tatics.setores.indexOf(meuSector) >= 0
         : true;
 
-    if (ballCorredor === 0) {
-        /*
-        Bola no eixo: os corredores fechavam 4 m para dentro. Era o mais
-        perverso dos tres estreitamentos — quanto MAIS central estava a bola,
-        mais a equipa fechava, o oposto de jogar pelas pontas.
-
-        Quem esta num corredor que o painel pediu deixa de ser puxado: se o
-        senhor ligou a ala, e para haver alguem na ala quando a bola esta no
-        meio, que e exactamente quando a ala serve para alguma coisa.
-        */
-        if (!sectorPedido) {
-            if (pCorredor === 1) xTarget -= 4.0;
-            else if (pCorredor === -1) xTarget += 4.0;
-        }
-    } else {
-        if (pCorredor === 0) {
-            xTarget += ballCorredor * 2.0;
-        } else if (pCorredor === -ballCorredor) {
-            // Lado oposto: fechar mais se for lateral
-            xTarget += ballCorredor * (isLateral ? 8.0 : 3.0);
-        } else if (pCorredor === ballCorredor) {
-            // Mesmo lado da bola: laterais abrem para dar linha de passe pelos lados
-            if (isLateral && bb.isAttacking) {
-                xTarget += ballCorredor * 6.0;
-            }
-        }
-    }
+    xTarget += deslocamentoDeCorredor({
+        ballCorredor: ballCorredor,
+        pCorredor: pCorredor,
+        isLateral: isLateral,
+        isDefesa: p.role === 'def',
+        isAttacking: bb.isAttacking,
+        sectorPedido: sectorPedido
+    });
 
     /*
     O deslocamento de corredor acima e somado DEPOIS do `u` ja ter sido

@@ -82,6 +82,16 @@ function novoJogo() {
         // aplicava o vies duas vezes. Dava testes a passar sozinhos e a falhar
         // na suite. O barramento e limpo antes de cada jogo novo.
         EventBus._listeners = {};
+
+        // O createTeams faz push nos arrays: sem os esvaziar, o segundo
+        // novoJogo ficava com 22 jogadores por equipa, metade deles em cima
+        // uns dos outros. Dava testes de espacamento a acusar "100% do tempo
+        // colados" com o jogo a comportar-se bem.
+        Match.players.length = 0;
+        Match.opponents.length = 0;
+        Match.ballCarrier = null;
+        Match.setPieceTaker = null;
+
         Match.init(new THREE.Scene());
         Match.delta = 0.016;
         for (let i = 0; i < 120; i++) Match.update(0.016);

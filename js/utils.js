@@ -684,6 +684,109 @@ function pesoEspacoPorTecnica(tec) {
 }
 
 /*
+A LINHA ENTRE DOIS PONTOS ESTA LIVRE?
+
+Distancia de cada obstaculo ao SEGMENTO (nao a recta): quem esta atras de
+quem passa, ou para la do destino, nao fecha linha nenhuma.
+
+`obstaculos` e uma lista de { x, z }. `margem` em metros — a folga minima que
+a bola precisa para passar ao lado de alguem.
+
+Pura: sem Match, sem THREE (o Line3 exigia um Vector3 por obstaculo e por
+chamada, e isto corre dentro da procura do destino de corrida, muitas vezes
+por frame).
+*/
+function linhaLivre(ax, az, bx, bz, obstaculos, margem) {
+    if (!obstaculos || !obstaculos.length) return true;
+
+    const dx = bx - ax;
+    const dz = bz - az;
+    const len2 = dx * dx + dz * dz;
+    const m2 = margem * margem;
+
+    for (const o of obstaculos) {
+        if (!o) continue;
+        let t = 0;
+        if (len2 > 0.000001) {
+            t = ((o.x - ax) * dx + (o.z - az) * dz) / len2;
+            t = Math.max(0, Math.min(1, t));
+        }
+        const px = ax + dx * t;
+        const pz = az + dz * t;
+        const ex = o.x - px;
+        const ez = o.z - pz;
+        if (ex * ex + ez * ez < m2) return false;
+    }
+    return true;
+}
+
+/*
+DESTINO DE UMA CORRIDA AO ESPACO.
+
+O candidato bruto vem do SpatialGrid (a celula mais vazia num raio a frente
+do jogador). Esta funcao decide se ele SERVE, e corta-o a medida:
+
+    a frente      avanco do destino > avanco do jogador + MINIMO
+    corrivel      entre MINIMO e `maxCorrida` metros; mais longe e encurtado
+                  na mesma direccao, mais perto nao vale a pena arrancar
+    em jogo       dentro das linhas, com folga
+    legal         aquem da linha de fora-de-jogo publicada pelo nivel 1
+                  (bb.offsideLimitDir, ja no referencial de ataque)
+
+Tudo em `avanco` (z * dirZ) para nao haver dois casos espelhados a manter.
+
+`offsideLimitDir` a null significa "sem linha publicada" (a equipa nao tem a
+posse) — nesse caso nao ha fora-de-jogo a respeitar.
+
+Devolve { x, z } no referencial do MUNDO, ou null se nao houver corrida que
+valha a pena.
+
+Pura: sem Match, sem SpatialGrid, sem THREE.
+*/
+function destinoDeCorrida(o) {
+    const MINIMO = 6.0;        // menos do que isto e um passo, nao uma corrida
+    const MARGEM_LINHA = 2.0;  // folga para as linhas laterais e de fundo
+    const MARGEM_FORA_DE_JOGO = 0.5;
+
+    const dirZ = o.dirZ;
+    const avancoJogador = o.pz * dirZ;
+    let alvoX = o.candidatoX;
+    let avancoAlvo = o.candidatoZ * dirZ;
+
+    // Aquem da linha de fora-de-jogo, se houver uma.
+    if (typeof o.offsideLimitDir === 'number') {
+        const tecto = o.offsideLimitDir - MARGEM_FORA_DE_JOGO;
+        if (avancoAlvo > tecto) avancoAlvo = tecto;
+    }
+
+    // Dentro do campo.
+    const meiaLarg = CAMPO_LARG / 2 - MARGEM_LINHA;
+    const meioComp = CAMPO_COMP / 2 - MARGEM_LINHA;
+    alvoX = Math.max(-meiaLarg, Math.min(meiaLarg, alvoX));
+    avancoAlvo = Math.max(-meioComp, Math.min(meioComp, avancoAlvo));
+
+    // Tem de ser para a frente, e tem de dar uma corrida.
+    if (avancoAlvo <= avancoJogador) return null;
+
+    let dx = alvoX - o.px;
+    let dAvanco = avancoAlvo - avancoJogador;
+    const dist = Math.hypot(dx, dAvanco);
+    if (dist < MINIMO) return null;
+
+    // Longe demais: encurta na mesma direccao em vez de desistir.
+    if (dist > o.maxCorrida) {
+        const k = o.maxCorrida / dist;
+        dx *= k;
+        dAvanco *= k;
+    }
+
+    return {
+        x: o.px + dx,
+        z: (avancoJogador + dAvanco) * dirZ
+    };
+}
+
+/*
 NOTA DE DISTANCIA DO PASSE — a forma da curva que faz o jogo girar.
 
 Era, dentro do findPassTarget (player.js):

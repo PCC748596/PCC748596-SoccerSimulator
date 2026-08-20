@@ -541,9 +541,9 @@ const BlockShape = {
     um número só, e todas as posições abrem ou fecham em proporção.
     */
     amplitude: {
-        short: 0.70,          // 70%
-        median: 0.80,         // 80%
-        large: 0.90           // 90%
+        short: 0.60,          // 60%
+        median: 0.70,         // 70%
+        large: 0.80           // 80%
     },
 
     /*
@@ -2602,6 +2602,47 @@ const Tatics = {
 };
 
 /*
+CORRIDA AO ESPACO (RUN_INTO_SPACE) — o movimento sem bola que faz a troca de
+passes existir.
+
+Medido antes de isto existir: no momento de cada passe havia em media 3.6
+colegas a 10-22 m do portador e so 1.7 com linha de passe livre. Nao faltava
+criterio na escolha do passe — faltava quem se oferecesse. A cadeia normal de
+circulacao (RB -> CB -> CB -> LB -> CM ...) precisa de tres ou quatro linhas
+abertas ao mesmo tempo, e elas nao existiam.
+
+    distMin/distMax   a que distancia do portador vale a pena arrancar. Perto
+                      demais nao abre linha nenhuma; longe demais e um passe
+                      que ja nao esta ao alcance de ninguem.
+    maxCorrida        comprimento maximo da corrida, em metros
+    passeMin/Max      a que distancia do PORTADOR o destino tem de ficar: e
+                      preciso que ele consiga la por a bola
+    margemDestino     adversario mais perto do destino do que isto = nao esta
+                      livre
+    margemLinha       folga que a bola precisa para passar ao lado de alguem
+                      na linha portador -> destino
+    duracao           tecto de tempo; a corrida acaba antes se houver passe
+                      (ver o case RUN_INTO_SPACE na fsm.js)
+    arrefecimento     tempo minimo entre duas corridas do mesmo jogador
+    ocupacaoMax       acima disto a celula nao esta livre, esta so menos cheia
+*/
+const RunIntoSpaceModel = {
+    distMin: 8.0,
+    distMax: 32.0,
+    maxCorrida: 18.0,
+
+    // O destino tem de ser SERVIVEL, e nao so vazio: a que distancia do
+    // portador ele fica, e que folga a bola precisa para la chegar.
+    passeMin: 10.0,
+    passeMax: 22.0,
+    margemDestino: 4.0,
+    margemLinha: 2.0,
+    duracao: 4.0,
+    arrefecimento: 3.0,
+    ocupacaoMax: 0.35
+};
+
+/*
 O SECTOR MANDA NA LARGURA — multiplicador sobre o fecho do LineShape.
 
 Medido antes disto: 32.3 m de largura de equipa com esq+dir, 32.3 m com cen,
@@ -2613,8 +2654,8 @@ bloco de 32 m em 68 m de campo, sempre, com qualquer combinacao.
 
 Devolve um multiplicador para o `fecho` por linha (LineShape.fecho):
 
-    esq+dir      1.30   pedidas as pontas: a equipa abre
-    um flanco    1.20   abre, mas menos: e um lado so
+    esq+dir      1.15   pedidas as pontas: a equipa abre
+    um flanco    1.10   abre, mas menos: e um lado so
     esq+cen+dir  1.00   os tres ligados nao pedem nada de especial
     flanco+cen   1.05   quase neutro
     cen          0.75   pedido o eixo: fecha
@@ -2631,7 +2672,9 @@ function fechoDoSector(setores) {
 
     if (flancos === 0) return cen ? 0.75 : 1.0;
     if (cen) return flancos === 2 ? 1.0 : 1.05;
-    return flancos === 2 ? 1.30 : 1.20;
+    // 1.30/1.20 numa primeira versao: em campo os laterais abriam demais e
+    // deixavam o corredor interior aberto (pedido explicito para fechar).
+    return flancos === 2 ? 1.15 : 1.10;
 }
 
 /*
