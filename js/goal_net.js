@@ -51,3 +51,55 @@ const NetWave = {
         return Math.max(0, Math.min(1, v / GoalNet.velocidadeCheia));
     }
 };
+
+/*
+Grelha de (nu+1) x (nv+1) vértices, por interpolação bilinear dos quatro cantos:
+
+    P(u, v) = (1-u)(1-v)·p1 + u(1-v)·p2 + (1-u)v·p3 + uv·p4
+
+Bilinear e não um PlaneGeometry transformado: as faces da rede são trapézios e
+planos inclinados (ver os cantos em criarFaceRede, match.js), não rectângulos, e
+a interpolação dos cantos reproduz qualquer um deles.
+
+A ordem dos cantos é a que o código já usava: p1 em (0,0), p2 em (1,0), p3 em
+(0,1), p4 em (1,1) — o que os índices antigos [0,1,2, 1,3,2] implicavam.
+
+Pura e sem THREE: quem chama monta o BufferGeometry com o que isto devolve.
+*/
+function gerarGrelhaRede(p1, p2, p3, p4, repX, repY, nu, nv) {
+    const nVertices = (nu + 1) * (nv + 1);
+    const posicoes = new Float32Array(nVertices * 3);
+    const uvs = new Float32Array(nVertices * 2);
+    const indices = [];
+
+    for (let iv = 0; iv <= nv; iv++) {
+        const v = iv / nv;
+        for (let iu = 0; iu <= nu; iu++) {
+            const u = iu / nu;
+            const i = iv * (nu + 1) + iu;
+
+            const a = (1 - u) * (1 - v), b = u * (1 - v);
+            const c = (1 - u) * v, d = u * v;
+
+            for (let k = 0; k < 3; k++) {
+                posicoes[i * 3 + k] = a * p1[k] + b * p2[k] + c * p3[k] + d * p4[k];
+            }
+
+            uvs[i * 2] = u * repX;
+            uvs[i * 2 + 1] = v * repY;
+        }
+    }
+
+    for (let iv = 0; iv < nv; iv++) {
+        for (let iu = 0; iu < nu; iu++) {
+            const i0 = iv * (nu + 1) + iu;
+            const i1 = i0 + 1;
+            const i2 = i0 + (nu + 1);
+            const i3 = i2 + 1;
+            // Mesma orientação dos dois triângulos do quad antigo.
+            indices.push(i0, i1, i2, i1, i3, i2);
+        }
+    }
+
+    return { posicoes: posicoes, uvs: uvs, indices: indices };
+}

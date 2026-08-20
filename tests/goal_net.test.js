@@ -134,3 +134,124 @@ test('impacto sem velocidade não abana a rede, e nunca dá negativo', () => {
     assert.strictEqual(s.W.amplitudeDoImpacto(0), 0);
     assert.ok(s.W.amplitudeDoImpacto(-5) >= 0, 'devia ser 0, não negativo');
 });
+
+/* ------------------------------------------------------------------
+   A grelha bilinear que substitui o quad de quatro vértices.
+   ------------------------------------------------------------------ */
+
+function recortarFuncao(src, nome) {
+    const i = src.indexOf('function ' + nome + '(');
+    assert.ok(i >= 0, 'function ' + nome + ' nao encontrada');
+    let nivel = 0;
+    for (let k = src.indexOf('{', i); k < src.length; k++) {
+        if (src[k] === '{') nivel++;
+        else if (src[k] === '}' && --nivel === 0) return src.slice(i, k + 1);
+    }
+    assert.fail('chavetas desequilibradas em ' + nome);
+}
+
+function montarGrelha() {
+    const sandbox = { Math: Math, Float32Array: Float32Array };
+    vm.createContext(sandbox);
+    vm.runInContext(
+        recortarConst(CONFIG, 'GoalNet') + '\n' +
+        recortarFuncao(NET, 'gerarGrelhaRede') + '\n' +
+        'this.gerar = gerarGrelhaRede; this.G = GoalNet;', sandbox);
+    return sandbox;
+}
+
+// Os quatro cantos do pano de trás de uma baliza, como em match.js.
+const P1 = [-3.66, 2.44, 0.8];   // u=0, v=0
+const P2 = [3.66, 2.44, 0.8];    // u=1, v=0
+const P3 = [-3.66, 0, 2.0];      // u=0, v=1
+const P4 = [3.66, 0, 2.0];       // u=1, v=1
+
+function vertice(g, i) {
+    return [g.posicoes[i * 3], g.posicoes[i * 3 + 1], g.posicoes[i * 3 + 2]];
+}
+
+test('a grelha tem o número certo de vértices e índices', () => {
+    const s = montarGrelha();
+    const nu = 4, nv = 3;
+    const g = s.gerar(P1, P2, P3, P4, 30, 10, nu, nv);
+    assert.strictEqual(g.posicoes.length, (nu + 1) * (nv + 1) * 3);
+    assert.strictEqual(g.uvs.length, (nu + 1) * (nv + 1) * 2);
+    assert.strictEqual(g.indices.length, nu * nv * 6);
+});
+
+test('os quatro cantos ficam exactamente onde estavam', () => {
+    const s = montarGrelha();
+    const nu = 4, nv = 3;
+    const g = s.gerar(P1, P2, P3, P4, 30, 10, nu, nv);
+
+    const idx = (iu, iv) => iv * (nu + 1) + iu;
+    const perto = (a, b, onde) => {
+        for (let k = 0; k < 3; k++) {
+            assert.ok(Math.abs(a[k] - b[k]) < 1e-6,
+                onde + ' componente ' + k + ': ' + a[k] + ' != ' + b[k]);
+        }
+    };
+
+    perto(vertice(g, idx(0, 0)), P1, 'p1');
+    perto(vertice(g, idx(nu, 0)), P2, 'p2');
+    perto(vertice(g, idx(0, nv)), P3, 'p3');
+    perto(vertice(g, idx(nu, nv)), P4, 'p4');
+});
+
+test('um ponto interior cai dentro da envolvente dos cantos', () => {
+    const s = montarGrelha();
+    const nu = 4, nv = 4;
+    const g = s.gerar(P1, P2, P3, P4, 30, 10, nu, nv);
+    const meio = vertice(g, 2 * (nu + 1) + 2);
+
+    const eixos = [[P1[0], P2[0], P3[0], P4[0]],
+                   [P1[1], P2[1], P3[1], P4[1]],
+                   [P1[2], P2[2], P3[2], P4[2]]];
+    for (let k = 0; k < 3; k++) {
+        const lo = Math.min(...eixos[k]), hi = Math.max(...eixos[k]);
+        assert.ok(meio[k] >= lo - 1e-6 && meio[k] <= hi + 1e-6,
+            'componente ' + k + ' = ' + meio[k] + ' fora de [' + lo + ',' + hi + ']');
+    }
+});
+
+test('o centro da grelha é a média dos quatro cantos', () => {
+    const s = montarGrelha();
+    // Com nu e nv pares, o vértice do meio está em u=v=0.5.
+    const nu = 2, nv = 2;
+    const g = s.gerar(P1, P2, P3, P4, 30, 10, nu, nv);
+    const meio = vertice(g, 1 * (nu + 1) + 1);
+    for (let k = 0; k < 3; k++) {
+        const esperado = (P1[k] + P2[k] + P3[k] + P4[k]) / 4;
+        assert.ok(Math.abs(meio[k] - esperado) < 1e-6,
+            'componente ' + k + ': ' + meio[k] + ' != ' + esperado);
+    }
+});
+
+test('as UVs vão de 0 às repetições pedidas', () => {
+    const s = montarGrelha();
+    const nu = 3, nv = 2, repX = 30, repY = 10;
+    const g = s.gerar(P1, P2, P3, P4, repX, repY, nu, nv);
+    const idx = (iu, iv) => iv * (nu + 1) + iu;
+
+    assert.strictEqual(g.uvs[idx(0, 0) * 2], 0);
+    assert.strictEqual(g.uvs[idx(0, 0) * 2 + 1], 0);
+    assert.strictEqual(g.uvs[idx(nu, 0) * 2], repX);
+    assert.strictEqual(g.uvs[idx(0, nv) * 2 + 1], repY);
+});
+
+test('todos os índices apontam para vértices que existem', () => {
+    const s = montarGrelha();
+    const nu = 5, nv = 4;
+    const g = s.gerar(P1, P2, P3, P4, 30, 10, nu, nv);
+    const nVertices = (nu + 1) * (nv + 1);
+    for (const i of g.indices) {
+        assert.ok(Number.isInteger(i) && i >= 0 && i < nVertices, 'índice ' + i);
+    }
+});
+
+test('a grelha mais fina que existe é um único quad', () => {
+    const s = montarGrelha();
+    const g = s.gerar(P1, P2, P3, P4, 30, 10, 1, 1);
+    assert.strictEqual(g.posicoes.length, 4 * 3);
+    assert.strictEqual(g.indices.length, 6);
+});

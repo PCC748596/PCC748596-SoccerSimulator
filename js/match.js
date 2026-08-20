@@ -431,11 +431,23 @@ const Match = {
         const texRede = new THREE.CanvasTexture(cvsRede); texRede.wrapS = THREE.RepeatWrapping; texRede.wrapT = THREE.RepeatWrapping;
         const matRede = new THREE.MeshBasicMaterial({ map: texRede, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
 
-        function criarFaceRede(p1, p2, p3, p4, repX, repY) {
+        /*
+        Uma face da rede. Passou de um quad de QUATRO vértices para uma grelha
+        (ver gerarGrelhaRede em goal_net.js): sem vértices pelo meio, a rede não
+        podia deformar-se — era uma chapa rígida com textura de rede.
+
+        Os cantos, as UVs e o aspecto em repouso são os mesmos; só há mais
+        vértices entre eles.
+        */
+        function criarFaceRede(p1, p2, p3, p4, repX, repY, nu, nv) {
+            const g = gerarGrelhaRede(p1, p2, p3, p4, repX, repY,
+                nu || GoalNet.segmentosU, nv || GoalNet.segmentosV);
+
             const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([...p1, ...p2, ...p3, ...p4]), 3));
-            geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, repX, 0, 0, repY, repX, repY]), 2));
-            geo.setIndex([0, 1, 2, 1, 3, 2]); geo.computeVertexNormals();
+            geo.setAttribute('position', new THREE.BufferAttribute(g.posicoes, 3));
+            geo.setAttribute('uv', new THREE.BufferAttribute(g.uvs, 2));
+            geo.setIndex(g.indices);
+            geo.computeVertexNormals();
             return new THREE.Mesh(geo, matRede);
         }
 
@@ -461,8 +473,12 @@ const Match = {
             const bTE = [-w, 0, profBot]; const bTD = [w, 0, profBot];
             const bFE = [-w, 0, 0]; const bFD = [w, 0, 0];
 
-            const redeCima = criarFaceRede(tLE, tLD, tTE, tTD, 30, 4); const redeTras = criarFaceRede(tTE, tTD, bTE, bTD, 30, 10);
-            const redeEsq = criarFaceRede(bFE, tLE, bTE, tTE, 8, 10); const redeDir = criarFaceRede(tLD, bFD, tTD, bTD, 8, 10);
+            const S = GoalNet;
+            // Os laterais são estreitos: menos divisões ao longo de u.
+            const redeCima = criarFaceRede(tLE, tLD, tTE, tTD, 30, 4, S.segmentosU, S.segmentosV);
+            const redeTras = criarFaceRede(tTE, tTD, bTE, bTD, 30, 10, S.segmentosU, S.segmentosV);
+            const redeEsq = criarFaceRede(bFE, tLE, bTE, tTE, 8, 10, S.segmentosLateralU, S.segmentosV);
+            const redeDir = criarFaceRede(tLD, bFD, tTD, bTD, 8, 10, S.segmentosLateralU, S.segmentosV);
 
             const redes = new THREE.Group(); redes.add(redeCima, redeTras, redeEsq, redeDir);
             if (lado === -1) { redes.scale.z = -1; }
