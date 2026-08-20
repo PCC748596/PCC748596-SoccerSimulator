@@ -114,8 +114,11 @@ Inalterados de propósito:
 - Estados reativos: `mergulho`, `maos`, `apanhar`, `salto_alto`.
 - O ramo de cruzamento e o de bola solta perto do guarda-redes.
 
-Removido: `actGoalkeeperPosition()` em `js/bt/player_bt.js:1078-1080`, código
-morto que duplica a fórmula antiga.
+Realinhado: `actGoalkeeperPosition()` em `js/bt/player_bt.js:1073-1084` duplica
+a fórmula antiga e hoje nunca executa, mas continua referenciada em três pontos
+da árvore (`js/bt/player_bt.js:1028`, `:1162`, `:1434`). Em vez de a remover, o
+corpo passa a delegar para `gkAnchor`, para que as duas vias não possam
+divergir se a árvore vier a correr para guarda-redes.
 
 ## Testes
 
