@@ -58,7 +58,6 @@ class FootballPlayer {
 
         this.passTarget = null;
         this.dribbleTargetX = 0;
-        this.carryTargetX = 0;
         this.dribbleOpponent = null;
         this.dribbleCooldownTimer = 0;
         this.isCross = false;

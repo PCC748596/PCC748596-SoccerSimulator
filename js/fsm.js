@@ -405,18 +405,15 @@ class PlayerFSM {
                     p.dynamicTarget.copy(Match.ball.position);
                     p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult * 1.05, 0);
                 } else {
-                    if (p.pos === 'LB' || p.pos === 'RB') {
-                        p.carryTargetX = p.baseTarget.x * 1.05;
-                    } else if (!p.carryTargetX || chancePorSegundo(1.2, dt)) {
-                        p.carryTargetX = Tatics.getWeightedSectorX(p.dirZ);
-                    }
-
                     // Escolhe a melhor direcção de condução (leque de ângulos adaptativo pela Técnica)
                     {
                         const todosJogadores = Match.players.concat(Match.opponents);
                         const px = p.model.position.x, pz = p.model.position.z;
                         let melhorNota = -Infinity;
-                        let alvoX = p.carryTargetX, alvoZ = pz + 10 * p.dirZ;
+                        // Recuo seguro se nenhum candidato passar os filtros:
+                        // dez metros a direito. Antes era o carryTargetX
+                        // sorteado, que já não existe.
+                        let alvoX = px, alvoZ = pz + 10 * p.dirZ;
 
                         // Visão de jogo baseada na técnica:
                         // Distância de leitura = técnica * 0.5 (ex: tec 80 = 40m, tec 60 = 30m, tec 40 = 20m)
@@ -465,9 +462,16 @@ class PlayerFSM {
                                 }
                             }
 
-                            let nota = Math.min(maisPerto, CarryModel.spaceCap) * CarryModel.spaceWeight;
-                            nota += (tz - pz) * p.dirZ * CarryModel.progressWeight;
-                            nota -= Math.abs(tx - p.carryTargetX) * CarryModel.sectorWeight;
+                            /*
+                            Três termos normalizados a 0..1 e só depois pesados
+                            (ver notaDireccaoCarry em utils.js). Antes eram
+                            grandezas cruas em escalas diferentes, e o progresso
+                            ganhava sempre ao espaço.
+                            */
+                            const espacoNorm = Math.min(maisPerto, CarryModel.spaceCap) / CarryModel.spaceCap;
+                            const progressoNorm = Math.max(0, Math.min(1, ((tz - pz) * p.dirZ) / visDist));
+                            const sectorPen = Tatics.penalidadeSector(tx, p.dirZ);
+                            const nota = notaDireccaoCarry(espacoNorm, progressoNorm, sectorPen, tec);
 
                             if (nota > melhorNota) { melhorNota = nota; alvoX = tx; alvoZ = tz; }
                         }
