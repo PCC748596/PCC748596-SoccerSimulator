@@ -300,8 +300,8 @@ class PlayerFSM {
                         let targetX = (Math.random() - 0.5) * 11.0;
                         _v1.set(targetX, 0, targetZ);
                         _v2.subVectors(_v1, Match.ball.position).normalize();
-                        Match.ballVel.copy(_v2).multiplyScalar(21.0); // Força um pouco maior (antes 19)
-                        Match.ballVel.y = 9.0; // Ângulo um pouco maior (antes 7.5)
+                        Match.ballVel.copy(_v2).multiplyScalar(24.5); // Força um pouco maior (antes 21)
+                        Match.ballVel.y = 9.8; // Ângulo um pouco maior (antes 9.0)
                         Match.state = 'PLAY';
                         Match.ballCarrier = null;
                         Match.possessionTeam = p.team;

@@ -982,9 +982,9 @@ const PassModel = {
     jogável: acima de BallControl.easySpeed (7.75) o receptor arrisca falhar o
     domínio, e a zero morre antes de lá chegar.
     */
-    vChegadaRasteira: 8.2,
-    vChegadaCruzamento: 8.5,   // cruzamento rasteiro vai mais forte, de propósito
-    vChegadaLancamento: 5.5,   // lançamento é para correr atrás, não para receber parado
+    vChegadaRasteira: 11.5,
+    vChegadaCruzamento: 12.0,   // cruzamento rasteiro vai mais forte, de propósito
+    vChegadaLancamento: 8.0,   // lançamento é para correr atrás, não para receber parado
 
     /*
     Erro máximo no PESO da bola, para skill de passe 0. Escala com
