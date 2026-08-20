@@ -333,7 +333,7 @@ function findCross(ctx) {
         C.bonusLargura * largura + C.bonusFundo * fundo;
     if (ctx.underPressure) chance -= C.penalPressao;
 
-    // TeamPlayStyle (tacticSystem.md) — Wing Play cruza bem mais, Direct/
+    // TeamPlayStyle (docs/tacticSystem.md) — Wing Play cruza bem mais, Direct/
     // Counter Attack ficam no neutro (ver TeamPlayStyles em config.js).
     if (typeof TeamPlayStyles !== 'undefined') {
         const teamStyle = TeamPlayStyles[Tatics.teamPlayStyle] || TeamPlayStyles.positional;

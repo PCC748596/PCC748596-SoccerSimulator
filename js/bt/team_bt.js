@@ -237,7 +237,7 @@ function computeCongestion(bb) {
 // Agressividade dinâmica: Mentalidade dá a base, TeamPlayStyle e o espaço no
 // lado ONDE A BOLA ESTÁ modulam por cima. Não é fixa — equipa Ofensiva
 // contra bloco compacto do lado da bola arrisca menos, sem o utilizador
-// mexer em nada (ver tacticSystem.md secção 9).
+// mexer em nada (ver docs/tacticSystem.md secção 9).
 function computeAggression(bb) {
     const base = (typeof MentalidadeModel !== 'undefined' && MentalidadeModel[Tatics.estilo])
         ? MentalidadeModel[Tatics.estilo].agressao : 0.5;

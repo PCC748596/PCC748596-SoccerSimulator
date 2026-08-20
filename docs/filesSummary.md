@@ -216,7 +216,7 @@ Além da postura, escreve: `pushMultiplier`, `styleDefenseZShift`, `advanceFacto
 marcações (`markingTarget` / `isCovering` / `markCount`) nos jogadores das duas
 equipas.
 
-**Camada tática coletiva** (tacticSystem.md) — três campos novos no
+**Camada tática coletiva** (tacticSystem.md, ao lado deste ficheiro) — três campos novos no
 `TeamBlackboard`, calculados no fim de `gather()`, uma camada ACIMA do
 Decision Grid e dos Playing Styles (que continuam intocados):
 

@@ -531,7 +531,7 @@ class FootballPlayer {
         let ratedCandidates = [];
 
         /*
-        Camada tática coletiva (tacticSystem.md) — Mentalidade já entrava via
+        Camada tática coletiva (docs/tacticSystem.md) — Mentalidade já entrava via
         Playing Style/Decision Grid; isto é NOVO: TeamPlayStyle + Momentum +
         Congestão, por cima do resto, sem mexer no que já existia acima.
         Playing Styles continuam a decidir tudo o que já decidiam (ver
