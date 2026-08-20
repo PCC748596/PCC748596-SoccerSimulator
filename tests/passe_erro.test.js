@@ -196,7 +196,7 @@ test('pressão e costas somam-se', () => {
 test('nem no pior caso a dispersão fica absurda', () => {
     const s = montar();
     const pior = s.sigma({ passSkill: 0, tecSkill: 0, distAdversario: 0, cosCorpo: -1 });
-    assert.ok(pior < 0.7, 'sigma de ' + pior.toFixed(3) + ' rad (0.7 = 40 graus)');
+    assert.ok(pior <= 0.35 + 1e-9, 'sigma de ' + pior.toFixed(3) + ' rad devia respeitar o sigmaTecto (0.35 rad)');
 });
 
 test('a força cai sob pressão, e nunca abaixo do mínimo', () => {

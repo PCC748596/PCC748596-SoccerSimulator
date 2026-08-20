@@ -60,14 +60,33 @@ function executePassGameplay(p) {
     let distAdversario = Infinity;
     for (const o of adversarios) {
         if (o.role === 'gk' || !o.model) continue;
-        const d = p.model.position.distanceTo(o.model.position);
+        // Distancia no PLANO (ver comentario acima) — nao 3D, senao a
+        // altura do adversario entra na conta do aperto sem fazer sentido.
+        const d = Math.hypot(
+            p.model.position.x - o.model.position.x,
+            p.model.position.z - o.model.position.z);
         if (d < distAdversario) distAdversario = d;
     }
 
-    // Frente local do modelo e +Z (ver pass_candidates.js).
-    _v2.set(0, 0, 1).applyQuaternion(p.model.quaternion);
-    const normDir = Math.hypot(dxAlvo, dzAlvo) || 1;
-    const cosCorpo = (_v2.x * dxAlvo + _v2.z * dzAlvo) / normDir;
+    /*
+    ANGULO DO CORPO. A leitura tem de ser a que foi guardada em initiatePass
+    (this.cosCorpoNoPasse), NAO a lida agora: o case 'PASS' abaixo (ver
+    slerp de p.model.quaternion) roda o jogador para o alvo a 25*dt por
+    frame desde o instante em que o passe arranca, por isso a esta altura
+    (contacto) ele ja esta praticamente virado para o alvo e cosCorpo daria
+    quase sempre ~1 — a penalizacao de costas nunca dispararia num jogo
+    real, so nos testes unitarios que chamam sigmaDePasse directamente.
+    */
+    let cosCorpo;
+    if (typeof p.cosCorpoNoPasse === 'number') {
+        cosCorpo = p.cosCorpoNoPasse;
+    } else {
+        // Frente local do modelo e +Z (ver pass_candidates.js).
+        _vFrenteCorpo.set(0, 0, 1).applyQuaternion(p.model.quaternion);
+        const normDir = Math.hypot(dxAlvo, dzAlvo) || 1;
+        cosCorpo = (_vFrenteCorpo.x * dxAlvo + _vFrenteCorpo.z * dzAlvo) / normDir;
+    }
+    p.cosCorpoNoPasse = null;
 
     const sigma = sigmaDePasse({
         passSkill: passSkill,

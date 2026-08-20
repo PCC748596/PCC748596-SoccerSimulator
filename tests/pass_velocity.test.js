@@ -97,6 +97,24 @@ test('velocidadeRasteiraPara: o passe curto chega mais vivo que o longo', () => 
         `curto=${curto.toFixed(2)} longo=${longo.toFixed(2)} m/s`);
 });
 
+/*
+Guarda contra recalibração silenciosa: `chegadaDe`, acima, é o inverso
+algébrico exacto da fórmula fechada dentro de `velocidadeRasteiraPara`, por
+isso qualquer erro na física partilhada cancela-se e os testes de "chegada"
+ficam sempre verdes — mudar `atritoRolamento`, ou qualquer outra constante
+da calibração, passaria despercebido. Estes dois números vêm de uma
+observação directa (não da fórmula inversa) e são o que prende a decisão do
+humano de manter `atritoRolamento` em 0.38. Se moverem, ou a física ou a
+calibração mudou, e isso tem de ser deliberado — não um efeito colateral.
+*/
+test('velocidadeRasteiraPara: velocidades de saída ficam presas à calibração actual', () => {
+    const vChegada = sandbox.PassModel.vChegadaRasteira;
+    const curto = sandbox.velocidadeRasteiraPara(4, vChegada);
+    const longo = sandbox.velocidadeRasteiraPara(25, vChegada);
+    assert.ok(Math.abs(curto - 8.42) < 0.05, `saida a 4m = ${curto.toFixed(2)} (esperado ~8.42)`);
+    assert.ok(Math.abs(longo - 16.86) < 0.05, `saida a 25m = ${longo.toFixed(2)} (esperado ~16.86)`);
+});
+
 test('velocidadeRasteiraPara: mais distância, mais velocidade de saída', () => {
     const vChegada = sandbox.PassModel.vChegadaRasteira;
     let anterior = 0;

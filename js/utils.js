@@ -229,7 +229,10 @@ function sigmaDePasse(o) {
         sigma *= 1 + (M.costasMult - 1) * atras;
     }
 
-    return sigma;
+    // Tecto: os multiplicadores de pressão e costas empilham-se, e sem
+    // limite o pior caso (sigmaMax * pressaoMult * costasMult) passa dos
+    // 30°, muito acima do que "~9.2 graus" documentado sugere.
+    return Math.min(sigma, M.sigmaTecto);
 }
 
 /*
@@ -313,6 +316,10 @@ function velocidadeRasteiraPara(dist, vChegada) {
     dos 15 m o `resolverElevacaoPasse` já manda a bola pelo ar, por isso o
     tecto aqui é rede de segurança e não caminho normal.
     */
+    // Uma distância negativa (erro de quem chama) não pode dar velocidade
+    // zero — isso lançaria a bola morta aos pés do próprio passador.
+    dist = Math.max(0, dist);
+
     let vAlvo = vChegada;
     if (dist < 12.0) {
         vAlvo += (12.0 - dist) * 0.18;

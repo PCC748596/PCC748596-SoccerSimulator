@@ -171,6 +171,7 @@ const _m1 = new THREE.Matrix4();
 const _q1 = new THREE.Quaternion();
 const _line1 = new THREE.Line3();
 const _vUp = new THREE.Vector3(0, 1, 0);   // eixo vertical, para rodar direcções no plano do campo
+const _vFrenteCorpo = new THREE.Vector3();  // frente local (+Z) do jogador que passa, para o ângulo do corpo no erro do passe (executePassGameplay)
 
 /*
 =============================================================================
@@ -1015,6 +1016,10 @@ vinham so de decisao ma ou de dominio falhado.
     pressaoMult     multiplicador de sigma com um adversario em cima
     costasMult      multiplicador quando passa de costas para o alvo
     forcaMinPressao fraccao da forca que sobra num passe apertado
+    sigmaTecto      tecto duro depois de aplicados pressaoMult e costasMult —
+                     sem ele o pior caso empilhado (sigmaMax * pressaoMult *
+                     costasMult) passa dos 30°, muito acima do "~9.2 graus"
+                     documentado para sigmaMax sozinho
 */
 const PassErrorModel = {
     sigmaMax: 0.16,        // ~9.2 graus
@@ -1023,7 +1028,8 @@ const PassErrorModel = {
     raioPressao: 3.5,
     pressaoMult: 1.8,
     costasMult: 2.0,
-    forcaMinPressao: 0.85
+    forcaMinPressao: 0.85,
+    sigmaTecto: 0.35
 };
 
 /*

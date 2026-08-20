@@ -831,7 +831,24 @@ class FootballPlayer {
         _v1.z = Math.max(-meioComp + 3.0, Math.min(meioComp - 3.0, _v1.z));
         
         this.passTargetPos = _v1.clone();
-        
+
+        /*
+        Angulo do corpo NO INSTANTE DA DECISAO, nao no do contacto: o case
+        'PASS' (fsm.js) roda o jogador para o alvo a 25*dt por frame assim
+        que o passe arranca, por isso ao chegar ao contacto ele ja esta
+        quase sempre virado para o alvo e a leitura la seria ~1 sempre — a
+        penalizacao de "passar de costas" (sigmaDePasse/costasMult) nunca
+        dispararia num jogo real. Guarda-se aqui a frente ACTUAL do jogador,
+        antes do slerp comecar a corrigi-la.
+        */
+        {
+            const dx = this.passTargetPos.x - this.model.position.x;
+            const dz = this.passTargetPos.z - this.model.position.z;
+            const normDir = Math.hypot(dx, dz) || 1;
+            _v1.set(0, 0, 1).applyQuaternion(this.model.quaternion);
+            this.cosCorpoNoPasse = (_v1.x * dx + _v1.z * dz) / normDir;
+        }
+
         if (typeof Match !== 'undefined') {
             if (Match.passTargetVisual) {
                 Match.passTargetVisual.position.set(_v1.x, 0.05, _v1.z);
