@@ -88,7 +88,7 @@ const TouchControls = {
                     <button type="button" id="btn-close-cam-popup" class="touch-popup-close">&times;</button>
                 </div>
                 <div class="touch-camera-grid">
-                    <button type="button" class="touch-cam-opt active" data-cam="center">
+                    <button type="button" class="touch-cam-opt" data-cam="center">
                         <span class="touch-cam-icon">📺</span>
                         <span>TV Centro (4)</span>
                     </button>
@@ -96,7 +96,7 @@ const TouchControls = {
                         <span class="touch-cam-icon">🎥</span>
                         <span>Lateral Móvel (5)</span>
                     </button>
-                    <button type="button" class="touch-cam-opt" data-cam="lateraltv">
+                    <button type="button" class="touch-cam-opt active" data-cam="lateraltv">
                         <span class="touch-cam-icon">🏟️</span>
                         <span>Lateral TV (7)</span>
                     </button>
