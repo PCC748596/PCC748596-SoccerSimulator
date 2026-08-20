@@ -1734,10 +1734,12 @@ const Match = {
         // --- laterais -------------------------------------------------
         if (d >= 0 && d <= N.profBase && b.y <= ALTURA_BALIZA) {
             if (Math.abs(b.x - meiaLarg) < rB) {
+                if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.x);
                 if (v.x > 0) { b.x = meiaLarg - rB; } else { b.x = meiaLarg + rB; }
                 v.x = -v.x * N.restituicao;
                 v.z *= N.atrito; v.y *= N.atrito;
             } else if (Math.abs(b.x + meiaLarg) < rB) {
+                if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.x);
                 if (v.x < 0) { b.x = -meiaLarg + rB; } else { b.x = -meiaLarg - rB; }
                 v.x = -v.x * N.restituicao;
                 v.z *= N.atrito; v.y *= N.atrito;
@@ -1747,6 +1749,7 @@ const Match = {
         // --- pano de cima ---------------------------------------------
         if (d >= 0 && d <= N.profTopo && Math.abs(b.x) <= meiaLarg) {
             if (Math.abs(b.y - ALTURA_BALIZA) < rB) {
+                if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.y);
                 if (v.y > 0) { b.y = ALTURA_BALIZA - rB; } else { b.y = ALTURA_BALIZA + rB; }
                 v.y = -v.y * N.restituicao;
                 v.x *= N.atrito; v.z *= N.atrito;
@@ -1770,6 +1773,8 @@ const Match = {
                     v.y -= vn * ny * (1 + N.restituicao);
                     vd *= N.atrito; v.y *= N.atrito; v.x *= N.atrito;
                 } else if (dist <= 0 && vn > 0) { // Bola vem de dentro para fora
+                    // Bateu pelo lado de dentro (Golo)
+                    if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
                     const correccao = dist + rB;
                     if (correccao > 0) {
                         d -= nd * correccao; b.y -= ny * correccao;
@@ -1779,6 +1784,7 @@ const Match = {
                     vd *= N.atrito; v.y *= N.atrito; v.x *= N.atrito;
                 } else if (dist > 0 && vn > 0) { 
                     // Bola passou o pano, ou teste que a lanca ja la
+                    if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
                     const correccao = dist + rB;
                     d -= nd * correccao; b.y -= ny * correccao;
                     vd -= vn * nd * (1 + N.restituicao);
