@@ -1550,6 +1550,35 @@ const MarkingModel = {
 
     coberturaBiasMax: 6.0, // cair para cobertura/eixo (mais folga: é reposicionamento, não marcação)
 
+    /*
+    MARCAÇÃO POSICIONAL — acompanhar, não roubar a bola.
+
+    Ninguém tem um homem atribuído: cada jogador olha para o adversário mais
+    perto do SEU SLOT e desloca-se na direcção dele, sem nunca sair mais do que
+    o biasMaxPorSetor manda. Se o homem sai do raio, ele volta ao slot; a mesma
+    referência pode ser largada por um e apanhada por outro.
+
+    Isto não é o tackling (actTackle/actSlideTackle, em bt/player_bt.js), que
+    continua a ser outro sistema e a decidir sozinho quando ir à bola.
+    */
+    raioSetor: 12.0,     // procura a referência a esta distância do SLOT
+
+    /*
+    Segundos a manter a decisão antes de reavaliar, nos dois sentidos: quem
+    acompanha continua a acompanhar, quem está no slot fica no slot. Sem isto a
+    referência trocava a cada frame com dois adversários a distância parecida, e
+    o jogador oscilava entre os dois.
+    */
+    histerese: 3.0,
+
+    /*
+    A que distância se acompanha o homem, por Defensive Pressure. É este o novo
+    significado do controlo do painel: era ele que mandava até onde o bloco
+    subia (TeamShape.pressaoLineCap, removido), e isso passou para a
+    Mentalidade.
+    */
+    distanciaPorPressao: { low: 4.5, balanced: 3.0, high: 1.5 },
+
     larguraCentro: 0.35,  // factor de largura da última linha com a bola no eixo
     larguraAla: 0.75,     // e com a bola no corredor
     fechoRaioX: 18.0,     // "eixo" = |ballX| abaixo disto
@@ -1630,6 +1659,65 @@ const MarkingModel = {
         ST: ['CB']
     }
 };
+
+/*
+Qual adversário este jogador acompanha: o mais próximo do SLOT dele, dentro do
+raio. Devolve null se não houver nenhum lá dentro — nesse caso ele fica no slot.
+
+Mede a partir do slot e não da posição actual de propósito. Da posição, isto
+realimenta-se: ele desloca-se para o adversário, o que o aproxima de outros, que
+passam a entrar no raio, e a referência foge em cadeia. O slot é o setor que o
+bloco lhe deu, e esse não se move sozinho.
+
+Pura: sem Match, sem Tatics, sem THREE (ver tests/marcacao_posicional.test.js).
+*/
+function escolherReferencia(slotX, slotZ, adversarios, raio) {
+    if (!adversarios || !adversarios.length) return null;
+
+    let melhor = null, melhorD2 = raio * raio;
+    for (const o of adversarios) {
+        // O guarda-redes não se acompanha: fica na baliza dele.
+        if (!o || o.role === 'gk' || !o.model) continue;
+        const dx = o.model.position.x - slotX;
+        const dz = o.model.position.z - slotZ;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < melhorD2) { melhorD2 = d2; melhor = o; }
+    }
+    return melhor;
+}
+
+/*
+Onde este jogador se põe para acompanhar o homem: entre ele e a PRÓPRIA baliza,
+a `distancia` metros dele, e nunca mais de `biasMax` fora do slot.
+
+O limite é o que mantém a marcação dentro do setor — acompanha quem lhe entra na
+zona, não sai a correr o campo atrás dele.
+
+Pura: sem Match, sem Tatics, sem THREE.
+*/
+function pontoDeMarcacao(slotX, slotZ, alvoX, alvoZ, ownGoalZ, distancia, biasMax) {
+    if (biasMax <= 0) return { x: slotX, z: slotZ };
+
+    // Do homem para a própria baliza: é deste lado que se fica.
+    let gx = 0 - alvoX;
+    let gz = ownGoalZ - alvoZ;
+    const gl = Math.hypot(gx, gz);
+    if (gl > 0.0001) { gx /= gl; gz /= gl; } else { gx = 0; gz = 0; }
+
+    const desejadoX = alvoX + gx * distancia;
+    const desejadoZ = alvoZ + gz * distancia;
+
+    // Desvio a partir do slot, cortado ao tecto.
+    let dx = desejadoX - slotX;
+    let dz = desejadoZ - slotZ;
+    const d = Math.hypot(dx, dz);
+    if (d > biasMax && d > 0.0001) {
+        dx = (dx / d) * biasMax;
+        dz = (dz / d) * biasMax;
+    }
+
+    return { x: slotX + dx, z: slotZ + dz };
+}
 
 /*
 Apoio ao portador: quantos jogadores por equipa podem estar em cada um dos
