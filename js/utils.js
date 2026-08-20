@@ -667,3 +667,36 @@ const OptimizedAnimations = {
     }
 };
 
+
+/*
+Quanto vale o espaço livre para este jogador, pela Técnica. Quem tem técnica lê
+o espaço e desvia; quem não tem insiste no caminho para a baliza.
+
+É uma das DUAS vias pelas quais a técnica manda na condução. A outra já existia:
+o cone de visão em CARRY (fsm.js) abre com a técnica — ±30° a 40, ±56° a 80 — e
+um jogador de técnica baixa nem chega a VER a ponta livre a 56°.
+*/
+function pesoEspacoPorTecnica(tec) {
+    const C = CarryModel;
+    const t = Math.max(0, Math.min(1,
+        (tec - C.tecEspacoMin) / (C.tecEspacoMax - C.tecEspacoMin)));
+    return C.pesoEspacoMin + (C.pesoEspacoMax - C.pesoEspacoMin) * t;
+}
+
+/*
+Nota de uma direcção candidata de condução. Os três argumentos vêm normalizados
+a 0..1 por quem chama (ver o case 'CARRY' em fsm.js):
+
+    espaco     distância ao obstáculo mais próximo no corredor, sobre spaceCap
+    progresso  avanço para a baliza sobre a distância de visão — cos(ângulo)
+    sectorPen  Tatics.penalidadeSector do ponto candidato
+
+Pura de propósito: sem Match, sem window, só os argumentos (ver
+tests/carry_direccao.test.js).
+*/
+function notaDireccaoCarry(espaco, progresso, sectorPen, tec) {
+    const C = CarryModel;
+    return espaco * pesoEspacoPorTecnica(tec)
+        + progresso * C.pesoProgresso
+        - sectorPen * C.pesoSector;
+}

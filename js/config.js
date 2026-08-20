@@ -1335,14 +1335,27 @@ const CarryModel = {
     leque: [-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2],
     lookAhead: 10.0,      // base de distância (sobrescrita por player.tec * 0.5)
     spaceCap: 16.0,       // espaço acima disto já não conta mais
-    spaceWeight: 2.0,     // quanto vale ter espaço
-    progressWeight: 3.2,  // quanto vale progredir para a baliza
-    // Era 0.18 — no pior caso (tx a ~29m do alvo) só penalizava ~5 pontos,
-    // contra até ~32 do progressWeight. Na prática o progresso pra frente
-    // ganhava sempre e o sector do painel (Left/Center/Right) não tinha
-    // efeito visível: o jogo conduzia sempre pelo meio. Subido para pesar
-    // tanto quanto o progresso no pior caso (~29 * 1.0 ≈ 29).
-    sectorWeight: 4.5,    // quanto pesa manter o sector táctico do painel (1.0 -> 1.5 -> 2.25 -> 4.5, +100%)
+
+    /*
+    PESOS DA DIRECÇÃO DE CONDUÇÃO. Os três termos chegam normalizados a 0..1
+    (ver notaDireccaoCarry em utils.js), por isso estes números são comparáveis
+    entre si — antes não eram, e era esse o bug.
+
+    Os antigos spaceWeight/progressWeight/sectorWeight multiplicavam grandezas
+    em escalas diferentes: o progresso valia visDist metros (40 m a técnica 80)
+    e o espaço no máximo spaceCap (16). Amplitude real: 56 pontos para o
+    progresso contra 32 para o espaço — a direcção frontal ganhava sempre, mesmo
+    com um adversário colado e a ponta vazia. Subir o sectorWeight de 1.0 para
+    4.5 em três tentativas nunca resolveu, porque o problema era a escala.
+
+    pesoProgresso fica em 1.0 de propósito: é a unidade de referência.
+    */
+    pesoEspacoMin: 1.0,   // técnica <= tecEspacoMin
+    pesoEspacoMax: 2.4,   // técnica >= tecEspacoMax
+    tecEspacoMin: 40,
+    tecEspacoMax: 90,
+    pesoProgresso: 1.0,
+    pesoSector: 1.6,
 
     /*
     Espaço livre à frente. Medido num corredor que abre para longe (`corredor`
