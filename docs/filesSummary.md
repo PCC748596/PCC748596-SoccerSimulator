@@ -259,15 +259,12 @@ O nível 1 fala **duas vezes** por frame:
 (`TeamAI.compact()` ficou vazio: comprimir passou a ser encolher o rectângulo,
 dentro do `computeBlock`. Mantido só para não partir quem o chame.)
 
-**`computeDefensiveLine`** — a linha segue a bola (8 m atrás dela), é modulada
-pelo estilo de jogo, limitada em cima pelo **mais restritivo** entre o tecto
-do painel "Linha Defensiva" e `TeamShape.pressaoLineCap[Tatics.pressaoDefensiva]`
-(absoluto, referencial de ataque: Low 0 = meio-campo, Balanced ~17.7 = 1/3 do
-campo de ataque, High ~35.3 = 2/3), e em baixo pelo `lineFloor`. Um último
-`max(linha, bola − blockDepthDef)` impede o tecto de deixar a bola fugir do
-bloco quando a equipa pressiona alto.
+**`computeDefensiveLine` já não existe** — a linha do fora-de-jogo passou a ser
+a traseira do bloco, calculada em `computeBlock` (ver a nota em `team_bt.js:752`).
+Enquanto eram dois cálculos independentes discordavam uns 10 m.
 
-`computeBlock` aplica o **mesmo** `pressaoLineCap` ao `blockCenterZ` sem bola
+`computeBlock` aplica o tecto da Mentalidade (`MentalidadeModel.tectoBloco`) ao
+centro do bloco sem bola
 — sem isto o centro do bloco seguia `ballZ*dir` quase cru (só ±3/6 m de
 folga por postura) e, numa reposição do GR adversário (bola no fundo do
 campo *dele*, portanto `ballZ*dir` enorme do lado de quem defende), o bloco
@@ -581,10 +578,6 @@ Primeiro a carregar. Não depende de nada além do THREE.
     `low` −32.5 (4 m à frente da grande área), `medium` −18.25 (entre a grande
     área e a linha central), `high` −2 (2 m atrás da linha central).
   - `lineFloor` −43 — a linha nunca recua mais do que isto.
-  - `pressaoLineCap` — tecto ABSOLUTO de avanço sem bola por Defensive
-    Pressure: `low` 0 (meio-campo), `balanced` ~17.7 (1/3 do campo de
-    ataque), `high` ~35.3 (2/3). Usado em `computeDefensiveLine` (min com o
-    tecto do painel) e em `computeBlock` (clamp directo do `blockCenterZ`).
   - `blockDepthDef` 36 / `blockDepthAtk` 44 — herdados; a profundidade do bloco
     passou para o `BlockShape` (em fracções). Ainda usados no
     `computeDefensiveLine` e como valor de recurso.
@@ -609,7 +602,7 @@ Primeiro a carregar. Não depende de nada além do THREE.
     DOIS blocos se afastam da baliza dele. A equipa do guarda-redes sobe esta
     folga (centro `-26.5 + 10`); a adversária recua a mesma coisa, e esse
     deslocamento é aplicado **depois** de todos os travões de `computeBlock` —
-    o `pressaoLineCap` corria a seguir e engolia-o por inteiro. Só as linhas de
+    o tecto da Mentalidade corria a seguir e engolia-o por inteiro. Só as linhas de
     fundo ainda falam depois.
   - `bascular` / `bascularComBola` — quanto o rectângulo acompanha a bola de lado.
   - `avancoAlemDaBola` — a frente do bloco fica à frente da bola no ataque.
@@ -672,8 +665,24 @@ Primeiro a carregar. Não depende de nada além do THREE.
   também deixou de ser um X sorteado a cada segundo por `getWeightedSectorX`
   (removido): com Left e Right ligados isso era uma moeda ao ar, e um extremo na
   direita atravessava o campo pelo meio metade das vezes.
-- **`MarkingModel`** — marcação (`distancia`, `aderencia`, `penalLado`) e
-  largura da última linha conforme a bola vem pelo eixo ou pelo corredor.
+- **`MarkingModel`** — **marcação posicional: acompanhar quem entra no setor.**
+  Ninguém tem um homem atribuído. Cada jogador olha para o adversário mais perto
+  do seu SLOT (`raioSetor`, 12 m) e desloca-se na direcção dele, parando à
+  `distanciaPorPressao` do Defensive Pressure (`low` 4.5 / `balanced` 3.0 /
+  `high` 1.5 m), sem nunca sair mais do que o `biasMaxPorSetor` manda (3 a 10 m,
+  por terço do campo).
+  - O raio mede-se do **slot**, não da posição actual: da posição, isto
+    realimenta-se — ele aproxima-se do homem, entram outros no raio, e a
+    referência foge em cadeia.
+  - `histerese` (3 s) trava a decisão nos dois sentidos, com duas saídas: a
+    referência fugir para lá de 1.5× o raio, ou sair de campo.
+  - **Não é tackling.** Isto só desloca o alvo de posicionamento; nunca muda o
+    estado da FSM nem manda ninguém à bola. Roubar a bola é `actTackle` /
+    `actSlideTackle` (`bt/player_bt.js`), outro sistema.
+  - `markingTarget` e o estado `MARKING` da FSM continuam **mortos** — foram
+    apagados com o antigo nível 2, e a marcação posicional não os usa.
+  - Também guarda a largura da última linha conforme a bola vem pelo eixo ou
+    pelo corredor (`larguraCentro`, `larguraAla`, `fechoRaioX`, `fechoZ`).
 - **`SupportModel`** — apoios ao portador (`maxPorLado: 1`, `raioMin`/`raioMax`, `anguloApoio`, `bonusOcupante`). Jogadores de linha posicionam-se a 45º do deslocamento (1 em `FWR_SUPPORT` e 1 em `AFT_SUPPORT`). Guarda-redes (`role: 'gk'`) são estritamente excluídos deste modelo.
 - **`CrossModel`** — a zona e a probabilidade de cruzar, e o que conta como
   "alguém na área". Os dois termos que dependem de estar mesmo na lateral da
@@ -758,10 +767,16 @@ Primeiro a carregar. Não depende de nada além do THREE.
   contado em `assignFormations`) — CM(1) Box-to-Box / CM(2) Orchestrator,
   CF(1) Fox in the Box / CF(2) Dummy Runner, CB(1) Build Up / CB(2) Extra
   Frontman. Pedido explícito: dois jogadores no mesmo posto não são clones.
-- **`MentalidadeModel`** — `{ agressao }` por Mentalidade (`defesa`/
-  `balanceado`/`ataque`, rótulos na UI: Defensiva/Equilibrada/Ofensiva —
-  os VALORES internos não mudaram). Base da `Agressividade` dinâmica em
-  `team_bt.js` → `computeAggression`.
+- **`MentalidadeModel`** — `{ agressao, blocoZ, tectoBloco }` por Mentalidade
+  (`defesa`/`balanceado`/`ataque`, rótulos na UI: Defensiva/Equilibrada/
+  Ofensiva). `agressao` é a base da `Agressividade` dinâmica em `team_bt.js` →
+  `computeAggression`.
+  - `blocoZ` desloca o centro do bloco em relação à **bola**; `tectoBloco` é o
+    mais longe que esse centro chega, medido do meio-campo: −17.7 / −8.8 /
+    **0** / +17.7 / +35.3. Com Equilibrada o bloco **não passa do meio-campo**.
+  - O tecto era do Defensive Pressure (`TeamShape.pressaoLineCap`, **removido**),
+    e por isso a Mentalidade não tinha palavra nenhuma sobre até onde a equipa
+    subia. O Defensive Pressure passou a ser a distância de marcação.
 - **`TeamPlayStyles`** — catálogo `possession`/`direct`/`counter_attack`/
   `wing_play`/`positional`/`high_press`. Cada entrada é só multiplicadores
   (`circulacao`, `verticalidade`, `viradas`, `corredores`, `cruzamento`,
@@ -1384,7 +1399,8 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Trocar ou reconverter o modelo da bola | `assets/Ball.obj` + `node tools/obj2js.js` |
 | FPS / timestep / arranque | `main.js` |
 | Cadência de decisão com bola (domínio antes de passar/rematar) | `config.js` → `CadenceModel` |
-| Quão alto a equipa pressiona / até onde o bloco avança sem bola | `config.js` → `DefensivePressureModel`, `TeamShape.pressaoLineCap` |
+| Até onde o bloco avança sem bola | `config.js` → `MentalidadeModel.tectoBloco` |
+| A que distância se acompanha o homem | `config.js` → `MarkingModel.distanciaPorPressao` |
 | Sincronizar um efeito de gameplay com a animação (bola sai do pé, etc.) | `bt/action_state.js` + `config.js` → `ActionAnimClips` |
 | Percepção da bola / interceptação / quem vai disputar uma bola solta | `perception.js` |
 | Cruzamento morre sempre (ninguém na área) | `bt/player_bt.js` → `AtacarArea` |
