@@ -84,12 +84,18 @@ test('sem adversário à vista não há pressão', () => {
 });
 
 test('os pesos nos extremos são os dois conjuntos declarados', () => {
-    assert.deepStrictEqual(
-        Object.assign({}, PassTypes.pesosPorPressao(0)),
-        Object.assign({}, E().pesosSemPressao));
-    assert.deepStrictEqual(
-        Object.assign({}, PassTypes.pesosPorPressao(1)),
-        Object.assign({}, E().pesosSobPressao));
+    /*
+    Com tolerância, não deepStrictEqual: a interpolação a + (b-a)*t com t=1 dá
+    0.44999999999999996 em vez de 0.45, e a igualdade exacta falhava por isso.
+    */
+    const igual = (obtido, esperado, onde) => {
+        for (const k of ['progresso', 'espaco', 'distancia']) {
+            assert.ok(Math.abs(obtido[k] - esperado[k]) < 1e-9,
+                onde + '.' + k + ': ' + obtido[k] + ' != ' + esperado[k]);
+        }
+    };
+    igual(PassTypes.pesosPorPressao(0), E().pesosSemPressao, 'semPressao');
+    igual(PassTypes.pesosPorPressao(1), E().pesosSobPressao, 'sobPressao');
 });
 
 test('a meia pressão os pesos são a média dos dois conjuntos', () => {

@@ -832,6 +832,8 @@ function slotNoBloco(p, bb) {
     if (xTarget > CORREDOR_LIMITE) pCorredor = 1;
     else if (xTarget < -CORREDOR_LIMITE) pCorredor = -1;
 
+    const isLateral = ['LB', 'RB', 'LM', 'RM', 'LWB', 'RWB', 'LW', 'RW'].includes(p.pos);
+
     if (ballCorredor === 0) {
         if (pCorredor === 1) xTarget -= 4.0;
         else if (pCorredor === -1) xTarget += 4.0;
@@ -839,7 +841,13 @@ function slotNoBloco(p, bb) {
         if (pCorredor === 0) {
             xTarget += ballCorredor * 2.0;
         } else if (pCorredor === -ballCorredor) {
-            xTarget += ballCorredor * 3.0;
+            // Lado oposto: fechar mais se for lateral
+            xTarget += ballCorredor * (isLateral ? 8.0 : 3.0);
+        } else if (pCorredor === ballCorredor) {
+            // Mesmo lado da bola: laterais abrem para dar linha de passe pelos lados
+            if (isLateral && bb.isAttacking) {
+                xTarget += ballCorredor * 6.0;
+            }
         }
     }
 
@@ -1054,7 +1062,8 @@ function aplicarMarcacaoPosicional(p, bb, targetX, targetZ) {
 
     const distancia = M.distanciaPorPressao[Tatics.pressaoDefensiva]
         ?? M.distanciaPorPressao.balanced;
-    const biasMax = M.biasMaxPara(targetZ * p.dirZ);
+    let biasMax = M.biasMaxPara(targetZ * p.dirZ);
+    if (p.pos === 'CB') biasMax *= 0.3;
 
     return pontoDeMarcacao(targetX, targetZ,
         p.marcRef.model.position.x, p.marcRef.model.position.z,

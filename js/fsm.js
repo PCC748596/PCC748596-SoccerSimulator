@@ -181,6 +181,9 @@ class PlayerFSM {
         }
         this.currentState = newState; this.timer = 0;
 
+        // A bola de cada canto começa no chão: ver o case WATCH_CORNER.
+        if (newState === 'WATCH_CORNER') this.cornerBolaSubiu = false;
+
         if (newState === 'SLIDE_TACKLE') this.enterSlideTackle();
         if (newState === 'TACKLE') this.p.tackleResolvido = false;
     }
@@ -292,13 +295,17 @@ class PlayerFSM {
                         Match.possessionTimer = 0;
                         Match.lastTouchedTeam = p.team;
                         Match.lastTouchedPlayer = p;
-                        Match.players.forEach(pl => {
-                            if (pl.fsm.currentState === 'SET_PIECE_WAIT' || pl.fsm.currentState === 'SET_PIECE_TAKER') {
-                                pl.fsm.changeState('MOVE_TO_POS');
-                            }
-                        });
-                        Match.opponents.forEach(pl => {
-                            if (pl.fsm.currentState === 'SET_PIECE_WAIT' || pl.fsm.currentState === 'SET_PIECE_TAKER') {
+                        /*
+                        Os dois planteis num laço só. Estavam separados, e o
+                        WATCH_CORNER foi posto apenas no de Match.players — ou
+                        seja, só o TeamA. Num canto do TeamB o batedor caía no
+                        ramo antigo e ia direito para MOVE_TO_POS, e metade dos cantos
+                        não tinha o comportamento nenhum.
+                        */
+                        Match.players.concat(Match.opponents).forEach(pl => {
+                            if (pl.fsm.currentState === 'SET_PIECE_TAKER') {
+                                pl.fsm.changeState('WATCH_CORNER');
+                            } else if (pl.fsm.currentState === 'SET_PIECE_WAIT') {
                                 pl.fsm.changeState('MOVE_TO_POS');
                             }
                         });
@@ -489,9 +496,11 @@ class PlayerFSM {
                     }
 
                     if (p.role === 'gk') {
-                        p.dynamicTarget.z = Math.max(-CAMPO_COMP / 2, Math.min(-38, p.dynamicTarget.z));
+                        let minZ = Math.min(p.ownGoalZ, p.ownGoalZ + 14 * p.dirZ);
+                        let maxZ = Math.max(p.ownGoalZ, p.ownGoalZ + 14 * p.dirZ);
+                        p.dynamicTarget.z = Math.max(minZ, Math.min(maxZ, p.dynamicTarget.z));
                         p.dynamicTarget.x = Math.max(-18, Math.min(18, p.dynamicTarget.x));
-                        if (p.model.position.z >= -39) {
+                        if ((p.model.position.z - p.ownGoalZ) * p.dirZ >= 13) {
                             let clearTarget = p.findPassTarget();
                             if (clearTarget) p.initiatePass(clearTarget);
                         }
@@ -506,7 +515,7 @@ class PlayerFSM {
                 correr, mas com a bola no pé (ver pertoDaLinhaDeFundo).
                 */
                 if (p.hasBall && p.velocity.lengthSq() > 2.0 && this.timer > CarryModel.touchCooldown
-                    && !pertoDaLinhaDeFundo(p)) {
+                    && !pertoDaLinhaDeFundo(p) && p.gkEstado !== 'segurando') {
                     let forward = p.velocity.clone().normalize();
                     let allOpps = (p.team === 'TeamA') ? Match.opponents : Match.players;
 
@@ -959,6 +968,30 @@ class PlayerFSM {
                 }
                 if (this.timer >= 0.2) {
                     this.changeState('IDLE');
+                }
+                break;
+            case 'WATCH_CORNER':
+                p.velocity.set(0, 0, 0);
+                if (Match.ball) {
+                    let lookPos = Match.ball.position.clone();
+                    lookPos.y = p.model.position.y;
+                    lookAtBola(p.model, lookPos);
+                }
+
+                /*
+                A bola PARTE do chão (y = 0.11) e só passa os 0.5 m ao fim de
+                quatro frames. Testar `y < 0.5` à cabeça dava verdade logo no
+                primeiro frame e o batedor saía daqui 67 ms depois de bater —
+                o comportamento não chegava a ver-se.
+
+                Por isso a queda só conta depois de a bola ter subido. Sai para
+                MOVE_TO_POS e não para IDLE: ele tem de voltar ao jogo, e IDLE
+                deixa-o à espera que alguém o mande mexer.
+                */
+                if (Match.ball.position.y > 0.5) this.cornerBolaSubiu = true;
+                if ((this.cornerBolaSubiu && Match.ball.position.y < 0.5) ||
+                    Match.lastTouchedPlayer !== p) {
+                    this.changeState('MOVE_TO_POS');
                 }
                 break;
         }
