@@ -490,6 +490,52 @@ const Match = {
 
         const specGeo = createSpectatorGeometry();
         const specMat = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.1 });
+        specMat.userData = { time: { value: 0 }, excitement: { value: 0 } };
+        specMat.onBeforeCompile = function (shader) {
+            shader.uniforms.uTime = specMat.userData.time;
+            shader.uniforms.uExcitement = specMat.userData.excitement;
+            shader.vertexShader = 'uniform float uTime;\nuniform float uExcitement;\n' + shader.vertexShader;
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <project_vertex>',
+                `
+                #ifdef USE_INSTANCING
+                float phase = instanceMatrix[3].x * 13.0 + instanceMatrix[3].z * 7.0;
+                float t = uTime;
+                float exc = uExcitement;
+                
+                float standUp = 0.0;
+                float armWave = 0.0;
+                float lean = 0.0;
+                
+                float wavePhase = mod(floor(phase * 10.0), 3.0);
+                standUp = abs(sin(t * (4.0 + wavePhase) + phase)) * 0.12;
+                
+                if (exc > 0.7) {
+                    standUp = 0.15 + abs(sin(t * 9.0 + phase)) * 0.18;
+                    armWave = sin(t * 11.0 + phase) * 0.25;
+                } else if (exc > 0.35) {
+                    standUp *= 1.4;
+                    armWave = sin(t * 6.0 + phase) * 0.12;
+                    lean = sin(t * 4.0 + phase) * 0.04;
+                } else {
+                    lean = sin(t * 2.0 + phase) * 0.02;
+                }
+
+                transformed.y += standUp;
+                transformed.x += lean;
+                
+                float cW = cos(armWave);
+                float sW = sin(armWave);
+                float tx = transformed.x;
+                float tz = transformed.z;
+                transformed.x = tx * cW - tz * sW;
+                transformed.z = tx * sW + tz * cW;
+                #endif
+                
+                #include <project_vertex>
+                `
+            );
+        };
         const specMesh = new THREE.InstancedMesh(specGeo, specMat, maxSeats);
         specMesh.castShadow = false;
         specMesh.receiveShadow = false;
@@ -687,6 +733,7 @@ const Match = {
         specMesh.count = spectatorIndex;
         specMesh.instanceMatrix.needsUpdate = true;
         if (specMesh.instanceColor) specMesh.instanceColor.needsUpdate = true;
+        
         campoGrupo.add(specMesh);
 
         this.specMesh = specMesh;
@@ -992,6 +1039,8 @@ const Match = {
     },
 
     update: function (dt) {
+        if (!this._pf_stats) this._pf_stats = { count: 0, time: 0 };
+        const t0 = performance.now();
         for (let p of this.players) { p.debugPoints = null; }
         for (let p of this.opponents) { p.debugPoints = null; }
         this.delta = dt;
@@ -1157,18 +1206,22 @@ const Match = {
         }
 
         this.updateCrowd(dt);
+        const t1 = performance.now();
+        this._pf_stats.time += (t1 - t0);
+        this._pf_stats.count++;
+        if (this._pf_stats.count === 60) {
+            console.log("Avg Match.update ms:", this._pf_stats.time / 60);
+            this._pf_stats.count = 0;
+            this._pf_stats.time = 0;
+        }
     },
 
     updateCrowd: function (dt) {
-        if (!this.specMesh || this.specData.length === 0) return;
+        if (!this.specMesh || !this.specMesh.material.userData.time) return;
         
-        // Desativa a animação pesada da torcida em dispositivos móveis/tablets para poupar bateria e manter 60 FPS
-        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 850);
-        if (isTouchDevice) return;
-
         this.crowdTimer += dt;
-
         let targetExcitement = 0.0;
+        
         if (this.state === 'GOAL') {
             targetExcitement = 1.0;
         } else if (this.ballVel.lengthSq() > 400) {
@@ -1180,59 +1233,12 @@ const Match = {
         } else {
             targetExcitement = 0.05;
         }
-        this.crowdExcitement += (targetExcitement - this.crowdExcitement) * dt * 3.0;
-
-        const sd = this.specDummy;
-        const t = this.crowdTimer;
-        const exc = this.crowdExcitement;
-        const count = this.specData.length;
-
-        // Na versão desktop também afrouxamos bastante a frequência de atualização para poupar o CPU
-        const updateRate = exc > 0.5 ? 4 : (exc > 0.2 ? 10 : 30);
-        const startIdx = Math.floor(t * 60) % updateRate;
-
-        let updatedAny = false;
-        const frustum = window.cameraFrustum;
-        if (!this._specPos) this._specPos = new THREE.Vector3();
-
-        for (let i = startIdx; i < count; i += updateRate) {
-            const d = this.specData[i];
-
-            // Viewport Frustum Culling: só calcula animação para espectadores dentro do viewport
-            if (frustum) {
-                this._specPos.set(d.bx, d.by, d.bz);
-                if (!frustum.containsPoint(this._specPos)) continue;
-            }
-
-            const phase = d.phase;
-
-            let standUp = 0;
-            let armWave = 0;
-            let lean = 0;
-
-            standUp = Math.abs(Math.sin(t * (4 + (Math.floor(phase * 10) % 3)) + phase)) * 0.12;
-
-            if (exc > 0.7) {
-                standUp = 0.15 + Math.abs(Math.sin(t * 9 + phase)) * 0.18;
-                armWave = Math.sin(t * 11 + phase) * 0.25;
-            } else if (exc > 0.35) {
-                standUp *= 1.4;
-                armWave = Math.sin(t * 6 + phase) * 0.12;
-                lean = Math.sin(t * 4 + phase) * 0.04;
-            } else {
-                lean = Math.sin(t * 2 + phase) * 0.02;
-            }
-
-            sd.position.set(d.bx + lean, d.by + standUp, d.bz);
-            sd.rotation.set(0, d.rotY + armWave, 0);
-            sd.updateMatrix();
-            this.specMesh.setMatrixAt(i, sd.matrix);
-            updatedAny = true;
-        }
         
-        if (updatedAny) {
-            this.specMesh.instanceMatrix.needsUpdate = true;
-        }
+        this.crowdExcitement += (targetExcitement - this.crowdExcitement) * dt * 3.0;
+        
+        // Pass uniforms to GPU Shader
+        this.specMesh.material.userData.time.value = this.crowdTimer;
+        this.specMesh.material.userData.excitement.value = this.crowdExcitement;
     },
 
     /*

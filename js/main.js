@@ -457,18 +457,27 @@ function animate(time) {
 
     if (TeamAI && TeamAI.blackboards) {
         const bbA = TeamAI.blackboards['TeamA'];
-        if (bbA && bbA.state) document.getElementById('hud-state-a').innerText = bbA.state;
+        if (bbA && bbA.state) {
+            const el = document.getElementById('hud-state-a');
+            if (el.innerText !== bbA.state) el.innerText = bbA.state;
+        }
         const bbB = TeamAI.blackboards['TeamB'];
-        if (bbB && bbB.state) document.getElementById('hud-state-b').innerText = bbB.state;
+        if (bbB && bbB.state) {
+            const el = document.getElementById('hud-state-b');
+            if (el.innerText !== bbB.state) el.innerText = bbB.state;
+        }
 
 
         // Alimenta a aba do fluxograma do TeamBT (teamBtView.html), se aberta.
         // BroadcastChannel: nada acontece se ninguém estiver a ouvir do outro lado.
         if (!window._teamBtChannel) window._teamBtChannel = new BroadcastChannel('teamBtTrace');
-        window._teamBtChannel.postMessage({
-            TeamA: bbA ? { trace: bbA.trace, posture: bbA.posture } : null,
-            TeamB: bbB ? { trace: bbB.trace, posture: bbB.posture } : null
-        });
+        if (!window._lastBtPost || time - window._lastBtPost > 200) {
+            window._lastBtPost = time;
+            window._teamBtChannel.postMessage({
+                TeamA: bbA ? { trace: bbA.trace, posture: bbA.posture } : null,
+                TeamB: bbB ? { trace: bbB.trace, posture: bbB.posture } : null
+            });
+        }
     }
 
     if (!window._hudJogadoresLast || time - window._hudJogadoresLast > 200) {
@@ -489,9 +498,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 850);
         rendererCore = new THREE.WebGLRenderer({ antialias: !isTouchDevice, powerPreference: "high-performance" });
+        // Max pixel ratio of 1.0 on tablets to save fill rate
+        rendererCore.setPixelRatio(isTouchDevice ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
         rendererCore.setSize(window.innerWidth, window.innerHeight);
         rendererCore.shadowMap.enabled = true;
-        rendererCore.shadowMap.type = THREE.PCFSoftShadowMap;
+        rendererCore.shadowMap.type = THREE.PCFShadowMap; // Better performance
         document.body.appendChild(rendererCore.domElement);
         window.rendererCore = rendererCore;
 
@@ -501,8 +512,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
         dirLight.position.set(50, 100, 40);
         dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 1024;
-        dirLight.shadow.mapSize.height = 1024;
+        dirLight.shadow.mapSize.width = isTouchDevice ? 512 : 1024;
+        dirLight.shadow.mapSize.height = isTouchDevice ? 512 : 1024;
         
         const d = 80;
         dirLight.shadow.camera.left = -d;
