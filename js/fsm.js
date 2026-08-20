@@ -121,11 +121,11 @@ function executePassGameplay(p) {
     } else {
         /*
         TIPO 1 — PASSE NORMAL. Forma por faixa de distância (pedido
-        explícito, ver PassModel.passeArco em config.js): <=5m sempre
-        rasteiro; 5-30m sorteia entre rasteiro e um arco raso com tecto de
+        explícito, ver PassModel.passeArco em config.js): <=15m sempre
+        rasteiro; 15-30m sorteia entre rasteiro e um arco raso com tecto de
         altura por faixa; >=30m sorteia entre rasteiro e lançado, com ângulo
         entre 30-45°. Estilo de passe "longo" força sempre o arco acima
-        dos 5m (`forcarArco`), como já fazia antes.
+        de `rasteiroMax` (`forcarArco`), como já fazia antes.
         */
         const forcarArco = (Tatics.passe === 'longo');
         const elev = resolverElevacaoPasse(distToTarget, forcarArco);

@@ -214,8 +214,8 @@ function velocidadeRasteiraPara(dist, vChegada) {
 Decide a FORMA do passe normal (rasteiro vs arco) pela distância ao alvo, e
 devolve a elevação a usar — ver PassModel.passeArco em config.js.
 
-<=5m: sempre rasteiro (devolve null).
-5-30m: sorteia entre rasteiro (null) e um arco raso, com o TECTO de altura
+<=15m: sempre rasteiro (devolve null).
+15-30m: sorteia entre rasteiro (null) e um arco raso, com o TECTO de altura
        da faixa. A elevação vem de `apex/alcance = tan(elev)/4` (física do
        tiro parabólico sem arrasto, plana) — só o ponto de partida: o
        alcance real, com arrasto, resolve-se a seguir em
@@ -226,7 +226,8 @@ devolve a elevação a usar — ver PassModel.passeArco em config.js.
        anguloLongoMax (perto dos 30m, mais alto), conforme a distância.
 
 `forcarArco` salta o sorteio rasteiro/arco (estilo de passe "longo" — pedido
-p'ra sair sempre pelo alto acima dos 5m, não só às vezes).
+p'ra sair sempre pelo alto acima de `rasteiroMax`, não só às vezes). NÃO salta
+o corte dos 15m: até lá é rasteiro seja qual for o estilo.
 
 Devolve `null` quando é para ir rasteiro.
 */

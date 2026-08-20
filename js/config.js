@@ -893,17 +893,24 @@ const PassModel = {
     /*
     --- Arco do passe normal por faixa de distância (pedido explícito) -----
 
-    <=5m sempre rasteiro. 5-30m pode sair rasteiro OU com um arco raso, com
+    <=15m sempre rasteiro. 15-30m pode sair rasteiro OU com um arco raso, com
     TECTO de altura por faixa — só sobe o necessário para passar por cima de
     quem estiver no meio, nunca um lançamento. >=30m é sempre pelo alto, com
     ângulo entre 30° (mais raso, mais rápido) e 45° (mais alto), calculado
     para o alcance pedido.
 
-    `chanceArco`: acima de 5m, chance de sair com arco em vez de rasteiro —
-    o mesmo passe de 15m tanto pode ser jogado no chão como levantado.
+    `rasteiroMax` era 5m, e por isso um passe curto de 8 ou 12m era levantado
+    metade das vezes sem ganhar nada: à distância a que o companheiro está
+    livre, a bola no chão chega antes e é mais fácil de dominar. Levantar só
+    faz sentido quando há mesmo gente no caminho — e essa decisão já é tomada
+    à parte, no ramo de linha bloqueada.
+
+    `chanceArco`: acima de `rasteiroMax`, chance de sair com arco em vez de
+    rasteiro — o mesmo passe de 20m tanto pode ser jogado no chão como
+    levantado.
     */
     passeArco: {
-        rasteiroMax: 5.0,
+        rasteiroMax: 15.0,
         chanceArco: 0.5,
         bandas: [
             { max: 10.0, alturaMax: 1.0 },
