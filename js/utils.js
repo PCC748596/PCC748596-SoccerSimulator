@@ -192,36 +192,28 @@ rolamento); integrando `v·dv / (k·v² + μ·g) = -dx`:
 */
 function velocidadeRasteiraPara(dist, vChegada) {
     /*
-    Velocidade de saída para a bola percorrer `dist` e lá chegar ainda
-    jogável. Inverte o arrasto quadrático + atrito de rolamento:
-
-        alvo = (k·v_alvo² + μg)·e^(2k·dist) − μg
-        v0   = √(alvo / k)
-
-    O `v_alvo` não é o `vChegada` cru: passes curtos levam um reforço (uma
-    bola de 4 m com a mesma chegada de uma de 20 m sai frouxa e parece que
-    o jogador não quis passar) e passes longos abrandam a chegada (senão a
-    velocidade de saída dispara).
-
-    Esta versão foi reposta a partir do commit 3c77ac2. A que estava no
-    lugar tinha uma curva contínua com reforço máximo de +2.0 m/s e
-    `vChegadaRasteira` a 1.0: um passe de 4 m saía a 6.19 m/s em vez de
-    12.78, todos os passes chegavam mortos, e os dois testes deste ficheiro
-    estavam vermelhos.
+    Curva contínua: passes curtos ganham um boost suave (a bola tem de
+    chegar firme, não morrer nos pés), passes longos perdem um pouco de
+    vChegada para não precisarem de velocidades de saída absurdas.
+    Sem descontinuidades nem gaps entre faixas.
     */
-    let vAlvo = vChegada;
-    if (dist < 12.0) {
-        vAlvo += (12.0 - dist) * 0.45; // ex.: 4 m ganha +3.6 m/s
-    } else if (dist > 15.0) {
-        vAlvo = Math.max(1.0, vChegada - (dist - 15.0) * 0.28);
+    const centro = 15.0;      // distância neutra (sem ajuste)
+    const diff = dist - centro;
+    let vAlvo;
+    if (diff < 0) {
+        // Curtos: boost suave, máx +2.0 m/s a dist=0
+        vAlvo = vChegada + (-diff / centro) * 2.0;
+    } else {
+        // Longos: redução gradual, mín 2.5 m/s
+        vAlvo = Math.max(2.5, vChegada - diff * 0.10);
     }
 
     const k = BallPhysics.kArrasto;
     const atrito = BallPhysics.atritoRolamento * BallPhysics.gravidade;
     const alvo = (k * vAlvo * vAlvo + atrito) * Math.exp(2 * k * dist) - atrito;
-
-    // Tecto de segurança: acima disto o passe rasteiro vira disparo.
-    return Math.min(18.5, Math.sqrt(Math.max(0, alvo / k)));
+    
+    // Tecto de 22 m/s para não cortar passes longos legítimos
+    return Math.min(22.0, Math.sqrt(Math.max(0, alvo / k)));
 }
 
 /*

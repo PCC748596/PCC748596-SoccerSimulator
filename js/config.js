@@ -211,7 +211,7 @@ const BallPhysics = {
     cd: 0.25,               // coeficiente de arrasto
     restituicao: 0.60,      // ressalto vertical em relva
     atritoRessalto: 0.75,   // perda horizontal em cada ressalto
-    atritoRolamento: 0.10,  // μ de rolamento em relva
+    atritoRolamento: 0.38,  // μ de rolamento em relva (real: 0.3–0.5)
     vMinRessalto: 0.6,      // abaixo disto não ressalta, assenta
     vMinRolar: 0.25,        // abaixo disto pára de vez
 
@@ -978,15 +978,11 @@ const PassModel = {
     },
 
     /*
-    Com que velocidade a bola CHEGA ao alvo num passe rasteiro.
-
-    8.2 está ACIMA do `BallControl.easySpeed` (7.75) de propósito: a bola
-    chega viva e o domínio é disputado, em vez de lhe morrer nos pés. É uma
-    tensão consciente — baixar isto para 7.0 dá passes mais fáceis de
-    dominar e um jogo mais lento; a 1.0 (o valor que aqui esteve) a bola
-    não chega sequer ao destino.
+    Com que velocidade a bola CHEGA ao alvo num passe rasteiro. Tem de chegar
+    jogável: acima de BallControl.easySpeed (7.75) o receptor arrisca falhar o
+    domínio, e a zero morre antes de lá chegar.
     */
-    vChegadaRasteira: 8.2,
+    vChegadaRasteira: 1.0,
     vChegadaCruzamento: 7.0,   // cruzamento rasteiro vai mais forte, de propósito
     vChegadaLancamento: 5.0,   // lançamento é para correr atrás, não para receber parado
 
