@@ -293,12 +293,15 @@ class PlayerFSM {
                 }
                 if (Match.setPieceTimer > 1.5) {
                     if (Match.state === 'CORNER_KICK') {
-                        let targetZ = p.ownGoalZ * -1.0 - p.dirZ * 12.0;
-                        let targetX = (Math.random() - 0.5) * 10;
+                        // Quadrado imaginário: profundidade entre a pequena área (5.5m) e a grande área (16.5m)
+                        // Largura correspondente (11m) centrada no penalty: X entre -5.5 e +5.5
+                        let zDepth = 5.5 + Math.random() * 11.0; 
+                        let targetZ = p.ownGoalZ * -1.0 - p.dirZ * zDepth;
+                        let targetX = (Math.random() - 0.5) * 11.0;
                         _v1.set(targetX, 0, targetZ);
                         _v2.subVectors(_v1, Match.ball.position).normalize();
-                        Match.ballVel.copy(_v2).multiplyScalar(19.0);
-                        Match.ballVel.y = 7.5;
+                        Match.ballVel.copy(_v2).multiplyScalar(21.0); // Força um pouco maior (antes 19)
+                        Match.ballVel.y = 9.0; // Ângulo um pouco maior (antes 7.5)
                         Match.state = 'PLAY';
                         Match.ballCarrier = null;
                         Match.possessionTeam = p.team;
@@ -823,15 +826,29 @@ class PlayerFSM {
                         if (distToBall < 1.4 && !p.tackleResolvido) {
                             p.tackleResolvido = true;
                             const carrier = Match.ballCarrier;
+
+                            // Bloqueio por ângulo: defensor atrás do portador (>90°) não rouba.
+                            let carrierFwd;
+                            if (carrier.velocity && carrier.velocity.lengthSq() > 0.1) {
+                                carrierFwd = carrier.velocity.clone().normalize();
+                            } else {
+                                carrierFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(carrier.model.quaternion);
+                            }
+                            const toDefender = new THREE.Vector3().subVectors(p.model.position, carrier.model.position);
+                            toDefender.y = 0;
+                            toDefender.normalize();
+                            const dotAngle = carrierFwd.x * toDefender.x + carrierFwd.z * toDefender.z;
+
                             /*
                             Desarme de pé é físico — carga de ombro: Velocidade
                             x Força de cada lado (média dos dois skills),
                             não Técnica. Base 0.5: disputa justa a skills
-                            iguais.
+                            iguais. Só possível se o defensor estiver num
+                            ângulo <=90° da frente do portador.
                             */
                             const forcaDef = (p.skillFor('SPEED') + p.skillFor('STRENGTH')) / 2;
                             const forcaAtk = (carrier.skillFor('SPEED') + carrier.skillFor('STRENGTH')) / 2;
-                            if (venceuDuelo(forcaDef, forcaAtk, 0.5)) {
+                            if (dotAngle >= 0 && venceuDuelo(forcaDef, forcaAtk, 0.5)) {
                                 carrier.hasBall = false;
                                 carrier.touchLock = BallControl.touchLock;
                                 Match.ballCarrier = null;
@@ -882,13 +899,30 @@ class PlayerFSM {
 
                         const carrierSlide = Match.ballCarrier;
                         const alvoValido = carrierSlide && carrierSlide.team !== p.team && carrierSlide.role !== 'gk';
+
+                        // Bloqueio por ângulo: carrinho por trás (>90°) não rouba.
+                        let slideAngleOk = true;
+                        if (alvoValido) {
+                            let cFwd;
+                            if (carrierSlide.velocity && carrierSlide.velocity.lengthSq() > 0.1) {
+                                cFwd = carrierSlide.velocity.clone().normalize();
+                            } else {
+                                cFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(carrierSlide.model.quaternion);
+                            }
+                            const toDef = new THREE.Vector3().subVectors(p.model.position, carrierSlide.model.position);
+                            toDef.y = 0;
+                            toDef.normalize();
+                            slideAngleOk = (cFwd.x * toDef.x + cFwd.z * toDef.z) >= 0;
+                        }
+
                         /*
                         Carrinho é Técnica (drible do portador) x Marcação (do
                         defensor) — quem lê melhor o corpo do outro. Base 0.45:
                         um carrinho é um lance arriscado, o portador começa
                         ligeiramente favorito mesmo a skills iguais.
+                        Só possível se o defensor estiver na frente/lado (<=90°).
                         */
-                        const venceu = alvoValido && venceuDuelo(p.skillFor('MARKING'), carrierSlide.skillFor('TEC'), 0.45);
+                        const venceu = alvoValido && slideAngleOk && venceuDuelo(p.skillFor('MARKING'), carrierSlide.skillFor('TEC'), 0.45);
 
                         if (venceu) {
                             carrierSlide.hasBall = false;

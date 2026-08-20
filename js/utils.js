@@ -191,23 +191,29 @@ rolamento); integrando `v·dv / (k·v² + μ·g) = -dx`:
     v0 = √( ( (k·v1² + μ·g)·e^(2·k·x) − μ·g ) / k )
 */
 function velocidadeRasteiraPara(dist, vChegada) {
-    // Adaptar a velocidade de chegada à distância:
-    // Passes curtos precisam sair com mais velocidade e dinamismo para não parecerem lentos/frouxos.
-    // Passes longos desaceleram progressivamente para não parecerem foguetes/chutões.
-    let vAlvo = vChegada;
-    if (dist < 12.0) {
-        vAlvo += (12.0 - dist) * 0.45; // Boost mais firme nos curtos (ex: 4m ganha +3.6 m/s)
-    } else if (dist > 15.0) {
-        // Redução gradual e progressiva nos passes longos
-        vAlvo = Math.max(1.0, vChegada - (dist - 15.0) * 0.28);
+    /*
+    Curva contínua: passes curtos ganham um boost suave (a bola tem de
+    chegar firme, não morrer nos pés), passes longos perdem um pouco de
+    vChegada para não precisarem de velocidades de saída absurdas.
+    Sem descontinuidades nem gaps entre faixas.
+    */
+    const centro = 15.0;      // distância neutra (sem ajuste)
+    const diff = dist - centro;
+    let vAlvo;
+    if (diff < 0) {
+        // Curtos: boost suave, máx +2.0 m/s a dist=0
+        vAlvo = vChegada + (-diff / centro) * 2.0;
+    } else {
+        // Longos: redução gradual, mín 2.5 m/s
+        vAlvo = Math.max(2.5, vChegada - diff * 0.10);
     }
 
     const k = BallPhysics.kArrasto;
     const atrito = BallPhysics.atritoRolamento * BallPhysics.gravidade;
     const alvo = (k * vAlvo * vAlvo + atrito) * Math.exp(2 * k * dist) - atrito;
     
-    // Tecto de segurança moderado para passes rasteiros (18.5 m/s) para evitar disparos irreais
-    return Math.min(18.5, Math.sqrt(Math.max(0, alvo / k)));
+    // Tecto de 22 m/s para não cortar passes longos legítimos
+    return Math.min(22.0, Math.sqrt(Math.max(0, alvo / k)));
 }
 
 /*

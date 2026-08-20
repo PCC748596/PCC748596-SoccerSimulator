@@ -211,7 +211,7 @@ const BallPhysics = {
     cd: 0.25,               // coeficiente de arrasto
     restituicao: 0.60,      // ressalto vertical em relva
     atritoRessalto: 0.75,   // perda horizontal em cada ressalto
-    atritoRolamento: 0.10,  // μ de rolamento em relva
+    atritoRolamento: 0.38,  // μ de rolamento em relva (real: 0.3–0.5)
     vMinRessalto: 0.6,      // abaixo disto não ressalta, assenta
     vMinRolar: 0.25,        // abaixo disto pára de vez
 
