@@ -470,6 +470,15 @@ const PositionSmoothing = 3.0;
 
 const BlockShape = {
     /*
+    Guarda-redes com a bola nas mãos: quanto se AFASTAM da baliza dele os dois
+    blocos, em metros. Aplica-se aos dois lados na mesma direcção — a equipa do
+    guarda-redes sobe esta folga, a adversária recua a mesma coisa — por isso o
+    resultado é as duas ficarem mais longe de quem segura a bola, abrindo campo
+    para o relançamento em vez de o jogo ficar amontoado à volta da área.
+    */
+    recuoGkComBola: 10.0,
+
+    /*
     Profundidade do bloco (da última linha ao jogador mais avançado), por
     definição de compacidade do painel. A traseira deste rectângulo é a linha
     do fora-de-jogo da equipa — ver computeBlock em team_bt.js.

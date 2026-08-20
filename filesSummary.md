@@ -601,6 +601,12 @@ Primeiro a carregar. Não depende de nada além do THREE.
   - `amplitude` / `amplitudeComBola` — a largura (*Width Compactness*: 50/60/70 %
     de 68 m). Mesma história do `amplitudeComBola` (1.15): definido, documentado,
     nunca lido. Também corrigido.
+  - `recuoGkComBola` (10 m) — **guarda-redes com a bola nas mãos**: quanto os
+    DOIS blocos se afastam da baliza dele. A equipa do guarda-redes sobe esta
+    folga (centro `-26.5 + 10`); a adversária recua a mesma coisa, e esse
+    deslocamento é aplicado **depois** de todos os travões de `computeBlock` —
+    o `pressaoLineCap` corria a seguir e engolia-o por inteiro. Só as linhas de
+    fundo ainda falam depois.
   - `bascular` / `bascularComBola` — quanto o rectângulo acompanha a bola de lado.
   - `avancoAlemDaBola` — a frente do bloco fica à frente da bola no ataque.
     Cuidado com o sinal: escrito como *recuo*, o bloco a atacar ficava mais

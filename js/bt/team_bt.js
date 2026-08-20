@@ -505,6 +505,8 @@ function computeBlock(bb) {
     const profundidade = CAMPO_COMP * B.profundidade[compacLength];
 
     const gkHoldingBall = typeof Match !== 'undefined' && Match.gkHoldingBall && Match.gkHoldingBall[bb.team];
+    const oppTeam = (bb.team === 'TeamA') ? 'TeamB' : 'TeamA';
+    const oppGkHoldingBall = typeof Match !== 'undefined' && Match.gkHoldingBall && Match.gkHoldingBall[oppTeam];
     const isGoalKick = typeof Match !== 'undefined' && Match.state === 'GOAL_KICK';
     const defendingGoalKick = isGoalKick && !bb.isAttacking;
 
@@ -518,8 +520,13 @@ function computeBlock(bb) {
         // No próprio tiro de meta, avança o time 10m para a frente
         centro = (bb.momentumZ * bb.dir) + 10 + ment.blocoZ;
     } else if (gkHoldingBall) {
-        // Centro a 10 metros a frente da linha da grande area
-        centro = -26.5; 
+        /*
+        O nosso guarda-redes tem a bola nas mãos: o bloco sobe e dá-lhe espaço
+        para relançar, em vez de ficar amontoado à frente da própria área.
+        BlockShape.recuoGkComBola é a folga pedida em metros; o -26.5 de base
+        era 10 m à frente da linha da grande área.
+        */
+        centro = -26.5 + BlockShape.recuoGkComBola;
     } else {
         // O centro do bloco no eixo Z acompanha a bola.
         centro = bb.momentumZ * bb.dir;
@@ -649,6 +656,22 @@ function computeBlock(bb) {
     margemFundo (0.94, ~3.2 m antes) e o recuoMax (-42, na marca de grande
     penalidade), mais a compressao contra eles.
     */
+    /*
+    Guarda-redes ADVERSÁRIO com a bola nas mãos: o bloco afasta-se da baliza
+    dele a mesma folga que a equipa dele sobe, e as duas acabam ambas
+    BlockShape.recuoGkComBola metros mais longe de quem segura a bola.
+
+    Corre AQUI, depois de todos os travões, e não como ramo do centro lá em
+    cima: o pressaoLineCap e o escape da bola dentro do bloco corriam a seguir
+    e engoliam o recuo inteiro — o cap de "Balanced" prende o centro a 1/3 do
+    campo de ataque, exactamente a zona onde este deslocamento tem de se ver.
+    Só as linhas de fundo, logo abaixo, ainda falam depois disto.
+    */
+    if (oppGkHoldingBall) {
+        z0 -= BlockShape.recuoGkComBola;
+        z1 -= BlockShape.recuoGkComBola;
+    }
+
     const fundo = CAMPO_COMP / 2;
 
     if (z0 < -fundo) {
