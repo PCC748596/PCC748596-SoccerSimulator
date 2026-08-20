@@ -197,3 +197,59 @@ test('a âncora cabe sempre dentro da grande área', () => {
         }
     }
 });
+
+/*
+Sweeper. updateGkStyle() (team_bt.js) só liga o estilo offensive quando um
+adversário com bola corre pelo corredor central sem defensor pela frente — é um
+gatilho pontual, não uma postura. Nesse caso, e só nesse, o guarda-redes vai à
+bola em vez de recuar; sweepOut limita quão longe.
+*/
+function montarSweep() {
+    const sandbox = {};
+    vm.createContext(sandbox);
+    vm.runInContext(
+        recortarLinha(CONFIG, 'LARGURA_BALIZA') + '\n' +
+        recortarLinha(CONFIG, 'GK_D_NEAR') + '\n' +
+        recortarLinha(CONFIG, 'GK_D_FAR') + '\n' +
+        recortarConst(CONFIG, 'GoalkeeperStyle') + '\n' +
+        recortarFuncao(CONFIG, 'gkAnchor') + '\n' +
+        recortarFuncao(CONFIG, 'gkSweepTarget') + '\n' +
+        'this.sweep = gkSweepTarget; this.gkAnchor = gkAnchor;' +
+        'this.S = GoalkeeperStyle;', sandbox);
+    return sandbox;
+}
+
+test('a varrida nunca passa de sweepOut metros da linha', () => {
+    const s = montarSweep();
+    for (const nome of ['defensive', 'offensive']) {
+        for (const d of [5, 20, 40, 80]) {
+            const r = s.sweep(0, GOL_A + d * DIR_A, GOL_A, DIR_A, s.S[nome]);
+            const p = (r.z - GOL_A) * DIR_A;
+            assert.ok(p <= s.S[nome].sweepOut + 1e-9,
+                nome + ': saiu ' + p + ' m, limite ' + s.S[nome].sweepOut);
+            assert.ok(p >= 0, nome + ': profundidade negativa ' + p);
+        }
+    }
+});
+
+test('a varrida vai na direcção da bola, não para o eixo', () => {
+    const s = montarSweep();
+    const r = s.sweep(15, GOL_A + 25 * DIR_A, GOL_A, DIR_A, s.S.offensive);
+    assert.ok(r.x > 0, 'devia deslocar-se para o lado da bola, x = ' + r.x);
+});
+
+test('bola perto: a varrida vai à bola em vez de a ultrapassar', () => {
+    const s = montarSweep();
+    const bolaZ = GOL_A + 4 * DIR_A;
+    const r = s.sweep(0, bolaZ, GOL_A, DIR_A, s.S.offensive);
+    const p = (r.z - GOL_A) * DIR_A;
+    assert.ok(p <= 4 + 1e-9, 'passou a bola: ' + p);
+});
+
+test('a varrida é sempre mais adiantada que a âncora com a bola longe', () => {
+    const s = montarSweep();
+    const d = 30;
+    const varrida = s.sweep(0, GOL_A + d * DIR_A, GOL_A, DIR_A, s.S.offensive);
+    const ancora = s.gkAnchor(0, GOL_A + d * DIR_A, GOL_A, DIR_A, s.S.offensive);
+    assert.ok((varrida.z - GOL_A) * DIR_A > (ancora.z - GOL_A) * DIR_A);
+});

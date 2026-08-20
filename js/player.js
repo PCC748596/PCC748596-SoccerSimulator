@@ -1959,10 +1959,21 @@ class FootballPlayer {
                                 Um só alvo, venha o portador de onde vier. Antes
                                 havia dois ramos, com coeficientes 0.55 e 0.35: o
                                 mais adiantado era o do atacante MAIS perto.
+
+                                Varre só quando updateGkStyle() (team_bt.js) diz
+                                que não há defensor entre o portador e a baliza —
+                                é isso, e só isso, que o estilo offensive
+                                significa. Fora daí, recua como sempre.
                                 */
-                                alvoGkX = ancora.x;
-                                alvoGkZ = ancora.z;
-                                speedLerp = 3.5;
+                                const varrer = (this.gkStyle === 'offensive' && carrier &&
+                                    carrier.team !== this.team);
+                                const alvo = varrer
+                                    ? gkSweepTarget(Match.ball.position.x, Match.ball.position.z,
+                                        this.ownGoalZ, this.dirZ, gkStyleAtual)
+                                    : ancora;
+                                alvoGkX = alvo.x;
+                                alvoGkZ = alvo.z;
+                                speedLerp = varrer ? 5.0 : 3.5;
                             }
                         }
                     } else {

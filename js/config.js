@@ -1048,6 +1048,29 @@ function gkAnchor(ballX, ballZ, ownGoalZ, dirZ, style) {
 }
 
 /*
+Alvo de varrida. Ao contrário de gkAnchor(), vai NA DIRECÇÃO da bola: é a
+situação em que o guarda-redes sai mesmo, porque não há defensor entre o
+atacante e a baliza. sweepOut trava quão longe.
+
+Também pura, pelas mesmas razões de gkAnchor().
+*/
+function gkSweepTarget(ballX, ballZ, ownGoalZ, dirZ, style) {
+    const e = style || GoalkeeperStyle.defensive;
+
+    const dx = ballX;
+    const dz = ballZ - ownGoalZ;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.0001) return { x: 0, z: ownGoalZ };
+
+    // Nunca ultrapassa a bola, nem sai mais do que sweepOut.
+    const alcance = Math.min(d, e.sweepOut);
+    return {
+        x: (dx / d) * alcance,
+        z: ownGoalZ + (dz / d) * alcance
+    };
+}
+
+/*
 Postura do guarda-redes.
 
 Rotações em radianos. Convenção do esqueleto (ver resetBonesToDefault):
