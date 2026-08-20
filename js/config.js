@@ -1410,6 +1410,39 @@ function offsetInquietacao(angulo, raio) {
     return { x: Math.cos(angulo) * raio, z: Math.sin(angulo) * raio };
 }
 
+/*
+=============================================================================
+VISÃO DE JOGO — o que o jogador consegue ler à frente
+=============================================================================
+A mesma fórmula estava escrita à mão em três sítios (o cone do carry, a
+detecção de adversário no toque, e o espaço à frente no BT). Regras duplicadas
+divergem: aconteceu já com o sector do passe e com o tecto do bloco.
+
+O ângulo é POR LADO: a `anguloPorTecnica` 0.9, a técnica 80 dá ±72° e a técnica
+50 dá ±45°. O piso existe para um jogador de técnica muito baixa não ficar cego.
+=============================================================================
+*/
+const VisionModel = {
+    anguloPorTecnica: 0.9,   // graus por ponto de técnica, para CADA lado
+    anguloMin: 30.0,         // piso, em graus
+    distanciaPorTecnica: 0.5,
+    distanciaMin: 12.0
+};
+
+// Meio-ângulo do cone de visão, em RADIANOS.
+function coneVisao(tec) {
+    const V = VisionModel;
+    return (Math.max(V.anguloMin, tec * V.anguloPorTecnica) * Math.PI) / 180;
+}
+
+// Até onde o jogador lê o jogo, em metros. `minimo` permite a um consumidor
+// exigir mais do que o piso geral, como o toque de condução já fazia.
+function alcanceVisao(tec, minimo) {
+    const V = VisionModel;
+    return Math.max(minimo === undefined ? V.distanciaMin : minimo,
+        tec * V.distanciaPorTecnica);
+}
+
 const CarryModel = {
     leque: [-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2],
     lookAhead: 10.0,      // base de distância (sobrescrita por player.tec * 0.5)

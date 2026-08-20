@@ -646,6 +646,13 @@ Primeiro a carregar. Não depende de nada além do THREE.
   nunca no portador nem no `chaser`. **Não acumula** — parte sempre do alvo
   corrente, senão a equipa derivava para fora da forma ao longo de minutos. Corre
   antes do tecto do estilo, para não voltar a furá-lo.
+- **`VisionModel`** — **o que o jogador lê à frente**, e a única fonte da
+  fórmula. O meio-ângulo do cone é `max(anguloMin 30°, TEC × anguloPorTecnica)`,
+  **por lado**: com `anguloPorTecnica` a 0.9, TEC 80 dá ±72° e TEC 50 dá ±45°. O
+  alcance é `max(12, TEC × 0.5)` m. Usado por `coneVisao(tec)` e
+  `alcanceVisao(tec, minimo)` no cone do carry (`fsm.js`), na detecção de
+  adversário no toque, e no espaço à frente (`bt/player_bt.js`) — estava escrito
+  à mão nos três, e regras duplicadas já divergiram duas vezes neste projecto.
 - **`DribbleModel`** — o 1×1: quando o portador tenta passar por um adversário.
 - **`CarryModel`** — a condução ("adiantada de bola"): a bola é fisicamente
   adiantada entre 3.6 e 6.0 m, com o impulso a herdar a velocidade do jogador,

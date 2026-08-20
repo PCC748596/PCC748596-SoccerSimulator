@@ -110,8 +110,8 @@ class PlayerContext {
         }
 
         const tec = p.skillFor ? p.skillFor('TEC') : 50;
-        const maxVisionDist = Math.max(15.0, tec * 0.5);
-        const halfAngleRad = (Math.max(30.0, tec * 0.7) * Math.PI) / 180;
+        const maxVisionDist = alcanceVisao(tec, 15.0);
+        const halfAngleRad = coneVisao(tec);
         const aberturaCorredor = Math.tan(halfAngleRad);
 
         for (const opp of this.opponents) {

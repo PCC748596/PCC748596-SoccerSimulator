@@ -415,12 +415,11 @@ class PlayerFSM {
                         // sorteado, que já não existe.
                         let alvoX = px, alvoZ = pz + 10 * p.dirZ;
 
-                        // Visão de jogo baseada na técnica:
-                        // Distância de leitura = técnica * 0.5 (ex: tec 80 = 40m, tec 60 = 30m, tec 40 = 20m)
-                        // Ângulo de visão = técnica * 0.7 graus (ex: tec 80 = ±56°, tec 50 = ±35°)
+                        // Visão de jogo baseada na técnica — ver VisionModel
+                        // em config.js, que é onde os números vivem agora.
                         const tec = p.skillFor ? p.skillFor('TEC') : 50;
-                        const visDist = Math.max(12.0, tec * 0.5);
-                        const maxAngRad = (Math.max(30.0, tec * 0.7) * Math.PI) / 180;
+                        const visDist = alcanceVisao(tec);
+                        const maxAngRad = coneVisao(tec);
 
                         // Ponto mais avançado que vale a pena mirar: a faixa junto
                         // à linha de fundo está fora, senão ele corre contra a
@@ -501,11 +500,11 @@ class PlayerFSM {
                     let forward = p.velocity.clone().normalize();
                     let allOpps = (p.team === 'TeamA') ? Match.opponents : Match.players;
 
-                    // Encontrar adversário mais perto no cone frontal de visão (técnica * 0.7 graus)
+                    // Adversário mais perto no cone frontal de visão (VisionModel).
                     const tec = p.skillFor ? p.skillFor('TEC') : 50;
-                    const maxVisionAngleRad = (Math.max(30.0, tec * 0.7) * Math.PI) / 180;
+                    const maxVisionAngleRad = coneVisao(tec);
                     const minDot = Math.cos(maxVisionAngleRad);
-                    const visionRange = Math.max(14.0, tec * 0.5);
+                    const visionRange = alcanceVisao(tec, 14.0);
 
                     let nearestOppDist = 999;
                     let nearestOpp = null;
