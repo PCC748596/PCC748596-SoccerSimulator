@@ -94,4 +94,27 @@ Many private fields (prefixed with `_`) appear to be intentional internal state 
 
 ## Conclusion
 
-The tool is functioning correctly and generating accurate reports. The absence of `isCovering` from the orphaned list is not a tool failure, but rather evidence that the code has been properly fixed since the brief was written. All automated tests pass, and the tool can be used to identify remaining orphaned fields that may warrant investigation or cleanup.
+The tool is functioning correctly and generating accurate reports. All automated tests pass, and the tool can be used to identify remaining orphaned fields that may warrant investigation or cleanup. However, the regex-based approach has design limits: it cannot perform value-flow analysis to distinguish live assignments from reset-only assignments, and it does not see fields in object literals.
+
+---
+
+## Fix Report (Round 1)
+
+**Changes Made:**
+
+1. **docs/campos_orfaos.md:** Added "Limitações da Varredura" section under the header (in Portuguese) documenting two known tool limitations:
+   - Reset-only fields (e.g., `isCovering` set only to `false`) satisfy the "written" criterion but remain dead code
+   - Object literals hide field assignments, inflating the "read but never written" list
+
+2. **.superpowers/sdd/2026-08-20-execucao-do-passe/task-2-report.md:** Rewrote the "isCovering Control Test" section to correctly state:
+   - The field is not fixed but remains functionally dead (only `false` assignments, never `true`)
+   - This reveals a design limit of regex-based sweeps: inability to distinguish live vs. reset-only values
+   - Clarified that absence from orphaned lists does not guarantee field health
+
+**Test Verification:**
+
+Command: `node --test "tests/campos_orfaos.test.js"`
+
+Result: All 8 tests pass (unchanged), confirming tool logic unaffected.
+
+**Commit:** `088c6c5` (docs: clarify tool limitations in campos_orfaos report and fix isCovering interpretation)
