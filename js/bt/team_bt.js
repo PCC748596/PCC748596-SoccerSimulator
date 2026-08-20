@@ -816,7 +816,20 @@ function slotNoBloco(p, bb) {
     desfazia o primeiro e punha o lateral direito da TeamB no lado esquerdo
     do campo, em contradicao com o baseTarget dele.
     */
-    const u = 0.5 + (p.slot.u - 0.5) * fecho;
+    /*
+    O SECTOR entra aqui, e nao noutro sitio qualquer: o fecho e a manopla da
+    largura, e o botao "Setor do campo" e um pedido de largura. Sem isto o
+    botao mexia so na escolha do passe (player.js) e na direccao da conducao
+    (fsm.js) — a equipa ficava com 32 m de largura em 68 m de campo com
+    qualquer combinacao de sectores. Ver fechoDoSector em config.js.
+    */
+    const fechoSec = (typeof fechoDoSector === 'function' && typeof Tatics !== 'undefined')
+        ? fechoDoSector(Tatics.setores)
+        : 1.0;
+
+    // Clamp: com o multiplicador acima de 1 o u pode sair do rectangulo, e a
+    // borda do bloco ja encosta a linha lateral.
+    const u = THREE.MathUtils.clamp(0.5 + (p.slot.u - 0.5) * fecho * fechoSec, 0.02, 0.98);
 
     let xTarget = bloco.x0 + u * (bloco.x1 - bloco.x0);
     const zTarget = (bloco.z0 + v * (bloco.z1 - bloco.z0)) * bb.dir;
@@ -834,9 +847,33 @@ function slotNoBloco(p, bb) {
 
     const isLateral = ['LB', 'RB', 'LM', 'RM', 'LWB', 'RWB', 'LW', 'RW'].includes(p.pos);
 
+    /*
+    Em que sector do painel este jogador cai, no referencial de ataque dele.
+    Usa o Tatics.sectorDeX (limite de 10 m) e nao o CORREDOR_LIMITE de 11.33:
+    a pergunta aqui e "o painel pediu este corredor?", e quem responde por
+    isso e a mesma funcao que o passe e a conducao usam.
+    */
+    const meuSector = (typeof Tatics !== 'undefined' && Tatics.sectorDeX)
+        ? Tatics.sectorDeX(xTarget, bb.dir)
+        : 'cen';
+    const sectorPedido = (typeof Tatics !== 'undefined' && Tatics.setores)
+        ? Tatics.setores.indexOf(meuSector) >= 0
+        : true;
+
     if (ballCorredor === 0) {
-        if (pCorredor === 1) xTarget -= 4.0;
-        else if (pCorredor === -1) xTarget += 4.0;
+        /*
+        Bola no eixo: os corredores fechavam 4 m para dentro. Era o mais
+        perverso dos tres estreitamentos — quanto MAIS central estava a bola,
+        mais a equipa fechava, o oposto de jogar pelas pontas.
+
+        Quem esta num corredor que o painel pediu deixa de ser puxado: se o
+        senhor ligou a ala, e para haver alguem na ala quando a bola esta no
+        meio, que e exactamente quando a ala serve para alguma coisa.
+        */
+        if (!sectorPedido) {
+            if (pCorredor === 1) xTarget -= 4.0;
+            else if (pCorredor === -1) xTarget += 4.0;
+        }
     } else {
         if (pCorredor === 0) {
             xTarget += ballCorredor * 2.0;
@@ -850,6 +887,19 @@ function slotNoBloco(p, bb) {
             }
         }
     }
+
+    /*
+    O deslocamento de corredor acima e somado DEPOIS do `u` ja ter sido
+    mapeado para dentro do rectangulo, e sao 2, 6 ou 8 m em cima disso. Sem
+    voltar a limitar, o alvo saia pela linha lateral: medido em 3.2% das
+    amostras, com o maximo em |x| = 37.6 numa meia-largura de 34 (o anel
+    grande do debug via-se fora do campo, ao lado do rectangulo).
+
+    Limita ao BLOCO e nao ao campo: o rectangulo ja encosta a linha lateral
+    quando quer (ver computeBloco), e limitar ao campo deixava passar alvos
+    fora do bloco na mesma — que e o que o anel de debug denuncia.
+    */
+    xTarget = THREE.MathUtils.clamp(xTarget, bloco.x0, bloco.x1);
 
     return {
         x: xTarget,
@@ -1032,34 +1082,11 @@ quem acompanha continua, quem está no slot fica — com duas saídas de emergê
 a referência afastar-se para lá de metade do raio, ou desaparecer do campo.
 */
 function aplicarMarcacaoPosicional(p, bb, targetX, targetZ) {
-    if (typeof MarkingModel === 'undefined' ||
-        typeof escolherReferencia !== 'function') {
+    if (typeof MarkingModel === 'undefined' || !p.marcRef) {
         return { x: targetX, z: targetZ };
     }
 
     const M = MarkingModel;
-    const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
-    const adversarios = (bb && bb.opp) ? bb.opp : [];
-
-    p.marcTimer = (p.marcTimer || 0) + dt;
-
-    // A referência ainda serve? Sai já se desapareceu do campo ou se fugiu do
-    // setor — manter a decisão nesses casos era pior do que trocar.
-    if (p.marcRef) {
-        const vivo = adversarios.indexOf(p.marcRef) >= 0;
-        const dx = p.marcRef.model.position.x - targetX;
-        const dz = p.marcRef.model.position.z - targetZ;
-        const fugiu = Math.hypot(dx, dz) > M.raioSetor * 1.5;
-        if (!vivo || fugiu) { p.marcRef = null; p.marcTimer = 0; }
-    }
-
-    if (p.marcTimer >= M.histerese) {
-        p.marcRef = escolherReferencia(targetX, targetZ, adversarios, M.raioSetor);
-        p.marcTimer = 0;
-    }
-
-    if (!p.marcRef) return { x: targetX, z: targetZ };
-
     const distancia = M.distanciaPorPressao[Tatics.pressaoDefensiva]
         ?? M.distanciaPorPressao.balanced;
     let biasMax = M.biasMaxPara(targetZ * p.dirZ);
@@ -1068,6 +1095,60 @@ function aplicarMarcacaoPosicional(p, bb, targetX, targetZ) {
     return pontoDeMarcacao(targetX, targetZ,
         p.marcRef.model.position.x, p.marcRef.model.position.z,
         p.ownGoalZ, distancia, biasMax);
+}
+
+/*
+Quem acompanha quem, para a equipa toda de uma vez.
+
+Corre entre as duas fases do PosicionamentoAI: precisa do posto de todos
+(`p.postoBase`, ja com o estilo) e tem de escrever o `p.marcRef` antes de
+qualquer um aplicar a sua marcacao.
+
+Aqui vive a histerese (nao se troca de homem todos os frames) e a validacao
+da referencia; a exclusividade e do `atribuirMarcacoes`, em config.js.
+*/
+function atribuirMarcacoesDaEquipa(lista, bb) {
+    if (typeof MarkingModel === 'undefined' ||
+        typeof atribuirMarcacoes !== 'function') return;
+
+    const M = MarkingModel;
+    const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
+    const adversarios = (bb && bb.opp) ? bb.opp : [];
+
+    const jogadores = [];
+    const marcadores = [];
+
+    for (const p of lista) {
+        if (!p || p.role === 'gk' || !p.postoBase) continue;
+        p.marcTimer = (p.marcTimer || 0) + dt;
+
+        // A referencia ainda serve? Sai ja se desapareceu do campo ou se fugiu
+        // do setor - manter a decisao nesses casos era pior do que trocar.
+        if (p.marcRef) {
+            const vivo = adversarios.indexOf(p.marcRef) >= 0;
+            const dx = p.marcRef.model.position.x - p.postoBase.x;
+            const dz = p.marcRef.model.position.z - p.postoBase.z;
+            const fugiu = Math.hypot(dx, dz) > M.raioSetor * 1.5;
+            if (!vivo || fugiu) { p.marcRef = null; p.marcTimer = 0; }
+        }
+
+        jogadores.push(p);
+        marcadores.push({
+            x: p.postoBase.x,
+            z: p.postoBase.z,
+            manter: p.marcTimer < M.histerese,
+            ref: p.marcRef
+        });
+    }
+
+    const escolha = atribuirMarcacoes(marcadores, adversarios, M.raioSetor);
+
+    for (let i = 0; i < jogadores.length; i++) {
+        const p = jogadores[i];
+        p.marcRef = escolha[i];
+        // So quem foi a leilao reinicia o relogio da histerese.
+        if (!marcadores[i].manter) p.marcTimer = 0;
+    }
 }
 
 /*
@@ -1110,7 +1191,15 @@ function aplicarInquietacao(p, bb, targetX, targetZ) {
 }
 
 const PosicionamentoAI = {
-    tick: function (p, bb) {
+    /*
+    FASE 1 - o posto de cada um antes da marcacao: slot no bloco + estilo.
+
+    Sai em `p.postoBase` porque a atribuicao de marcacoes precisa dos postos da
+    EQUIPA INTEIRA antes de decidir quem acompanha quem (ver
+    atribuirMarcacoesDaEquipa). Enquanto isto vivia tudo num `tick` por
+    jogador, cada um escolhia o seu homem as cegas e dois caiam no mesmo.
+    */
+    tickBase: function (p, bb) {
         if (p.role === 'gk') return;   // o GK posiciona-se em updateGK()
 
         const slot = slotNoBloco(p, bb);
@@ -1124,6 +1213,20 @@ const PosicionamentoAI = {
         const comEstilo = (typeof aplicarEstiloPosicional === 'function')
             ? aplicarEstiloPosicional(p, bb, targetX, targetZ)
             : { x: targetX, z: targetZ };
+
+        if (!p.postoBase) p.postoBase = { x: 0, z: 0 };
+        p.postoBase.x = comEstilo.x;
+        p.postoBase.z = comEstilo.z;
+    },
+
+    /*
+    FASE 2 - marcacao, inquietacao, tecto e alisamento. Corre DEPOIS de
+    atribuirMarcacoesDaEquipa, que ja poe o `p.marcRef` de cada um.
+    */
+    tickFinal: function (p, bb) {
+        if (p.role === 'gk') return;
+        if (!p.postoBase) return;
+        const comEstilo = p.postoBase;
 
         // Quinto passo: acompanhar quem entra no setor. Depois do estilo, para
         // a marcação partir do slot que o estilo já inclinou.

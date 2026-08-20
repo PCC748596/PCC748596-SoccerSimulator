@@ -271,7 +271,35 @@ const Match = {
                 e.preventDefault();
             }
             if (e.key === 'x' || e.key === 'X') togglePainel();
+            /*
+            Ctrl+C: canto forçado, para se ver a jogada sem esperar que
+            aconteça sozinha. Vai para a equipa que está a atacar (a posse, ou
+            o último toque se ainda não houver posse), na quina do lado onde a
+            bola está e na linha de fundo que essa equipa ataca.
+            */
+            if ((e.key === 'c' || e.key === 'C') && e.ctrlKey) {
+                this.forcarCanto();
+                e.preventDefault();
+            }
         });
+    },
+
+    /*
+    Canto de encomenda (Ctrl+C). Quem bate é quem está a atacar; a quina é a
+    do lado onde a bola está, na linha de fundo que essa equipa ataca — daí o
+    `dirZ` do plantel dela e não um sinal fixo.
+    */
+    forcarCanto: function () {
+        const equipa = this.possessionTeam || this.lastTouchedTeam || 'TeamA';
+        const plantel = (equipa === 'TeamA') ? this.players : this.opponents;
+        const attDir = (plantel[0] && plantel[0].dirZ) ? plantel[0].dirZ : 1;
+
+        // A bola diz o LADO (o sinal do x); o setupSetPiece lê daqui.
+        const ladoX = Math.sign(this.ball.position.x) || 1;
+        this.ball.position.set(ladoX * 20, BallPhysics.raio, attDir * 50);
+        this.ballVel.set(0, 0, 0);
+
+        this.setupSetPiece('CORNER_KICK', equipa);
     },
 
     // Também acionado pela tecla Espaço (ver setupKeyboardListeners) — usado
@@ -1328,8 +1356,24 @@ const Match = {
         // próprio setupSetPiece, directamente (excepto tiro de meta, que usa o TeamBT).
         if (!this.nivel2Activo()) return;
 
-        this.players.forEach(p => PosicionamentoAI.tick(p, bbA));
-        this.opponents.forEach(p => PosicionamentoAI.tick(p, bbB));
+        /*
+        Duas fases, com a atribuição de marcações pelo meio. A marcação é uma
+        decisão de EQUIPA (um adversário, um marcador) e não se pode tomar
+        dentro do ciclo por jogador: cada um escolhia o mais perto do seu slot
+        sem saber dos companheiros, e com a bola numa ala dois do lado oposto
+        caíam no mesmo homem — e no mesmo ponto, porque o pontoDeMarcacao
+        mapeia um homem para uma coordenada só. Era o RM e o CM a esbarrar.
+        */
+        this.players.forEach(p => PosicionamentoAI.tickBase(p, bbA));
+        this.opponents.forEach(p => PosicionamentoAI.tickBase(p, bbB));
+
+        if (typeof atribuirMarcacoesDaEquipa === 'function') {
+            atribuirMarcacoesDaEquipa(this.players, bbA);
+            atribuirMarcacoesDaEquipa(this.opponents, bbB);
+        }
+
+        this.players.forEach(p => PosicionamentoAI.tickFinal(p, bbA));
+        this.opponents.forEach(p => PosicionamentoAI.tickFinal(p, bbB));
 
         /*
         Nao ha mais nada a mexer nos alvos depois disto.
@@ -2145,10 +2189,26 @@ const Match = {
         let defDir = -attDir;
 
         if (type === 'CORNER_KICK') {
-            let flagX = Math.sign(this.ball.position.x) * 33.5;
-            let flagZ = attDir * 52.5;
+            /*
+            Geometria toda no pontoDeCanto (config.js): a bola na quina e no
+            chão, quem bate FORA do campo e atrás dela, e o ponto da área para
+            onde ele olha. Estava aqui à mão, com o batedor 1.5 m para DENTRO
+            das duas linhas e virado para a bandeirola — de costas para a área.
+            */
+            const canto = pontoDeCanto(this.ball.position.x, attDir);
+            const flagX = canto.bola.x;
+            const flagZ = canto.bola.z;
 
-            this.ball.position.set(flagX, BallPhysics.raio, flagZ);
+            this.ball.position.set(canto.bola.x, canto.bola.y, canto.bola.z);
+
+            /*
+            Ninguém segura a bola numa bola parada. Sem isto o `hasBall` de
+            quem tocou por último sobrevive ao apito e o player.update()
+            continua a colar a bola a ele — no caso do guarda-redes, à altura
+            do PEITO. Era a bola fora do chão que se via no canto.
+            */
+            this.players.concat(this.opponents).forEach(p => { p.hasBall = false; });
+            this.ballCarrier = null;
 
             let taker = null;
             let minDist = 999;
@@ -2162,8 +2222,12 @@ const Match = {
             this.setPieceTaker = taker;
             this.setPieceTaker.hasBall = false;
 
-            taker.model.position.set(flagX - Math.sign(flagX) * 1.5, ALTURA_BASE_Y, flagZ - attDir * 1.5);
-            lookAtBola(taker.model, new THREE.Vector3(0, ALTURA_BASE_Y, flagZ - attDir * 10));
+            // O alvo na área fica guardado: o SET_PIECE_TAKER volta a virá-lo
+            // para lá todos os frames, e é para lá que ele centra.
+            this.cornerAlvo = new THREE.Vector3(canto.alvo.x, ALTURA_BASE_Y, canto.alvo.z);
+
+            taker.model.position.set(canto.batedor.x, ALTURA_BASE_Y, canto.batedor.z);
+            lookAtBola(taker.model, this.cornerAlvo);
             taker.fsm.changeState('SET_PIECE_TAKER');
 
             let attackersInBox = attackingPlayers.filter(p => p !== taker && p.role !== 'gk');

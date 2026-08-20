@@ -276,7 +276,17 @@ class PlayerFSM {
                 break;
             case 'SET_PIECE_TAKER':
                 p.velocity.set(0, 0, 0);
-                if (Match.ball) {
+                /*
+                No canto olha para a ÁREA, não para a bola: ele está fora do
+                campo, atrás dela (ver pontoDeCanto), e virá-lo para a bola
+                punha-o de costas para onde vai centrar. Nas outras bolas
+                paradas continua a olhar para a bola.
+                */
+                if (Match.state === 'CORNER_KICK' && Match.cornerAlvo) {
+                    let lookPos = Match.cornerAlvo.clone();
+                    lookPos.y = p.model.position.y;
+                    lookAtBola(p.model, lookPos);
+                } else if (Match.ball) {
                     let lookPos = Match.ball.position.clone();
                     lookPos.y = p.model.position.y;
                     lookAtBola(p.model, lookPos);

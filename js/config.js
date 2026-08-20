@@ -1800,30 +1800,71 @@ const MarkingModel = {
     }
 };
 
+
 /*
-Qual adversário este jogador acompanha: o mais próximo do SLOT dele, dentro do
-raio. Devolve null se não houver nenhum lá dentro — nesse caso ele fica no slot.
+ATRIBUICAO EXCLUSIVA - quem acompanha quem, decidido para a EQUIPA toda de uma
+vez, e nao jogador a jogador.
 
-Mede a partir do slot e não da posição actual de propósito. Da posição, isto
-realimenta-se: ele desloca-se para o adversário, o que o aproxima de outros, que
-passam a entrar no raio, e a referência foge em cadeia. O slot é o setor que o
-bloco lhe deu, e esse não se move sozinho.
+Substitui o `escolherReferencia`, que escolhia o adversario mais perto do slot
+de cada um sem saber o que os companheiros tinham escolhido. Com a bola numa
+ala, dois jogadores do lado oposto tem o mesmo adversario como o mais perto - e como o
+`pontoDeMarcacao` mapeia esse homem para UM ponto, os dois caminham para a
+mesma coordenada. Medido com a bola parada em x = -24: o RM e o CM tinham os
+slots a 7.08 m um do outro e acabavam com os alvos a 0.35 m, a esbarrar.
 
-Pura: sem Match, sem Tatics, sem THREE (ver tests/marcacao_posicional.test.js).
+Guloso, por distancia crescente: o par mais proximo fecha primeiro, e cada
+adversario so e dado uma vez. Quem ja vinha a acompanhar alguem (`manter`, a
+histerese do chamador) trava-o antes de o leilao abrir, para a troca de homem
+nao acontecer todos os frames.
+
+`marcadores`: [{ x, z, manter, ref }] - o ponto de onde cada um marca (o slot ja
+inclinado pelo estilo), o que ele acompanhava e se a histerese ainda o segura.
+Devolve um array pela MESMA ordem, com o adversario de cada um ou null.
+
+Pura: sem Match, sem Tatics, sem THREE.
 */
-function escolherReferencia(slotX, slotZ, adversarios, raio) {
-    if (!adversarios || !adversarios.length) return null;
+function atribuirMarcacoes(marcadores, adversarios, raio) {
+    const n = marcadores.length;
+    const escolha = new Array(n).fill(null);
+    if (!adversarios || !adversarios.length) return escolha;
 
-    let melhor = null, melhorD2 = raio * raio;
-    for (const o of adversarios) {
-        // O guarda-redes não se acompanha: fica na baliza dele.
-        if (!o || o.role === 'gk' || !o.model) continue;
-        const dx = o.model.position.x - slotX;
-        const dz = o.model.position.z - slotZ;
-        const d2 = dx * dx + dz * dz;
-        if (d2 < melhorD2) { melhorD2 = d2; melhor = o; }
+    const tomados = new Set();
+
+    // 1) Histerese primeiro: quem mantem o homem trava-o antes do leilao.
+    for (let i = 0; i < n; i++) {
+        const m = marcadores[i];
+        if (!m || !m.manter || !m.ref) continue;
+        if (adversarios.indexOf(m.ref) < 0) continue;   // saiu do campo
+        if (tomados.has(m.ref)) continue;               // outro ja o segurava
+        escolha[i] = m.ref;
+        tomados.add(m.ref);
     }
-    return melhor;
+
+    // 2) Leilao guloso: todos os pares dentro do raio, do mais perto ao mais longe.
+    const pares = [];
+    for (let i = 0; i < n; i++) {
+        if (escolha[i]) continue;
+        const m = marcadores[i];
+        if (!m) continue;
+        for (const o of adversarios) {
+            // O guarda-redes nao se acompanha: fica na baliza dele.
+            if (!o || o.role === 'gk' || !o.model) continue;
+            if (tomados.has(o)) continue;
+            const dx = o.model.position.x - m.x;
+            const dz = o.model.position.z - m.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < raio * raio) pares.push({ i: i, o: o, d2: d2 });
+        }
+    }
+    pares.sort((a, b) => a.d2 - b.d2);
+
+    for (const par of pares) {
+        if (escolha[par.i] || tomados.has(par.o)) continue;
+        escolha[par.i] = par.o;
+        tomados.add(par.o);
+    }
+
+    return escolha;
 }
 
 /*
@@ -2559,6 +2600,86 @@ const Tatics = {
         document.getElementById('val-gk-b').innerText = TeamSkills.TeamB.gk;
     }
 };
+
+/*
+O SECTOR MANDA NA LARGURA — multiplicador sobre o fecho do LineShape.
+
+Medido antes disto: 32.3 m de largura de equipa com esq+dir, 32.3 m com cen,
+31.2 m com esq. O botao "Setor do campo" nao mexia um centimetro em quem
+estava onde: o `Tatics.setores` so era lido na escolha do destinatario do
+passe (player.js) e na direccao da conducao (fsm.js). Quem POSICIONA — o
+slotNoBloco — nunca tinha ouvido falar de sectores, e a equipa vivia num
+bloco de 32 m em 68 m de campo, sempre, com qualquer combinacao.
+
+Devolve um multiplicador para o `fecho` por linha (LineShape.fecho):
+
+    esq+dir      1.30   pedidas as pontas: a equipa abre
+    um flanco    1.20   abre, mas menos: e um lado so
+    esq+cen+dir  1.00   os tres ligados nao pedem nada de especial
+    flanco+cen   1.05   quase neutro
+    cen          0.75   pedido o eixo: fecha
+
+Pura: sem Match, sem Tatics, sem THREE.
+*/
+function fechoDoSector(setores) {
+    if (!setores || !setores.length) return 1.0;
+
+    const esq = setores.indexOf('esq') >= 0;
+    const dir = setores.indexOf('dir') >= 0;
+    const cen = setores.indexOf('cen') >= 0;
+    const flancos = (esq ? 1 : 0) + (dir ? 1 : 0);
+
+    if (flancos === 0) return cen ? 0.75 : 1.0;
+    if (cen) return flancos === 2 ? 1.0 : 1.05;
+    return flancos === 2 ? 1.30 : 1.20;
+}
+
+/*
+GEOMETRIA DO CANTO - onde fica a bola, quem bate e para onde ele olha.
+
+`bolaX` e a coordenada x da bola quando saiu (so o SINAL conta: diz a quina);
+`attDir` e a direccao de ataque de quem bate (a linha de fundo atacada).
+
+Tres regras que se viam mal no ecra:
+
+  bola     na quina, no chao (y = raio) e DENTRO das linhas - se passar de
+           |z| = 53 a deteccao de linha de fundo volta a disparar.
+  batedor  FORA do campo, atras da bola na linha que vai da area ate a quina.
+           Estava a 1.5 m para DENTRO das duas linhas.
+  alvo     o ponto da area para onde ele olha e centra. Sem isto o
+           SET_PIECE_TAKER virava-o para a BOLA todos os frames e ele ficava
+           de costas para a area.
+
+Pura: sem Match, sem THREE.
+*/
+function pontoDeCanto(bolaX, attDir) {
+    const lado = (bolaX >= 0) ? 1 : -1;
+    const meiaLarg = CAMPO_LARG / 2;
+    const meioComp = CAMPO_COMP / 2;
+
+    // Meio metro para dentro das duas linhas: a bandeirola, sem arriscar o
+    // clamp da linha de fundo.
+    const bola = {
+        x: lado * (meiaLarg - 0.5),
+        y: BallPhysics.raio,
+        z: attDir * (meioComp - 0.5)
+    };
+
+    // Para onde a bola vai: a zona do penalti da baliza atacada.
+    const alvo = { x: 0, z: attDir * (meioComp - 11) };
+
+    // Batedor: na recta alvo->bola, 1.6 m PARA ALEM da bola. Fica sempre fora
+    // do campo (a bola ja esta a meio metro das duas linhas) e com a bola
+    // entre ele e a area, que e o que lhe da o gesto de centrar.
+    let dx = bola.x - alvo.x;
+    let dz = bola.z - alvo.z;
+    const d = Math.hypot(dx, dz) || 1;
+    dx /= d; dz /= d;
+
+    const batedor = { x: bola.x + dx * 1.6, z: bola.z + dz * 1.6 };
+
+    return { bola: bola, batedor: batedor, alvo: alvo };
+}
 
 const FormationsData = {
     '442': [

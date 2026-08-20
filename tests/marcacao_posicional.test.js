@@ -109,9 +109,8 @@ function montarMarcacao() {
     vm.runInContext(
         'const CAMPO_COMP = 106;\n' +
         recortarConst(CONFIG, 'MarkingModel') + '\n' +
-        recortarFuncao(CONFIG, 'escolherReferencia') + '\n' +
         recortarFuncao(CONFIG, 'pontoDeMarcacao') + '\n' +
-        'this.M = MarkingModel; this.escolher = escolherReferencia;' +
+        'this.M = MarkingModel;' +
         'this.ponto = pontoDeMarcacao;', sandbox);
     return sandbox;
 }
@@ -132,41 +131,6 @@ test('mais pressão é marcar mais perto', () => {
     const d = s.M.distanciaPorPressao;
     assert.ok(d.high < d.balanced, 'high devia ser menor que balanced');
     assert.ok(d.balanced < d.low, 'balanced devia ser menor que low');
-});
-
-test('escolhe o adversário mais perto do slot', () => {
-    const s = montarMarcacao();
-    const lista = [adv(10, 0, 'longe'), adv(2, 1, 'perto'), adv(6, 0, 'medio')];
-    assert.strictEqual(s.escolher(0, 0, lista, s.M.raioSetor).id, 'perto');
-});
-
-test('devolve null quando o mais perto está fora do raio', () => {
-    const s = montarMarcacao();
-    const fora = s.M.raioSetor + 5;
-    assert.strictEqual(s.escolher(0, 0, [adv(fora, 0, 'a')], s.M.raioSetor), null);
-});
-
-test('devolve null com a lista vazia', () => {
-    const s = montarMarcacao();
-    assert.strictEqual(s.escolher(0, 0, [], s.M.raioSetor), null);
-});
-
-test('guarda-redes não é candidato a ser acompanhado', () => {
-    const s = montarMarcacao();
-    const gk = { id: 'gk', role: 'gk', model: { position: { x: 1, z: 0 } } };
-    const campo = adv(5, 0, 'campo');
-    assert.strictEqual(s.escolher(0, 0, [gk, campo], s.M.raioSetor).id, 'campo');
-});
-
-/*
-O raio mede-se a partir do SLOT, não da posição do jogador. Medir da posição
-realimenta-se: ele desloca-se para o adversário, isso aproxima-o de outros, que
-passam a estar no raio, e a referência foge em cadeia.
-*/
-test('a escolha não depende de onde o jogador está', () => {
-    const s = montarMarcacao();
-    const lista = [adv(3, 0, 'perto'), adv(9, 0, 'longe')];
-    assert.strictEqual(s.escolher(0, 0, lista, s.M.raioSetor).id, 'perto');
 });
 
 test('o ponto fica entre o adversário e a própria baliza', () => {
