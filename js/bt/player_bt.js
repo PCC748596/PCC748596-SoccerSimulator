@@ -1657,6 +1657,30 @@ const PlayerBT = sel('PlayerRoot',
             Depois do Receber, que tem prioridade: quem vai receber a bola nao
             arranca para outro sitio.
             */
+            seq('EsperarNaArea',
+                cond('foiCanto', (ctx) => {
+                    const p = ctx.p;
+                    if (!p.setPieceTarget) return false;
+                    // Se a bola saiu da zona de perigo (z < 25), cancela
+                    if (Math.abs(Match.ball.position.z) < 25) {
+                        p.setPieceTarget = null;
+                        return false;
+                    }
+                    // Se alguém dominar a bola e não for um toque imediato no ar
+                    if (Match.ballCarrier) {
+                        p.setPieceTarget = null;
+                        return false;
+                    }
+                    return true;
+                }),
+                act('manterPosicao', (ctx) => {
+                    const p = ctx.p;
+                    p.dynamicTarget.copy(p.setPieceTarget);
+                    p.speedMult = 4.0;
+                    p.fsm.changeState('MOVE_TO_POS');
+                })
+            ),
+
             seq('CorrerNoEspaco',
                 cond('haEspacoAFrente', podeCorrerNoEspaco),
                 act('correrNoEspaco', actRunIntoSpace)

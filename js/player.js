@@ -938,23 +938,106 @@ class FootballPlayer {
                 const d = opp.model.position.distanceTo(this.model.position);
                 if (d < 2.0 && d < distMarc) { distMarc = d; marcador = opp; }
             }
-            const cabeceadaLimpa = !marcador || venceuDuelo(this.skillFor('TEC'), marcador.skillFor('MARKING'), 0.55);
+            // 1. Calcular AerialScore do atacante
+            const aerialAtacante = this.skillFor('TEC') * 0.70 + this.skillFor('STRENGTH') * 0.30;
+            
+            // 2 & 3. Disputa Aérea
+            let cabeceadaLimpa = true;
+            if (marcador) {
+                const aerialDefensor = marcador.skillFor('TEC') * 0.70 + marcador.skillFor('STRENGTH') * 0.30;
+                const attackerChance = aerialAtacante / (aerialAtacante + aerialDefensor);
+                cabeceadaLimpa = Math.random() < attackerChance;
+            }
 
-            let maxC = (LARGURA_BALIZA / 2) - 0.5;
+            const maxC = (LARGURA_BALIZA / 2) - 0.5;
             let alvoX, alvoY, pow;
+            let forcedGKDelay = null;
+
             if (!cabeceadaLimpa) {
-                // Marcador ganhou o salto: cabeçada sai fraca e desviada.
+                // 4. DEFESA_TIRA
                 alvoX = this.model.position.x + (Math.random() - 0.5) * 5.0;
                 alvoY = 0.3;
                 pow = (5.0 + Math.random() * 3.0) / 3.0;
             } else {
+                // 5 & 6. Disputa Atacante x Goleiro
                 const gkAdversario0 = (this.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
-                // Técnica x GK decide o canto: vencer aponta perto do poste.
-                const venceuGK = gkAdversario0 ? venceuDuelo(this.skillFor('TEC'), gkAdversario0.skillFor('GK'), 0.5) : true;
-                const cantoC = venceuGK ? maxC * 0.88 : maxC * 0.5;
-                alvoX = (Math.random() > 0.5 ? 1 : -1) * cantoC;
-                alvoY = Math.random() * 1.5 + 0.3;
-                pow = (16.0 + ((this.skillFor('TEC') - 50) / 50) * 8.0) / 3.0;
+                let gkScore = 50; 
+                if (gkAdversario0) {
+                    gkScore = gkAdversario0.skillFor('TEC') * 0.30 + gkAdversario0.skillFor('GK') * 0.70;
+                }
+                
+                // 7. Comparar probabilisticamente
+                const attackRatio = aerialAtacante / (aerialAtacante + gkScore);
+                
+                // Distribuição de pesos conforme as regras
+                const weights = [
+                    { outcome: 'GOL', weight: Math.pow(attackRatio, 2) * 100 },
+                    { outcome: 'TRAVE_CAMPO', weight: attackRatio * 15 },
+                    { outcome: 'TRAVE_FORA', weight: attackRatio * 15 },
+                    { outcome: 'TRAVESSAO_CAMPO', weight: attackRatio * 15 },
+                    { outcome: 'TRAVESSAO_FORA', weight: attackRatio * 15 },
+                    { outcome: 'GOLEIRO_DEFENDE', weight: Math.pow(1 - attackRatio, 2) * 100 },
+                    { outcome: 'GOLEIRO_FORA', weight: (1 - attackRatio) * 50 }
+                ];
+                
+                let totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
+                let roll = Math.random() * totalWeight;
+                let selectedOutcome = 'GOLEIRO_DEFENDE';
+                for (let w of weights) {
+                    if (roll < w.weight) {
+                        selectedOutcome = w.outcome;
+                        break;
+                    }
+                    roll -= w.weight;
+                }
+                
+                // 8. Aplicar o resultado fisicamente
+                let sinal = Math.random() > 0.5 ? 1 : -1;
+                
+                switch (selectedOutcome) {
+                    case 'GOL':
+                        alvoX = sinal * maxC * 0.88;
+                        alvoY = Math.random() * 1.5 + 0.3;
+                        pow = 8.0;
+                        forcedGKDelay = 1.0; // GK não chega
+                        break;
+                    case 'TRAVE_CAMPO':
+                        alvoX = sinal * (LARGURA_BALIZA / 2 - 0.08); // Bate na parte de dentro do poste
+                        alvoY = 0.5;
+                        pow = 6.5;
+                        forcedGKDelay = 1.0;
+                        break;
+                    case 'TRAVE_FORA':
+                        alvoX = sinal * (LARGURA_BALIZA / 2 + 0.08); // Bate na parte de fora do poste
+                        alvoY = 0.5;
+                        pow = 6.5;
+                        forcedGKDelay = 1.0;
+                        break;
+                    case 'TRAVESSAO_CAMPO':
+                        alvoX = (Math.random() - 0.5) * maxC;
+                        alvoY = ALTURA_BALIZA - 0.08; // Bate na parte de baixo do travessão
+                        pow = 7.0;
+                        forcedGKDelay = 1.0;
+                        break;
+                    case 'TRAVESSAO_FORA':
+                        alvoX = (Math.random() - 0.5) * maxC;
+                        alvoY = ALTURA_BALIZA + 0.08; // Bate na parte de cima do travessão
+                        pow = 7.0;
+                        forcedGKDelay = 1.0;
+                        break;
+                    case 'GOLEIRO_DEFENDE':
+                        alvoX = (Math.random() - 0.5) * 1.5; // Vai perto do meio
+                        alvoY = 1.0;
+                        pow = 4.5; // Fraco, fácil de encaixar
+                        forcedGKDelay = 0; // GK reage instantaneamente
+                        break;
+                    case 'GOLEIRO_FORA':
+                        alvoX = sinal * maxC * 1.05; // Vai rente ao poste por fora
+                        alvoY = 1.0;
+                        pow = 6.5; // GK estica-se e toca nela
+                        forcedGKDelay = 0;
+                        break;
+                }
             }
 
             /*
@@ -983,7 +1066,7 @@ class FootballPlayer {
                 // Notifica o GK adversário com o seu delay de reacção próprio.
                 const gkAdversario = (this.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
                 if (gkAdversario) {
-                    gkAdversario.gkDelayReacao = 0.45 - ((TeamSkills[defendingTeam].gk - 50) / 50) * 0.35;
+                    gkAdversario.gkDelayReacao = (forcedGKDelay !== null) ? forcedGKDelay : (0.45 - ((TeamSkills[defendingTeam].gk - 50) / 50) * 0.35);
                     gkAdversario.gkReagiu = false;
                 }
                 window.bolaChutada = true;

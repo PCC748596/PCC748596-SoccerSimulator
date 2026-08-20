@@ -2248,7 +2248,7 @@ const Match = {
                 let pos = boxPositions[idx] || { x: 0, z: flagZ - attDir * 15 };
                 p.model.position.set(pos.x + (Math.random() - 0.5) * 2, ALTURA_BASE_Y, pos.z + (Math.random() - 0.5) * 2);
                 p.fsm.changeState('SET_PIECE_WAIT');
-                p.dynamicTarget.copy(p.model.position);
+                p.setPieceTarget = new THREE.Vector3().copy(p.model.position);
             });
 
             let defendersInBox = defendingPlayers.filter(p => p.role !== 'gk');
