@@ -690,6 +690,25 @@ Primeiro a carregar. Não depende de nada além do THREE.
   `SpatialGrid`) — são os que se mexem para cruzar mais/menos DALI, sem
   aumentar o cruzamento de qualquer sítio (`chanceBase`).
 - **`BallControl`** — recepção, intercepção e desvio. Ver a secção do `match.js`.
+- **`GoalNet`** — a rede da baliza, em duas metades independentes.
+  - **Física** (`profTopo` 0.8, `profBase` 2.0, `restituicao` 0.12, `atrito`
+    0.72): `Match.colidirComRede` empurra a bola para dentro do pano, absorve a
+    componente normal e trava a tangencial. É a inclinação do pano de trás que
+    faz a bola descer até ao chão em vez de parar onde bateu.
+  - **Ondulação** (`NetWave`, em `js/goal_net.js`): `segmentosU`/`segmentosV`
+    dão os vértices — cada face era um quad de QUATRO, e por isso a rede não
+    podia deformar-se. O deslocamento é ao longo da normal,
+    `amplitude · envolvente(t) · sin(frequencia·t + k·(u+v))`, com
+    `envolvente(t) = (1 − e^(−t/ataqueOnda)) · e^(−t/tau)` e `tau =
+    duracaoOnda/4` (~1.8% da amplitude aos 5 s). A fase depende de `u+v`, e é
+    isso que faz a onda **percorrer** o pano em vez de o levantar em bloco.
+  - O factor `ataqueOnda` existe para a envolvente valer 0 em `t=0`. Sem ele a
+    rede saltava para uma posição já deformada no primeiro frame, porque a fase
+    depende de `u+v` e não só de `t`.
+  - Cada face guarda as posições de repouso num `Float32Array` e parte sempre
+    delas; nunca se deforma sobre a geometria corrente, senão acumulava e a rede
+    não voltava ao lugar. `NetWave.update` sai numa comparação enquanto nenhuma
+    rede abana, por isso a malha mais densa não custa nada em repouso.
 - **`SlideTackleModel`** — o carrinho: fases (`lancamento` → `deslize` →
   `paragem` → `levantar`), o empurrão dado à bola em metros, e a `pose` completa
   em radianos. A animação antiga era `applyKeyframeAnimation("Soccer Tackle")`,
