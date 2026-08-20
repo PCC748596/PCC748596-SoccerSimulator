@@ -46,7 +46,7 @@ const LARGURA_BALIZA = 7.32;
 const ALTURA_BALIZA = 2.44;
 const LINHA = CAMPO_COMP / 2;   // 52.5
 
-const sandbox = { Math, CAMPO_COMP, LARGURA_BALIZA, ALTURA_BALIZA };
+const sandbox = { console, Math, CAMPO_COMP, LARGURA_BALIZA, ALTURA_BALIZA };
 vm.createContext(sandbox);
 vm.runInContext(
     recortarConst(CONFIG, 'BallPhysics') + '\n' +

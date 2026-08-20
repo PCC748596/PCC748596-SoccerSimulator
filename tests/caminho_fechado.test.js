@@ -103,7 +103,7 @@ test('as fronteiras do corredor são exactas', () => {
 test('o ramo vem antes do drible e do passe para a frente', () => {
     const iFechado = BT.indexOf("seq('CaminhoFechado'");
     const iDriblar = BT.indexOf("seq('Driblar'");
-    const iFrente = BT.indexOf("seq('PassarFrente'");
+    const iFrente = BT.indexOf("seq('ProcurarPasse'");
     assert.ok(iFechado > 0 && iDriblar > 0 && iFrente > 0);
     assert.ok(iFechado < iDriblar, 'devia vir antes do drible');
     assert.ok(iFechado < iFrente, 'devia vir antes do passe para a frente');

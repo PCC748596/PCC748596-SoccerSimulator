@@ -306,6 +306,22 @@ travar só quem corre.
 */
 const GAME_SPEED = 0.88209;
 
+/*
+Duração e escala do relógio de jogo:
+45 minutos de tempo de jogo (2700s) = 10 minutos reais (600s).
+Cada segundo real avança 4.5 segundos no relógio da partida.
+*/
+const MatchDuration = {
+    halfGameMinutes: 45,
+    halfRealMinutes: 10,
+    gameSecondsPerRealSecond: 4.5,
+    get timeScale() {
+        return (typeof GAME_SPEED !== 'undefined' && GAME_SPEED > 0)
+            ? (this.gameSecondsPerRealSecond / GAME_SPEED)
+            : this.gameSecondsPerRealSecond;
+    }
+};
+
 window.cameraMode = 'center';
 window.cameraZoom = 1.0;
 /*
@@ -1833,40 +1849,23 @@ internos (`defesa`/`balanceado`/`ataque`) não mudaram, só o rótulo na UI.
 const MentalidadeModel = {
     muito_defensiva: {
         agressao: 0.20,
-        blocoZ: -10.0,
-        passAngulos: { ate45: 0.25, entre45_90: 0.35, entre90_100: 0.25, atras100: 0.15 }
+        blocoZ: -10.0
     },
     defesa: {
         agressao: 0.35,
-        blocoZ: -5.0,
-        passAngulos: { ate45: 0.30, entre45_90: 0.35, entre90_100: 0.25, atras100: 0.10 }
+        blocoZ: -5.0
     },
     balanceado: {
         agressao: 0.50,
-        blocoZ: 0.0,
-        /*
-        Distribuição de passes por ângulo:
-        - 40% num ângulo de até 45° para cada lado do jogador (cone frontal de 90°)
-        - 30% num ângulo entre 45° e 90°
-        - 20% num ângulo entre 90° e 100°
-        - 10% restante (> 100°)
-        */
-        passAngulos: {
-            ate45: 0.40,
-            entre45_90: 0.30,
-            entre90_100: 0.20,
-            atras100: 0.10
-        }
+        blocoZ: 0.0
     },
     ataque: {
         agressao: 0.65,
-        blocoZ: 7.0,
-        passAngulos: { ate45: 0.50, entre45_90: 0.30, entre90_100: 0.15, atras100: 0.05 }
+        blocoZ: 7.0
     },
     muito_ofensiva: {
         agressao: 0.80,
-        blocoZ: 12.0,
-        passAngulos: { ate45: 0.60, entre45_90: 0.25, entre90_100: 0.10, atras100: 0.05 }
+        blocoZ: 12.0
     }
 };
 
@@ -1887,27 +1886,27 @@ sobre pesos já existentes:
 const TeamPlayStyles = {
     possession: {
         nome: 'Possession',
-        circulacao: 1.6, verticalidade: 0.75, viradas: 1.3,
+        circulacao: 1.9, verticalidade: 0.6, viradas: 1.3,
         corredores: 0.9, cruzamento: 0.9, pressaoPosPerda: 1.0
     },
     direct: {
         nome: 'Direct',
-        circulacao: 0.55, verticalidade: 1.5, viradas: 0.7,
+        circulacao: 0.65, verticalidade: 1.4, viradas: 0.7,
         corredores: 1.0, cruzamento: 1.0, pressaoPosPerda: 1.0
     },
     counter_attack: {
         nome: 'Counter Attack',
-        circulacao: 0.7, verticalidade: 1.35, viradas: 0.9,
+        circulacao: 0.8, verticalidade: 1.25, viradas: 0.9,
         corredores: 1.0, cruzamento: 1.0, pressaoPosPerda: 0.8
     },
     wing_play: {
         nome: 'Wing Play',
-        circulacao: 0.9, verticalidade: 1.0, viradas: 1.1,
+        circulacao: 1.1, verticalidade: 0.9, viradas: 1.1,
         corredores: 1.5, cruzamento: 1.4, pressaoPosPerda: 1.0
     },
     positional: {
         nome: 'Positional',
-        circulacao: 1.25, verticalidade: 0.95, viradas: 1.15,
+        circulacao: 1.5, verticalidade: 0.75, viradas: 1.15,
         corredores: 1.1, cruzamento: 1.0, pressaoPosPerda: 1.0
     },
 };

@@ -398,10 +398,10 @@ const Match = {
         const cvsR = document.createElement('canvas'); const ctxR = cvsR.getContext('2d'); cvsR.width = 16; cvsR.height = 512;
         const stripeHeights = [];
         for (let i = 0; i < 3; i++) stripeHeights.push(17 / 3);
-        for (let i = 0; i < 22; i++) stripeHeights.push(CAMPO_COMP / 22);
+        for (let i = 0; i < 20; i++) stripeHeights.push(CAMPO_COMP / 20);
         for (let i = 0; i < 3; i++) stripeHeights.push(17 / 3);
         let currentY = 0;
-        for (let i = 0; i < 28; i++) {
+        for (let i = 0; i < 26; i++) {
             let nextY = currentY + stripeHeights[i];
             let yStartPix = Math.round((currentY / gramaComp) * 512);
             let yEndPix = Math.round((nextY / gramaComp) * 512);
@@ -1013,10 +1013,11 @@ const Match = {
             return;
         }
 
-        if (this.state === 'PLAY') {
-            this.tempoDeJogo += dt;
-            this.updatePlacar();
-        }
+        const clockScale = (typeof MatchDuration !== 'undefined' && MatchDuration.timeScale)
+            ? MatchDuration.timeScale
+            : 4.5;
+        this.tempoDeJogo += dt * clockScale;
+        this.updatePlacar();
 
         if (this.state === 'CORNER_KICK') {
             this.setPieceTimer += dt;
@@ -1621,63 +1622,76 @@ const Match = {
         const v = this.ballVel;
         const meiaLarg = LARGURA_BALIZA / 2;
 
-        // Profundidade dentro da baliza e velocidade nessa direcção.
         let d = b.z * zSinal - CAMPO_COMP / 2;
         let vd = v.z * zSinal;
 
-        // --- laterais -------------------------------------------------
-        if (b.x > meiaLarg - rB) {
-            b.x = meiaLarg - rB;
-            if (v.x > 0) v.x = -v.x * N.restituicao;
-            v.z *= N.atrito; v.y *= N.atrito;
-        } else if (b.x < -meiaLarg + rB) {
-            b.x = -meiaLarg + rB;
-            if (v.x < 0) v.x = -v.x * N.restituicao;
-            v.z *= N.atrito; v.y *= N.atrito;
-        }
+        if (d < -rB) return;
+        if (Math.abs(b.x) > meiaLarg + rB + 1.0) return;
 
-        // --- pano de cima ---------------------------------------------
-        if (d <= N.profTopo && b.y > ALTURA_BALIZA - rB) {
-            b.y = ALTURA_BALIZA - rB;
-            if (v.y > 0) v.y = -v.y * N.restituicao;
-            v.x *= N.atrito; v.z *= N.atrito;
-        }
-
-        /*
-        --- pano de trás, inclinado ----------------------------------
-        Recta que passa por (d=profTopo, y=ALTURA_BALIZA) e (d=profBase,
-        y=0):  a·d + y = a·profBase, com a = ALTURA_BALIZA/(profBase-profTopo).
-        A bola tem de ficar do lado de dentro, a pelo menos um raio.
-        */
+        // Se a bola estiver completamente atrás da rede (mais de 0.5m), não tentamos puxá-la para dentro!
+        // Ela veio de fora.
         const a = ALTURA_BALIZA / (N.profBase - N.profTopo);
         const c = a * N.profBase;
         const norma = Math.hypot(a, 1);
-        const dist = (a * d + b.y - c) / norma;   // >0 = já passou o pano
+        const dist = (a * d + b.y - c) / norma;
+        if (dist > 0.8) return; 
 
-        if (dist > -rB) {
-            // Normal do pano, a apontar para fora da baliza.
-            const nd = a / norma, ny = 1 / norma;
-            const correccao = dist + rB;
-            d -= nd * correccao;
-            b.y -= ny * correccao;
-
-            const vn = vd * nd + v.y * ny;
-            if (vn > 0) {
-                // Tira a componente normal (absorvida pela corda) e devolve
-                // só uma fracção; o resto do vector é o deslizamento.
-                vd -= vn * nd * (1 + N.restituicao);
-                v.y -= vn * ny * (1 + N.restituicao);
+        // --- laterais -------------------------------------------------
+        if (d >= 0 && d <= N.profBase && b.y <= ALTURA_BALIZA) {
+            if (Math.abs(b.x - meiaLarg) < rB) {
+                if (v.x > 0) { b.x = meiaLarg - rB; } else { b.x = meiaLarg + rB; }
+                v.x = -v.x * N.restituicao;
+                v.z *= N.atrito; v.y *= N.atrito;
+            } else if (Math.abs(b.x + meiaLarg) < rB) {
+                if (v.x < 0) { b.x = -meiaLarg + rB; } else { b.x = -meiaLarg - rB; }
+                v.x = -v.x * N.restituicao;
+                v.z *= N.atrito; v.y *= N.atrito;
             }
-            vd *= N.atrito;
-            v.y *= N.atrito;
-            v.x *= N.atrito;
         }
 
-        // Nunca deixar a bola sair por trás da rede, seja qual for o resto.
-        if (d > N.profBase - rB) { d = N.profBase - rB; if (vd > 0) vd = 0; }
-        if (d < 0) { d = 0; }
+        // --- pano de cima ---------------------------------------------
+        if (d >= 0 && d <= N.profTopo && Math.abs(b.x) <= meiaLarg) {
+            if (Math.abs(b.y - ALTURA_BALIZA) < rB) {
+                if (v.y > 0) { b.y = ALTURA_BALIZA - rB; } else { b.y = ALTURA_BALIZA + rB; }
+                v.y = -v.y * N.restituicao;
+                v.x *= N.atrito; v.z *= N.atrito;
+            }
+        }
 
-        b.z = (CAMPO_COMP / 2 + d) * zSinal;
+        // --- pano de trás, inclinado ----------------------------------
+       if (Math.abs(b.x) <= meiaLarg) {
+            if (Math.abs(dist) < 0.8) {
+                const nd = a / norma, ny = 1 / norma;
+                const vn = vd * nd + v.y * ny;
+
+                if (dist > 0 && vn < 0) { // Bola vem de fora para dentro
+                    const correccao = rB - dist;
+                    if (correccao > 0) {
+                        d += nd * correccao; b.y += ny * correccao;
+                    }
+                    vd -= vn * nd * (1 + N.restituicao);
+                    v.y -= vn * ny * (1 + N.restituicao);
+                    vd *= N.atrito; v.y *= N.atrito; v.x *= N.atrito;
+                } else if (dist <= 0 && vn > 0) { // Bola vem de dentro para fora
+                    const correccao = dist + rB;
+                    if (correccao > 0) {
+                        d -= nd * correccao; b.y -= ny * correccao;
+                    }
+                    vd -= vn * nd * (1 + N.restituicao);
+                    v.y -= vn * ny * (1 + N.restituicao);
+                    vd *= N.atrito; v.y *= N.atrito; v.x *= N.atrito;
+                } else if (dist > 0 && vn > 0) { 
+                    // Bola passou o pano, ou teste que a lanca ja la
+                    const correccao = dist + rB;
+                    d -= nd * correccao; b.y -= ny * correccao;
+                    vd -= vn * nd * (1 + N.restituicao);
+                    v.y -= vn * ny * (1 + N.restituicao);
+                    vd *= N.atrito; v.y *= N.atrito; v.x *= N.atrito;
+                }
+            }
+        }
+
+        b.z = (d + CAMPO_COMP / 2) * zSinal;
         v.z = vd * zSinal;
     },
 
@@ -1913,14 +1927,12 @@ const Match = {
                                 p.dynamicTarget = new THREE.Vector3(p.baseTarget.x, ALTURA_BASE_Y, z);
                             }
                             p.fsm.changeState('MOVE_TO_POS');
-                            p.speedMult = 3.2; // Caminhada / trote de regresso à formação
+                            p.speedMult = 6.0; // Corrida rápida de regresso à formação
                         });
                     });
                 }
 
-                this.colidirComRede(zSinal);
-
-            } else {
+                } else {
                 if (this.state === 'PLAY') {
                     let lastTeam = this.lastTouchedTeam || 'TeamA';
                     /*
@@ -1965,6 +1977,7 @@ const Match = {
                     this.ballVel.set(0, 0, 0);
                 }
             }
+            this.colidirComRede(zSinal);
         }
 
         if (this.state === 'GOAL') {

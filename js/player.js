@@ -23,33 +23,6 @@ function amostrarClipChuteGR(norm) {
     };
 }
 
-/*
-Calcula o ângulo em graus (0° a 180°) entre o vetor frontal do jogador e a posição alvo.
-0° = diretamente à frente; 45° = 45 graus para qualquer lado; 90° = perpendicular/lateral.
-*/
-function getPassAngleDeg(player, targetPos) {
-    if (!player || !player.model || !player.model.position || !targetPos) return 0;
-    const ownPos = player.model.position;
-    const dx = targetPos.x - ownPos.x;
-    const dz = targetPos.z - ownPos.z;
-    const len = Math.hypot(dx, dz);
-    if (len < 0.001) return 0;
-
-    let fwdX = 0, fwdZ = player.dirZ || 1;
-    if (player.model.quaternion && typeof THREE !== 'undefined') {
-        const v = new THREE.Vector3(0, 0, 1).applyQuaternion(player.model.quaternion).normalize();
-        if (v.lengthSq() > 0.1) {
-            fwdX = v.x;
-            fwdZ = v.z;
-        }
-    }
-
-    const toX = dx / len;
-    const toZ = dz / len;
-    const dot = Math.max(-1, Math.min(1, fwdX * toX + fwdZ * toZ));
-    return Math.acos(dot) * (180 / Math.PI);
-}
-
 class FootballPlayer {
     constructor(id, color1, color2, team) {
         this.id = id; this.team = team; this.role = 'def';
@@ -249,13 +222,6 @@ class FootballPlayer {
                 if (relZ >= -1.0) return false;
             } else if (filterOrDir === 'def' || filterOrDir === 'mid' || filterOrDir === 'atk') {
                 if (p.role !== filterOrDir) return false;
-            } else if (typeof filterOrDir === 'object' && filterOrDir !== null && filterOrDir.minAngle !== undefined) {
-                let angleDeg = getPassAngleDeg(this, optPos);
-                if (filterOrDir.minAngle === 0) {
-                    if (angleDeg > filterOrDir.maxAngle) return false;
-                } else {
-                    if (angleDeg <= filterOrDir.minAngle || angleDeg > filterOrDir.maxAngle) return false;
-                }
             }
 
             return (optPos.z * dirZ > ownZ * dirZ - 15.0);
@@ -526,13 +492,6 @@ class FootballPlayer {
                 if (relZ >= -1.0) return false;
             } else if (filterOrDir === 'def' || filterOrDir === 'mid' || filterOrDir === 'atk') {
                 if (p.role !== filterOrDir) return false;
-            } else if (typeof filterOrDir === 'object' && filterOrDir !== null && filterOrDir.minAngle !== undefined) {
-                let angleDeg = getPassAngleDeg(this, optPos);
-                if (filterOrDir.minAngle === 0) {
-                    if (angleDeg > filterOrDir.maxAngle) return false;
-                } else {
-                    if (angleDeg <= filterOrDir.minAngle || angleDeg > filterOrDir.maxAngle) return false;
-                }
             }
 
             return (optPos.z * dirZ > ownZ * dirZ - 35.0);
@@ -588,6 +547,9 @@ class FootballPlayer {
             // Distância máxima baseada no skill de passe (skill * 0.6)
             let maxDist = Math.max(10, skillVal * 0.6); 
             if (dist > maxDist || dist < 2.0) continue;
+
+            // Evitar passes para fora do campo
+            if (Math.abs(optPos.x) > (CAMPO_LARG / 2) || Math.abs(optPos.z) > (CAMPO_COMP / 2)) continue;
 
             _line1.set(this.model.position, optPos);
             let minOppDist = 999, oppMaisPerto = null;
@@ -683,6 +645,8 @@ class FootballPlayer {
 
             // Progressão
             let progression = (optPos.z - ownZ) * dirZ;
+            let relX = Math.abs(optPos.x - ownX);
+            
             if (progression > 0) {
                 let progBonus = Math.min(25, progression * 0.9) * verticalidade;
                 // Lançamento em espaço vazio
@@ -699,6 +663,13 @@ class FootballPlayer {
                 }
             }
 
+            // Bônus explícito para passes laterais e para trás (Aumento de 20%)
+            if (progression <= 2.0 && relX > 5.0) {
+                score *= 1.20; // Lado
+            } else if (progression < -2.0) {
+                score *= 1.20; // Trás
+            }
+
             // Virada
             if (isOrchestrator) {
                 if (Math.sign(optPos.x) !== Math.sign(ownX) && Math.abs(optPos.x - ownX) > 20) {
@@ -708,23 +679,6 @@ class FootballPlayer {
                 const congestaoAlvo = teamBB.congestion[secToCongestionKey[optSec]] || 0;
                 if (congestaoAlvo < congestaoMeuLado - 20) {
                     score += 50 * teamStyle.viradas * (1 - teamBB.aggression);
-                }
-            }
-
-            // Multiplicador da distribuição de ângulos da Mentalidade
-            if (typeof Tatics !== 'undefined') {
-                const estilo = Tatics.estilo || 'balanceado';
-                const ment = (typeof MentalidadeModel !== 'undefined' && MentalidadeModel[estilo])
-                    ? MentalidadeModel[estilo]
-                    : (typeof MentalidadeModel !== 'undefined' ? MentalidadeModel.balanceado : null);
-                if (ment && ment.passAngulos) {
-                    const angleDeg = getPassAngleDeg(this, optPos);
-                    let weight = 0.10;
-                    if (angleDeg <= 45) weight = ment.passAngulos.ate45;
-                    else if (angleDeg <= 90) weight = ment.passAngulos.entre45_90;
-                    else if (angleDeg <= 100) weight = ment.passAngulos.entre90_100;
-                    else weight = ment.passAngulos.atras100 || 0.10;
-                    score *= (0.75 + weight * 0.75);
                 }
             }
 
@@ -1244,9 +1198,9 @@ class FootballPlayer {
         _v1.set(this.model.position.x * 2 - target.x, this.model.position.y, this.model.position.z * 2 - target.z);
         _m1.lookAt(this.model.position, _v1, this.model.up);
         _q1.setFromRotationMatrix(_m1);
-        this.model.quaternion.slerp(_q1, Math.min(1.0, 7.0 * Match.delta));
+        this.model.quaternion.slerp(_q1, Math.min(1.0, 3.5 * Match.delta));
         // A aceleração foi reduzida para ~2.5 (de 4.5) para diminuir a explosão nas corridas
-        this.velocity.lerp(desired, Math.min(1.0, 2.5 * Match.delta));
+        this.velocity.lerp(desired, Math.min(1.0, 1.8 * Match.delta));
         return this.velocity;
     }
 

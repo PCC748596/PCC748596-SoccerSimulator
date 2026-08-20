@@ -571,101 +571,35 @@ function actDribble(ctx) {
     p.fsm.changeState('DRIBBLE');
 }
 
-function findPassForward(ctx) {
+function findBestPassAnywhere(ctx) {
     const p = ctx.p;
     if (!ctx.underPressure) {
         const tb = findThroughBall(ctx);
         if (tb) return { type: 'through', data: tb };
     }
-    let target = p.findPassTarget({ minAngle: 0, maxAngle: 45 }) || p.findPassTarget('frente');
-    if (!target && ctx.underPressure) target = p.findPassTargetRelaxed({ minAngle: 0, maxAngle: 45 }) || p.findPassTargetRelaxed('frente');
+    
+    let target = p.findPassTarget(); // Avalia todos e escolhe o melhor
+    if (!target && ctx.underPressure) target = p.findPassTargetRelaxed();
+    if (!target && ctx.underPressure && p.decisionTimer > 0.8) target = p.findPassTargetDesperate();
+    
     if (target) return { type: 'pass', target: target };
     return null;
 }
 
 function findPassSide(ctx) {
     const p = ctx.p;
-    let target = p.findPassTarget({ minAngle: 45, maxAngle: 90 }) || p.findPassTarget('lado');
-    if (!target && ctx.underPressure) target = p.findPassTargetRelaxed({ minAngle: 45, maxAngle: 90 }) || p.findPassTargetRelaxed('lado');
+    let target = p.findPassTarget('lado');
+    if (!target && ctx.underPressure) target = p.findPassTargetRelaxed('lado');
     if (target) return { type: 'pass', target: target };
     return null;
 }
 
 function findPassBack(ctx) {
     const p = ctx.p;
-    let target = p.findPassTarget({ minAngle: 90, maxAngle: 180 }) || p.findPassTarget('tras');
-    if (!target && ctx.underPressure) target = p.findPassTargetRelaxed({ minAngle: 90, maxAngle: 180 }) || p.findPassTargetRelaxed('tras');
+    let target = p.findPassTarget('tras');
+    if (!target && ctx.underPressure) target = p.findPassTargetRelaxed('tras');
     if (!target && ctx.underPressure && p.decisionTimer > 0.8) target = p.findPassTargetDesperate();
     if (target) return { type: 'pass', target: target };
-    return null;
-}
-
-/*
-Seleciona opção de passe respeitando a distribuição estatística de ângulos da Mentalidade tática:
-- Mentalidade Equilibrada (balanceado):
-  * 40% num ângulo de até 45° para cada lado do jogador (cone frontal de 90°)
-  * 30% num ângulo entre 45° e 90°
-  * 20% num ângulo entre 90° e 100°
-  * 10% restante (> 100°)
-*/
-function findPassByMentality(ctx) {
-    const p = ctx.p;
-    const estilo = (typeof Tatics !== 'undefined' && Tatics.estilo) ? Tatics.estilo : 'balanceado';
-    const ment = (typeof MentalidadeModel !== 'undefined' && MentalidadeModel[estilo])
-        ? MentalidadeModel[estilo]
-        : (typeof MentalidadeModel !== 'undefined' ? MentalidadeModel.balanceado : null);
-
-    const dist = (ment && ment.passAngulos) ? ment.passAngulos : {
-        ate45: 0.40,
-        entre45_90: 0.30,
-        entre90_100: 0.20,
-        atras100: 0.10
-    };
-
-    const zones = [
-        { name: 'ate45', minAngle: 0, maxAngle: 45, prob: dist.ate45 ?? 0.40, isForward: true },
-        { name: 'entre45_90', minAngle: 45, maxAngle: 90, prob: dist.entre45_90 ?? 0.30, isForward: false },
-        { name: 'entre90_100', minAngle: 90, maxAngle: 100, prob: dist.entre90_100 ?? 0.20, isForward: false },
-        { name: 'atras100', minAngle: 100, maxAngle: 180, prob: dist.atras100 ?? 0.10, isForward: false }
-    ];
-
-    const r = Math.random();
-    let acc = 0;
-    let selectedZone = zones[0];
-    for (const z of zones) {
-        acc += z.prob;
-        if (r <= acc) {
-            selectedZone = z;
-            break;
-        }
-    }
-
-    const testOrder = [selectedZone, ...zones.filter(z => z !== selectedZone).sort((a, b) => b.prob - a.prob)];
-
-    for (const z of testOrder) {
-        if (z.isForward && !ctx.underPressure) {
-            const tb = findThroughBall(ctx);
-            if (tb) return { type: 'through', data: tb, zone: z.name };
-        }
-
-        const filter = { minAngle: z.minAngle, maxAngle: z.maxAngle };
-        let target = p.findPassTarget(filter);
-        if (!target && ctx.underPressure) {
-            target = p.findPassTargetRelaxed(filter);
-        }
-        if (target) {
-            return { type: 'pass', target: target, zone: z.name };
-        }
-    }
-
-    if (ctx.underPressure && p.decisionTimer > 0.8) {
-        const desperate = p.findPassTargetDesperate();
-        if (desperate) return { type: 'pass', target: desperate, zone: 'desperate' };
-    }
-
-    const generalTarget = p.findPassTarget();
-    if (generalTarget) return { type: 'pass', target: generalTarget, zone: 'general' };
-
     return null;
 }
 
@@ -1415,10 +1349,10 @@ const PlayerBT = sel('PlayerRoot',
                 act('driblar', actDribble)
             ),
 
-            // 5. Decisão de Passe (distribuído por ângulos conforme a Mentalidade tática)
-            seq('PassarFrente',
+            // 5. Escolha de passe baseada na avaliação geral
+            seq('ProcurarPasse',
                 cond('haOpcaoDePasse', (ctx) => {
-                    const passChoice = findPassByMentality(ctx);
+                    const passChoice = findBestPassAnywhere(ctx);
                     if (!passChoice) return false;
                     ctx.currentPassChoice = passChoice;
                     return true;
@@ -1434,29 +1368,7 @@ const PlayerBT = sel('PlayerRoot',
                 })
             ),
 
-            // 6. Não dá para driblar nem passe pela mentalidade - fallback lado
-            seq('PassarLado',
-                cond('haCompanheiroLado', (ctx) => {
-                    const passSide = findPassSide(ctx);
-                    if (!passSide) return false;
-                    ctx.passTarget = passSide.target;
-                    return true;
-                }),
-                act('passarLado', actPass)
-            ),
-
-            // 7. Fallback trás
-            seq('PassarTras',
-                cond('haCompanheiroTras', (ctx) => {
-                    const passBack = findPassBack(ctx);
-                    if (!passBack) return false;
-                    ctx.passTarget = passBack.target;
-                    return true;
-                }),
-                act('passarTras', actPass)
-            ),
-
-            // 8. Não tem passe viável e está sob pressão - chute para a lateral
+            // 6. Não tem passe viável e está sob pressão - chute para a lateral
             seq('ChuteLateral',
                 cond('semOpcoesSeguras', (ctx) => {
                     return ctx.underPressure || ctx.p.decisionTimer > 1.2;
