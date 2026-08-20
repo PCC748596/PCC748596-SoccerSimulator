@@ -58,25 +58,62 @@ this.resolverElevacaoPasse = resolverElevacaoPasse;
 
 vm.runInContext(script, sandbox);
 
-test('velocidadeRasteiraPara: passes curtos (<12m) recebem boost dinâmico para rapidez', () => {
-    const vChegada = sandbox.PassModel.vChegadaRasteira;
-    const vCurto4m = sandbox.velocidadeRasteiraPara(4.0, vChegada);
-    const vCurto8m = sandbox.velocidadeRasteiraPara(8.0, vChegada);
-    const vMedio15m = sandbox.velocidadeRasteiraPara(15.0, vChegada);
+/*
+Os limiares antigos (saida >= 12 m/s num passe de 4 m) foram escritos para
+um atritoRolamento de 0.10. Com o valor real do jogo, 0.38, sao impossiveis
+e indesejaveis: 12 m/s de saida em 4 m CHEGA a 10 m/s, muito acima do
+BallControl.easySpeed (7.75) — ninguem domina isso.
 
-    // O passe curto deve ter velocidade de saída viva (> 11.5 m/s)
-    assert.ok(vCurto4m >= 12.0, `Passe de 4m (${vCurto4m.toFixed(2)} m/s) deve ser ágil e rápido`);
-    assert.ok(vCurto8m >= 11.5, `Passe de 8m (${vCurto8m.toFixed(2)} m/s) deve ser ágil e rápido`);
-    assert.ok(vCurto4m > vMedio15m, 'Passe curto de 4m recebe boost em relação à velocidade base de 15m');
+Estes testes verificam a CHEGADA, que e o que decide se a bola e jogavel. A
+saida e consequencia.
+*/
+
+// Velocidade com que a bola chega, dada a de saida: inverte a mesma fisica.
+function chegadaDe(sandbox, dist, v0) {
+    const B = sandbox.BallPhysics;
+    const atrito = B.atritoRolamento * B.gravidade;
+    const q = (B.kArrasto * v0 * v0 + atrito) / Math.exp(2 * B.kArrasto * dist) - atrito;
+    return q <= 0 ? 0 : Math.sqrt(q / B.kArrasto);
+}
+
+test('velocidadeRasteiraPara: a bola chega sempre dominável', () => {
+    const vChegada = sandbox.PassModel.vChegadaRasteira;
+    const easySpeed = 7.75;   // BallControl.easySpeed
+    for (const d of [3, 5, 8, 12, 15, 20, 25]) {
+        const v0 = sandbox.velocidadeRasteiraPara(d, vChegada);
+        const chegada = chegadaDe(sandbox, d, v0);
+        assert.ok(chegada < easySpeed,
+            `Passe de ${d}m chega a ${chegada.toFixed(2)} m/s — acima do easySpeed`);
+        assert.ok(chegada > 1.5,
+            `Passe de ${d}m chega a ${chegada.toFixed(2)} m/s — morre antes do alvo`);
+    }
 });
 
-test('velocidadeRasteiraPara: passes longos (>20m) não viram foguetes e são contidos', () => {
+test('velocidadeRasteiraPara: o passe curto chega mais vivo que o longo', () => {
     const vChegada = sandbox.PassModel.vChegadaRasteira;
-    const v30m = sandbox.velocidadeRasteiraPara(30.0, vChegada);
-    const v50m = sandbox.velocidadeRasteiraPara(50.0, vChegada);
+    const curto = chegadaDe(sandbox, 4, sandbox.velocidadeRasteiraPara(4, vChegada));
+    const longo = chegadaDe(sandbox, 25, sandbox.velocidadeRasteiraPara(25, vChegada));
+    assert.ok(curto > longo,
+        `curto=${curto.toFixed(2)} longo=${longo.toFixed(2)} m/s`);
+});
 
-    assert.ok(v30m <= 15.0, `Passe de 30m (${v30m.toFixed(2)} m/s) deve ser contido e jogável`);
-    assert.ok(v50m <= 18.5, `Passe de 50m (${v50m.toFixed(2)} m/s) não pode exceder o teto seguro`);
+test('velocidadeRasteiraPara: mais distância, mais velocidade de saída', () => {
+    const vChegada = sandbox.PassModel.vChegadaRasteira;
+    let anterior = 0;
+    for (const d of [3, 6, 10, 15, 20, 25]) {
+        const v0 = sandbox.velocidadeRasteiraPara(d, vChegada);
+        assert.ok(v0 > anterior,
+            `saida em ${d}m (${v0.toFixed(2)}) nao e maior que em ${d - 1}m ou menos (${anterior.toFixed(2)})`);
+        anterior = v0;
+    }
+});
+
+test('velocidadeRasteiraPara: o tecto de 18.5 m/s é respeitado', () => {
+    const vChegada = sandbox.PassModel.vChegadaRasteira;
+    for (const d of [30, 50, 80]) {
+        const v0 = sandbox.velocidadeRasteiraPara(d, vChegada);
+        assert.ok(v0 <= 18.5, `Passe de ${d}m sai a ${v0.toFixed(2)} m/s`);
+    }
 });
 
 test('resolverElevacaoPasse: arcos aéreos longos mantêm trajetória parabólica realista', () => {

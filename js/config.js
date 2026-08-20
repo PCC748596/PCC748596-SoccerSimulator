@@ -978,11 +978,16 @@ const PassModel = {
     },
 
     /*
-    Com que velocidade a bola CHEGA ao alvo num passe rasteiro. Tem de chegar
-    jogável: acima de BallControl.easySpeed (7.75) o receptor arrisca falhar o
-    domínio, e a zero morre antes de lá chegar.
+    Com que velocidade a bola CHEGA ao alvo num passe rasteiro.
+
+    4.5 fica confortavelmente abaixo do `BallControl.easySpeed` (7.75): a
+    bola chega viva mas dominável. Esteve a 1.0, e a 1 m/s morria antes de
+    lá chegar — era o que punha os dois testes deste ficheiro a vermelho.
+
+    Com o reforço do passe curto (ver velocidadeRasteiraPara) uma bola de
+    3 m chega a 6.12 m/s e uma de 25 m a 3.00 m/s.
     */
-    vChegadaRasteira: 1.0,
+    vChegadaRasteira: 4.5,
     vChegadaCruzamento: 7.0,   // cruzamento rasteiro vai mais forte, de propósito
     vChegadaLancamento: 5.0,   // lançamento é para correr atrás, não para receber parado
 

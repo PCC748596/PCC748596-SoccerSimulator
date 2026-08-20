@@ -192,28 +192,43 @@ rolamento); integrando `v·dv / (k·v² + μ·g) = -dx`:
 */
 function velocidadeRasteiraPara(dist, vChegada) {
     /*
-    Curva contínua: passes curtos ganham um boost suave (a bola tem de
-    chegar firme, não morrer nos pés), passes longos perdem um pouco de
-    vChegada para não precisarem de velocidades de saída absurdas.
-    Sem descontinuidades nem gaps entre faixas.
+    Velocidade de SAÍDA para a bola percorrer `dist` e lá chegar ainda
+    jogável. Inverte o arrasto quadrático do ar mais o atrito de rolamento:
+
+        alvo = (k·v_alvo² + μg)·e^(2k·dist) − μg
+        v0   = √(alvo / k)
+
+    A calibração é feita pela velocidade de CHEGADA, não pela de saída: é a
+    chegada que decide se o receptor domina a bola (ver
+    BallControl.easySpeed = 7.75) — a saída é consequência da distância.
+
+    O `v_alvo` não é o `vChegada` cru:
+
+      curto (< 12 m)  chega mais vivo. Uma bola de 3 m com a mesma chegada
+                      de uma de 20 m sai a passo e parece que o jogador não
+                      quis passar.
+      longo (> 15 m)  chega mais manso, com piso de 1.5 m/s. Sem isto a
+                      velocidade de saída bate no tecto e o passe deixa de
+                      responder à distância.
+
+    Com `atritoRolamento` a 0.38 (μg = 3.73 m/s²) o passe rasteiro tem um
+    limite físico: nem no tecto de 18.5 m/s a bola passa dos ~29.8 m. Acima
+    dos 15 m o `resolverElevacaoPasse` já manda a bola pelo ar, por isso o
+    tecto aqui é rede de segurança e não caminho normal.
     */
-    const centro = 15.0;      // distância neutra (sem ajuste)
-    const diff = dist - centro;
-    let vAlvo;
-    if (diff < 0) {
-        // Curtos: boost suave, máx +2.0 m/s a dist=0
-        vAlvo = vChegada + (-diff / centro) * 2.0;
-    } else {
-        // Longos: redução gradual, mín 2.5 m/s
-        vAlvo = Math.max(2.5, vChegada - diff * 0.10);
+    let vAlvo = vChegada;
+    if (dist < 12.0) {
+        vAlvo += (12.0 - dist) * 0.18;
+    } else if (dist > 15.0) {
+        vAlvo = Math.max(1.5, vChegada - (dist - 15.0) * 0.15);
     }
 
     const k = BallPhysics.kArrasto;
     const atrito = BallPhysics.atritoRolamento * BallPhysics.gravidade;
     const alvo = (k * vAlvo * vAlvo + atrito) * Math.exp(2 * k * dist) - atrito;
-    
-    // Tecto de 22 m/s para não cortar passes longos legítimos
-    return Math.min(22.0, Math.sqrt(Math.max(0, alvo / k)));
+
+    // Tecto: acima disto o passe rasteiro vira disparo.
+    return Math.min(18.5, Math.sqrt(Math.max(0, alvo / k)));
 }
 
 /*
