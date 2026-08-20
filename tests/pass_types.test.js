@@ -69,23 +69,27 @@ test('corredor central é |x| < larguraCentro', () => {
     assert.strictEqual(PassTypes.corredorDe(-25), 'lado');
 });
 
-test('centro para centro: 80% direct, 20% into space', () => {
+test('centro para centro: 30% direct, 35% into space, 35% leading', () => {
     for (const sec of ['def', 'mid']) {
         for (const dest of ['def', 'mid']) {
+            // Só destinos que NÃO recuam mais que a margem, senão casa a
+            // regra do recuo, que corre antes desta.
+            if (sec === 'mid' && dest === 'def') continue;
             const m = PassTypes.misturaPara(
                 zonaCalc(zona('centro', sec)), zonaCalc(zona('centro', dest)));
-            assert.deepStrictEqual(plano(m), { direct: 0.8, space: 0.2 }, sec + '->' + dest);
+            assert.deepStrictEqual(plano(m),
+                { direct: 0.3, space: 0.35, leading: 0.35 }, sec + '->' + dest);
         }
     }
 });
 
-test('centro para o lado, a progredir: 80% into space, 20% leading', () => {
+test('centro para o lado, a progredir: 55% into space, 35% leading', () => {
     const defMid = PassTypes.misturaPara(
         zonaCalc(zona('centro', 'def')), zonaCalc(zona('lado', 'mid')));
     const midAtk = PassTypes.misturaPara(
         zonaCalc(zona('centro', 'mid')), zonaCalc(zona('lado', 'atk')));
-    assert.deepStrictEqual(plano(defMid), { space: 0.8, leading: 0.2 });
-    assert.deepStrictEqual(plano(midAtk), { space: 0.8, leading: 0.2 });
+    assert.deepStrictEqual(plano(defMid), { direct: 0.1, space: 0.55, leading: 0.35 });
+    assert.deepStrictEqual(plano(midAtk), { direct: 0.1, space: 0.55, leading: 0.35 });
 });
 
 test('defesa directo para o ataque: 50/50 into space e leading', () => {
@@ -102,21 +106,21 @@ test('def->atk ganha à regra do ataque (ordem das regras)', () => {
     assert.strictEqual(m.leading, 0.5, 'devia cair em defParaAtk, nao em origemAtaque');
 });
 
-test('a partir do ataque: 60% into space, 40% direct', () => {
-    for (const dest of [zona('centro', 'atk'), zona('lado', 'atk'), zona('centro', 'mid')]) {
+test('a partir do ataque: 45% into space, 30% leading, 25% direct', () => {
+    // 'centro'/'mid' sai da lista: com origem no ataque é recuo, e a regra
+    // do recuo corre primeiro.
+    for (const dest of [zona('centro', 'atk'), zona('lado', 'atk')]) {
         const m = PassTypes.misturaPara(zonaCalc(zona('centro', 'atk')), zonaCalc(dest));
-        assert.deepStrictEqual(plano(m), { space: 0.6, direct: 0.4 });
+        assert.deepStrictEqual(plano(m), { direct: 0.25, space: 0.45, leading: 0.3 });
     }
 });
 
-test('o resto herda 80% direct / 20% into space', () => {
-    // recuo do meio para a defesa, e lateral dentro do mesmo sector
-    const recuo = PassTypes.misturaPara(
-        zonaCalc(zona('centro', 'mid')), zonaCalc(zona('centro', 'def')));
+test('o resto herda 30% direct / 35% into space / 35% leading', () => {
+    // Lateral dentro do mesmo sector: não progride, mas também não recua.
     const lateral = PassTypes.misturaPara(
         zonaCalc(zona('lado', 'mid')), zonaCalc(zona('lado', 'mid')));
-    assert.deepStrictEqual(plano(recuo), { direct: 0.8, space: 0.2 });
-    assert.deepStrictEqual(plano(lateral), { direct: 0.8, space: 0.2 });
+    assert.deepStrictEqual(plano(lateral),
+        { direct: 0.3, space: 0.35, leading: 0.35 });
 });
 
 test('toda a mistura da tabela soma 1', () => {
@@ -231,4 +235,64 @@ test('a baliza do outro lado inverte o que conta como adiantar', () => {
     // A atacar -Z: adiantar é descer em z.
     assert.strictEqual(
         PassTypes.pontoMaisPertoDoGolo(pontos, -52.5, mateAtras).z, 4);
+});
+
+/* ------------------------------------------------------------------
+   Recuo: a bola vai aos pés quando o passe é para trás.
+   ------------------------------------------------------------------ */
+
+// zonaCalc/zona só sabem construir zonas por sector; para o recuo interessa
+// o avanço em metros, por isso constrói-se a zona directamente.
+const zonaEm = (x, zAtk) => PassTypes.zonaDe(x, zAtk);
+
+test('zonaDe devolve o avanço recebido, sem mexer no resto', () => {
+    const z = PassTypes.zonaDe(20, -30);
+    assert.strictEqual(z.avanco, -30);
+    assert.strictEqual(z.sector, 'def');
+    assert.strictEqual(z.corredor, 'lado');
+});
+
+test('passe para trás casa a regra do recuo', () => {
+    const m = PassTypes.misturaPara(zonaEm(0, 20), zonaEm(0, 5));
+    assert.deepStrictEqual(plano(m), { direct: 0.85, space: 0.15 });
+});
+
+test('passe lateral puro NÃO é recuo', () => {
+    const m = PassTypes.misturaPara(zonaEm(-20, 10), zonaEm(20, 10));
+    assert.notStrictEqual(m.direct, 0.85, 'mesmo avanço não devia ser recuo');
+});
+
+test('recuo mais curto que a margem NÃO conta como recuo', () => {
+    const dentro = PassTypeModel.margemRecuo - 0.5;
+    const m = PassTypes.misturaPara(zonaEm(0, 10), zonaEm(0, 10 - dentro));
+    assert.notStrictEqual(m.direct, 0.85);
+});
+
+test('a regra do recuo ganha à do ataque (ordem das regras)', () => {
+    // Origem no ataque, destino bem atrás: sem a ordem certa cairia em
+    // origemAtaque e a bola ia para o espaço, à frente de quem recebe.
+    const m = PassTypes.misturaPara(zonaEm(0, 30), zonaEm(0, 5));
+    assert.deepStrictEqual(plano(m), { direct: 0.85, space: 0.15 });
+});
+
+test('a maioria das misturas pede a bola à frente', () => {
+    const aFrente = (m) => (m.space || 0) + (m.leading || 0);
+    // A do recuo é a única excepção, e é essa a intenção.
+    for (const r of PassTypeModel.regras) {
+        if (r.nome === 'recuo') {
+            assert.ok(aFrente(r.mistura) < 0.5, 'recuo devia ir aos pés');
+        } else {
+            assert.ok(aFrente(r.mistura) >= 0.7, r.nome + ' só tem ' + aFrente(r.mistura));
+        }
+    }
+    assert.ok(aFrente(PassTypeModel.misturaPadrao) >= 0.7, 'a padrão é a que mais dispara');
+});
+
+test('as constantes do leading curto existem e são coerentes', () => {
+    for (const k of ['margemRecuo', 'liderancaCurta', 'liderancaPasso', 'liderancaMin']) {
+        assert.strictEqual(typeof PassTypeModel[k], 'number', k + ' em falta');
+        assert.ok(PassTypeModel[k] > 0, k + ' devia ser positivo');
+    }
+    assert.ok(PassTypeModel.liderancaMin < PassTypeModel.liderancaCurta,
+        'o mínimo tem de ser menor que a distância cheia');
 });

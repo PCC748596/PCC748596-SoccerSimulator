@@ -1697,33 +1697,65 @@ const PassTypeModel = {
     larguraCentro: 10.0,   // |x| abaixo disto conta como corredor central
 
     /*
-    Ordem importa: `defParaAtk` tem de ser vista antes de `origemAtaque`,
+    Recuo: quantos metros o destino tem de estar ATRÁS da origem para o passe
+    contar como para trás. Sem esta margem, um passe lateral com meio metro de
+    diferença virava recuo e ia aos pés.
+    */
+    margemRecuo: 2.0,
+
+    /*
+    LEADING CURTO — o passe à frente que não precisa do leque de candidatos.
+
+    Quando nenhum ponto do PlayerPassTarget é validado (adversário a menos de
+    2 m, linha de passe tapada, ponto a mais de 30 m da bola), o passe caía aos
+    pés. Num bloco compacto isso é a maior parte das vezes, e era daí que vinha
+    a sensação de jogo travado.
+
+    `liderancaCurta` é a distância cheia à frente do companheiro; perante um
+    adversário encurta-se de `liderancaPasso` de cada vez, até `liderancaMin`.
+    */
+    liderancaCurta: 4.0,
+    liderancaPasso: 1.0,
+    liderancaMin: 1.5,
+
+    /*
+    Ordem importa. `recuo` vem primeiro: um passe para trás é para segurar a
+    bola, e jogá-lo no espaço à frente de quem recebe manda-o correr para longe
+    da linha que veio dar. `defParaAtk` tem de ser vista antes de `origemAtaque`,
     senão um passe longo de trás cairia na regra do ataque.
+
+    A tabela foi invertida: dava 80% de bola aos pés na misturaPadrao — a regra
+    que apanha a maioria dos passes — e `leading` só aparecia em duas regras
+    estreitas. O jogo travava a cada passe.
     */
     regras: [
+        // Passe para trás: aos pés, para segurar.
+        { nome: 'recuo', quando: (o, d) => d.avanco < o.avanco - PassTypeModel.margemRecuo,
+          mistura: { direct: 0.85, space: 0.15 } },
+
         // Defesa a saltar o meio-campo, directo para o ataque.
         { nome: 'defParaAtk', quando: (o, d) => o.sector === 'def' && d.sector === 'atk',
           mistura: { space: 0.5, leading: 0.5 } },
 
-        // Já no ataque: lá dentro, a recuar para o meio, ou a abrir nas pontas.
+        // Já no ataque: lá dentro ou a abrir nas pontas.
         { nome: 'origemAtaque', quando: (o) => o.sector === 'atk',
-          mistura: { space: 0.6, direct: 0.4 } },
+          mistura: { direct: 0.25, space: 0.45, leading: 0.3 } },
 
         // Progressão pelo centro a abrir para o lado (def->mid, mid->atk).
         { nome: 'centroParaLado',
           quando: (o, d) => o.corredor === 'centro' && d.corredor === 'lado' &&
                             ((o.sector === 'def' && d.sector === 'mid') ||
                              (o.sector === 'mid' && d.sector === 'atk')),
-          mistura: { space: 0.8, leading: 0.2 } },
+          mistura: { direct: 0.1, space: 0.55, leading: 0.35 } },
 
         // Dentro do corredor central, em qualquer sector.
         { nome: 'centroParaCentro',
           quando: (o, d) => o.corredor === 'centro' && d.corredor === 'centro',
-          mistura: { direct: 0.8, space: 0.2 } }
+          mistura: { direct: 0.3, space: 0.35, leading: 0.35 } }
     ],
 
-    // Tudo o resto (recuos, passes laterais dentro do mesmo sector, etc.).
-    misturaPadrao: { direct: 0.8, space: 0.2 },
+    // Tudo o resto (passes laterais dentro do mesmo sector, etc.).
+    misturaPadrao: { direct: 0.3, space: 0.35, leading: 0.35 },
 
     /*
     Pesos da escolha do RECEPTOR. O tipo de passe não decide só onde a bola

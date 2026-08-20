@@ -50,8 +50,14 @@ const PassTypes = {
         return (Math.abs(x) < PassTypeModel.larguraCentro) ? 'centro' : 'lado';
     },
 
+    /*
+    `avanco` é o zAtk cru, em metros. Sem ele a tabela de misturas só sabia
+    em que terço cada ponta está, e um passe para trás dentro do mesmo terço
+    era indistinguível de um passe para a frente — caía na misturaPadrao e
+    era jogado no espaço, à frente de quem recebe.
+    */
     zonaDe: function (x, zAtk) {
-        return { sector: this.sectorDe(zAtk), corredor: this.corredorDe(x) };
+        return { sector: this.sectorDe(zAtk), corredor: this.corredorDe(x), avanco: zAtk };
     },
 
     /*
