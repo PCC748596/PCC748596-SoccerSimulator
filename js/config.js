@@ -2147,31 +2147,45 @@ const Tatics = {
     },
 
     /*
-    Sector activado tem 80% de chance contra um desactivado; entre dois
-    activados é 50/50 (é só escolher ao calhas dentro do grupo activo).
-    Se o centro estiver desactivado, ele só aparece nos 20% "desactivados"
-    — na prática vira passagem de troca de lado, não destino, porque o
-    carryTargetX é re-sorteado a cada ~1s (ver CARRY em fsm.js) e volta a
-    puxar para esq/dir quase de seguida.
+    SECTOR DE CAMPO: a que faixa pertence um X, no referencial de ATAQUE
+    (x * dirZ). A convenção dos 10 m já vivia em PassTypeModel.larguraCentro e,
+    copiada à mão, dentro de findPassTarget (player.js). Agora é uma só.
     */
-    getWeightedSectorX: function (teamDir = 1) {
-        const todos = ['esq', 'cen', 'dir'];
-        const activos = todos.filter(s => this.setores.includes(s));
-        const inactivos = todos.filter(s => !this.setores.includes(s));
+    sectorDeX: function (x, dirZ) {
+        const xAtk = x * dirZ;
+        if (xAtk < -10) return 'esq';
+        if (xAtk > 10) return 'dir';
+        return 'cen';
+    },
 
-        let pool = activos.length ? activos : todos;
-        // 20% -> 10% -> 5% de fuga para sector desactivado.
-        if (inactivos.length > 0 && Math.random() > 0.95) pool = inactivos;
+    /*
+    Quão FORA dos sectores activados está este X, de 0 (dentro de um deles) a 1
+    (o mais longe que o campo permite). Normalizada pela meia-largura do campo.
 
-        const chosenSector = pool[Math.floor(Math.random() * pool.length)];
+    Substitui o getWeightedSectorX, que sorteava um X alvo dentro do grupo
+    activo e o re-sorteava a cada ~1 s. Com Left e Right ligados isso era uma
+    moeda ao ar: um extremo na direita saía metade das vezes com alvo em -19 e
+    atravessava o campo pelo meio para lá chegar. E, por ser distância a um
+    PONTO (±19), penalizava um extremo em x=+25 que já estava bem colocado.
+    */
+    penalidadeSector: function (x, dirZ) {
+        const activos = this.setores;
+        if (!activos || activos.length === 0) return 0;
+        if (activos.indexOf(this.sectorDeX(x, dirZ)) >= 0) return 0;
 
-        if (chosenSector === 'esq') {
-            return -19 * teamDir + (Math.random() - 0.5) * 8;
-        } else if (chosenSector === 'dir') {
-            return 19 * teamDir + (Math.random() - 0.5) * 8;
-        } else {
-            return (Math.random() - 0.5) * 10;
+        const xAtk = x * dirZ;
+        let melhor = Infinity;
+        for (const s of activos) {
+            // Distância à BORDA do sector activo, não ao seu centro.
+            let d;
+            if (s === 'esq') d = xAtk - (-10);
+            else if (s === 'dir') d = 10 - xAtk;
+            else d = Math.abs(xAtk) - 10;
+            if (d < melhor) melhor = d;
         }
+
+        const meiaLarg = CAMPO_LARG / 2;
+        return Math.max(0, Math.min(1, melhor / meiaLarg));
     },
 
     update: function () {
