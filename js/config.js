@@ -1001,6 +1001,32 @@ const PassModel = {
 };
 
 /*
+ERRO DE EXECUCAO DO PASSE — a dispersao angular.
+
+O `PassModel.erroPesoMax` ja tratava do PESO (chegar curto ou comprido). O
+que faltava era a DIRECCAO: o passe saia sempre na linha exacta do alvo, e
+por isso nenhuma bola se perdia por ter saido torta. As perdas de posse
+vinham so de decisao ma ou de dominio falhado.
+
+    sigmaMax        dispersao (rad) de um jogador com 0 de skill
+    sigmaMin        piso: nem o melhor passador do mundo e exacto
+    pesoTecnica     quanto a TEC conta face ao PASS (0..1)
+    raioPressao     a que distancia um adversario comeca a estorvar
+    pressaoMult     multiplicador de sigma com um adversario em cima
+    costasMult      multiplicador quando passa de costas para o alvo
+    forcaMinPressao fraccao da forca que sobra num passe apertado
+*/
+const PassErrorModel = {
+    sigmaMax: 0.16,        // ~9.2 graus
+    sigmaMin: 0.012,       // ~0.7 graus
+    pesoTecnica: 0.35,
+    raioPressao: 3.5,
+    pressaoMult: 1.8,
+    costasMult: 2.0,
+    forcaMinPressao: 0.85
+};
+
+/*
 Carrinho (SLIDE_TACKLE).
 
 A animação era `applyKeyframeAnimation("Soccer Tackle")` — dados pré-gravados de

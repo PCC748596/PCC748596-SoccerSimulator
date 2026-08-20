@@ -40,16 +40,36 @@ function executePassGameplay(p) {
     const dxAlvo = _v1.x - Match.ball.position.x;
     const dzAlvo = _v1.z - Match.ball.position.z;
     let distToTarget = Math.hypot(dxAlvo, dzAlvo);
-    const dirX = distToTarget > 0.001 ? dxAlvo / distToTarget : 0;
-    const dirZ = distToTarget > 0.001 ? dzAlvo / distToTarget : 1;
 
     /*
-    O erro de passe ("peso" da bola) tem de ser aplicado na DISTÂNCIA ALVO,
-    antes da balística. Aplicar um multiplicador na velocidade calculada
-    com arrasto quadrático fazia o erro na distância explodir de forma
-    não-linear — passes saíam absurdamente longos ou curtos.
+    ERRO DE DIRECCAO. Antes o passe saia sempre na linha exacta do alvo: o
+    unico erro era no peso, e por isso nenhuma bola se perdia por ter saido
+    torta. Ver PassErrorModel/sigmaDePasse.
+
+    A rotacao e aplicada a DIRECCAO e nao ao ponto: rodar o ponto mudava
+    tambem a distancia, e a distancia ja tem o seu proprio erro logo abaixo.
     */
     const passSkill = p.skillFor ? p.skillFor('PASS') : 50;
+    const tecSkill = p.skillFor ? p.skillFor('TEC') : 50;
+
+    const sigma = sigmaDePasse({
+        passSkill: passSkill,
+        tecSkill: tecSkill,
+        distAdversario: Infinity,
+        cosCorpo: 1
+    });
+    const desvio = sigma * amostraGaussiana(Math.random);
+    const rodado = rodarNoPlano(dxAlvo, dzAlvo, desvio);
+
+    const dirX = distToTarget > 0.001 ? rodado.x / distToTarget : 0;
+    const dirZ = distToTarget > 0.001 ? rodado.z / distToTarget : 1;
+
+    /*
+    O erro de PESO tem de ser aplicado na DISTANCIA ALVO, antes da
+    balistica. Aplicar um multiplicador na velocidade calculada com arrasto
+    quadratico fazia o erro na distancia explodir de forma nao-linear —
+    passes saiam absurdamente longos ou curtos.
+    */
     const erroDist = 1 + (Math.random() * 2 - 1) * PassModel.erroPesoMax * (1 - passSkill / 100);
     distToTarget *= erroDist;
 

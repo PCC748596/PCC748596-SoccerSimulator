@@ -182,6 +182,59 @@ function velocidadeParaAlcance(dist, elev) {
 }
 
 /*
+DISPERSAO ANGULAR DE UM PASSE, em radianos (desvio padrao).
+
+`passSkill` e `tecSkill` sao 0..100. `distAdversario` e a distancia ao
+adversario mais proximo de quem passa (Infinity se nao houver nenhum) e
+`cosCorpo` e o coseno do angulo entre a frente do jogador e a direccao do
+passe (1 virado para o alvo, -1 de costas).
+
+Ver PassErrorModel em config.js.
+
+Pura: sem Match, sem THREE, e sem Math.random — a amostra e sorteada por
+quem chama (ver amostraGaussiana).
+*/
+function sigmaDePasse(o) {
+    const M = PassErrorModel;
+    const pass = Math.max(0, Math.min(100, o.passSkill || 0));
+    const tec = Math.max(0, Math.min(100, o.tecSkill || 0));
+
+    // A TEC conta, mas menos que o PASS: passar e a habilidade principal.
+    const skill = (pass * (1 - M.pesoTecnica) + tec * M.pesoTecnica) / 100;
+    let sigma = M.sigmaMin + (M.sigmaMax - M.sigmaMin) * (1 - skill);
+
+    return sigma;
+}
+
+/*
+Uma amostra de uma normal (0, 1), por Box-Muller.
+
+`rnd` e injectado de proposito: uma funcao pura nao chama Math.random, e sem
+isto nao havia maneira de testar a FORMA da distribuicao (media, desvio,
+cauda) — so de esperar que ela se portasse bem.
+
+O clamp do u1 evita log(0) = -Infinity quando o gerador devolve zero.
+*/
+function amostraGaussiana(rnd) {
+    const u1 = Math.max(1e-12, rnd());
+    const u2 = rnd();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+/*
+Roda um vector no plano XZ. O sentido segue o mesmo do resto do jogo (ver
+alvoDeApoio: x = sin, z = cos).
+
+Pura: sem THREE — isto corre uma vez por passe e criar um Vector3 para o
+efeito era desperdicio.
+*/
+function rodarNoPlano(x, z, angulo) {
+    const c = Math.cos(angulo);
+    const s = Math.sin(angulo);
+    return { x: x * c + z * s, z: -x * s + z * c };
+}
+
+/*
 Passe rasteiro: velocidade de saída para a bola percorrer `dist` metros e lá
 chegar ainda com `vChegada` m/s (um passe tem de chegar jogável, não morto).
 
