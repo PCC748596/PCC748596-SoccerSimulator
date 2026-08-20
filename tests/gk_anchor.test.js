@@ -165,3 +165,35 @@ test('as distâncias de referência são a área e o meio-campo adversário', ()
     assert.strictEqual(s.NEAR, 16.5);
     assert.strictEqual(s.FAR, 55.0);
 });
+
+/*
+O ramo de repouso de updateGK() é código embebido num método de 800 linhas, não
+uma função isolável. O que se testa aqui é o contrato de que ele depende: a
+âncora com um atacante colado à área tem de deixar o guarda-redes MAIS recuado
+do que a âncora com a bola no meio-campo. Era exactamente isto que o coeficiente
+0.55 de player.js violava.
+*/
+test('atacante à entrada da área recua-o mais do que bola no meio-campo', () => {
+    const s = montar();
+    // Atacante com bola a 18 m da baliza, ligeiramente à direita.
+    const ataque = s.gkAnchor(6, GOL_A + 18 * DIR_A, GOL_A, DIR_A, s.S.defensive);
+    // Mesma equipa, bola no meio-campo.
+    const meio = s.gkAnchor(6, GOL_A + 52.5 * DIR_A, GOL_A, DIR_A, s.S.defensive);
+
+    assert.ok(depth(ataque, GOL_A, DIR_A) < depth(meio, GOL_A, DIR_A),
+        'com o ataque perto ele tem de estar mais perto da linha');
+});
+
+test('a âncora cabe sempre dentro da grande área', () => {
+    const s = montar();
+    for (const nome of ['defensive', 'offensive']) {
+        for (const d of [0, 10, 30, 60, 110]) {
+            for (const bx of [-30, 0, 30]) {
+                const r = s.gkAnchor(bx, GOL_A + d * DIR_A, GOL_A, DIR_A, s.S[nome]);
+                const p = depth(r, GOL_A, DIR_A);
+                assert.ok(p >= 0 && p <= 16.5,
+                    nome + ': profundidade ' + p + ' fora da área a d=' + d);
+            }
+        }
+    }
+});

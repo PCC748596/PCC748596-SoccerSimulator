@@ -1829,21 +1829,19 @@ class FootballPlayer {
             let alvoGkX = (typeof Match !== 'undefined' && (Match.state === 'GOAL' || Match.state === 'OUT')) ? 0 : gkCorpo.position.x;
 
             /*
-            Posição de repouso: 5 m à frente da própria linha, MAIS um avanço
-            proporcional à distância da bola — é para isso que existe o
-            GoalkeeperStyle.maxOut (defensive 6 m, offensive/sweeper 20 m).
-
-            Esse avanço estava escrito em actGoalkeeperPosition (player_bt.js)
-            e nunca corria: o update() manda os guarda-redes para updateGK e
-            NUNCA para o runBehaviorTree, por isso essa folha é código morto e
-            o maxOut nunca foi lido. O resultado é o guarda-redes plantado a
-            5 m da linha com o bloco da equipa no meio-campo — 45 m de buraco
-            atrás da última linha, e um sweeper que nunca varre.
+            Posição de repouso: sai toda de gkAnchor() (config.js), a mesma
+            função que os ramos defensivos usam mais abaixo. Antes eram quatro
+            fórmulas diferentes, com coeficientes que SUBIAM (0.15, 0.35, 0.55)
+            à medida que o atacante se aproximava — quanto maior o perigo, mais
+            ele saía da baliza — e uma base de repouso já 5 m fora da linha.
             */
             const gkStyleAtual = GoalkeeperStyle[this.gkStyle] || GoalkeeperStyle.defensive;
-            const avancoGk = (typeof Match !== 'undefined' && Match.state === 'PLAY') ? Math.max(0, Math.min(gkStyleAtual.maxOut,
-                (Match.ball.position.z - this.ownGoalZ) * 0.1 * this.dirZ)) : 0;
-            let alvoGkZ = (typeof Match !== 'undefined' && Match.state === 'GOAL') ? (-48 * this.dirZ) : (ownGoalZCenter(this.team) + (5 + avancoGk) * this.dirZ);
+            const ancora = gkAnchor(Match.ball.position.x, Match.ball.position.z,
+                this.ownGoalZ, this.dirZ, gkStyleAtual);
+
+            let alvoGkZ = (typeof Match !== 'undefined' && Match.state === 'GOAL')
+                ? (-48 * this.dirZ)
+                : ancora.z;
 
             let speedLerp = (typeof Match !== 'undefined' && Match.state === 'GOAL') ? 4.0 : 2.0;
 
@@ -1957,19 +1955,19 @@ class FootballPlayer {
                                     this.gkTipoMergulho = Match.ball.position.y > 1.2 ? 'alto' : 'baixo';
                                 }
                             } else {
-                                if (carrier && carrier.model.position.distanceTo(gkCorpo.position) < 14.0) {
-                                    alvoGkZ = ownGoalZCenter(this.team) + (Match.ball.position.z - ownGoalZCenter(this.team)) * 0.55;
-                                    alvoGkX = Match.ball.position.x * 0.6;
-                                } else {
-                                    alvoGkZ = ownGoalZCenter(this.team) + (Match.ball.position.z - ownGoalZCenter(this.team)) * 0.35;
-                                    alvoGkX = Math.max(-limitGKX, Math.min(limitGKX, Match.ball.position.x * 0.7));
-                                }
+                                /*
+                                Um só alvo, venha o portador de onde vier. Antes
+                                havia dois ramos, com coeficientes 0.55 e 0.35: o
+                                mais adiantado era o do atacante MAIS perto.
+                                */
+                                alvoGkX = ancora.x;
+                                alvoGkZ = ancora.z;
                                 speedLerp = 3.5;
                             }
                         }
                     } else {
-                        alvoGkZ = ownGoalZCenter(this.team) + (Match.ball.position.z - ownGoalZCenter(this.team)) * 0.15;
-                        alvoGkX = Math.max(-limitGKX, Math.min(limitGKX, Match.ball.position.x * 0.5));
+                        alvoGkX = ancora.x;
+                        alvoGkZ = ancora.z;
                         speedLerp = 2.2;
                     }
                 } 
