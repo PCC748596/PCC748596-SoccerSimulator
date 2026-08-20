@@ -401,3 +401,45 @@ test('guarda-redes não conta como adversário a tapar', () => {
     assert.ok(Math.abs(pt.z - PassTypeModel.liderancaCurta) < 1e-9,
         'não devia ter encurtado por causa do GR');
 });
+
+/* ------------------------------------------------------------------
+   Regressão: leque vazio já não manda a bola aos pés.
+   ------------------------------------------------------------------ */
+
+test('leque vazio com adversários dados: leading vira ponto curto', () => {
+    const m = mateVirado(0, 0, 0, 7);
+    const r = PassTypes.pontoPara(PassTypes.LEADING, [], m, 52.5, []);
+    assert.strictEqual(r.tipo, PassTypes.LEADING);
+    assert.ok(r.ponto, 'devia trazer ponto');
+    assert.strictEqual(r.ponto.curto, true);
+});
+
+test('leque vazio com adversários dados: space vira ponto curto', () => {
+    const m = mateVirado(0, 0, 0, 8);
+    const r = PassTypes.pontoPara(PassTypes.SPACE, [], m, 52.5, []);
+    assert.strictEqual(r.tipo, PassTypes.SPACE);
+    assert.strictEqual(r.ponto.curto, true);
+});
+
+test('sem ponto curto possível, ainda cai em direct', () => {
+    // Encostado à linha de fundo, virado para fora: nada à frente cabe no campo.
+    const m = mateVirado(0, CAMPO_COMP / 2 - 0.5, 0, 9);
+    const r = PassTypes.pontoPara(PassTypes.LEADING, [], m, 52.5, []);
+    assert.strictEqual(r.tipo, PassTypes.DIRECT);
+    assert.strictEqual(r.ponto, null);
+});
+
+test('leque cheio continua a ganhar ao ponto curto', () => {
+    const m = mateVirado(0, 0, 0, 10);
+    const doLeque = [3, 6, 9].map(d => ({ x: 0, z: d, mate: m }));
+    const r = PassTypes.pontoPara(PassTypes.LEADING, doLeque, m, 52.5, []);
+    assert.strictEqual(r.ponto.z, 9, 'devia ser o ponto do leque mais adiantado');
+    assert.strictEqual(r.ponto.curto, undefined, 'o do leque não é curto');
+});
+
+test('direct continua a não trazer ponto, mesmo com adversários dados', () => {
+    const m = mateVirado(0, 0, 0, 11);
+    const r = PassTypes.pontoPara(PassTypes.DIRECT, [], m, 52.5, []);
+    assert.strictEqual(r.tipo, PassTypes.DIRECT);
+    assert.strictEqual(r.ponto, null);
+});

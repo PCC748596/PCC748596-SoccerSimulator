@@ -205,20 +205,28 @@ const PassTypes = {
     },
 
     /*
-    Resolve o ponto de mira do tipo pedido. Sem pontos vivos que sirvam,
-    cai para `direct` — um passe para o espaço sem espaço nenhum é uma bola
-    atirada fora.
+    Resolve o ponto de mira do tipo pedido.
+
+    Ordem: primeiro o leque (pontos já validados contra adversários e linhas de
+    passe), depois o ponto curto à frente. Só quando nem esse existe é que a
+    bola vai aos pés.
+
+    Era só a primeira metade: sem ponto no leque, `direct`. Como o leque vem
+    vazio sempre que há gente à volta — e é aí que se joga a maior parte do
+    tempo — o jogo travava a cada passe.
+
+    `opponents` é opcional: sem ele não há como validar o ponto curto, e o
+    comportamento é o antigo.
     */
-    pontoPara: function (tipo, pontos, mate, golZ) {
-        if (tipo === this.SPACE) {
-            const pt = this.pontoMediano(pontos, mate);
-            return pt ? { tipo: tipo, ponto: pt } : { tipo: this.DIRECT, ponto: null };
-        }
-        if (tipo === this.LEADING) {
-            const pt = this.pontoMaisPertoDoGolo(pontos, golZ, mate);
-            return pt ? { tipo: tipo, ponto: pt } : { tipo: this.DIRECT, ponto: null };
-        }
-        return { tipo: this.DIRECT, ponto: null };
+    pontoPara: function (tipo, pontos, mate, golZ, opponents) {
+        let pt = null;
+        if (tipo === this.SPACE) pt = this.pontoMediano(pontos, mate);
+        else if (tipo === this.LEADING) pt = this.pontoMaisPertoDoGolo(pontos, golZ, mate);
+        else return { tipo: this.DIRECT, ponto: null };
+
+        if (!pt && opponents) pt = this.pontoLiderancaCurta(mate, opponents);
+
+        return pt ? { tipo: tipo, ponto: pt } : { tipo: this.DIRECT, ponto: null };
     },
 
     /* ---------------------------------------------------------------
@@ -250,7 +258,8 @@ const PassTypes = {
         const destino = this.zonaDe(mate.model.position.x, mate.model.position.z * dirZ);
         const pontos = (this.pontosPorMate(carrier)[mate.id]) || [];
         const tipo = this.sortear(this.misturaPara(origem, destino), rnd);
-        return this.pontoPara(tipo, pontos, mate, carrier.targetGoalZ);
+        const opponents = (carrier.team === 'TeamA') ? Match.opponents : Match.players;
+        return this.pontoPara(tipo, pontos, mate, carrier.targetGoalZ, opponents);
     },
 
     /*
@@ -270,6 +279,7 @@ const PassTypes = {
 
         const mapa = this.pontosPorMate(carrier);
         const teammates = (carrier.team === 'TeamA') ? Match.players : Match.opponents;
+        const opponents = (carrier.team === 'TeamA') ? Match.opponents : Match.players;
 
         let melhor = null, melhorNota = -Infinity;
 
@@ -284,7 +294,7 @@ const PassTypes = {
             const pontos = mapa[mate.id] || [];
 
             const tipoSorteado = this.sortear(this.misturaPara(origem, destino), rnd);
-            const res = this.pontoPara(tipoSorteado, pontos, mate, golZ);
+            const res = this.pontoPara(tipoSorteado, pontos, mate, golZ, opponents);
 
             // Progresso: quanto o PONTO DE MIRA adianta a bola para a
             // baliza. Num passe directo o ponto é o próprio companheiro.
