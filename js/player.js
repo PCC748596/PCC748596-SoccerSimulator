@@ -1152,8 +1152,19 @@ class FootballPlayer {
 
         A linha entre os dois só faz sentido com os dois ligados ao mesmo tempo.
         */
-        const showForTeam = (window.teamBTPosState === this.team || window.teamBTPosState === 'Both');
-        const showForStyle = (window.playingStyleBTToggleState === this.team || window.playingStyleBTToggleState === 'Both');
+        /*
+        Os anéis só valem enquanto o nível 2 estiver a escrevê-los. Fora disso
+        (GOAL, OUT, cantos, livres) `slotTarget` e `styleTarget` guardam o
+        último valor de jogo corrido, e mostrá-los é pior do que não mostrar
+        nada: depois de um golo apareciam junto à baliza, enquanto o rectângulo
+        do bloco — esse recalculado a cada frame — já estava no meio-campo.
+        */
+        const nivel2 = (typeof Match !== 'undefined' && Match.nivel2Activo)
+            ? Match.nivel2Activo() : true;
+        const showForTeam = nivel2 &&
+            (window.teamBTPosState === this.team || window.teamBTPosState === 'Both');
+        const showForStyle = nivel2 &&
+            (window.playingStyleBTToggleState === this.team || window.playingStyleBTToggleState === 'Both');
         const teamTarget = this.slotTarget || this.tacticalTarget || this.dynamicTarget;
         const styleTarget = this.styleTarget || this.dynamicTarget;
 

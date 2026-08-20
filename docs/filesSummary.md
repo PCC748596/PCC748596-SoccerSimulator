@@ -892,7 +892,9 @@ o botão do painel passa `false`, ver abaixo): liga todos os `playingStyle`
 RMS, máximo, desvio padrão de X/Z. Aponta `semEfeito:true` quando um estilo
 ativa mas não desloca nada (flag sem código de posicionamento por trás,
 ex.: `juntaSeAoAtaque`). Reporta no `console.table` e no campo `estilos` do
-JSON exportado.
+JSON exportado. Só conta frames com o nível 2 a correr
+(`Match.nivel2Activo()`): parado o jogo, o `slotTarget` fica congelado no
+último frame corrido e o desvio medido seria a distância a um ponto velho.
 
 `opts.rotacionarFormacoes` (default = `calibrarEstilos`): nenhuma formação
 sozinha (`FormationsData` — 442/433/4231) cabe as 12 posições de campo ao

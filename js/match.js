@@ -1252,6 +1252,21 @@ const Match = {
     O nível 3 (o que este jogador faz com a bola) corre depois, em
     FootballPlayer.update → runBehaviorTree, e comanda a PlayerFSM.
     */
+    /*
+    O nível 2 (PosicionamentoAI.tick) corre? É ele que escreve `slotTarget` e
+    `styleTarget` em cada jogador — os anéis do debug do TeamBT — e só corre em
+    jogo corrido e no tiro de meta.
+
+    Isto vive aqui, num sítio só, de propósito. A regra estava escrita à mão no
+    `return` do runTeamAI E implícita no desenho dos anéis (player.js), e as
+    duas divergiram: depois de um golo o rectângulo do bloco ia para o
+    meio-campo (o nível 1 corre sempre) mas os anéis ficavam junto à baliza, a
+    mostrar o slot congelado do último frame de jogo corrido.
+    */
+    nivel2Activo: function () {
+        return this.state === 'PLAY' || this.state === 'GOAL_KICK';
+    },
+
     runTeamAI: function () {
         this.updatePossession();
 
@@ -1281,7 +1296,7 @@ const Match = {
         // Nível 2 (onde cada jogador se coloca) e a coesão que depende dele só
         // fazem sentido em jogo corrido — em bola parada quem posiciona é o
         // próprio setupSetPiece, directamente (excepto tiro de meta, que usa o TeamBT).
-        if (this.state !== 'PLAY' && this.state !== 'GOAL_KICK') return;
+        if (!this.nivel2Activo()) return;
 
         this.players.forEach(p => PosicionamentoAI.tick(p, bbA));
         this.opponents.forEach(p => PosicionamentoAI.tick(p, bbB));

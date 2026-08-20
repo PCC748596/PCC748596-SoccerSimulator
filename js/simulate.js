@@ -317,7 +317,14 @@ const Sim = {
                 for (let i = 0; i < lote; i++) {
                     Match.update(dt);
                     registarHeatmap(this.heatmap);
-                    if (estiloStats) {
+                    /*
+                    Só com o nível 2 a correr. Ele é que escreve o slotTarget
+                    contra o qual se mede o desvio do estilo; parado (golo,
+                    bola fora, canto) o slot fica congelado no último frame de
+                    jogo corrido, e o desvio medido é a distância a um ponto
+                    velho — ruído somado aos números do relatório.
+                    */
+                    if (estiloStats && Match.nivel2Activo()) {
                         registarEstilos(estiloStats, Match.players);
                         registarEstilos(estiloStats, Match.opponents);
                     }
