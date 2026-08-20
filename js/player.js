@@ -319,7 +319,9 @@ class FootballPlayer {
             if (opt.id === this.id || opt.role === 'gk') continue;
             const optPos = alvoDePasse(opt);
             const dist = this.model.position.distanceTo(optPos);
-            if (dist < 3.0 || dist > 35.0) continue;
+            // Ver o findPassTarget: o piso mede o colega, nao o ponto de lead.
+            const distReal = this.model.position.distanceTo(opt.model.position);
+            if (dist < 3.0 || dist > 35.0 || distReal < 3.0) continue;
 
             let distMarcador = 999;
             for (const opp of opponents) {
@@ -329,7 +331,10 @@ class FootballPlayer {
             }
             if (distMarcador < 2.5) continue; // colega também marcado de perto: não vale a pena
 
-            let nota = distMarcador * 5 - dist * 0.5;
+            // O `- dist * 0.5` que aqui estava premiava o passe mais curto de
+            // todos. A forma da curva e a mesma do findPassTarget, com peso
+            // menor: aqui manda quem esta desmarcado, que e o ponto do relaxed.
+            let nota = distMarcador * 5 + notaDistanciaPasse(dist, 1.0, 1.0) * 0.15;
             const progression = (optPos.z - ownZ) * dirZ;
             if (progression > 0) nota += 10;
 
@@ -356,8 +361,10 @@ class FootballPlayer {
             if (opt.id === this.id) continue;
             let optPos = alvoDePasse(opt);
             let dist = this.model.position.distanceTo(optPos);
+            // Ver o findPassTarget: o piso mede o colega, nao o ponto de lead.
+            const distReal = this.model.position.distanceTo(opt.model.position);
             let maxDist = Math.max(10, skillVal * 0.6);
-            if (dist > maxDist || dist < 2.0) continue;
+            if (dist > maxDist || dist < 2.0 || distReal < 3.0) continue;
 
             let toTarget = new THREE.Vector3().subVectors(optPos, this.model.position);
             toTarget.y = 0;
@@ -389,7 +396,12 @@ class FootballPlayer {
             if (isOrchestrator) safetyEff *= 0.3;
             if (minOppDist < safetyEff) continue;
 
-            let score = 100 - (angle / maxAngleRad) * 30 + Math.min(30, minOppDist * 4);
+            // Sem termo de distancia, os 100 pontos de base eram iguais para um
+            // passe de 3 m e um de 25 m, e o desempate ficava todo no angulo e
+            // na folga do adversario — o curto ganhava.
+            let score = notaDistanciaPasse(dist, 1.0, 1.0) * 0.6
+                - (angle / maxAngleRad) * 30
+                + Math.min(30, minOppDist * 4);
             ratedCandidates.push({ player: opt, score: score });
         }
 
@@ -566,9 +578,17 @@ class FootballPlayer {
             let optPos = alvoDePasse(opt);
             let dist = this.model.position.distanceTo(optPos);
 
+            /*
+            O piso de distancia mede o COLEGA e nao so o ponto de lead. O
+            alvoDePasse devolve para onde ele vai estar; com ele a correr na
+            direccao do portador, o ponto ficava a 6 m e o homem a 1 m — e
+            saia um passe de um metro, visto no jogo (CM->CM(1)).
+            */
+            const distReal = this.model.position.distanceTo(opt.model.position);
+
             // Distância máxima baseada no skill de passe (skill * 0.6)
             let maxDist = Math.max(10, skillVal * 0.6); 
-            if (dist > maxDist || dist < 2.0) continue;
+            if (dist > maxDist || dist < 2.0 || distReal < 3.0) continue;
 
             // Evitar passes para fora do campo
             if (Math.abs(optPos.x) > (CAMPO_LARG / 2) || Math.abs(optPos.z) > (CAMPO_COMP / 2)) continue;
@@ -606,19 +626,14 @@ class FootballPlayer {
             let circulacao = teamStyle ? teamStyle.circulacao : 1.0;
             let verticalidade = teamStyle ? teamStyle.verticalidade : 1.0;
 
-            let baseScore = 100;
-            if (dist <= 20.0) {
-                baseScore = 80 + (20 * circulacao);
-            } else if (dist <= 40.0) {
-                baseScore = 100 - (dist - 20) * 1.5;
-                baseScore *= ((circulacao + verticalidade) / 2);
-            } else {
-                baseScore = 70 - (dist - 40) * 2.0;
-                baseScore *= verticalidade;
-                baseScore = Math.max(10, baseScore);
-            }
-
-            let score = baseScore;
+            /*
+            A nota de distancia vive em notaDistanciaPasse (utils.js), com o
+            estilo la dentro. Aqui estava um ramo PLANO de 2 a 20 m: um passe
+            de 2.5 m valia o mesmo que um de 19 m, e quem desempatava era o
+            bonus de "livre de marcacao" logo abaixo — que o toquinho ao lado
+            ganha sempre. Media: 32.1% dos passes abaixo de 5 m.
+            */
+            let score = notaDistanciaPasse(dist, circulacao, verticalidade);
 
             // Bónus por estar livre de marcação
             score += Math.min(50, Math.max(0, (minOppDist - safetyLimit) * 8));
@@ -671,10 +686,22 @@ class FootballPlayer {
             
             if (progression > 0) {
                 let progBonus = Math.min(25, progression * 0.9) * verticalidade;
-                // Lançamento em espaço vazio
+                /*
+                Lançamento em espaço vazio. A escala vem da MESMA curva de
+                distância (formaDistanciaPasse): valia +60 a +84 fixos, cegos
+                à distância — mais do que toda a amplitude da nota de
+                distância — e por isso um toque de 4 m para um colega livre
+                batia a bola de 15 m que faz o jogo girar. Um lançamento no
+                espaço é, por natureza, uma bola longa; agora o bónus só vale
+                o que a distância merece.
+
+                Medido (8 sementes, 100 s cada): com o bónus cego, 22.6% dos
+                passes abaixo de 5 m e 28.9 passes por semente; com ele
+                desligado de vez, 15.2% e 34.8 passes.
+                */
                 if (minOppDist > 8.0) {
                     const aggr = teamBB ? teamBB.aggression : 0.5;
-                    progBonus += 60 * (0.6 + aggr * 0.8);
+                    progBonus += 60 * (0.6 + aggr * 0.8) * formaDistanciaPasse(dist);
                 }
                 score += progBonus;
             } else {

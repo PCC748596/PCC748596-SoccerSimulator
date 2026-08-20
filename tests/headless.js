@@ -76,6 +76,12 @@ function novoJogo() {
     vm.runInContext(`
         // Sem const: o novoJogo pode ser chamado varias vezes no mesmo
         // contexto (um teste por cenario) e const rebentava a segunda.
+        //
+        // O Match.init faz EventBus.on(...) — chamado duas vezes, ficavam DOIS
+        // listeners de GK_CATCH_BALL, CB_HAS_BALL e CM_HAS_BALL, e cada evento
+        // aplicava o vies duas vezes. Dava testes a passar sozinhos e a falhar
+        // na suite. O barramento e limpo antes de cada jogo novo.
+        EventBus._listeners = {};
         Match.init(new THREE.Scene());
         Match.delta = 0.016;
         for (let i = 0; i < 120; i++) Match.update(0.016);

@@ -684,6 +684,65 @@ function pesoEspacoPorTecnica(tec) {
 }
 
 /*
+NOTA DE DISTANCIA DO PASSE — a forma da curva que faz o jogo girar.
+
+Era, dentro do findPassTarget (player.js):
+
+    if (dist <= 20.0)      baseScore = 80 + 20 * circulacao;
+    else if (dist <= 40.0) baseScore = (100 - (dist - 20) * 1.5) * (circ + vert) / 2;
+    else                   baseScore = max(10, (70 - (dist - 40) * 2) * vert);
+
+O primeiro ramo era PLANO: um passe de 2.5 m valia exactamente o mesmo que um
+de 19 m. Com a nota igual, quem desempatava era o bonus de "livre de
+marcacao" (ate +50), e esse o passe curtissimo ganha quase sempre — uma linha
+de 3 m nao da tempo a ninguem de a cortar. Medido no jogo: 32.1% dos passes
+abaixo de 5 m e mediana de 11.0 m; a troca de 12-18 m que faz a bola girar
+nao tinha vantagem nenhuma sobre o toquinho ao lado.
+
+Agora a curva tem forma:
+
+    < 6 m      0.25   possivel, mas caro: quase nunca e a melhor ideia
+    6 - 12 m   sobe   ate ao topo
+    12 - 22 m  1.00   a faixa da circulacao normal
+
+A primeira versao punha o topo a partir dos 10 m e o piso em 0.35. Medido:
+16.8% dos passes ainda abaixo de 5 m, e 70% desses passes curtos TINHAM uma
+linha livre a 10-22 m pelo criterio do proprio jogo. Ou seja, a curva perdia
+para o bonus de "livre de marcacao" (ate +50). Dai o piso descer a 0.25 e a
+rampa acabar so aos 12 m.
+    22 - 40 m  desce  ate 0.55
+    > 40 m     desce  ate um minimo de 0.20
+
+O estilo entra por cima, e nao dentro da forma: `circulacao` pesa no passe
+curto/medio e `verticalidade` no longo, com a mistura a rodar entre os 12 e
+os 32 m. Um Possession e um Direct escolhem alvos diferentes com a MESMA
+curva por baixo.
+
+Pura de proposito: sem Match, sem window, so os argumentos (ver
+tests/passe_distancia.test.js).
+*/
+function formaDistanciaPasse(dist) {
+    const d = Math.max(0, dist);
+    if (d < 6) return 0.25;
+    if (d < 12) return 0.25 + (d - 6) / 6 * 0.75;
+    if (d <= 22) return 1.0;
+    if (d <= 40) return 1.0 - (d - 22) / 18 * 0.45;
+    return Math.max(0.20, 0.55 - (d - 40) * 0.01);
+}
+
+function notaDistanciaPasse(dist, circulacao, verticalidade) {
+    const d = Math.max(0, dist);
+    const forma = formaDistanciaPasse(d);
+
+    // 0 no passe curto, 1 no longo: e o que decide se manda a circulacao ou
+    // a verticalidade do TeamPlayStyle.
+    const t = Math.max(0, Math.min(1, (d - 12) / 20));
+    const estilo = circulacao * (1 - t) + verticalidade * t;
+
+    return 100 * forma * estilo;
+}
+
+/*
 Nota de uma direcção candidata de condução. Os três argumentos vêm normalizados
 a 0..1 por quem chama (ver o case 'CARRY' em fsm.js):
 
