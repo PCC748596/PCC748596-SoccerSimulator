@@ -160,3 +160,155 @@ test('sob pressão o isolado volta a ganhar', () => {
     const nl = PassTypes.notaCandidato(lateral.g, lateral.e, lateral.d, w);
     assert.ok(nl > nf, 'frente=' + nf.toFixed(3) + ' lateral=' + nl.toFixed(3));
 });
+
+/* ------------------------------------------------------------------
+   Passe para trás: só a quem está perto da jogada.
+   ------------------------------------------------------------------ */
+
+// Match falso, com o mínimo que o melhorRecuo lê.
+function montarMatch(carrierZ, companheiros) {
+    global.Match = {
+        players: companheiros,
+        opponents: [],
+        ball: { position: { x: 0, y: 0, z: carrierZ } }
+    };
+}
+
+const jog = (x, z, id, role) => ({
+    id: id, role: role || 'mid', team: 'TeamA', dirZ: 1,
+    model: { position: { x: x, z: z } }
+});
+
+test('o recuo só olha para quem está atrás da linha da bola', () => {
+    const carrier = jog(0, 0, 'c');
+    const atras = jog(0, -8, 'atras');
+    const frente = jog(0, 8, 'frente');
+    montarMatch(0, [carrier, atras, frente]);
+    const r = PassTypes.melhorRecuo(carrier);
+    assert.ok(r, 'devia ter encontrado alguém');
+    assert.strictEqual(r.id, 'atras');
+});
+
+test('o recuo ignora quem está longe, mesmo estando atrás', () => {
+    const carrier = jog(0, 0, 'c');
+    const longe = jog(0, -(PassTypeModel.escolha.raioRecuo + 10), 'longe');
+    montarMatch(0, [carrier, longe]);
+    assert.strictEqual(PassTypes.melhorRecuo(carrier), null,
+        'era este o atraso para o guarda-redes a meio-campo');
+});
+
+test('o guarda-redes serve, se estiver perto', () => {
+    const carrier = jog(0, -30, 'c');
+    const gk = jog(0, -40, 'gk', 'gk');
+    montarMatch(-30, [carrier, gk]);
+    const r = PassTypes.melhorRecuo(carrier);
+    assert.ok(r, 'não é o papel que exclui, é a distância');
+    assert.strictEqual(r.id, 'gk');
+});
+
+test('sem ninguém atrás e perto, devolve null', () => {
+    const carrier = jog(0, 0, 'c');
+    const frente = jog(0, 10, 'frente');
+    montarMatch(0, [carrier, frente]);
+    assert.strictEqual(PassTypes.melhorRecuo(carrier), null,
+        'é este o caso que manda conduzir para trás');
+});
+
+test('entre dois atrás, escolhe o mais perto', () => {
+    const carrier = jog(0, 0, 'c');
+    const perto = jog(0, -5, 'perto');
+    const meio = jog(0, -14, 'meio');
+    montarMatch(0, [carrier, perto, meio]);
+    assert.strictEqual(PassTypes.melhorRecuo(carrier).id, 'perto');
+});
+
+test('a equipa que ataca ao contrário recua para o outro lado', () => {
+    const carrier = jog(0, 0, 'c');
+    carrier.dirZ = -1;
+    const atras = jog(0, 8, 'atras');   // atrás, para quem ataca em -z
+    atras.dirZ = -1;
+    montarMatch(0, [carrier, atras]);
+    assert.strictEqual(PassTypes.melhorRecuo(carrier).id, 'atras');
+});
+
+test('a pressão sai do adversário mais perto do portador', () => {
+    const carrier = jog(0, 0, 'c');
+    global.Match = {
+        players: [carrier],
+        opponents: [jog(3, 0, 'perto'), jog(20, 0, 'longe')],
+        ball: { position: { x: 0, y: 0, z: 0 } }
+    };
+    assert.strictEqual(PassTypes.distAdversarioMaisPerto(carrier), 3);
+});
+
+test('sem adversários em campo, a distância é infinita', () => {
+    const carrier = jog(0, 0, 'c');
+    global.Match = { players: [carrier], opponents: [], ball: { position: { x: 0, y: 0, z: 0 } } };
+    assert.strictEqual(PassTypes.distAdversarioMaisPerto(carrier), Infinity);
+    // E infinito não dá pressão nenhuma, nem NaN.
+    assert.strictEqual(PassTypes.pressaoSobrePortador(Infinity, 8), 0);
+});
+
+/* ------------------------------------------------------------------
+   Conduzir para trás: o cone com o eixo invertido.
+   ------------------------------------------------------------------ */
+
+const FSM_SRC = fs.readFileSync(path.join(raiz, 'js', 'fsm.js'), 'utf8');
+
+// O bloco que escolhe a direcção de condução, dentro do case CARRY.
+function blocoDoCarry() {
+    const i = FSM_SRC.indexOf('// Escolhe a melhor direcção de condução');
+    assert.ok(i >= 0, 'bloco do carry nao encontrado');
+    const j = FSM_SRC.indexOf('p.dynamicTarget.set(alvoX', i);
+    assert.ok(j > i, 'fim do bloco nao encontrado');
+    return FSM_SRC.slice(i, j);
+}
+
+test('o alvo de recurso segue o sentido, não a direcção de ataque', () => {
+    /*
+    Era o defeito: `alvoZ = pz + 10 * p.dirZ`. Quando nenhum candidato passava
+    os filtros, um portador em recuo era mandado dez metros para a FRENTE — o
+    contrário do que o recuo pede.
+    */
+    const bloco = blocoDoCarry();
+    assert.ok(bloco.indexOf('alvoZ = pz + 10 * sentido') >= 0,
+        'o alvo de recurso devia usar o sentido');
+    assert.ok(bloco.indexOf('alvoZ = pz + 10 * p.dirZ') < 0,
+        'ficou o p.dirZ no alvo de recurso');
+});
+
+test('o sentido é declarado antes de ser usado', () => {
+    const bloco = blocoDoCarry();
+    const decl = bloco.indexOf('const sentido =');
+    const uso = bloco.indexOf('alvoZ = pz + 10 * sentido');
+    assert.ok(decl >= 0, 'sentido nao declarado');
+    assert.ok(decl < uso, 'declarado depois de usado, daria ReferenceError');
+});
+
+test('o sector continua no referencial de ataque, não no do sentido', () => {
+    /*
+    O sector do painel (Left/Center/Right) é sempre no referencial de ataque da
+    equipa, venha o portador a avançar ou a recuar. Invertê-lo aqui faria o
+    recuo procurar o corredor errado.
+    */
+    const bloco = blocoDoCarry();
+    assert.ok(bloco.indexOf('penalidadeSector(tx, p.dirZ)') >= 0,
+        'a penalidade de sector devia continuar com p.dirZ');
+    assert.ok(bloco.indexOf('penalidadeSector(tx, sentido)') < 0,
+        'o sector nao pode seguir o sentido do recuo');
+});
+
+test('a condução em campo aberto não conta como drible tentado', () => {
+    /*
+    O ramo 1 da cascata muda para CARRY, não DRIBBLE: não há adversário
+    nomeado, é campo aberto. Contava na mesma como drible tentado, e
+    inflacionava as estatísticas com conduções que nunca foram um 1x1.
+    */
+    const BT = fs.readFileSync(path.join(raiz, 'js', 'bt', 'player_bt.js'), 'utf8');
+    const i = BT.indexOf('function actPass(ctx)');
+    assert.ok(i >= 0, 'actPass nao encontrado');
+    const fim = BT.indexOf('function podeDriblar', i);
+    const bloco = BT.slice(i, fim);
+    assert.ok(bloco.indexOf('dribles.tentados') < 0,
+        'o actPass não devia contar dribles');
+});

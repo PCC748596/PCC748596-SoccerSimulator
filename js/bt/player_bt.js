@@ -536,12 +536,19 @@ function actPass(ctx) {
         return;
     }
 
-    // 1. Driblar: precisa de técnica e de espaço à frente.
+    /*
+    1. Levar a bola, se a técnica der para isso e houver espaço à frente.
+
+    CARRY e não DRIBBLE: o estado DRIBBLE é o 1x1 contra um adversário
+    NOMEADO (p.dribbleOpponent), e aqui não há nenhum — é campo aberto. Por
+    isso também não conta como drible tentado nas estatísticas: contava, e
+    inflacionava o número de dribles com conduções que nunca foram um 1x1.
+    Quem conta dribles é o actDribble, que tem mesmo um adversário pela frente.
+    */
     const tec = p.skillFor ? p.skillFor('TEC') : 50;
     if (tec >= E.tecnicaDrible && ctx.campoAberto) {
         p.carryRecuo = false;
         p.apoioAtivo = false;
-        if (typeof MatchStats !== 'undefined') MatchStats[p.team].dribles.tentados++;
         p.fsm.changeState('CARRY');
         return;
     }

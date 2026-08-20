@@ -417,14 +417,7 @@ class PlayerFSM {
                         const todosJogadores = Match.players.concat(Match.opponents);
                         const px = p.model.position.x, pz = p.model.position.z;
                         let melhorNota = -Infinity;
-                        // Recuo seguro se nenhum candidato passar os filtros:
-                        // dez metros a direito. Antes era o carryTargetX
-                        // sorteado, que já não existe.
-                        let alvoX = px, alvoZ = pz + 10 * p.dirZ;
 
-                        // Visão de jogo baseada na técnica — ver VisionModel
-                        // em config.js, que é onde os números vivem agora.
-                        const tec = p.skillFor ? p.skillFor('TEC') : 50;
                         /*
                         Sentido da condução. O cone de visão é o mesmo — a
                         técnica manda nele por igual, para a frente e para
@@ -433,8 +426,20 @@ class PlayerFSM {
                         Assim ele recua pelo corredor mais livre, com o mesmo
                         peso de espaço e o mesmo respeito pelo sector, em vez de
                         recuar às cegas.
+
+                        Declarado ANTES do alvo de recurso de propósito: esse
+                        usava p.dirZ, e num recuo sem candidato nenhum mandava-o
+                        dez metros para a FRENTE — o contrário do pedido.
                         */
                         const sentido = p.carryRecuo ? -p.dirZ : p.dirZ;
+
+                        // Recuo seguro se nenhum candidato passar os filtros:
+                        // dez metros a direito, no sentido em que vai.
+                        let alvoX = px, alvoZ = pz + 10 * sentido;
+
+                        // Visão de jogo baseada na técnica — ver VisionModel
+                        // em config.js, que é onde os números vivem agora.
+                        const tec = p.skillFor ? p.skillFor('TEC') : 50;
                         const visDist = alcanceVisao(tec);
                         const maxAngRad = coneVisao(tec);
 

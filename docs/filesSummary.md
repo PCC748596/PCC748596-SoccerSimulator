@@ -647,6 +647,26 @@ Primeiro a carregar. Não depende de nada além do THREE.
     em vez de desistir. O ponto vem marcado com `curto: true`, e por isso é
     jogado com a balística de passe normal, não com a de lançamento.
 
+  - **Quem recebe** (`escolha`): três termos normalizados a 0..1 — progresso
+    sobre `progressoRef` (30 m), espaço sobre `maxPontosLeque` (49, calculado do
+    `PassCandidates` e não escrito à mão), distância sobre `distanciaMax` (45 m)
+    — com pesos que variam pela **pressão sobre o portador** (`raioPressao`
+    8 m): livre procura quem progride, pressionado procura quem está livre.
+  - O termo do espaço era a **contagem** de pontos vivos do leque, até 49,
+    contra um progresso que raramente passava de 40. Um companheiro isolado na
+    lateral tinha o leque quase todo vivo e ganhava a escolha **por estar
+    isolado** — 37 contra 22 de quem estava bem colocado à frente. Era daí que
+    vinha o toque eterno para a lateral.
+  - Abaixo de `notaMinima` (0.35) o `actPass` desce uma cascata: levar a bola
+    (se TEC ≥ `tecnicaDrible`, 75, e houver campo aberto), atrasar a alguém a
+    menos de `raioRecuo` (18 m), ou **conduzir para trás** (`p.carryRecuo`, que
+    inverte o eixo do cone no `case 'CARRY'`). O raio do recuo é o que impede o
+    atraso para o guarda-redes a meio-campo.
+  - No recuo, o **sector** do painel continua no referencial de ataque
+    (`penalidadeSector(tx, p.dirZ)`): só o eixo do cone é que inverte. E o ramo
+    de levar a bola muda para `CARRY`, não `DRIBBLE` — não há adversário
+    nomeado, é campo aberto, e por isso também não conta como drible tentado.
+
   `js/pass_types.js` é importado directamente pelos testes em Node e **não pode
   usar `THREE`** — por isso `PassTypes.frenteDe` tira a orientação do companheiro
   do quaternião por aritmética, em vez de `applyQuaternion` como o
