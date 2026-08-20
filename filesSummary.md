@@ -623,10 +623,30 @@ Primeiro a carregar. Não depende de nada além do THREE.
 - **`DribbleModel`** — o 1×1: quando o portador tenta passar por um adversário.
 - **`CarryModel`** — a condução ("adiantada de bola"): a bola é fisicamente
   adiantada entre 3.6 e 6.0 m, com o impulso a herdar a velocidade do jogador,
-  para ele correr de facto atrás dela. Inclui o leque de direcções avaliadas e
-  os pesos de espaço / progressão / sector.
+  para ele correr de facto atrás dela.
   **`espacoLivre` (12 m) e `distanciaMax` (12 m) são os dois números que
   regulam quanto se conduz em vez de passar** — ver a nota no nível 3.
+
+  **Para onde ele leva a bola** sai de um leque de nove candidatos, pontuados
+  com três termos **normalizados a 0..1** e só depois pesados
+  (`notaDireccaoCarry` em `utils.js`):
+  - `espaço` — distância ao obstáculo mais próximo no corredor, sobre `spaceCap`
+    (16 m). Peso entre `pesoEspacoMin` (1.0) e `pesoEspacoMax` (2.4), pela
+    Técnica — quem tem técnica lê o espaço, quem não tem insiste no caminho
+    directo. É uma das duas vias da Técnica; a outra é o cone de visão, que
+    abre de ±30° a ±56°.
+  - `progresso` — avanço para a baliza sobre a distância de visão, ou seja o
+    cosseno do ângulo. Peso `pesoProgresso` (1.0), a unidade de referência.
+  - `sector` — `Tatics.penalidadeSector`, **zero dentro de um sector activo** do
+    painel. Peso `pesoSector` (1.6).
+
+  Os antigos `spaceWeight`/`progressWeight`/`sectorWeight` multiplicavam
+  grandezas em escalas diferentes (progresso até 56 pontos de amplitude, espaço
+  32): a direcção frontal ganhava sempre, mesmo com um adversário colado e a
+  ponta vazia, e subir o `sectorWeight` três vezes nunca teve efeito. O sector
+  também deixou de ser um X sorteado a cada segundo por `getWeightedSectorX`
+  (removido): com Left e Right ligados isso era uma moeda ao ar, e um extremo na
+  direita atravessava o campo pelo meio metade das vezes.
 - **`MarkingModel`** — marcação (`distancia`, `aderencia`, `penalLado`) e
   largura da última linha conforme a bola vem pelo eixo ou pelo corredor.
 - **`SupportModel`** — apoios ao portador (`maxPorLado: 1`, `raioMin`/`raioMax`, `anguloApoio`, `bonusOcupante`). Jogadores de linha posicionam-se a 45º do deslocamento (1 em `FWR_SUPPORT` e 1 em `AFT_SUPPORT`). Guarda-redes (`role: 'gk'`) são estritamente excluídos deste modelo.

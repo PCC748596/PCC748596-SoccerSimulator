@@ -519,12 +519,10 @@ class FootballPlayer {
         passe premiava o outro — as duas metades do sistema a anular-se, e
         nenhuma das equipas jogava consistentemente pelas pontas.
         */
-        const getSectorOfX = (x) => {
-            const xAtk = x * dirZ;
-            if (xAtk < -10) return 'esq';
-            if (xAtk > 10) return 'dir';
-            return 'cen';
-        };
+        // Era uma cópia à mão da mesma regra dos 10 m que a condução usa. Uma
+        // só, agora, em Tatics.sectorDeX — se as duas divergissem, o passe
+        // premiava um flanco e a condução puxava para o outro.
+        const getSectorOfX = (x) => Tatics.sectorDeX(x, dirZ);
 
         let skillVal = this.skillFor('PASS');
         let safetyLimit = 1.0 + (1.0 - (skillVal / 100)) * 0.6;

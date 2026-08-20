@@ -14,7 +14,7 @@ FUNCTION & OBJECT INDEX
 
 - Tatics: Global object managing formation, play style, passing style, and field sectors.
     * toggleSector: Adds/removes focused attacking sectors for AI behavior.
-    * getWeightedSectorX: Returns an X coordinate favoring the chosen tactical sectors.
+    * sectorDeX, penalidadeSector: Classifies an X into a tactical sector and scores how far outside the active ones it falls.
     * update, updateSkills: Refreshes tactics and stats based on UI changes.
 
 - Match: Main game loop and state manager.
