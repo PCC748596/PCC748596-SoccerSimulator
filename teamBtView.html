@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+
+<head>
+    <meta charset="UTF-8">
+    <title>TeamBT — Fluxograma ao vivo</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 16px;
+            background: #1b1e24;
+            color: #ddd;
+            font-family: Consolas, monospace;
+            font-size: 13px;
+        }
+
+        #topo {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        #topo h1 {
+            font-size: 15px;
+            margin: 0;
+        }
+
+        select {
+            background: #2a2e37;
+            color: #ddd;
+            border: 1px solid #444;
+            padding: 4px 8px;
+        }
+
+        #postura {
+            font-weight: bold;
+        }
+
+        #status-link {
+            color: #888;
+        }
+
+        .tree {
+            display: flex;
+            justify-content: center;
+        }
+
+        ul {
+            list-style: none;
+            margin: 0;
+            padding-top: 20px;
+            position: relative;
+            display: flex;
+        }
+
+        ul::before {
+            content: none;
+        }
+
+        li {
+            list-style: none;
+            margin: 0 6px;
+            padding-top: 20px;
+            position: relative;
+            text-align: center;
+        }
+
+        /* linha vertical do nó até o pai */
+        li::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 1px;
+            height: 20px;
+            background: #555;
+        }
+
+        /* linha horizontal ligando irmãos, na "cintura" do grupo */
+        li:not(:only-child)::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -50%;
+            width: 100%;
+            height: 1px;
+            background: #555;
+        }
+
+        li:first-child:not(:only-child)::after {
+            left: 50%;
+            width: 50%;
+        }
+
+        li:last-child:not(:only-child)::after {
+            left: -50%;
+            width: 50%;
+        }
+
+        li:only-child {
+            padding-top: 0;
+        }
+
+        li:only-child::before {
+            display: none;
+        }
+
+        .box {
+            display: inline-block;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 6px 10px;
+            background: #2a2e37;
+            white-space: nowrap;
+            font-size: 12px;
+        }
+
+        .type-sel>.box {
+            border-color: #7f8ede;
+        }
+
+        .type-seq>.box {
+            border-color: #d4a94a;
+        }
+
+        .type-cond>.box {
+            border-style: dashed;
+        }
+
+        .type-act>.box {
+            border-color: #6a6a6a;
+        }
+
+        .kind {
+            font-size: 9px;
+            color: #888;
+            display: block;
+        }
+
+        /* estados vindos do trace deste tick */
+        .st-SUCCESS>.box {
+            background: #234d2e;
+            border-color: #4caf50;
+            color: #b7f5c2;
+        }
+
+        .st-FAILURE>.box {
+            background: #2a2a2a;
+            border-color: #555;
+            color: #777;
+        }
+
+        .st-RUNNING>.box {
+            background: #4d4423;
+            border-color: #d4a94a;
+            color: #f5e2b7;
+        }
+
+        .st-none>.box {
+            opacity: 0.35;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="topo">
+        <h1>TeamBT — fluxograma ao vivo</h1>
+        <label>Equipa:
+            <select id="sel-team">
+                <option value="TeamA">TeamA</option>
+                <option value="TeamB">TeamB</option>
+            </select>
+        </label>
+        <span>Postura activa: <span id="postura">—</span></span>
+        <span id="status-link">(precisa da aba do jogo aberta noutro separador)</span>
+    </div>
+
+    <div class="tree" id="tree"></div>
+
+    <script>
+        /*
+        Espelha à mão a estrutura de TeamBT em js/bt/team_bt.js (sel/seq/cond/act).
+        Se a árvore lá mudar, actualizar aqui — não há introspecção automática
+        porque os nós BT (core.js) não guardam os filhos com nomes legíveis
+        fora do closure de setPosture/act.
+        */
+        const TREE = {
+            name: 'TeamRoot', type: 'sel', children: [
+                {
+                    name: 'BolaParada', type: 'seq', children: [
+                        { name: 'jogoParado', type: 'cond' },
+                        { name: 'posture:SET_PIECE', type: 'act' }
+                    ]
+                },
+                {
+                    name: 'ComBola', type: 'seq', children: [
+                        { name: 'temPosse', type: 'cond' },
+                        {
+                            name: 'FaseOfensiva', type: 'sel', children: [
+                                {
+                                    name: 'Transicao', type: 'seq', children: [
+                                        { name: 'emContraAtaque', type: 'cond' },
+                                        { name: 'posture:COUNTER', type: 'act' }
+                                    ]
+                                },
+                                {
+                                    name: 'UltimoTerco', type: 'seq', children: [
+                                        { name: 'bolaNoUltimoTerco', type: 'cond' },
+                                        { name: 'posture:FINAL_THIRD', type: 'act' }
+                                    ]
+                                },
+                                {
+                                    name: 'PosseInstalada', type: 'seq', children: [
+                                        { name: 'posseProlongada', type: 'cond' },
+                                        { name: 'posture:ATTACK_SUSTAINED', type: 'act' }
+                                    ]
+                                },
+                                { name: 'posture:BUILD_UP', type: 'act' }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    name: 'SemBola', type: 'seq', children: [
+                        { name: 'lerAmeacaDeFlanco', type: 'act' },
+                        {
+                            name: 'BlocoDefensivo', type: 'sel', children: [
+                                {
+                                    name: 'Basculacao', type: 'seq', children: [
+                                        { name: 'flancoEmPerigo', type: 'cond' },
+                                        { name: 'posture:FLANK_SHIFT', type: 'act' }
+                                    ]
+                                },
+                                {
+                                    name: 'BlocoBaixo', type: 'seq', children: [
+                                        { name: 'bolaNoNossoTerco', type: 'cond' },
+                                        { name: 'posture:LOW_BLOCK', type: 'act' }
+                                    ]
+                                },
+                                {
+                                    name: 'PressaoAlta', type: 'seq', children: [
+                                        { name: 'pressionamosAlto', type: 'cond' },
+                                        { name: 'posture:HIGH_PRESS', type: 'act' }
+                                    ]
+                                },
+                                { name: 'posture:MID_BLOCK', type: 'act' }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        };
+
+        function buildNode(node) {
+            const li = document.createElement('li');
+            li.className = 'type-' + node.type + ' st-none';
+            li.dataset.name = node.name;
+
+            const box = document.createElement('div');
+            box.className = 'box';
+            box.innerHTML = node.name + '<span class="kind">' + node.type + '</span>';
+            li.appendChild(box);
+
+            if (node.children && node.children.length) {
+                const ul = document.createElement('ul');
+                node.children.forEach(c => ul.appendChild(buildNode(c)));
+                li.appendChild(ul);
+            }
+            return li;
+        }
+
+        function buildTree() {
+            const root = document.createElement('ul');
+            root.appendChild(buildNode(TREE));
+            const holder = document.getElementById('tree');
+            holder.innerHTML = '';
+            holder.appendChild(root);
+        }
+        buildTree();
+
+        // status por nome, recalculado a cada mensagem
+        function applyTrace(trace) {
+            const statusByName = {};
+            (trace || []).forEach(entry => {
+                const idx = entry.lastIndexOf(':');
+                const name = entry.slice(0, idx);
+                const status = entry.slice(idx + 1);
+                statusByName[name] = status;
+            });
+
+            document.querySelectorAll('#tree li').forEach(li => {
+                const name = li.dataset.name;
+                const status = statusByName[name];
+                li.className = li.className.replace(/\sst-\S+/, '');
+                li.classList.add(status ? ('st-' + status) : 'st-none');
+            });
+        }
+
+        const teamSel = document.getElementById('sel-team');
+        let lastPayload = null;
+
+        function render() {
+            if (!lastPayload) return;
+            const data = lastPayload[teamSel.value];
+            document.getElementById('postura').innerText = (data && data.posture) ? data.posture : '—';
+            applyTrace(data ? data.trace : []);
+            document.getElementById('status-link').innerText = '';
+        }
+
+        teamSel.addEventListener('change', render);
+
+        const channel = new BroadcastChannel('teamBtTrace');
+        channel.onmessage = (ev) => {
+            lastPayload = ev.data;
+            render();
+        };
+    </script>
+</body>
+
+</html>
