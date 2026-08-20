@@ -52,11 +52,28 @@ function executePassGameplay(p) {
     const passSkill = p.skillFor ? p.skillFor('PASS') : 50;
     const tecSkill = p.skillFor ? p.skillFor('TEC') : 50;
 
+    /*
+    Adversario mais proximo de QUEM PASSA (nao da linha de passe: isso ja e
+    o filtro de sombra no findPassTarget). E o que mede o aperto.
+    */
+    const adversarios = (p.team === 'TeamA') ? Match.opponents : Match.players;
+    let distAdversario = Infinity;
+    for (const o of adversarios) {
+        if (o.role === 'gk' || !o.model) continue;
+        const d = p.model.position.distanceTo(o.model.position);
+        if (d < distAdversario) distAdversario = d;
+    }
+
+    // Frente local do modelo e +Z (ver pass_candidates.js).
+    _v2.set(0, 0, 1).applyQuaternion(p.model.quaternion);
+    const normDir = Math.hypot(dxAlvo, dzAlvo) || 1;
+    const cosCorpo = (_v2.x * dxAlvo + _v2.z * dzAlvo) / normDir;
+
     const sigma = sigmaDePasse({
         passSkill: passSkill,
         tecSkill: tecSkill,
-        distAdversario: Infinity,
-        cosCorpo: 1
+        distAdversario: distAdversario,
+        cosCorpo: cosCorpo
     });
     const desvio = sigma * amostraGaussiana(Math.random);
     const rodado = rodarNoPlano(dxAlvo, dzAlvo, desvio);
@@ -71,7 +88,7 @@ function executePassGameplay(p) {
     passes saiam absurdamente longos ou curtos.
     */
     const erroDist = 1 + (Math.random() * 2 - 1) * PassModel.erroPesoMax * (1 - passSkill / 100);
-    distToTarget *= erroDist;
+    distToTarget *= erroDist * fatorForcaSobPressao(distAdversario);
 
     /*
     A força do passe sai da BALÍSTICA, não de uma heurística.

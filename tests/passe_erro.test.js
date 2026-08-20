@@ -144,3 +144,66 @@ test('rodar 90 graus troca os eixos', () => {
     assert.ok(Math.abs(r.x) < 1e-9 && Math.abs(r.z + 1) < 1e-9,
         'deu (' + r.x.toFixed(3) + ', ' + r.z.toFixed(3) + ')');
 });
+
+/* ------------------------------------------------------------------
+   Pressao e angulo do corpo.
+   ------------------------------------------------------------------ */
+
+function montarForca() {
+    const sandbox = { Math: Math };
+    vm.createContext(sandbox);
+    vm.runInContext(
+        recortarConst(CONFIG, 'PassErrorModel') + '\n' +
+        recortarFuncao(UTILS, 'fatorForcaSobPressao') + '\n' +
+        'this.forca = fatorForcaSobPressao;', sandbox);
+    return sandbox.forca;
+}
+
+test('adversário em cima aumenta a dispersão', () => {
+    const s = montar();
+    const livre = s.sigma(semPressao());
+    const apertado = s.sigma(semPressao({ distAdversario: 0.8 }));
+    assert.ok(apertado > livre * 1.4,
+        'livre=' + livre.toFixed(4) + ' apertado=' + apertado.toFixed(4));
+});
+
+test('a pressão desaparece gradualmente com a distância', () => {
+    const s = montar();
+    const perto = s.sigma(semPressao({ distAdversario: 1.0 }));
+    const medio = s.sigma(semPressao({ distAdversario: 2.5 }));
+    const longe = s.sigma(semPressao({ distAdversario: 10.0 }));
+    assert.ok(perto > medio && medio > longe, 'nao e gradual');
+    assert.ok(Math.abs(longe - s.sigma(semPressao())) < 1e-9,
+        'fora do raio de pressao devia ser igual a estar livre');
+});
+
+test('passar de costas dispersa mais do que passar de frente', () => {
+    const s = montar();
+    const frente = s.sigma(semPressao({ cosCorpo: 1 }));
+    const lado = s.sigma(semPressao({ cosCorpo: 0 }));
+    const costas = s.sigma(semPressao({ cosCorpo: -1 }));
+    assert.ok(costas > lado && lado > frente,
+        'frente=' + frente.toFixed(4) + ' lado=' + lado.toFixed(4) + ' costas=' + costas.toFixed(4));
+});
+
+test('pressão e costas somam-se', () => {
+    const s = montar();
+    const so_costas = s.sigma(semPressao({ cosCorpo: -1 }));
+    const ambos = s.sigma(semPressao({ cosCorpo: -1, distAdversario: 0.8 }));
+    assert.ok(ambos > so_costas, 'o pior caso devia ser o pior de todos');
+});
+
+test('nem no pior caso a dispersão fica absurda', () => {
+    const s = montar();
+    const pior = s.sigma({ passSkill: 0, tecSkill: 0, distAdversario: 0, cosCorpo: -1 });
+    assert.ok(pior < 0.7, 'sigma de ' + pior.toFixed(3) + ' rad (0.7 = 40 graus)');
+});
+
+test('a força cai sob pressão, e nunca abaixo do mínimo', () => {
+    const forca = montarForca();
+    assert.strictEqual(forca(Infinity), 1.0);
+    assert.strictEqual(forca(10.0), 1.0);
+    const apertado = forca(0.5);
+    assert.ok(apertado < 1.0, 'sob pressao a forca devia cair');
+    assert.ok(apertado >= 0.85 - 1e-9, 'caiu abaixo do minimo: ' + apertado);
+});

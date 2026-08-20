@@ -203,7 +203,51 @@ function sigmaDePasse(o) {
     const skill = (pass * (1 - M.pesoTecnica) + tec * M.pesoTecnica) / 100;
     let sigma = M.sigmaMin + (M.sigmaMax - M.sigmaMin) * (1 - skill);
 
+    /*
+    PRESSAO. Um adversario a `raioPressao` nao estorva nada; colado,
+    multiplica a dispersao por `pressaoMult`. Entre os dois, linear.
+
+    Isto nao existia: um jogador com um adversario em cima passava com a
+    mesma precisao de um sozinho no meio do campo. A pressao so actuava na
+    DECISAO (underPressure faz cair para o findPassTargetRelaxed) — ele
+    escolhia pior, mas executava igualmente bem.
+    */
+    const d = o.distAdversario;
+    if (typeof d === 'number' && d < M.raioPressao) {
+        const aperto = 1 - Math.max(0, d) / M.raioPressao;
+        sigma *= 1 + (M.pressaoMult - 1) * aperto;
+    }
+
+    /*
+    ANGULO DO CORPO. `cosCorpo` 1 e virado para o alvo, -1 de costas. A
+    penalizacao cresce so na metade de tras: passar para o lado e normal,
+    passar sem olhar e que nao.
+    */
+    const cos = (typeof o.cosCorpo === 'number') ? Math.max(-1, Math.min(1, o.cosCorpo)) : 1;
+    if (cos < 1) {
+        const atras = (1 - cos) / 2;   // 0 de frente, 1 de costas
+        sigma *= 1 + (M.costasMult - 1) * atras;
+    }
+
     return sigma;
+}
+
+/*
+Quanto da forca sobra num passe feito sob pressao, 0..1.
+
+Um passe apertado sai mais fraco: nao ha tempo para armar a perna. Aplica-se
+a DISTANCIA ALVO (como o erro de peso) e nao a velocidade ja resolvida — a
+balistica com arrasto quadratico nao e linear, e multiplicar a velocidade
+faz o erro na distancia explodir.
+
+Pura: sem Match, sem THREE.
+*/
+function fatorForcaSobPressao(distAdversario) {
+    const M = PassErrorModel;
+    const d = distAdversario;
+    if (typeof d !== 'number' || d >= M.raioPressao) return 1.0;
+    const aperto = 1 - Math.max(0, d) / M.raioPressao;
+    return 1.0 - (1.0 - M.forcaMinPressao) * aperto;
 }
 
 /*
