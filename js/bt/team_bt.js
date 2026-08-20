@@ -1238,6 +1238,99 @@ function aplicarInquietacao(p, bb, targetX, targetZ) {
     return { x: targetX + o.x, z: targetZ + o.z };
 }
 
+/*
+Quem se oferece como opcao de passe, decidido para a EQUIPA de uma vez.
+
+Corre depois do tickBase (precisa do `postoBase` de toda a gente: o custo de
+um apoio e a distancia do SLOT dele ao ponto) e antes do nivel 3, que e quem
+executa — a folha ApoioDeCirculacao do player_bt.
+
+So a equipa com a bola se oferece. Escreve `p.apoioPonto` em quem foi
+escolhido e limpa-o nos outros; sem a limpeza, um apoio ficava agarrado ao
+ponto da jogada anterior depois de a bola mudar de dono.
+*/
+function atribuirApoiosDaEquipa(lista, bb) {
+    if (typeof SupportModel === 'undefined' || !SupportModel.circulacao) return;
+    if (typeof atribuirApoios !== 'function') return;
+
+    const semApoio = () => { for (const p of lista) p.apoioPonto = null; };
+
+    /*
+    A referencia e a BOLA, nao o portador.
+
+    Medido: so 34% dos frames tem `ballCarrier` — o resto do tempo a bola vai
+    no ar ou anda solta. Com o portador como referencia, os apoios eram
+    apagados dois em cada tres frames e a duracao media de um apoio ficava em
+    0.2 s: ninguem chegava a chegar ao ponto. Oferecer-se e em relacao a onde
+    a bola esta, e isso existe sempre.
+
+    A condicao passa a ser a POSSE da equipa (isAttacking), que sobrevive a
+    bola estar em movimento entre dois companheiros.
+    */
+    if (!bb.isAttacking) { semApoio(); return; }
+    if (typeof Match === 'undefined' || !Match.ball) { semApoio(); return; }
+    if (Match.gkHoldingBall && Match.gkHoldingBall[bb.team]) { semApoio(); return; }
+
+    const portador = bb.carrier;
+    const refX = Match.ball.position.x;
+    const refZ = Match.ball.position.z;
+    const dirZref = lista[0] ? lista[0].dirZ : 1;
+
+    const C = SupportModel.circulacao;
+    const adversarios = (bb.opp || [])
+        .filter(o => o && o.role !== 'gk' && o.model)
+        .map(o => ({ x: o.model.position.x, z: o.model.position.z }));
+
+    /*
+    O `apoioActual` e o que liga a histerese: sem ele, cada frame refazia a
+    atribuicao do zero e o encargo saltava de pessoa para pessoa — medido, a
+    duracao media de um apoio era 0.2 s e ninguem chegava ao ponto.
+
+    Por isso a limpeza dos pontos NAO pode ser feita antes disto: o ponto
+    anterior tem de sobreviver ate a nova atribuicao o confirmar ou largar.
+    */
+    const candidatos = [];
+    for (const p of lista) {
+        if (!p || p.role === 'gk' || !p.postoBase) continue;
+        if (portador && p === portador) continue;
+        // Quem esta em cima da bola tambem nao: e ele que a vai jogar.
+        if (Math.hypot(p.model.position.x - refX, p.model.position.z - refZ) < 2.0) continue;
+        // Quem vai receber a bola tem tarefa; oferecer-se e para os outros.
+        if (typeof Match !== 'undefined' && Match.intendedReceiver === p) continue;
+        candidatos.push({
+            id: p.id,
+            slotX: p.postoBase.x,
+            slotZ: p.postoBase.z,
+            apoioActual: p.apoioPonto || null
+        });
+    }
+    if (!candidatos.length) {
+        for (const p of lista) p.apoioPonto = null;
+        return;
+    }
+
+    const escolhidos = atribuirApoios({
+        portador: { x: refX, z: refZ, dirZ: dirZref },
+        candidatos: candidatos,
+        adversarios: adversarios,
+        offsideLimitDir: (typeof bb.offsideLimitDir === 'number') ? bb.offsideLimitDir : null,
+        maxApoios: C.maxApoios,
+        raioMin: C.raioMin,
+        raioMax: C.raioMax,
+        desvioMax: C.desvioMax,
+        margemLinha: C.margemLinha,
+        margemAdversario: C.margemAdversario
+    });
+
+    const comApoio = new Set(escolhidos.map(e => e.id));
+    for (const p of lista) if (!comApoio.has(p.id)) p.apoioPonto = null;
+
+    for (const e of escolhidos) {
+        const p = lista.find(j => j.id === e.id);
+        if (p) p.apoioPonto = { x: e.x, z: e.z };
+    }
+}
+
 const PosicionamentoAI = {
     /*
     FASE 1 - o posto de cada um antes da marcacao: slot no bloco + estilo.

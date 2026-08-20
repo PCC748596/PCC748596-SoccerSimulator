@@ -45,6 +45,9 @@ function medir(compact, ladoBola) {
             quase 1 m entre corridas.
             */
             RunIntoSpaceModel.distMax = -1;
+            // E o apoio de circulacao, pela mesma razao: quem se oferece mexe
+            // nas marcacoes do bloco que estamos a medir.
+            SupportModel.circulacao.maxApoios = 0;
 
             Tatics.compactness = '${compact}';
             Tatics.setores = ['esq', 'dir'];

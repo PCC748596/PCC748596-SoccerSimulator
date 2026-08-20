@@ -411,6 +411,10 @@ class PlayerFSM {
             // tal no debug. O alvo é o ponto de interceptação calculado pela
             // percepção (ver actIntercept), não a posição actual da bola.
             case 'INTERCEPT':
+            // SUPPORT_PASS: ir para o ponto onde sou opcao de passe. Mesma
+            // locomocao; estado proprio para se ver no debug quem se esta a
+            // oferecer (ver atribuirApoiosDaEquipa).
+            case 'SUPPORT_PASS':
                 p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult);
                 break;
 

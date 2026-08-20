@@ -1084,6 +1084,31 @@ function alvoDeApoio(p, aFrenteDaBola, ctx) {
 
 // Ocupa a posição que o nível 2 lhe deu.
 /*
+APOIO DE CIRCULACAO — ir para o ponto onde sou opcao de passe.
+
+O ponto ja vem escolhido pelo nivel de equipa (atribuirApoiosDaEquipa, em
+team_bt.js): aqui e so execucao. Estado proprio na FSM para se ver no debug
+quem esta a oferecer-se e quem esta so a ocupar a posicao.
+*/
+function podeApoiarCirculacao(ctx) {
+    const p = ctx.p;
+    if (!p.apoioPonto) return false;
+    if (p.role === 'gk') return false;
+    if (p === Match.ballCarrier) return false;
+    return true;
+}
+
+function actApoioCirculacao(ctx) {
+    const p = ctx.p;
+    p.dynamicTarget.set(p.apoioPonto.x, ALTURA_BASE_Y, p.apoioPonto.z);
+    // Ritmo de quem se desmarca: mais do que posicionar-se, menos do que
+    // atacar o espaco (ver actRunIntoSpace).
+    p.speedMult = (6.2 + ((ctx.skillSpeed - 50) / 50) * 1.3) * 1.25 * 0.9;
+    p.apoioAtivo = false;
+    p.fsm.changeState('SUPPORT_PASS');
+}
+
+/*
 CORRIDA AO ESPACO — arrancar para um espaco livre a frente, sem bola.
 
 Quem ja esta a correr continua (o `runTimer` e a corrida em curso; quem a
@@ -1679,6 +1704,17 @@ const PlayerBT = sel('PlayerRoot',
                     p.speedMult = 4.0;
                     p.fsm.changeState('MOVE_TO_POS');
                 })
+            ),
+
+            /*
+            Apoio de circulacao antes da corrida ao espaco: oferecer-se a
+            distancia de passe serve a jogada seguinte; atacar o espaco serve
+            a jogada depois dessa. Sem opcao de passe agora, nao ha jogada
+            depois dessa.
+            */
+            seq('ApoioDeCirculacao',
+                cond('fuiChamadoAApoiar', podeApoiarCirculacao),
+                act('apoiarCirculacao', actApoioCirculacao)
             ),
 
             seq('CorrerNoEspaco',

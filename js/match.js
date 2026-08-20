@@ -1376,6 +1376,17 @@ const Match = {
         this.opponents.forEach(p => PosicionamentoAI.tickFinal(p, bbB));
 
         /*
+        Quem se oferece como opcao de passe. Tambem e decisao de EQUIPA: cada
+        um a escolher sozinho o melhor ponto escolhe o MESMO ponto (foi o erro
+        que a marcacao tinha). Corre depois do posicionamento porque o custo de
+        um apoio e a distancia do slot dele ao ponto.
+        */
+        if (typeof atribuirApoiosDaEquipa === 'function') {
+            atribuirApoiosDaEquipa(this.players, bbA);
+            atribuirApoiosDaEquipa(this.opponents, bbB);
+        }
+
+        /*
         Nao ha mais nada a mexer nos alvos depois disto.
 
         Foram apagadas, por esta ordem: as molas de coesao

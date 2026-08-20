@@ -1933,7 +1933,24 @@ const SupportModel = {
     /*
     Vantagem, em metros, de quem JÁ estava a fazer o apoio.
     */
-    bonusOcupante: 2.5
+    bonusOcupante: 2.5,
+
+    /*
+    Apoio de CIRCULACAO — a outra camada, a distancia de passe (ver
+    atribuirApoios). O apoio acima e curto (3.5 a 7 m): serve a tabela, nao
+    serve a troca de passes que faz a bola girar.
+
+    `desvioMax` e o mesmo principio do biasMax da marcacao: o apoio inclina
+    quem ja estava por perto, nao arranca ninguem do outro lado do campo.
+    */
+    circulacao: {
+        maxApoios: 3,
+        raioMin: 10.0,
+        raioMax: 18.0,
+        desvioMax: 8.0,
+        margemLinha: 2.0,
+        margemAdversario: 3.0
+    }
 };
 
 
@@ -2610,6 +2627,170 @@ const Tatics = {
         document.getElementById('val-gk-b').innerText = TeamSkills.TeamB.gk;
     }
 };
+
+/*
+APOIO DE CIRCULACAO — quem se oferece a distancia de passe, e onde.
+
+O apoio que ja existia (SupportModel.raioMin/raioMax, 3.5 a 7 m, um de cada
+lado) e apoio CURTO: o toque de saida, a tabela. Medido em jogo: 1.3 apoios
+por frame, a 6.1 +/- 4.6 m do portador.
+
+Faltava a outra camada. Media dos companheiros por distancia ao portador:
+0-8 m 18.8%, 8-12 m 12.5%, 12-22 m 42.0%, 22+ 26.6% — havia gente na faixa
+da circulacao, mas por ACASO, parada no slot do bloco, e so 1.7 deles com
+linha de passe aberta. Ninguem tinha a tarefa de se oferecer.
+
+A atribuicao e de EQUIPA e nao de jogador, pela mesma razao da marcacao (ver
+atribuirMarcacoes): cada um a escolher sozinho o melhor ponto escolhe o
+MESMO ponto, e dois jogadores caminham para a mesma coordenada.
+
+Como funciona: gera pontos num leque a volta do portador (varios angulos,
+varios raios dentro da faixa de passe), deita fora os que estao fora do
+campo, em fora-de-jogo, colados a um adversario ou com a linha do portador
+tapada, e depois faz um leilao guloso — o par (jogador, ponto) mais barato
+fecha primeiro, um ponto por jogador, e pontos demasiado proximos uns dos
+outros excluem-se.
+
+O custo de um par e a distancia do SLOT do jogador ao ponto: o apoio inclina
+quem ja estava por perto, nao arranca ninguem do outro lado do campo. Acima
+de `desvioMax` o par nem entra.
+
+Pura: sem Match, sem Tatics, sem THREE (usa o linhaLivre, tambem puro).
+*/
+function atribuirApoios(o) {
+    const resultado = [];
+    if (!o || !o.candidatos || !o.candidatos.length) return resultado;
+
+    const port = o.portador;
+    const dirZ = port.dirZ;
+    const meiaLarg = CAMPO_LARG / 2 - 2.0;
+    const meioComp = CAMPO_COMP / 2 - 2.0;
+
+    /*
+    Um ponto serve se estiver em campo, aquem do fora-de-jogo, sem adversario
+    colado, com a linha do portador aberta e a distancia de passe. E o mesmo
+    teste para os pontos gerados e para o ponto que alguem JA esta a ocupar.
+    */
+    function serve(x, z) {
+        if (Math.abs(x) > meiaLarg || Math.abs(z) > meioComp) return false;
+        if (typeof o.offsideLimitDir === 'number' && z * dirZ > o.offsideLimitDir) return false;
+
+        const d = Math.hypot(x - port.x, z - port.z);
+        if (d < o.raioMin - 1.0 || d > o.raioMax + 1.0) return false;
+
+        // Colado a um adversario nao e opcao de passe, e uma disputa.
+        for (const a of o.adversarios) {
+            if (Math.hypot(a.x - x, a.z - z) < o.margemAdversario) return false;
+        }
+
+        // E a bola consegue la chegar?
+        return linhaLivre(port.x, port.z, x, z, o.adversarios, o.margemLinha);
+    }
+
+    const escolhidos = [];
+    const usados = new Set();
+
+    const longeDosOutros = (x, z) => {
+        for (const e of escolhidos) {
+            if (Math.hypot(e.x - x, e.z - z) < 6.0) return false;
+        }
+        return true;
+    };
+
+    /*
+    HISTERESE PRIMEIRO: quem ja esta a apoiar num ponto que continua a servir
+    fica com ele.
+
+    Medido sem isto: a duracao media de um apoio era 0.2 s. A atribuicao era
+    refeita do zero a cada frame e o encargo saltava de pessoa para pessoa ao
+    sabor de diferencas de centimetros no custo — o jogador so estava dentro
+    de 2 m do seu ponto em 7.7% dos frames, ou seja, nunca chegava a
+    oferecer-se de facto. E o mesmo defeito que a marcacao tinha (ver
+    atribuirMarcacoes).
+    */
+    for (const c of o.candidatos) {
+        if (escolhidos.length >= o.maxApoios) break;
+        const actual = c.apoioActual;
+        if (!actual) continue;
+        if (Math.hypot(actual.x - c.slotX, actual.z - c.slotZ) > o.desvioMax) continue;
+        if (!serve(actual.x, actual.z)) continue;
+        if (!longeDosOutros(actual.x, actual.z)) continue;
+
+        usados.add(c.id);
+        escolhidos.push({ id: c.id, x: actual.x, z: actual.z });
+    }
+
+    /*
+    Leque de pontos para quem sobra. Os angulos sao relativos ao sentido de
+    ATAQUE: 0 e a frente do portador, +-180 e atras. Inclui angulos para tras
+    de proposito — a circulacao normal passa muito por recuar a bola para a
+    linha seguinte.
+    */
+    const angulos = [-150, -110, -70, -35, 0, 35, 70, 110, 150];
+    const raios = [o.raioMin, (o.raioMin + o.raioMax) / 2, o.raioMax];
+
+    const pontos = [];
+    for (const grau of angulos) {
+        for (const raio of raios) {
+            const rad = grau * Math.PI / 180;
+            const x = port.x + Math.sin(rad) * raio;
+            const z = port.z + Math.cos(rad) * raio * dirZ;
+            if (serve(x, z)) pontos.push({ x: x, z: z });
+        }
+    }
+
+    /*
+    REANCORAGEM: quem ja apoiava mas cujo ponto deixou de servir (a bola
+    andou, um adversario fechou a linha) muda de ponto, nao perde o encargo.
+
+    Sem isto ele voltava a concorrer do zero com todos os outros e a duracao
+    media de um apoio nao passava de 0.5 s — o suficiente para arrancar, nao
+    para chegar. Trocar de sitio e barato; trocar de pessoa e que nao.
+    */
+    for (const c of o.candidatos) {
+        if (escolhidos.length >= o.maxApoios) break;
+        if (usados.has(c.id) || !c.apoioActual) continue;
+
+        let melhor = null, melhorCusto = Infinity;
+        for (const ponto of pontos) {
+            if (!longeDosOutros(ponto.x, ponto.z)) continue;
+            const custo = Math.hypot(ponto.x - c.slotX, ponto.z - c.slotZ);
+            if (custo > o.desvioMax || custo >= melhorCusto) continue;
+            melhorCusto = custo;
+            melhor = ponto;
+        }
+        if (!melhor) continue;
+
+        usados.add(c.id);
+        escolhidos.push({ id: c.id, x: melhor.x, z: melhor.z });
+    }
+
+    // Leilao guloso para o resto: o par mais barato fecha primeiro.
+    const pares = [];
+    for (const c of o.candidatos) {
+        if (usados.has(c.id)) continue;
+        for (let i = 0; i < pontos.length; i++) {
+            const custo = Math.hypot(pontos[i].x - c.slotX, pontos[i].z - c.slotZ);
+            if (custo > o.desvioMax) continue;
+            pares.push({ id: c.id, i: i, custo: custo });
+        }
+    }
+    pares.sort((a, b) => a.custo - b.custo);
+
+    for (const par of pares) {
+        if (escolhidos.length >= o.maxApoios) break;
+        if (usados.has(par.id)) continue;
+
+        const ponto = pontos[par.i];
+        // Dois apoios em cima um do outro nao sao duas opcoes, sao uma.
+        if (!longeDosOutros(ponto.x, ponto.z)) continue;
+
+        usados.add(par.id);
+        escolhidos.push({ id: par.id, x: ponto.x, z: ponto.z });
+    }
+
+    return escolhidos;
+}
 
 /*
 CORRIDA AO ESPACO (RUN_INTO_SPACE) — o movimento sem bola que faz a troca de
