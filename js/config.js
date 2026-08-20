@@ -75,10 +75,48 @@ trava o deslizamento sem o impedir: é ele que faz a bola descer o pano em vez
 de ficar colada onde bateu.
 */
 const GoalNet = {
+    /*
+    FÍSICA — não mexer sem medir. A bola já bate no pano, perde velocidade e
+    escorrega até ao chão pela inclinação do pano de trás (profTopo 0.8 no
+    cimo, profBase 2.0 na base). Ver Match.colidirComRede em match.js.
+    */
     profTopo: 0.8,
     profBase: 2.0,
     restituicao: 0.12,
-    atrito: 0.72
+    atrito: 0.72,
+
+    /*
+    MALHA — quantos quadrados por face. Antes cada face era UM quad de quatro
+    vértices, e por isso a rede não podia deformar-se: era uma chapa rígida com
+    textura de rede. Os laterais são estreitos e levam menos divisões ao longo
+    de u.
+    */
+    segmentosU: 16,
+    segmentosV: 6,
+    segmentosLateralU: 8,
+
+    /*
+    ONDULAÇÃO (ver NetWave em goal_net.js). O deslocamento é ao longo da normal
+    da face:
+
+        desloc = amplitude * envolvente(t) * sin(frequencia*t + k*(u+v))
+        envolvente(t) = (1 - e^(-t/ataqueOnda)) * e^(-t/tau)
+
+    com tau = duracaoOnda/4, o que deixa ~1.8% da amplitude ao fim de
+    duracaoOnda. `ondasPorPano` é quantas cristas cabem na diagonal do pano: é
+    o que faz a ondulação PERCORRER a rede em vez de a levantar em bloco.
+
+    O factor de ATAQUE existe para a envolvente valer 0 em t=0. Sem ele a
+    envolvente arrancava em 1 e, como a fase depende de (u+v), a rede saltava
+    para uma posição já deformada no primeiro frame em vez de partir do
+    repouso — apanhado pelos testes.
+    */
+    ataqueOnda: 0.05,
+    duracaoOnda: 5.0,
+    amplitudeMax: 0.28,
+    frequencia: 7.0,
+    ondasPorPano: 2.5,
+    velocidadeCheia: 22.0
 };
 
 /*
