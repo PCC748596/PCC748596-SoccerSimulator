@@ -77,7 +77,18 @@ uma unica corrida (elas sao raras: 1.7% dos jogadores-frame em jogo livre), e
 qualquer teste montado sobre uma so ficava intermitente por causa do cenario
 e nao do codigo.
 */
-const SEMENTES = [20260820, 424242, 987654];
+/*
+Cinco sementes e nao tres. Medido depois do apoio de circulacao ganhar
+prioridade sobre a corrida: ela dispara em ~17 frames de 1800 (1%) nas
+sementes em que dispara, e em ZERO nas outras — fica no limiar da
+deteccao. Com tres sementes o teste ficava vermelho uma corrida em cada
+duas por causa do cenario, nao do codigo.
+
+Isto e um teste do MECANISMO (dispara, e legal, acaba), nao da frequencia.
+Se a corrida ao espaco vale a pena com 1% de presenca e outra conversa,
+e esta anotada no ledger do plano.
+*/
+const SEMENTES = [20260820, 424242, 987654, 111, 555];
 
 function cenarios() {
     const total = {
