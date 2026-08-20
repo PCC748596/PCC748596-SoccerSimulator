@@ -481,6 +481,18 @@ const Match = {
             const redeDir = criarFaceRede(tLD, bFD, tTD, bTD, 8, 10, S.segmentosLateralU, S.segmentosV);
 
             const redes = new THREE.Group(); redes.add(redeCima, redeTras, redeEsq, redeDir);
+
+            /*
+            Regista as faces no NetWave para poderem ondular. A normal de cada
+            uma é aproximada pelo eixo dominante: chega para o deslocamento
+            visual, e evita ter de recalcular normais por vértice a cada frame.
+            */
+            if (typeof NetWave !== 'undefined') {
+                NetWave.registarFace(redeCima, lado, { x: 0, y: 1, z: 0 }, S.segmentosU, S.segmentosV);
+                NetWave.registarFace(redeTras, lado, { x: 0, y: 0, z: 1 }, S.segmentosU, S.segmentosV);
+                NetWave.registarFace(redeEsq, lado, { x: 1, y: 0, z: 0 }, S.segmentosLateralU, S.segmentosV);
+                NetWave.registarFace(redeDir, lado, { x: 1, y: 0, z: 0 }, S.segmentosLateralU, S.segmentosV);
+            }
             if (lado === -1) { redes.scale.z = -1; }
 
             baliza.add(redes); baliza.position.set(0, 0, zSinal + (rP * dir)); campoGrupo.add(baliza);
@@ -1144,6 +1156,8 @@ const Match = {
         }
 
         this.updateBall();
+        // Sai sozinho quando nenhuma rede está a abanar (ver NetWave.update).
+        if (typeof NetWave !== 'undefined') NetWave.update(dt);
         if (typeof SpatialGrid !== 'undefined') SpatialGrid.update(dt);
         // Sem isto o leque de candidatos era desenhado UMA vez, no instante em
         // que se liga o toggle, e ficava congelado nesse frame: os jogadores
@@ -1702,6 +1716,8 @@ const Match = {
                 const vn = vd * nd + v.y * ny;
 
                 if (dist > 0 && vn < 0) { // Bola vem de fora para dentro
+                    // A rede abana: quanto mais forte a componente normal, mais.
+                    if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
                     const correccao = rB - dist;
                     if (correccao > 0) {
                         d += nd * correccao; b.y += ny * correccao;

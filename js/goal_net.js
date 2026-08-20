@@ -49,6 +49,84 @@ const NetWave = {
     amplitudeDoImpacto: function (velocidadeNormal) {
         const v = Math.abs(velocidadeNormal);
         return Math.max(0, Math.min(1, v / GoalNet.velocidadeCheia));
+    },
+
+    /*
+    Regista uma face para poder ser animada. `base` é a cópia das posições de
+    repouso: é sempre DELAS que se parte, nunca da geometria corrente, senão a
+    deformação acumulava e a rede nunca voltava ao lugar.
+    */
+    registarFace: function (mesh, zSinal, normal, nu, nv) {
+        const attr = mesh.geometry.attributes.position;
+        this.faces.push({
+            mesh: mesh,
+            attr: attr,
+            base: new Float32Array(attr.array),
+            normal: normal,
+            zSinal: zSinal,
+            nu: nu,
+            nv: nv,
+            t: 0,
+            amplitude: 0,
+            activa: false
+        });
+    },
+
+    /*
+    A bola bateu nesta baliza. Reinicia o relógio e fica com a MAIOR das
+    amplitudes, em vez de as somar: somar deixava a rede a crescer sem limite
+    numa sequência de remates.
+    */
+    bater: function (zSinal, velocidadeNormal) {
+        const a = this.amplitudeDoImpacto(velocidadeNormal);
+        if (a <= 0) return;
+
+        for (const f of this.faces) {
+            if (f.zSinal !== zSinal) continue;
+            f.amplitude = f.activa ? Math.max(f.amplitude, a) : a;
+            f.t = 0;
+            f.activa = true;
+        }
+    },
+
+    /*
+    Sai IMEDIATAMENTE se nenhuma face está a abanar: em repouso o custo é uma
+    comparação por frame, e a malha mais densa não pesa nada enquanto ninguém
+    marcar.
+    */
+    update: function (dt) {
+        if (!this.faces.length) return;
+
+        let algumaActiva = false;
+        for (const f of this.faces) { if (f.activa) { algumaActiva = true; break; } }
+        if (!algumaActiva) return;
+
+        const dur = GoalNet.duracaoOnda;
+
+        for (const f of this.faces) {
+            if (!f.activa) continue;
+
+            f.t += dt;
+            const acabou = f.t >= dur;
+
+            const base = f.base, arr = f.attr.array;
+            const largura = f.nu + 1;
+
+            for (let i = 0; i < largura * (f.nv + 1); i++) {
+                const iu = i % largura, iv = (i / largura) | 0;
+                const u = iu / f.nu, v = iv / f.nv;
+
+                const d = acabou ? 0 : this.deslocamento(f.t, u, v, f.amplitude);
+
+                arr[i * 3] = base[i * 3] + f.normal.x * d;
+                arr[i * 3 + 1] = base[i * 3 + 1] + f.normal.y * d;
+                arr[i * 3 + 2] = base[i * 3 + 2] + f.normal.z * d;
+            }
+
+            f.attr.needsUpdate = true;
+            // Uma última passagem já pôs tudo no repouso exacto: pode parar.
+            if (acabou) { f.activa = false; f.amplitude = 0; }
+        }
     }
 };
 
