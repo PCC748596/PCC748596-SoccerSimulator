@@ -1074,11 +1074,16 @@ function actGoalkeeperPosition(ctx) {
     const p = ctx.p;
     p.apoioAtivo = false;
     p.speedMult = (4.2 + ((ctx.skillSpeed - 50) / 50) * 1.2) * 1.25 * 0.9;
-    const targetX = Math.max(-10, Math.min(10, Match.ball.position.x * 0.5));
+    /*
+    Delega em gkAnchor() (config.js), a mesma função que updateGK() usa. Esta
+    folha nunca corre — update() manda os guarda-redes para updateGK e nunca
+    para runBehaviorTree — mas continua referenciada pela árvore, por isso fica
+    ligada à fórmula real em vez de guardar uma cópia que pode divergir.
+    */
     const style = GoalkeeperStyle[p.gkStyle] || GoalkeeperStyle.defensive;
-    const targetZ = (p.ownGoalZ + 5 * p.dirZ) +
-        Math.max(0, Math.min(style.maxOut, (Match.ball.position.z - p.ownGoalZ) * 0.1 * p.dirZ));
-    p.dynamicTarget.set(targetX, ALTURA_BASE_Y, targetZ);
+    const alvo = gkAnchor(Match.ball.position.x, Match.ball.position.z,
+        p.ownGoalZ, p.dirZ, style);
+    p.dynamicTarget.set(alvo.x, ALTURA_BASE_Y, alvo.z);
     p.fsm.changeState('MOVE_TO_POS');
 }
 
