@@ -435,12 +435,6 @@ const TeamShape = {
     lá no fundo do campo dele) o bloco tentava ficar "à frente da bola" e
     saltava quase até ao ataque, mesmo em Balanced.
     */
-    pressaoLineCap: {
-        low: 0.0,                      // nunca passa do meio-campo
-        balanced: (CAMPO_COMP / 2) / 3,       // 1/3 do campo de ataque (~17.7)
-        high: (CAMPO_COMP / 2) * 2 / 3         // 2/3 do campo de ataque (~35.3)
-    },
-
     // Construção: com a bola aquém deste Z, um médio desce a dar linha de passe.
     supportBallZ: -6.0,
     supportAhead: 9.0,    // quantos metros à frente da bola se oferece
@@ -2112,25 +2106,44 @@ internos (`defesa`/`balanceado`/`ataque`) não mudaram, só o rótulo na UI.
 =============================================================================
 */
 const MentalidadeModel = {
+    /*
+    `blocoZ` desloca o centro do bloco em relação à BOLA; `tectoBloco` é o mais
+    longe que esse centro pode ir, medido do meio-campo, no referencial de
+    ataque.
+
+    O tecto era do Defensive Pressure (TeamShape.pressaoLineCap, removido), e
+    por isso a Mentalidade não tinha palavra nenhuma sobre até onde a equipa
+    subia: com Equilibrada e pressão Balanced o bloco ia buscar a bola a 17.7 m
+    DENTRO do meio-campo adversário. O Defensive Pressure passou a ser a
+    distância de marcação (ver MarkingModel.distanciaPorPressao).
+
+    Frações do meio-campo (53 m): um terço, um sexto, zero, um terço, dois
+    terços.
+    */
     muito_defensiva: {
         agressao: 0.20,
-        blocoZ: -10.0
+        blocoZ: -10.0,
+        tectoBloco: -(CAMPO_COMP / 2) / 3
     },
     defesa: {
         agressao: 0.35,
-        blocoZ: -5.0
+        blocoZ: -5.0,
+        tectoBloco: -(CAMPO_COMP / 2) / 6
     },
     balanceado: {
         agressao: 0.50,
-        blocoZ: 0.0
+        blocoZ: 0.0,
+        tectoBloco: 0.0
     },
     ataque: {
         agressao: 0.65,
-        blocoZ: 7.0
+        blocoZ: 7.0,
+        tectoBloco: (CAMPO_COMP / 2) / 3
     },
     muito_ofensiva: {
         agressao: 0.80,
-        blocoZ: 12.0
+        blocoZ: 12.0,
+        tectoBloco: (CAMPO_COMP / 2) * 2 / 3
     }
 };
 

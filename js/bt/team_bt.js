@@ -54,7 +54,9 @@ bloco responde aos ajustes que existem e mais nada -
     Linha Defensiva   TeamShape.linhaDefensiva (tecto da traseira)
     Width Compactness BlockShape.amplitude
     Length Compactness BlockShape.profundidade
-    Defensive Pressure TeamShape.pressaoLineCap (tecto do centro sem bola)
+    Defensive Pressure MarkingModel.distanciaPorPressao (a que distância se
+                       acompanha o homem; o tecto do bloco passou para a
+                       Mentalidade, MentalidadeModel.tectoBloco)
     Setores           Tatics.setores
 
 A postura continua a existir e a aparecer no HUD (ver main.js); so deixou de
@@ -610,12 +612,15 @@ function computeBlock(bb) {
         }
 
         /*
-        Limite duro do avanco sem bola, por Defensive Pressure: meio-campo
-        (Low), 1/3 do campo de ataque (Balanced), 2/3 (High). E o ULTIMO a
-        falar - e ele que decide ate onde a equipa acompanha uma bola que
-        esta no campo adversario, e por isso ganha ao escape acima.
+        Limite duro do avanço sem bola, agora pela MENTALIDADE: é ela que manda
+        onde o bloco se põe em relação à bola, e o tecto é a outra metade dessa
+        decisão. É o ÚLTIMO a falar — decide até onde a equipa acompanha uma
+        bola que está no campo adversário — e por isso ganha ao escape acima.
+
+        Era do Defensive Pressure, que passou a ser a distância de marcação. Com
+        Equilibrada o tecto é 0: o bloco não passa do meio-campo.
         */
-        const pressCap = TeamShape.pressaoLineCap[Tatics.pressaoDefensiva] ?? TeamShape.pressaoLineCap.balanced;
+        const pressCap = ment.tectoBloco;
         const centroAtual = (z0 + z1) / 2;
         if (centroAtual > pressCap) {
             z0 -= (centroAtual - pressCap);
