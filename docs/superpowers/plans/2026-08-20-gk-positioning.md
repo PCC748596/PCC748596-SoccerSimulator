@@ -12,7 +12,7 @@
 
 - Sem passos de build. Os ficheiros em `js/` são carregados como `<script>` clássicos por `index.html`; tudo é global, nada de `import`/`export`.
 - `gkAnchor` tem de ser pura: sem leituras de `Match`, `window` ou de qualquer outro global mutável. Só os cinco argumentos.
-- Os testes correm com `node --test tests/`. Não há script `test` em `package.json`; usa o comando completo.
+- Os testes correm com `node --test tests/*.test.js` (o `node --test tests/` simples não resolve o diretório neste Node em Windows). Não há script `test` em `package.json`; usa o comando completo.
 - O código e os comentários do repositório estão em português europeu. Segue o mesmo registo.
 - Convenção de eixos já existente: `dirZ` é `+1` para `TeamA` e `-1` para `TeamB`; `ownGoalZ = -(CAMPO_COMP / 2) * dirZ`. Avançar para o campo adversário é somar `depth * dirZ` a `ownGoalZ`.
 - `LARGURA_BALIZA` vale `7.32`, logo `limitGKX = 7.32 / 2 - 0.5 = 3.16`.
@@ -280,7 +280,7 @@ Expected: PASS, 11 testes.
 
 - [ ] **Step 5: Confirmar que não partiste os outros testes**
 
-Run: `node --test tests/`
+Run: `node --test tests/*.test.js`
 Expected: PASS. Repara em `tests/gk_saida.test.js` em particular — também recorta de `config.js`.
 
 - [ ] **Step 6: Commit**
@@ -412,7 +412,7 @@ Expected: sem saída, código de saída 0.
 
 - [ ] **Step 7: Correr a suite toda**
 
-Run: `node --test tests/`
+Run: `node --test tests/*.test.js`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
@@ -567,7 +567,7 @@ Expected: sem saída, código de saída 0.
 
 - [ ] **Step 7: Correr a suite toda**
 
-Run: `node --test tests/`
+Run: `node --test tests/*.test.js`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
@@ -615,7 +615,7 @@ Expected: sem saída, código de saída 0.
 
 - [ ] **Step 4: Correr a suite toda**
 
-Run: `node --test tests/`
+Run: `node --test tests/*.test.js`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**

@@ -322,7 +322,7 @@ const MatchDuration = {
     }
 };
 
-window.cameraMode = 'center';
+window.cameraMode = 'lateraltv';
 window.cameraZoom = 1.0;
 /*
 Arranca EM PAUSA (pedido): o jogo abre parado e só corre quando se carrega
@@ -990,15 +990,62 @@ const SlideTackleModel = {
 /*
 Playing style do GK (ver updateGkStyle em team_bt.js).
 
-    defensive  padrão — fica perto da baliza, no máximo até à marca de
-               grande penalidade (~11 m da linha de fundo: 5 + maxOut).
+    defensive  padrão — fica perto da baliza.
     offensive  sweeper-keeper — sai para cobrir o espaço atrás da defesa
                quando o adversário ataca pelo corredor central sem oposição.
+
+depthMin/depthMax: distância à própria linha de golo, em metros. O valor real
+sai da curva em gkAnchor() — depthMin com a bola dentro da grande área,
+depthMax com ela no meio-campo adversário.
+
+sweepOut: quão longe da linha ele pode ir a varrer, e SÓ a varrer. É o gatilho
+pontual de updateGkStyle() (team_bt.js), não uma postura de repouso.
+
+Antes disto havia um único maxOut e quatro fórmulas espalhadas por updateGK(),
+com coeficientes que SUBIAM (0.15, 0.35, 0.55) à medida que o atacante se
+aproximava: quanto maior o perigo, mais ele saía da baliza.
 */
 const GoalkeeperStyle = {
-    defensive: { maxOut: 6 },
-    offensive: { maxOut: 20 }
+    defensive: { depthMin: 1.2, depthMax: 6.0, sweepOut: 6.0 },
+    offensive: { depthMin: 1.8, depthMax: 11.0, sweepOut: 20.0 }
 };
+
+// Referências da curva de profundidade: borda da grande área e meio-campo
+// adversário. Entre elas a profundidade cresce; fora delas está saturada.
+const GK_D_NEAR = 16.5;
+const GK_D_FAR = 55.0;
+
+/*
+Posição de ancoragem do guarda-redes, em repouso e a defender.
+
+Função PURA de propósito: não lê Match nem window, só os cinco argumentos, e
+por isso é testável isolada (ver tests/gk_anchor.test.js).
+
+Profundidade: cresce com a distância da bola à baliza, com easing quadrático —
+o recuo acelera junto da área, que é onde importa.
+
+Lateral: bissetriz do ângulo bola-postes, recuada de depth. O desvio encolhe
+sozinho conforme ele recua para a linha; é geometria, não uma constante à mão.
+*/
+function gkAnchor(ballX, ballZ, ownGoalZ, dirZ, style) {
+    const e = style || GoalkeeperStyle.defensive;
+
+    const dx = ballX;
+    const dz = ballZ - ownGoalZ;
+    const d = Math.hypot(dx, dz);
+
+    let t = (d - GK_D_NEAR) / (GK_D_FAR - GK_D_NEAR);
+    t = Math.max(0, Math.min(1, t));
+    const depth = e.depthMin + (e.depthMax - e.depthMin) * t * t;
+
+    // d === 0 é a bola em cima do centro da baliza: sem direção definida, fica
+    // no eixo. Sem esta guarda, depth/d dava NaN.
+    const limitGKX = (LARGURA_BALIZA / 2) - 0.5;
+    let x = (d > 0.0001) ? (ballX * (depth / d)) : 0;
+    x = Math.max(-limitGKX, Math.min(limitGKX, x));
+
+    return { x: x, z: ownGoalZ + depth * dirZ };
+}
 
 /*
 Postura do guarda-redes.
