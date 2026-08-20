@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Scratch do subagent-driven-development: ledger, briefs e relatorios.
+# E rascunho de execucao, nao faz parte do projecto.
+.superpowers/
