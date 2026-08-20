@@ -747,7 +747,7 @@ efeito era desperdicio.
 function rodarNoPlano(x, z, angulo) {
     const c = Math.cos(angulo);
     const s = Math.sin(angulo);
-    return { x: x * c - z * s, z: x * s + z * c };
+    return { x: x * c + z * s, z: -x * s + z * c };
 }
 ```
 
