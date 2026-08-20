@@ -703,6 +703,11 @@ Primeiro a carregar. Não depende de nada além do THREE.
 - **`FullBackStyle`** — estilo do lateral. `avancoMax` em **metros** (`defensive`
   2, `offensive` 15) é o que manda; o `comBolaMult` afina o slot mas sozinho
   valia 1-3 m e não dava subida visível. Só actua com bola.
+- **`GoalkeeperKickPower`** (1.15) — multiplicador da **força** do chutão do
+  guarda-redes (`puntBall` em `player.js`). Multiplica a velocidade de saída,
+  não o alcance: como o alcance vai com o quadrado da velocidade, estes +15% de
+  força valem cerca de +32% de distância. O tecto de 50 m/s do `puntBall` nunca
+  chega a morder com este valor.
 - **`GoalkeeperKickClip`** — GOALKEEPER_KICK_FORWARD_HIGH, os 12 keyframes do
   chutão do GR, em `t = (frame-1)/11`. Inclui `largaBolaEm`/`alturaMao`/
   `alturaPe`: a bola desce das mãos ao pé entre a máxima preparação (frame 6) e

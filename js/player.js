@@ -822,7 +822,13 @@ class FootballPlayer {
 
         // Alcance pretendido: chutão de meio-campo, com alguma variação. Aumentado em 20%.
         const alcance = (38 + Math.random() * 16) * 1.20;
-        const v = Math.min(50, Math.sqrt((alcance * gGrav) / Math.sin(2 * elev)));
+        /*
+        GoalkeeperKickPower é força — velocidade de SAÍDA —, não alcance. Como
+        o alcance vai com o quadrado da velocidade (R = v² sin2θ / g), estes
+        +15% de força valem cerca de +32% de distância.
+        */
+        const v = Math.min(50,
+            Math.sqrt((alcance * gGrav) / Math.sin(2 * elev)) * GoalkeeperKickPower);
 
         // Frente da equipa (dirZ), rodada pelo desvio lateral sorteado.
         const horiz = v * Math.cos(elev);

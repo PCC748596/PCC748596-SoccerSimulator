@@ -254,6 +254,13 @@ t = (frame - 1) / 11:
 `bracoX`/`cotovelo` largam a bola a partir do frame 6 e passam a equilibrar.
 =============================================================================
 */
+/*
+Multiplicador da FORÇA do chutão do guarda-redes (ver puntBall em player.js).
+Multiplica a velocidade de saída, não o alcance: como o alcance vai com o
+quadrado da velocidade, 1.15 de força dá cerca de 1.32 de distância.
+*/
+const GoalkeeperKickPower = 1.15;
+
 const GoalkeeperKickClip = {
     pernaChute: 'r',    // qual das pernas bate; a outra é a de apoio
     frames: [
