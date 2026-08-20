@@ -486,6 +486,14 @@ const BlockShape = {
     recuoGkComBola: 10.0,
 
     /*
+    Tiro de meta: quanto os DOIS blocos se afastam da baliza onde a bola está,
+    por cima do avanço de 10 m que o time que bate já tinha. Mesma ideia do
+    recuoGkComBola, e aplicado da mesma maneira — o time que bate sobe, o que
+    defende recua outro tanto.
+    */
+    avancoTiroMeta: 15.0,
+
+    /*
     Profundidade do bloco (da última linha ao jogador mais avançado), por
     definição de compacidade do painel. A traseira deste rectângulo é a linha
     do fora-de-jogo da equipa — ver computeBlock em team_bt.js.
@@ -1246,10 +1254,11 @@ const AppearanceModel = {
     ],
 
     chuteiras: [
-        { nome: 'vermelha', peso: 30, cor: 0xd62828 },
-        { nome: 'branca',   peso: 28, cor: 0xf5f5f5 },
-        { nome: 'preta',    peso: 25, cor: 0x1c1c1c },
-        { nome: 'rosa',     peso: 17, cor: 0xff5fa2 }
+        { nome: 'vermelha', peso: 25, cor: 0xd62828 },
+        { nome: 'branca',   peso: 23, cor: 0xf5f5f5 },
+        { nome: 'preta',    peso: 20, cor: 0x1c1c1c },
+        { nome: 'amarela',  peso: 18, cor: 0xe8ff00 },
+        { nome: 'rosa',     peso: 14, cor: 0xff5fa2 }
     ]
 };
 

@@ -107,10 +107,10 @@ test('os quatro tipos pedidos existem, com as cores certas', () => {
     assert.strictEqual(Math.max(...peles), claridade(porNome.ruivo.pele));
 });
 
-test('as quatro cores de chuteira pedidas existem', () => {
+test('as cinco cores de chuteira pedidas existem', () => {
     const s = montar();
     const nomes = s.A.chuteiras.map(c => c.nome);
-    for (const n of ['vermelha', 'rosa', 'branca', 'preta']) {
+    for (const n of ['vermelha', 'rosa', 'branca', 'preta', 'amarela']) {
         assert.ok(nomes.includes(n), 'falta a chuteira ' + n);
     }
 });
@@ -155,9 +155,9 @@ test('as chuteiras dividem-se pelas proporções pedidas', () => {
     const conta = {};
     for (const a of plantel(s)) conta[a.chuteira] = (conta[a.chuteira] || 0) + 1;
 
-    // vermelha 3, branca 3, preta 3, rosa 2 por equipa.
+    // vermelha 3 por equipa, as outras quatro cores 2 cada.
     assert.deepStrictEqual(conta, {
-        vermelha: 6, branca: 6, preta: 6, rosa: 4
+        vermelha: 6, branca: 4, preta: 4, amarela: 4, rosa: 4
     });
 });
 

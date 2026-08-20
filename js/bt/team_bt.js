@@ -517,8 +517,13 @@ function computeBlock(bb) {
         // No tiro de meta adversário, o time que defende volta para o meio-campo
         centro = 0;
     } else if (isGoalKick && bb.isAttacking) {
-        // No próprio tiro de meta, avança o time 10m para a frente
-        centro = (bb.momentumZ * bb.dir) + 10 + ment.blocoZ;
+        /*
+        No próprio tiro de meta o time sobe: 10 m de base mais o avancoTiroMeta,
+        para dar espaço ao guarda-redes em vez de lhe ficar em cima. O time que
+        defende afasta-se a mesma folga, mas para o LADO OPOSTO — ver o bloco
+        no fim desta função, depois dos travões.
+        */
+        centro = (bb.momentumZ * bb.dir) + 10 + ment.blocoZ + BlockShape.avancoTiroMeta;
     } else if (gkHoldingBall) {
         /*
         O nosso guarda-redes tem a bola nas mãos: o bloco sobe e dá-lhe espaço
@@ -670,6 +675,17 @@ function computeBlock(bb) {
     if (oppGkHoldingBall) {
         z0 -= BlockShape.recuoGkComBola;
         z1 -= BlockShape.recuoGkComBola;
+    }
+
+    /*
+    Tiro de meta adversário: o mesmo raciocínio, e pela mesma razão corre aqui
+    em baixo. O ramo do centro pôs este bloco no meio-campo (centro = 0); esta
+    folga afasta-o mais BlockShape.avancoTiroMeta da baliza onde a bola está,
+    tanto quanto o time que bate sobe do outro lado.
+    */
+    if (defendingGoalKick) {
+        z0 -= BlockShape.avancoTiroMeta;
+        z1 -= BlockShape.avancoTiroMeta;
     }
 
     const fundo = CAMPO_COMP / 2;

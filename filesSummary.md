@@ -601,6 +601,10 @@ Primeiro a carregar. Não depende de nada além do THREE.
   - `amplitude` / `amplitudeComBola` — a largura (*Width Compactness*: 50/60/70 %
     de 68 m). Mesma história do `amplitudeComBola` (1.15): definido, documentado,
     nunca lido. Também corrigido.
+  - `avancoTiroMeta` (15 m) — **tiro de meta**: quanto os DOIS blocos se afastam
+    da baliza onde a bola está, por cima do avanço de 10 m que o time que bate
+    já tinha. Mesma mecânica do `recuoGkComBola`, incluindo o deslocamento do
+    lado que defende ser aplicado depois dos travões.
   - `recuoGkComBola` (10 m) — **guarda-redes com a bola nas mãos**: quanto os
     DOIS blocos se afastam da baliza dele. A equipa do guarda-redes sobe esta
     folga (centro `-26.5 + 10`); a adversária recua a mesma coisa, e esse
@@ -1055,7 +1059,7 @@ Tudo o que é individual: decisão, movimento e corpo 3D.
 
   Cabelo e pele vêm sempre do mesmo `AppearanceModel.tipos` — `castanhoClaro`,
   `loiro`, `negro`, `ruivo` — para não sair ruivo de pele escura; as chuteiras
-  (`vermelha`, `branca`, `preta`, `rosa`) são repartidas à parte. O tom das
+  (`vermelha`, `branca`, `preta`, `amarela`, `rosa`) são repartidas à parte. O tom das
   juntas sai da pele, escurecido a 72%, para o contorno das articulações não
   desaparecer.
 
