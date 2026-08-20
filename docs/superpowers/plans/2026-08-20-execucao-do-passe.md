@@ -16,101 +16,199 @@
 - **Aleatoriedade injectada, nunca embutida.** Uma função pura não chama `Math.random()`: recebe-o como argumento. É o que torna o erro do passe testável.
 - **Duas corridas antes de acreditar num número.** Nesta sessão houve três medições de uma amostra só que não se reproduziram. Qualquer efeito medido leva no mínimo 10 sementes, e o desvio vai no relatório.
 - **A/B no mesmo binário.** Para medir o efeito de uma funcionalidade, ligar/desligar por constante em runtime — nunca comparar duas versões do ficheiro, que trazem outras diferenças pelo meio.
-- **Física da bola:** `BallPhysics.raio = 0.11`, `gravidade = 9.81`, `atritoRolamento = 0.10`, `kArrasto ≈ 0.01354`. `BallControl.easySpeed = 7.75` (acima disto o receptor arrisca falhar o domínio).
+- **Física da bola:** `BallPhysics.raio = 0.11`, `gravidade = 9.81`, **`atritoRolamento = 0.38`** (μg = 3.73 m/s²), `kArrasto ≈ 0.01354`. `BallControl.easySpeed = 7.75` (acima disto o receptor arrisca falhar o domínio).
+- **A física da bola não se toca.** O `atritoRolamento` a 0.38 é escolha deliberada, com o intervalo real anotado no próprio ficheiro. Se um teste não passa com ela, é o teste ou a calibração que está errado — nunca a constante. Uma primeira tentativa baixou-a para 0.10 para os testes passarem; foi revertida.
 - **Skills por jogador** (`p.skillFor(campo)`, 0..100): `gk`, `tec`, `marking`, `speed`, `strength`, `pass`, `intercept`.
 - **A frente local do modelo do jogador é +Z** (ver `pass_candidates.js`): `new THREE.Vector3(0,0,1).applyQuaternion(p.model.quaternion)`.
 
 ---
 
-### Task 1: Repor a calibração do passe rasteiro
+### Task 1: Recalibrar o passe rasteiro para o atrito real
 
-Dois testes estão vermelhos. O ficheiro actual tem `velocidadeRasteiraPara` reescrito e `vChegadaRasteira` a `1.0`, contra `8.2` no commit `3c77ac2` — provavelmente perdido numa reescrita de commits. Consequência: um passe de 4 m sai a **6.19 m/s** em vez de ~12.8, e como o lead do passe é calculado com uma velocidade média estimada de 11 m/s, a mira e a bola estão desalinhadas em todos os passes do jogo.
+Dois testes estão vermelhos: `velocidadeRasteiraPara` está numa versão em que `PassModel.vChegadaRasteira` vale `1.0` — a bola é lançada para chegar a 1 m/s, ou seja morre antes de lá chegar.
+
+**A causa não é só a constante.** O `BallPhysics.atritoRolamento` é `0.38` (μ·g = 3.73 m/s² de desaceleração), e os limiares dos dois testes foram escritos para um atrito de `0.10`. Com o atrito real são impossíveis: um passe de 4 m a 12 m/s de saída **chega a 10 m/s**, muito acima do `BallControl.easySpeed` (7.75) — seria incontrolável. E um passe rasteiro de 30 m exigiria 18.5 m/s à saída para chegar morto.
+
+O que se recalibra é a curva **pela velocidade de CHEGADA**, que é o que decide se a bola dá para dominar. A velocidade de saída passa a ser consequência.
+
+Limite físico a conhecer, com μ = 0.38 e o tecto de 18.5 m/s à saída:
+
+```
+chegando a 0 m/s  ->  no máximo 29.8 m
+chegando a 3 m/s  ->  no máximo 28.6 m
+chegando a 4 m/s  ->  no máximo 27.7 m
+```
+
+Um passe rasteiro para lá dos ~28 m não existe nesta física — acima disso a bola tem de ir pelo ar (o `resolverElevacaoPasse` já trata disso a partir dos 15 m).
 
 **Files:**
 - Modify: `js/utils.js` (função `velocidadeRasteiraPara`)
 - Modify: `js/config.js` (`PassModel.vChegadaRasteira`)
-- Test: `tests/pass_velocity.test.js` (já existe; passa a verde)
+- Test: `tests/pass_velocity.test.js` (reescrever os dois testes vermelhos; **não tocar nos restantes**)
 
 **Interfaces:**
 - Produces: `velocidadeRasteiraPara(dist, vChegada)` → velocidade de saída em m/s, com tecto de 18.5.
 
-- [ ] **Step 1: Confirmar que os testes estão vermelhos e porquê**
+- [ ] **Step 1: Confirmar o ponto de partida**
 
 Run: `node --test tests/pass_velocity.test.js`
 Expected: FAIL, 2 testes, com `'Passe de 4m (6.19 m/s) deve ser ágil e rápido'`.
 
-- [ ] **Step 2: Repor a função**
+Confirmar também que `grep -n "atritoRolamento" js/config.js` dá `0.38`. **Não alterar esse valor** — se parecer que a calibração só funciona baixando-o, a calibração está errada.
 
-Em `js/utils.js`, substituir o corpo de `velocidadeRasteiraPara` por:
+- [ ] **Step 2: Substituir a função**
+
+Em `js/utils.js`, substituir a função `velocidadeRasteiraPara` inteira por:
 
 ```javascript
 function velocidadeRasteiraPara(dist, vChegada) {
     /*
-    Velocidade de saída para a bola percorrer `dist` e lá chegar ainda
-    jogável. Inverte o arrasto quadrático + atrito de rolamento:
+    Velocidade de SAÍDA para a bola percorrer `dist` e lá chegar ainda
+    jogável. Inverte o arrasto quadrático do ar mais o atrito de rolamento:
 
         alvo = (k·v_alvo² + μg)·e^(2k·dist) − μg
         v0   = √(alvo / k)
 
-    O `v_alvo` não é o `vChegada` cru: passes curtos levam um reforço (uma
-    bola de 4 m com a mesma chegada de uma de 20 m sai frouxa e parece que
-    o jogador não quis passar) e passes longos abrandam a chegada (senão a
-    velocidade de saída dispara).
+    A calibração é feita pela velocidade de CHEGADA, não pela de saída: é a
+    chegada que decide se o receptor domina a bola (ver
+    BallControl.easySpeed = 7.75) — a saída é consequência da distância.
 
-    Esta versão foi reposta a partir do commit 3c77ac2. A que estava no
-    lugar tinha uma curva contínua com reforço máximo de +2.0 m/s e
-    `vChegadaRasteira` a 1.0: um passe de 4 m saía a 6.19 m/s em vez de
-    12.78, todos os passes chegavam mortos, e os dois testes deste ficheiro
-    estavam vermelhos.
+    O `v_alvo` não é o `vChegada` cru:
+
+      curto (< 12 m)  chega mais vivo. Uma bola de 3 m com a mesma chegada
+                      de uma de 20 m sai a passo e parece que o jogador não
+                      quis passar.
+      longo (> 15 m)  chega mais manso, com piso de 1.5 m/s. Sem isto a
+                      velocidade de saída bate no tecto e o passe deixa de
+                      responder à distância.
+
+    Com `atritoRolamento` a 0.38 (μg = 3.73 m/s²) o passe rasteiro tem um
+    limite físico: nem no tecto de 18.5 m/s a bola passa dos ~29.8 m. Acima
+    dos 15 m o `resolverElevacaoPasse` já manda a bola pelo ar, por isso o
+    tecto aqui é rede de segurança e não caminho normal.
     */
     let vAlvo = vChegada;
     if (dist < 12.0) {
-        vAlvo += (12.0 - dist) * 0.45; // ex.: 4 m ganha +3.6 m/s
+        vAlvo += (12.0 - dist) * 0.18;
     } else if (dist > 15.0) {
-        vAlvo = Math.max(1.0, vChegada - (dist - 15.0) * 0.28);
+        vAlvo = Math.max(1.5, vChegada - (dist - 15.0) * 0.15);
     }
 
     const k = BallPhysics.kArrasto;
     const atrito = BallPhysics.atritoRolamento * BallPhysics.gravidade;
     const alvo = (k * vAlvo * vAlvo + atrito) * Math.exp(2 * k * dist) - atrito;
 
-    // Tecto de segurança: acima disto o passe rasteiro vira disparo.
+    // Tecto: acima disto o passe rasteiro vira disparo.
     return Math.min(18.5, Math.sqrt(Math.max(0, alvo / k)));
 }
 ```
 
-- [ ] **Step 3: Repor a constante**
+- [ ] **Step 3: Substituir a constante**
 
-Em `js/config.js`, no `PassModel`, substituir o bloco da constante por:
+Em `js/config.js`, no `PassModel`, substituir o comentário e o valor de `vChegadaRasteira` por:
 
 ```javascript
     /*
     Com que velocidade a bola CHEGA ao alvo num passe rasteiro.
 
-    8.2 está ACIMA do `BallControl.easySpeed` (7.75) de propósito: a bola
-    chega viva e o domínio é disputado, em vez de lhe morrer nos pés. É uma
-    tensão consciente — baixar isto para 7.0 dá passes mais fáceis de
-    dominar e um jogo mais lento; a 1.0 (o valor que aqui esteve) a bola
-    não chega sequer ao destino.
+    4.5 fica confortavelmente abaixo do `BallControl.easySpeed` (7.75): a
+    bola chega viva mas dominável. Esteve a 1.0, e a 1 m/s morria antes de
+    lá chegar — era o que punha os dois testes deste ficheiro a vermelho.
+
+    Com o reforço do passe curto (ver velocidadeRasteiraPara) uma bola de
+    3 m chega a 6.12 m/s e uma de 25 m a 3.00 m/s.
     */
-    vChegadaRasteira: 8.2,
+    vChegadaRasteira: 4.5,
 ```
 
-- [ ] **Step 4: Correr os testes**
+- [ ] **Step 4: Reescrever os dois testes vermelhos**
+
+Em `tests/pass_velocity.test.js`, substituir os dois testes chamados
+`'velocidadeRasteiraPara: passes curtos (<12m) recebem boost dinâmico para rapidez'`
+e
+`'velocidadeRasteiraPara: passes longos (>20m) não viram foguetes e são contidos'`
+por estes quatro. **Não mexer nos outros testes do ficheiro.**
+
+```javascript
+/*
+Os limiares antigos (saida >= 12 m/s num passe de 4 m) foram escritos para
+um atritoRolamento de 0.10. Com o valor real do jogo, 0.38, sao impossiveis
+e indesejaveis: 12 m/s de saida em 4 m CHEGA a 10 m/s, muito acima do
+BallControl.easySpeed (7.75) — ninguem domina isso.
+
+Estes testes verificam a CHEGADA, que e o que decide se a bola e jogavel. A
+saida e consequencia.
+*/
+
+// Velocidade com que a bola chega, dada a de saida: inverte a mesma fisica.
+function chegadaDe(sandbox, dist, v0) {
+    const B = sandbox.BallPhysics;
+    const atrito = B.atritoRolamento * B.gravidade;
+    const q = (B.kArrasto * v0 * v0 + atrito) / Math.exp(2 * B.kArrasto * dist) - atrito;
+    return q <= 0 ? 0 : Math.sqrt(q / B.kArrasto);
+}
+
+test('velocidadeRasteiraPara: a bola chega sempre dominável', () => {
+    const vChegada = sandbox.PassModel.vChegadaRasteira;
+    const easySpeed = 7.75;   // BallControl.easySpeed
+    for (const d of [3, 5, 8, 12, 15, 20, 25]) {
+        const v0 = sandbox.velocidadeRasteiraPara(d, vChegada);
+        const chegada = chegadaDe(sandbox, d, v0);
+        assert.ok(chegada < easySpeed,
+            `Passe de ${d}m chega a ${chegada.toFixed(2)} m/s — acima do easySpeed`);
+        assert.ok(chegada > 1.5,
+            `Passe de ${d}m chega a ${chegada.toFixed(2)} m/s — morre antes do alvo`);
+    }
+});
+
+test('velocidadeRasteiraPara: o passe curto chega mais vivo que o longo', () => {
+    const vChegada = sandbox.PassModel.vChegadaRasteira;
+    const curto = chegadaDe(sandbox, 4, sandbox.velocidadeRasteiraPara(4, vChegada));
+    const longo = chegadaDe(sandbox, 25, sandbox.velocidadeRasteiraPara(25, vChegada));
+    assert.ok(curto > longo,
+        `curto=${curto.toFixed(2)} longo=${longo.toFixed(2)} m/s`);
+});
+
+test('velocidadeRasteiraPara: mais distância, mais velocidade de saída', () => {
+    const vChegada = sandbox.PassModel.vChegadaRasteira;
+    let anterior = 0;
+    for (const d of [3, 6, 10, 15, 20, 25]) {
+        const v0 = sandbox.velocidadeRasteiraPara(d, vChegada);
+        assert.ok(v0 > anterior,
+            `saida em ${d}m (${v0.toFixed(2)}) nao e maior que em ${d - 1}m ou menos (${anterior.toFixed(2)})`);
+        anterior = v0;
+    }
+});
+
+test('velocidadeRasteiraPara: o tecto de 18.5 m/s é respeitado', () => {
+    const vChegada = sandbox.PassModel.vChegadaRasteira;
+    for (const d of [30, 50, 80]) {
+        const v0 = sandbox.velocidadeRasteiraPara(d, vChegada);
+        assert.ok(v0 <= 18.5, `Passe de ${d}m sai a ${v0.toFixed(2)} m/s`);
+    }
+});
+```
+
+- [ ] **Step 5: Correr os testes do ficheiro**
 
 Run: `node --test tests/pass_velocity.test.js`
-Expected: PASS. Os valores esperados, com esta função e 8.2: 4 m → 12.78 m/s, 8 m → 11.90, 15 m → 11.71, 30 m → 11.26.
+Expected: PASS.
 
-- [ ] **Step 5: Correr a suite toda**
+Valores de referência com esta calibração (chegada → saída):
+`3 m: 6.12 → 8.00` · `4 m: 5.94 → 8.42` · `8 m: 5.22 → 10.02` · `15 m: 4.50 → 12.97` · `20 m: 3.75 → 14.90` · `25 m: 3.00 → 16.86`.
+
+Se os teus números não baterem com estes, **não ajustes os testes** — a função é que não está como o Step 2 pede.
+
+- [ ] **Step 6: Correr a suite toda**
 
 Run: `node --test "tests/*.test.js"`
-Expected: todos passam.
+Expected: todos passam. Se algum outro teste de passe falhar, lê a falha antes de mexer: pode estar a assumir a calibração antiga, e nesse caso reporta em vez de o alterares por tua conta.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add js/utils.js js/config.js
-git commit -m "fix: repor a calibracao do passe rasteiro (3c77ac2)"
+git add js/utils.js js/config.js tests/pass_velocity.test.js
+git commit -m "fix: recalibrar o passe rasteiro pela velocidade de chegada"
 ```
 
 ---
