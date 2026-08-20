@@ -481,7 +481,13 @@ function aplicarMiraDoPasse(p, tipo, ponto) {
     p.passTipo = tipo;
     p.passAimPoint = ponto ? { x: ponto.x, z: ponto.z } : null;
 
-    const paraOEspaco = ponto &&
+    /*
+    O ponto CURTO (pontoLiderancaCurta, em pass_types.js) não leva balística de
+    lançamento: são 4 m à frente do companheiro, não uma bola para ele correr
+    atrás. Com vChegadaLancamento (5 m/s à chegada) ficava a rolar mansa à
+    frente dele. Vai como passe normal, só com o alvo deslocado.
+    */
+    const paraOEspaco = ponto && !ponto.curto &&
         (tipo === PassTypes.SPACE || tipo === PassTypes.LEADING);
 
     if (paraOEspaco) {
