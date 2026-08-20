@@ -624,6 +624,27 @@ Primeiro a carregar. Não depende de nada além do THREE.
   reduzido pelo ângulo (`angleFloor`) e por ser defesa (`defenderFactor`).
 - **`PassModel`** — `carryChance*` (conduzir em vez de passar), parâmetros do
   lançamento, e as forças mínimas.
+- **`PassTypeModel`** — **onde a bola cai num passe**: aos pés (`direct`), no
+  ponto mediano do leque (`space`) ou no mais adiantado (`leading`). A tabela
+  `regras` escolhe a mistura pela zona de origem e destino; a primeira regra que
+  casa manda.
+  - `recuo` é a primeira: destino mais de `margemRecuo` (2 m) atrás da origem
+    vai aos pés (85%), porque um passe para trás é para segurar. Antes não havia
+    noção de recuo — caía na `misturaPadrao` como qualquer outro. É para isso
+    que `PassTypes.zonaDe` devolve `avanco`, o z cru no referencial de ataque.
+  - A `misturaPadrao` é a que mais dispara, e passou de **80% aos pés para 70% à
+    frente**. Era daí que vinha a sensação de jogo travado.
+  - `liderancaCurta` (4 m), `liderancaPasso` (1 m) e `liderancaMin` (1.5 m)
+    definem o **leading curto**: quando o leque do `PlayerPassTarget` não valida
+    nenhum ponto — o normal num bloco compacto — `pontoPara` mira este ponto à
+    frente do companheiro em vez de cair aos pés. Encurta perante um adversário
+    em vez de desistir. O ponto vem marcado com `curto: true`, e por isso é
+    jogado com a balística de passe normal, não com a de lançamento.
+
+  `js/pass_types.js` é importado directamente pelos testes em Node e **não pode
+  usar `THREE`** — por isso `PassTypes.frenteDe` tira a orientação do companheiro
+  do quaternião por aritmética, em vez de `applyQuaternion` como o
+  `pass_candidates.js` faz.
 - **`DribbleModel`** — o 1×1: quando o portador tenta passar por um adversário.
 - **`CarryModel`** — a condução ("adiantada de bola"): a bola é fisicamente
   adiantada entre 3.6 e 6.0 m, com o impulso a herdar a velocidade do jogador,
