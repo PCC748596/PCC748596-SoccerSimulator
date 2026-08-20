@@ -1083,8 +1083,18 @@ const PosicionamentoAI = {
             ? aplicarMarcacaoPosicional(p, bb, comEstilo.x, comEstilo.z)
             : comEstilo;
 
+        /*
+        O tecto do estilo é o ÚLTIMO a falar: o Box-to-Box não passa da entrada
+        da área, e a marcação (acima) chega a desviar 10 m no terço de ataque.
+        Enquanto o tecto vivia dentro do aplicarEstiloPosicional, a marcação
+        voltava a furá-lo.
+        */
+        const comTecto = (typeof aplicarTectoDoEstilo === 'function')
+            ? aplicarTectoDoEstilo(p, comMarcacao.z)
+            : comMarcacao.z;
+
         const tx = THREE.MathUtils.clamp(comMarcacao.x, -32, 32);
-        const tz = THREE.MathUtils.clamp(comMarcacao.z, -50, 50);
+        const tz = THREE.MathUtils.clamp(comTecto, -50, 50);
 
         const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
         let k = 1 - Math.exp(-PositionSmoothing * dt);

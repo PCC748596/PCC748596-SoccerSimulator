@@ -489,17 +489,26 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
             targetZ = centro + (targetZ - centro) * est.amplitudeZ;
         }
 
-        /*
-        `travaNaEntradaArea` (Box-to-Box): "da entrada de uma área até a
-        entrada da outra" — pedido explícito. Sem teto, amplitudeZ (1.5x)
-        esticava o alvo para BEM DENTRO da área adversária, um meio-campo
-        a jogar de ponta-de-lança. Trava aqui, depois do amplitudeZ, para
-        cortar só o excesso — nunca empurra para trás quem já estava
-        aquém do teto.
-        */
-        if (est.travaNaEntradaArea && targetZ * p.dirZ > CrossModel.areaZ) {
-            targetZ = CrossModel.areaZ * p.dirZ;
-        }
-
     return { x: targetX, z: targetZ };
+}
+
+/*
+`travaNaEntradaArea` (Box-to-Box): "da entrada de uma área até a entrada da
+outra" — pedido explícito. Sem tecto, o amplitudeZ (1.5x) esticava o alvo para
+BEM DENTRO da área adversária, um meio-campo a jogar de ponta-de-lança.
+
+Vive à parte, e não no fim de aplicarEstiloPosicional, porque tem de ser o
+ÚLTIMO a falar. Estava lá dentro, e a marcação posicional — que corre depois —
+voltava a empurrá-lo para dentro da área: no terço de ataque o desvio de
+marcação chega a 10 m, muito mais do que os 2.5 m de folga que este tecto dá.
+
+Corta só o excesso: nunca empurra para trás quem já estava aquém do tecto.
+*/
+function aplicarTectoDoEstilo(p, targetZ) {
+    if (typeof estiloAtivoDe !== 'function') return targetZ;
+    const est = estiloAtivoDe(p);
+    if (!est || !est.travaNaEntradaArea) return targetZ;
+
+    if (targetZ * p.dirZ > CrossModel.areaZ) return CrossModel.areaZ * p.dirZ;
+    return targetZ;
 }
