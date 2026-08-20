@@ -135,6 +135,76 @@ const PassTypes = {
     },
 
     /*
+    Frente do companheiro: para onde o CORPO dele aponta, no plano.
+
+    Mesma convenção do leque em pass_candidates.js — frente local é +Z — mas
+    calculada à mão em vez de com applyQuaternion: este ficheiro é importado
+    directamente pelos testes em Node, onde o THREE não existe.
+
+    Rodar (0,0,1) por um quaternião (x,y,z,w) dá, nas componentes do plano:
+        fx = 2*(x*z + w*y)
+        fz = 1 - 2*(x*x + y*y)
+
+    Sem quaternião (ou com um degenerado) fica o eixo de ataque da equipa, que
+    é o mesmo recurso que o leque usa.
+    */
+    frenteDe: function (mate) {
+        const q = mate.model && mate.model.quaternion;
+        if (q) {
+            const fx = 2 * (q.x * q.z + q.w * q.y);
+            const fz = 1 - 2 * (q.x * q.x + q.y * q.y);
+            const len = Math.hypot(fx, fz);
+            if (len > 0.001) return { fx: fx / len, fz: fz / len };
+        }
+        return { fx: 0, fz: mate.dirZ || 1 };
+    },
+
+    /*
+    Ponto de mira alguns metros à frente do companheiro, SEM passar pelo leque
+    de candidatos nem pelos filtros dele.
+
+    É o que impede o passe de cair aos pés sempre que o leque vem vazio — num
+    bloco compacto, a maior parte das vezes. Encurta perante um adversário em
+    vez de desistir; só devolve null se nem à distância mínima houver espaço,
+    ou se o ponto sair do campo.
+
+    O `curto: true` distingue-o de um ponto do leque: quem consome usa-o para
+    escolher a balística (ver aplicarMiraDoPasse em bt/player_bt.js) — uma bola
+    de 4 m não se joga com a lentidão de um lançamento de 20.
+    */
+    pontoLiderancaCurta: function (mate, opponents) {
+        if (!mate || !mate.model || typeof PassTypeModel === 'undefined') return null;
+
+        const M = PassTypeModel;
+        const raio = (typeof PassCandidates !== 'undefined')
+            ? PassCandidates.raioAdversario : 2.0;
+
+        const f = this.frenteDe(mate);
+        const mx = mate.model.position.x, mz = mate.model.position.z;
+        const meiaLarg = CAMPO_LARG / 2, meioComp = CAMPO_COMP / 2;
+        const lista = opponents || [];
+
+        for (let d = M.liderancaCurta; d >= M.liderancaMin - 1e-9; d -= M.liderancaPasso) {
+            const px = mx + f.fx * d;
+            const pz = mz + f.fz * d;
+
+            if (Math.abs(px) > meiaLarg || Math.abs(pz) > meioComp) continue;
+
+            let livre = true;
+            for (const o of lista) {
+                if (!o || o.role === 'gk' || !o.model) continue;
+                if (Math.hypot(o.model.position.x - px, o.model.position.z - pz) < raio) {
+                    livre = false;
+                    break;
+                }
+            }
+            if (livre) return { x: px, z: pz, curto: true };
+        }
+
+        return null;
+    },
+
+    /*
     Resolve o ponto de mira do tipo pedido. Sem pontos vivos que sirvam,
     cai para `direct` — um passe para o espaço sem espaço nenhum é uma bola
     atirada fora.

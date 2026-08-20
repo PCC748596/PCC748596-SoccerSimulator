@@ -14,6 +14,7 @@ const raiz = path.join(__dirname, '..');
 const CONFIG = fs.readFileSync(path.join(raiz, 'js', 'config.js'), 'utf8');
 
 global.CAMPO_COMP = 105;
+global.CAMPO_LARG = 68;
 
 // Recorta `const NOME = { ... };` (chaveta equilibrada).
 function recortarConst(src, nome) {
@@ -26,7 +27,7 @@ function recortarConst(src, nome) {
     }
     assert.fail('chavetas desequilibradas em ' + nome);
 }
-const sandbox = { CAMPO_COMP: 105, Math };
+const sandbox = { CAMPO_COMP: 105, CAMPO_LARG: 68, Math };
 vm.createContext(sandbox);
 vm.runInContext(recortarConst(CONFIG, 'PassTypeModel') + '\nthis.M = PassTypeModel;', sandbox);
 global.PassTypeModel = sandbox.M;
@@ -295,4 +296,108 @@ test('as constantes do leading curto existem e são coerentes', () => {
     }
     assert.ok(PassTypeModel.liderancaMin < PassTypeModel.liderancaCurta,
         'o mínimo tem de ser menor que a distância cheia');
+});
+
+/* ------------------------------------------------------------------
+   Leading curto: o ponto à frente que não passa pelo leque.
+   ------------------------------------------------------------------ */
+
+/*
+Companheiro de teste. `quaternion` é uma rotação em torno de Y de `ang`
+radianos, na convenção do THREE: (0, sin(ang/2), 0, cos(ang/2)). Com ang=0 a
+frente local +Z fica a apontar para +Z do mundo.
+
+Não se usa THREE aqui de propósito: js/pass_types.js é importado em Node, onde
+ele não existe, e por isso a frente sai do quaternião por aritmética.
+*/
+function mateVirado(x, z, ang, id) {
+    return {
+        id: id === undefined ? 99 : id,
+        dirZ: 1,
+        model: {
+            position: { x: x, z: z },
+            quaternion: { x: 0, y: Math.sin(ang / 2), z: 0, w: Math.cos(ang / 2) }
+        }
+    };
+}
+
+const opp = (x, z) => ({ role: 'def', model: { position: { x: x, z: z } } });
+
+test('frenteDe lê a orientação do modelo', () => {
+    const f0 = PassTypes.frenteDe(mateVirado(0, 0, 0));
+    assert.ok(Math.abs(f0.fx - 0) < 1e-9, 'fx = ' + f0.fx);
+    assert.ok(Math.abs(f0.fz - 1) < 1e-9, 'fz = ' + f0.fz);
+
+    const f90 = PassTypes.frenteDe(mateVirado(0, 0, Math.PI / 2));
+    assert.ok(Math.abs(f90.fx - 1) < 1e-9, 'fx = ' + f90.fx);
+    assert.ok(Math.abs(f90.fz - 0) < 1e-9, 'fz = ' + f90.fz);
+});
+
+test('frenteDe cai no eixo de ataque quando não há quaternião', () => {
+    const semModelo = { id: 1, dirZ: -1, model: { position: { x: 0, z: 0 } } };
+    const f = PassTypes.frenteDe(semModelo);
+    assert.strictEqual(f.fx, 0);
+    assert.strictEqual(f.fz, -1);
+});
+
+test('o ponto curto fica à frente do companheiro, à distância pedida', () => {
+    const m = mateVirado(0, 0, 0);
+    const pt = PassTypes.pontoLiderancaCurta(m, []);
+    assert.ok(pt, 'devia ter devolvido um ponto');
+    assert.ok(Math.abs(pt.z - PassTypeModel.liderancaCurta) < 1e-9, 'z = ' + pt.z);
+    assert.ok(Math.abs(pt.x) < 1e-9, 'x = ' + pt.x);
+});
+
+test('o ponto curto nunca fica atrás do companheiro', () => {
+    for (const ang of [0, 0.7, Math.PI / 2, 2.5, Math.PI, -1.2]) {
+        const m = mateVirado(5, -8, ang);
+        const pt = PassTypes.pontoLiderancaCurta(m, []);
+        if (!pt) continue;
+        const f = PassTypes.frenteDe(m);
+        // Projecção do deslocamento na frente do jogador: tem de ser positiva.
+        const proj = (pt.x - 5) * f.fx + (pt.z - (-8)) * f.fz;
+        assert.ok(proj > 0, 'ang=' + ang + ' deu projecção ' + proj);
+    }
+});
+
+test('o ponto curto vem marcado como curto', () => {
+    const pt = PassTypes.pontoLiderancaCurta(mateVirado(0, 0, 0), []);
+    assert.strictEqual(pt.curto, true);
+});
+
+test('encurta perante um adversário em cima do ponto cheio', () => {
+    const m = mateVirado(0, 0, 0);
+    // Adversário exactamente onde cairia o ponto de 4 m.
+    const pt = PassTypes.pontoLiderancaCurta(m, [opp(0, PassTypeModel.liderancaCurta)]);
+    assert.ok(pt, 'devia ter encurtado, não desistido');
+    assert.ok(pt.z < PassTypeModel.liderancaCurta, 'não encurtou: z = ' + pt.z);
+    assert.ok(pt.z >= PassTypeModel.liderancaMin - 1e-9, 'passou o mínimo: z = ' + pt.z);
+});
+
+test('desiste quando o corredor à frente está todo tapado', () => {
+    const m = mateVirado(0, 0, 0);
+    // Adversários a cobrir todas as distâncias entre o mínimo e a cheia.
+    const tapado = [];
+    for (let d = 1; d <= 5; d += 0.5) tapado.push(opp(0, d));
+    assert.strictEqual(PassTypes.pontoLiderancaCurta(m, tapado), null);
+});
+
+test('desiste quando o ponto cairia fora do campo', () => {
+    // Encostado à linha de fundo, virado para fora.
+    const m = mateVirado(0, CAMPO_COMP / 2 - 0.5, 0);
+    assert.strictEqual(PassTypes.pontoLiderancaCurta(m, []), null);
+});
+
+test('desiste quando o ponto cairia fora da linha lateral', () => {
+    // Encostado à lateral, virado para fora (90 graus = +X).
+    const m = mateVirado(CAMPO_LARG / 2 - 0.5, 0, Math.PI / 2);
+    assert.strictEqual(PassTypes.pontoLiderancaCurta(m, []), null);
+});
+
+test('guarda-redes não conta como adversário a tapar', () => {
+    const m = mateVirado(0, 0, 0);
+    const gk = { role: 'gk', model: { position: { x: 0, z: PassTypeModel.liderancaCurta } } };
+    const pt = PassTypes.pontoLiderancaCurta(m, [gk]);
+    assert.ok(Math.abs(pt.z - PassTypeModel.liderancaCurta) < 1e-9,
+        'não devia ter encurtado por causa do GR');
 });
