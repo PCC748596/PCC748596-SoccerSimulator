@@ -621,6 +621,19 @@ Primeiro a carregar. Não depende de nada além do THREE.
   ponto mediano do leque (`space`) ou no mais adiantado (`leading`). A tabela
   `regras` escolhe a mistura pela zona de origem e destino; a primeira regra que
   casa manda.
+  - **Quem recebe** (`escolha`): três termos normalizados a 0..1 — progresso
+    sobre `progressoRef` (30 m), espaço sobre `maxPontosLeque` (49, lido do
+    `PassCandidates`), distância sobre `distanciaMax` (45 m) — com pesos que
+    variam pela **pressão sobre o portador** (`raioPressao` 8 m): livre procura
+    quem progride, pressionado procura quem está livre.
+  - O termo do espaço era a **contagem** de pontos vivos do leque, até 49, contra
+    um progresso que raramente passava de 40. Um companheiro isolado na lateral
+    tinha o leque quase todo vivo e ganhava a escolha **por estar isolado** — 37
+    contra 22 de quem estava bem colocado à frente. Era daí que vinha o toque
+    eterno para a lateral.
+  - Abaixo de `notaMinima` (0.35) o `actPass` desce uma cascata: driblar (se
+    TEC ≥ `tecnicaDrible`, 75, e houver campo aberto), atrasar a alguém a menos
+    de `raioRecuo` (18 m), conduzir para trás (`carryRecuo`).
   - `recuo` é a primeira: destino mais de `margemRecuo` (2 m) atrás da origem
     vai aos pés (85%), porque um passe para trás é para segurar. Antes não havia
     noção de recuo — caía na `misturaPadrao` como qualquer outro. É para isso

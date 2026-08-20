@@ -1951,11 +1951,45 @@ const PassTypeModel = {
     uma alternativa claramente melhor, não por um empate técnico.
     */
     escolha: {
-        bonusSugerido: 30.0,   // vantagem de partida do alvo que o BT propôs
-        pesoProgresso: 1.2,    // metros ganhos para a baliza, no ponto de mira
-        pesoEspaco: 1.0,       // por ponto vivo no leque do companheiro
-        pesoDistancia: 0.6,    // penaliza passes longos
-        distanciaMax: 45.0     // acima disto nem é candidato
+        /*
+        Os três termos chegam normalizados a 0..1 (ver notaCandidato em
+        pass_types.js), por isso estes pesos são comparáveis entre si.
+
+        Os antigos pesoProgresso/pesoEspaco/pesoDistancia multiplicavam
+        grandezas em escalas diferentes, e o do espaço era a CONTAGEM de pontos
+        vivos do leque — até 49, contra um progresso que raramente passava de
+        40. Um companheiro isolado na lateral tinha o leque quase todo vivo e
+        ganhava a escolha por estar isolado: 37 pontos contra 22 de quem estava
+        bem colocado à frente. Daí o passe eterno para a lateral.
+        */
+        bonusSugerido: 0.5,      // vantagem de partida do alvo que o BT propôs
+        progressoRef: 30.0,      // metros ganhos que valem 1.0 de progresso
+        distanciaMax: 45.0,      // acima disto nem é candidato
+
+        /*
+        Os pesos variam com a PRESSÃO sobre o portador: livre, procura quem
+        progride; com um adversário em cima, procura quem está livre. É o que
+        torna o passe lateral para o isolado a jogada certa quando é mesmo a
+        única, em vez de ser a regra.
+        */
+        raioPressao: 8.0,
+        pesosSemPressao: { progresso: 1.0, espaco: 0.30, distancia: 0.35 },
+        pesosSobPressao: { progresso: 0.45, espaco: 1.00, distancia: 0.20 },
+
+        /*
+        Abaixo desta nota não vale a pena passar a ninguém: o actPass desce a
+        cascata driblar -> atrasar a alguém perto -> conduzir para trás.
+        `tecnicaDrible` é o mesmo 75 que o podeDriblar já usa.
+        */
+        notaMinima: 0.35,
+        tecnicaDrible: 75,
+
+        /*
+        Até onde se atrasa a bola. Sem este limite, um médio sob pressão
+        atrasava para o guarda-redes a quarenta metros — isso não é reiniciar a
+        jogada, é fugir dela.
+        */
+        raioRecuo: 18.0
     }
 };
 

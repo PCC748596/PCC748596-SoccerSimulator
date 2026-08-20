@@ -418,6 +418,16 @@ class PlayerFSM {
                         // Visão de jogo baseada na técnica — ver VisionModel
                         // em config.js, que é onde os números vivem agora.
                         const tec = p.skillFor ? p.skillFor('TEC') : 50;
+                        /*
+                        Sentido da condução. O cone de visão é o mesmo — a
+                        técnica manda nele por igual, para a frente e para
+                        trás — só o eixo em torno do qual abre é que muda.
+
+                        Assim ele recua pelo corredor mais livre, com o mesmo
+                        peso de espaço e o mesmo respeito pelo sector, em vez de
+                        recuar às cegas.
+                        */
+                        const sentido = p.carryRecuo ? -p.dirZ : p.dirZ;
                         const visDist = alcanceVisao(tec);
                         const maxAngRad = coneVisao(tec);
 
@@ -432,8 +442,8 @@ class PlayerFSM {
                             const ratio = (k / (passos - 1)) * 2 - 1; // de -1 a +1
                             const ang = ratio * maxAngRad;
                             const tx = px + Math.sin(ang) * visDist;
-                            let tz = pz + Math.cos(ang) * p.dirZ * visDist;
-                            if (tz * p.dirZ > avancoMax) tz = avancoMax * p.dirZ;
+                            let tz = pz + Math.cos(ang) * sentido * visDist;
+                            if (tz * sentido > avancoMax) tz = avancoMax * sentido;
                             if (Math.abs(tx) > 31 || Math.abs(tz) > 51) continue;
 
                             let maisPerto = 999;
@@ -468,7 +478,7 @@ class PlayerFSM {
                             ganhava sempre ao espaço.
                             */
                             const espacoNorm = Math.min(maisPerto, CarryModel.spaceCap) / CarryModel.spaceCap;
-                            const progressoNorm = Math.max(0, Math.min(1, ((tz - pz) * p.dirZ) / visDist));
+                            const progressoNorm = Math.max(0, Math.min(1, ((tz - pz) * sentido) / visDist));
                             const sectorPen = Tatics.penalidadeSector(tx, p.dirZ);
                             const nota = notaDireccaoCarry(espacoNorm, progressoNorm, sectorPen, tec);
 

@@ -263,6 +263,97 @@ const PassTypes = {
     },
 
     /*
+    Quantos pontos tem o leque de UM companheiro, no máximo. Sai do
+    PassCandidates e não de um 49 escrito à mão: mexer na densidade do leque não
+    pode voltar a desequilibrar a escolha em silêncio.
+    */
+    maxPontosLeque: function () {
+        if (typeof PassCandidates === 'undefined') return 49;
+        return PassCandidates.arcos * PassCandidates.pontosPorArco;
+    },
+
+    /*
+    Quão pressionado está o portador, de 0 (ninguém por perto) a 1 (adversário
+    em cima). `distMaisPerto` é a distância ao adversário mais próximo dele.
+    */
+    pressaoSobrePortador: function (distMaisPerto, raio) {
+        if (!isFinite(distMaisPerto)) return 0;
+        const t = Math.max(0, Math.min(1, distMaisPerto / raio));
+        return 1 - t;
+    },
+
+    /*
+    Interpola entre os dois conjuntos de pesos conforme a pressão.
+    */
+    pesosPorPressao: function (pressao) {
+        const E = PassTypeModel.escolha;
+        const t = Math.max(0, Math.min(1, pressao));
+        const a = E.pesosSemPressao, b = E.pesosSobPressao;
+        return {
+            progresso: a.progresso + (b.progresso - a.progresso) * t,
+            espaco: a.espaco + (b.espaco - a.espaco) * t,
+            distancia: a.distancia + (b.distancia - a.distancia) * t
+        };
+    },
+
+    /*
+    Nota de um candidato a receber. Os três argumentos vêm normalizados a 0..1
+    por quem chama — o progresso pode ser negativo num passe para trás.
+    */
+    notaCandidato: function (progressoNorm, espacoNorm, distNorm, pesos) {
+        return progressoNorm * pesos.progresso
+            + espacoNorm * pesos.espaco
+            - distNorm * pesos.distancia;
+    },
+
+    // Distância do portador ao adversário mais próximo. Infinity se não houver.
+    distAdversarioMaisPerto: function (carrier) {
+        if (typeof Match === 'undefined') return Infinity;
+        const opps = (carrier.team === 'TeamA') ? Match.opponents : Match.players;
+        const cx = carrier.model.position.x, cz = carrier.model.position.z;
+
+        let melhor = Infinity;
+        for (const o of opps) {
+            if (!o || !o.model) continue;
+            const d = Math.hypot(o.model.position.x - cx, o.model.position.z - cz);
+            if (d < melhor) melhor = d;
+        }
+        return melhor;
+    },
+
+    /*
+    Melhor companheiro para atrasar a bola: atrás da linha do portador e a menos
+    de `raioRecuo`. Entre os que servem, o mais perto.
+
+    O raio é o que interessa aqui. Sem ele, um médio sob pressão atrasava para o
+    guarda-redes a quarenta metros, e isso não é reiniciar a jogada — é fugir
+    dela. Qualquer jogador serve, guarda-redes incluído: não é o papel que
+    exclui, é a distância.
+    */
+    melhorRecuo: function (carrier) {
+        if (typeof Match === 'undefined' || typeof PassTypeModel === 'undefined') return null;
+
+        const raio = PassTypeModel.escolha.raioRecuo;
+        const mates = (carrier.team === 'TeamA') ? Match.players : Match.opponents;
+        const cx = carrier.model.position.x, cz = carrier.model.position.z;
+        const dirZ = carrier.dirZ;
+
+        let melhor = null, melhorD = Infinity;
+        for (const m of mates) {
+            if (m === carrier || !m.model) continue;
+
+            // Atrás no referencial de ataque do portador.
+            const avanco = (m.model.position.z - cz) * dirZ;
+            if (avanco >= 0) continue;
+
+            const d = Math.hypot(m.model.position.x - cx, m.model.position.z - cz);
+            if (d > raio) continue;
+            if (d < melhorD) { melhorD = d; melhor = m; }
+        }
+        return melhor;
+    },
+
+    /*
     Devolve { mate, tipo, ponto } ou null (nada melhor do que o caminho
     antigo). `sugerido` é o companheiro que o BT já tinha escolhido: entra
     na corrida com `bonusSugerido` de avanço, por isso só é trocado por uma
@@ -280,6 +371,12 @@ const PassTypes = {
         const mapa = this.pontosPorMate(carrier);
         const teammates = (carrier.team === 'TeamA') ? Match.players : Match.opponents;
         const opponents = (carrier.team === 'TeamA') ? Match.opponents : Match.players;
+
+        // Os pesos dependem de quão pressionado está QUEM PASSA, e por isso
+        // calculam-se uma vez, fora do laço dos candidatos.
+        const pressao = this.pressaoSobrePortador(
+            this.distAdversarioMaisPerto(carrier), E.raioPressao);
+        const pesos = this.pesosPorPressao(pressao);
 
         let melhor = null, melhorNota = -Infinity;
 
@@ -301,14 +398,25 @@ const PassTypes = {
             const alvoZ = res.ponto ? res.ponto.z : mz;
             const progresso = (alvoZ - cz) * dirZ;
 
-            let nota = progresso * E.pesoProgresso
-                + pontos.length * E.pesoEspaco
-                - dist * E.pesoDistancia;
+            /*
+            Três termos normalizados a 0..1 e só depois pesados. O do espaço era
+            a CONTAGEM de pontos vivos do leque (até 49), contra um progresso
+            que raramente passava de 40: um companheiro isolado na lateral
+            ganhava por estar isolado.
+
+            O progresso pode ser negativo — um passe para trás perde terreno —
+            e por isso o clamp é a -1, não a 0.
+            */
+            const progressoNorm = Math.max(-1, Math.min(1, progresso / E.progressoRef));
+            const espacoNorm = Math.min(1, pontos.length / this.maxPontosLeque());
+            const distNorm = Math.max(0, Math.min(1, dist / E.distanciaMax));
+
+            let nota = this.notaCandidato(progressoNorm, espacoNorm, distNorm, pesos);
             if (mate === sugerido) nota += E.bonusSugerido;
 
             if (nota > melhorNota) {
                 melhorNota = nota;
-                melhor = { mate: mate, tipo: res.tipo, ponto: res.ponto };
+                melhor = { mate: mate, tipo: res.tipo, ponto: res.ponto, nota: nota };
             }
         }
 

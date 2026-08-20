@@ -58,6 +58,12 @@ class FootballPlayer {
 
         this.passTarget = null;
         this.dribbleTargetX = 0;
+        /*
+        Conduzir PARA TRÁS. Levantada pelo actPass quando não há bom recetor nem
+        ninguém perto para atrasar: volta com a bola e espera que apareça linha,
+        em vez de a atirar para a lateral. Ver o case CARRY em fsm.js.
+        */
+        this.carryRecuo = false;
         this.dribbleOpponent = null;
         this.dribbleCooldownTimer = 0;
         this.isCross = false;

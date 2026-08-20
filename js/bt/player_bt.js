@@ -54,6 +54,8 @@ class PlayerContext {
         */
         if (!p.hasBall) {
             p.carryDist = 0;
+            // A bola mudou de pé: o recuo com bola acabou.
+            p.carryRecuo = false;
         } else if (p.ultimaPosCarry) {
             // Passos maiores do que isto não são corrida — são um recomeço, uma
             // bola parada ou um reposicionamento. Contá-los enchia o orçamento
@@ -500,22 +502,69 @@ function aplicarMiraDoPasse(p, tipo, ponto) {
 }
 
 /*
-O BT já escolheu um companheiro; o PassTypes decide COMO a bola lhe chega
-(aos pés, no espaço à frente, ou no ponto mais adiantado do leque) e pode
-trocar o receptor por outro claramente melhor para o tipo sorteado.
+O BT já escolheu um companheiro; o PassTypes decide COMO a bola lhe chega (aos
+pés, no espaço à frente, ou no ponto mais adiantado do leque) e pode trocar o
+receptor por outro claramente melhor para o tipo sorteado.
+
+Quando nem o melhor candidato chega a `notaMinima`, desce-se a cascata em vez de
+passar por passar — era daí que vinha o toque eterno para o companheiro isolado
+na lateral, onde não havia jogada nenhuma:
+
+    1. driblar, se a técnica der para isso e houver espaço à frente;
+    2. atrasar a alguém PERTO, para reiniciar a jogada;
+    3. voltar com a bola e esperar que apareça linha.
 
 Sem PassTypes carregado, ou sem nada melhor a propor, fica o caminho antigo.
 */
 function actPass(ctx) {
     const p = ctx.p;
-    if (typeof PassTypes !== 'undefined') {
-        const escolha = PassTypes.escolher(p, ctx.passTarget);
-        if (escolha && escolha.mate) {
-            aplicarMiraDoPasse(p, escolha.tipo, escolha.ponto);
-            p.initiatePass(escolha.mate);
-            return;
-        }
+    if (typeof PassTypes === 'undefined') {
+        p.passAimPoint = null;
+        p.passTipo = 'direct';
+        p.initiatePass(ctx.passTarget);
+        return;
     }
+
+    const E = PassTypeModel.escolha;
+    const escolha = PassTypes.escolher(p, ctx.passTarget);
+    const boa = escolha && escolha.mate && escolha.nota >= E.notaMinima;
+
+    if (boa) {
+        p.carryRecuo = false;
+        aplicarMiraDoPasse(p, escolha.tipo, escolha.ponto);
+        p.initiatePass(escolha.mate);
+        return;
+    }
+
+    // 1. Driblar: precisa de técnica e de espaço à frente.
+    const tec = p.skillFor ? p.skillFor('TEC') : 50;
+    if (tec >= E.tecnicaDrible && ctx.campoAberto) {
+        p.carryRecuo = false;
+        p.apoioAtivo = false;
+        if (typeof MatchStats !== 'undefined') MatchStats[p.team].dribles.tentados++;
+        p.fsm.changeState('CARRY');
+        return;
+    }
+
+    // 2. Atrasar a alguém perto, para reiniciar a jogada.
+    const recuo = PassTypes.melhorRecuo(p);
+    if (recuo) {
+        p.carryRecuo = false;
+        const r = PassTypes.paraMate(p, recuo);
+        aplicarMiraDoPasse(p, r.tipo, r.ponto);
+        p.initiatePass(recuo);
+        return;
+    }
+
+    // 3. Voltar com a bola e esperar.
+    if (escolha && escolha.mate) {
+        p.carryRecuo = true;
+        p.apoioAtivo = false;
+        p.fsm.changeState('CARRY');
+        return;
+    }
+
+    // Sem candidato nenhum: o caminho antigo, para nunca ficar sem saída.
     p.passAimPoint = null;
     p.passTipo = 'direct';
     p.initiatePass(ctx.passTarget);
