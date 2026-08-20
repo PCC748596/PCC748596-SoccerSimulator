@@ -5,6 +5,16 @@ Comando: `node tools/campos_orfaos.js`
 
 ---
 
+## Limitações da Varredura
+
+O relatório abaixo tem duas limitações conhecidas:
+
+1. **Campos de reset não ativados:** Um campo que é atribuído apenas o seu valor de reset (`= false`, `= null`, `= 0`) conta como "escrito" mesmo que nunca seja ativado para um valor verdadeiro. Exemplo: `isCovering` é atribuído a `false` em vários sítios mas nunca a `true`, logo o ramo que o lê nunca executa — o campo continua morto, mas não aparece nesta lista.
+
+2. **Campos em object literals:** A varredura não vê atribuições dentro de object literals (e.g., `{ campo: valor }`), o que explica por que a lista "LIDOS E NUNCA ESCRITOS" é longa e contém muito ruído. Muitas dessas leituras são inicializações de configuração que existem mas não são encontradas.
+
+---
+
 
 === ESCRITOS E NUNCA LIDOS (63) ===
   advanceFactor               js\bt\team_bt.js:85, js\bt\team_bt.js:467
