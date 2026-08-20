@@ -212,9 +212,11 @@ sem isto a marcação reagia instantaneamente à posse, ritmo de "últimos 5
 minutos perdendo a final" o jogo inteiro.
 
 Além da postura, escreve: `pushMultiplier`, `styleDefenseZShift`, `advanceFactor`,
-`chaser` (quem vai à bola — decisão colectiva, só um vai), `flankAlert`, e as
-marcações (`markingTarget` / `isCovering` / `markCount`) nos jogadores das duas
-equipas.
+`chaser` (quem vai à bola — decisão colectiva, só um vai) e `flankAlert`.
+
+`markingTarget` / `isCovering` / `markCount` continuam a ser **limpos** aqui a
+cada tick, mas ninguém os escreve: foram apagados com o antigo nível 2. A
+marcação a sério é posicional e não passa por eles (ver `MarkingModel`).
 
 **Camada tática coletiva** (tacticSystem.md, ao lado deste ficheiro) — três campos novos no
 `TeamBlackboard`, calculados no fim de `gather()`, uma camada ACIMA do
@@ -253,7 +255,7 @@ O nível 1 fala **duas vezes** por frame:
 
 | Passo | Quando | Faz |
 |---|---|---|
-| `TeamAI.tick()` | antes do nível 2 | plano colectivo, `computeDefensiveLine()` e **`computeBlock()`** |
+| `TeamAI.tick()` | antes do nível 2 | plano colectivo e **`computeBlock()`** |
 | `TeamAI.holdLine()` | depois do nível 2 | `holdOffsideLine()` — a última linha tem a palavra final |
 
 (`TeamAI.compact()` ficou vazio: comprimir passou a ser encolher o rectângulo,
@@ -580,7 +582,7 @@ Primeiro a carregar. Não depende de nada além do THREE.
   - `lineFloor` −43 — a linha nunca recua mais do que isto.
   - `blockDepthDef` 36 / `blockDepthAtk` 44 — herdados; a profundidade do bloco
     passou para o `BlockShape` (em fracções). Ainda usados no
-    `computeDefensiveLine` e como valor de recurso.
+    antigo `computeDefensiveLine` (removido) e como valor de recurso.
   - `atkAnchorLag` 26 / `atkAnchorMax` 14 — idem.
   - `supportBallZ` / `supportAhead` / `supportWide` — quando e onde um médio
     desce a dar linha de passe na construção.
@@ -598,6 +600,16 @@ Primeiro a carregar. Não depende de nada além do THREE.
     da baliza onde a bola está, por cima do avanço de 10 m que o time que bate
     já tinha. Mesma mecânica do `recuoGkComBola`, incluindo o deslocamento do
     lado que defende ser aplicado depois dos travões.
+  - **Laterais e extremos** (`LB`/`RB`/`LM`/`RM`/`LWB`/`RWB`/`LW`/`RW`) abrem e
+    fecham com o lado da jogada, em `slotNoBloco`: no lado da bola e a atacar
+    abrem +6 m para dar linha pela lateral; no lado oposto fecham 8 m (contra os
+    3 m de quem não é lateral). O clamp de ±32 m do `PosicionamentoAI.tick`
+    impede que a abertura os ponha fora do campo — com slots já muito abertos,
+    ela satura antes da linha lateral.
+  - **Zagueiros** (`CB`) levam o desvio de marcação a 30% (`biasMax *= 0.3` em
+    `aplicarMarcacaoPosicional`), para não serem arrastados à frente dos médios.
+    É uma redução, **não uma garantia geométrica**: se o slot do bloco já os
+    puser à frente, a marcação não é a causa.
   - `recuoGkComBola` (10 m) — **guarda-redes com a bola nas mãos**: quanto os
     DOIS blocos se afastam da baliza dele. A equipa do guarda-redes sobe esta
     folga (centro `-26.5 + 10`); a adversária recua a mesma coisa, e esse
@@ -641,8 +653,9 @@ Primeiro a carregar. Não depende de nada além do THREE.
   - A `misturaPadrao` é a que mais dispara, e passou de **80% aos pés para 70% à
     frente**. Era daí que vinha a sensação de jogo travado.
   - `liderancaCurta` (4 m), `liderancaPasso` (1 m) e `liderancaMin` (1.5 m)
-    definem o **leading curto**: quando o leque do `PlayerPassTarget` não valida
-    nenhum ponto — o normal num bloco compacto — `pontoPara` mira este ponto à
+    definem o **leading curto** (`pontoLiderancaCurta`, em `pass_types.js`):
+    quando o leque do `PlayerPassTarget` não valida nenhum ponto — o normal num
+    bloco compacto — `pontoPara` mira este ponto à
     frente do companheiro em vez de cair aos pés. Encurta perante um adversário
     em vez de desistir. O ponto vem marcado com `curto: true`, e por isso é
     jogado com a balística de passe normal, não com a de lançamento.
@@ -870,12 +883,18 @@ Primeiro a carregar. Não depende de nada além do THREE.
   - `toggleSector(sector)` — liga/desliga cada sector independentemente, com um
     mínimo de 1 activo. Actualiza o botão, o contador do rótulo e re-atribui
     formações.
-  - `getWeightedSectorX(teamDir)` — devolve um X enviesado para os sectores escolhidos;
-    é isto que faz a IA jogar mais pela esquerda/centro/direita. **Espelha por
-    `teamDir`**, e quem classificar sectores noutro sítio tem de espelhar
-    também (ver `getSectorOfX` em `findPassTarget`) — misturar referencial de
-    mundo com referencial de ataque faz os dois sistemas apontarem para
-    flancos opostos e anularem-se.
+  - `sectorDeX(x, dirZ)` — a que faixa pertence um X, no referencial de ataque
+    (`|x·dirZ| ≤ 10` é centro). É a **única** fonte desta classificação: o
+    `findPassTarget` tinha uma cópia à mão, e enquanto foram duas o passe
+    premiava um flanco e a condução puxava para o outro.
+  - `penalidadeSector(x, dirZ)` — quão fora dos sectores activos está um ponto,
+    de 0 (dentro de um deles) a 1. É isto que faz a IA jogar mais pela
+    esquerda/centro/direita.
+    Substituiu o `getWeightedSectorX`, **removido**: sorteava um X alvo dentro
+    do grupo activo e re-sorteava-o a cada segundo. Com Left e Right ligados
+    era uma moeda ao ar — um extremo na direita saía metade das vezes com alvo
+    em −19 e atravessava o campo pelo meio. E, por medir a distância a um
+    PONTO, penalizava um extremo em x=+25 que já estava bem colocado.
   - `update()` / `updateSkills()` — lêem os `<select>` e sliders do painel.
 - `FormationsData` — posições base normalizadas para `442`, `433` e `4231`.
 
@@ -1193,6 +1212,12 @@ Tudo o que é individual: decisão, movimento e corpo 3D.
   `this.gkTipoMergulho`, `this.gkReagiu`, `this.gkDelayReacao`. Os dois GKs não
   se interferem.
 
+  **Tudo o que é do guarda-redes tem de espelhar por `dirZ`.** O ramo do GK no
+  `case 'CARRY'` (`fsm.js`) tinha o clamp em `-38` e o gatilho de passar em
+  `z >= -39`, escritos à mão para o TeamA: para o TeamB o alvo era forçado
+  para o **outro lado do campo** e ele passava a bola sempre. Agora é
+  `ownGoalZ ± 14` e `(z − ownGoalZ) · dirZ >= 13`.
+
   Estados relevantes a partir do momento em que apanha a bola:
   - **`apanhar`** — bola mansa/rolando: pára de deslizar, agacha (em vez de
     agarrar instantaneamente a meio da corrida) e vira-se para a bola
@@ -1313,7 +1338,21 @@ Tudo o que é individual: decisão, movimento e corpo 3D.
 
 Estados: `IDLE`, `MOVE_TO_POS`, `MARKING`, `BLOCKING`, `FWR_SUPPORT`,
 `AFT_SUPPORT`, `CARRY`, `DRIBBLE`, `CUT`, `PASS`, `SHOOT`, `TACKLE`,
-`SLIDE_TACKLE`, `SET_PIECE_TAKER`, `SET_PIECE_WAIT`.
+`SLIDE_TACKLE`, `SET_PIECE_TAKER`, `SET_PIECE_WAIT`, `WATCH_CORNER`.
+
+**`MARKING` está morto** — ninguém escreve `markingTarget`. A marcação a sério é
+posicional e não passa pela FSM (ver `MarkingModel`).
+
+**`WATCH_CORNER`** — quem bate o canto fica fora do campo, parado, virado para a
+bola, até ela cair ou outro lhe tocar. Dois cuidados, que já foram dois bugs:
+- O disparo percorre **os dois planteis num laço só**. Estavam separados e o
+  estado foi posto apenas no de `Match.players`, portanto só o TeamA o tinha; num
+  canto do TeamB o batedor caía no ramo antigo.
+- A bola **parte do chão** (y = 0.11) e leva quatro frames a passar os 0.5 m, por
+  isso testar `y < 0.5` à cabeça dava verdade no primeiro frame e ele saía 67 ms
+  depois de bater. A queda só conta depois de a bola ter subido
+  (`cornerBolaSubiu`, reposto no `changeState`). Sai para `MOVE_TO_POS`, não
+  `IDLE`: tem de voltar ao jogo.
 
 **`CUT`** é o corte diagonal de 30° (DRIBBLE_CUT_30). O `DRIBBLE` bem-sucedido
 entra nele em vez de resolver tudo num frame: a direcção roda por smoothstep ao
