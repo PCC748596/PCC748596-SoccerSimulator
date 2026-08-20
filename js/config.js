@@ -590,8 +590,8 @@ o meio-campo ficar vazio. Sem bola toda a gente recua e a equipa junta-se.
 =============================================================================
 */
 const LineShape = {
-    def: { comBola:  0.05, semBola: -0.03 },
-    mid: { comBola:  0.01, semBola: -0.07 },
+    def: { comBola: 0.05, semBola: -0.03 },
+    mid: { comBola: 0.01, semBola: -0.07 },
     atk: { comBola: -0.04, semBola: -0.13 },
 
     /*
@@ -971,7 +971,7 @@ const PassModel = {
         bandas: [
             { max: 10.0, alturaMax: 1.0 },
             { max: 20.0, alturaMax: 2.2 },
-            { max: 30.0, alturaMax: 3.2 }
+            { max: 30.0, alturaMax: 4.2 }
         ],
         anguloLongoMin: 32 * Math.PI / 180,
         anguloLongoMax: 42 * Math.PI / 180
@@ -982,9 +982,9 @@ const PassModel = {
     jogável: acima de BallControl.easySpeed (7.75) o receptor arrisca falhar o
     domínio, e a zero morre antes de lá chegar.
     */
-    vChegadaRasteira: 11.5,
-    vChegadaCruzamento: 12.0,   // cruzamento rasteiro vai mais forte, de propósito
-    vChegadaLancamento: 8.0,   // lançamento é para correr atrás, não para receber parado
+    vChegadaRasteira: 1.0,
+    vChegadaCruzamento: 7.0,   // cruzamento rasteiro vai mais forte, de propósito
+    vChegadaLancamento: 5.0,   // lançamento é para correr atrás, não para receber parado
 
     /*
     Erro máximo no PESO da bola, para skill de passe 0. Escala com
@@ -1317,18 +1317,18 @@ const AppearanceModel = {
     tipos: [
         // Castanho claro é o mais comum, como pedido.
         { nome: 'castanhoClaro', peso: 42, cabelo: 0x8b6b45, pele: 0xe8c9a8 },
-        { nome: 'loiro',         peso: 28, cabelo: 0xd9c37a, pele: 0xf2d7bd },
-        { nome: 'negro',         peso: 22, cabelo: 0x1a1410, pele: 0x6b4630 },
+        { nome: 'loiro', peso: 28, cabelo: 0xd9c37a, pele: 0xf2d7bd },
+        { nome: 'negro', peso: 22, cabelo: 0x1a1410, pele: 0x6b4630 },
         // Poucos ruivos, e são os de pele mais clara.
-        { nome: 'ruivo',         peso: 8,  cabelo: 0xb5502a, pele: 0xf6ddc8 }
+        { nome: 'ruivo', peso: 8, cabelo: 0xb5502a, pele: 0xf6ddc8 }
     ],
 
     chuteiras: [
         { nome: 'vermelha', peso: 25, cor: 0xd62828 },
-        { nome: 'branca',   peso: 23, cor: 0xf5f5f5 },
-        { nome: 'preta',    peso: 20, cor: 0x1c1c1c },
-        { nome: 'amarela',  peso: 18, cor: 0xe8ff00 },
-        { nome: 'rosa',     peso: 14, cor: 0xff5fa2 }
+        { nome: 'branca', peso: 23, cor: 0xf5f5f5 },
+        { nome: 'preta', peso: 20, cor: 0x1c1c1c },
+        { nome: 'amarela', peso: 18, cor: 0xe8ff00 },
+        { nome: 'rosa', peso: 14, cor: 0xff5fa2 }
     ]
 };
 
@@ -1993,28 +1993,38 @@ const PassTypeModel = {
     */
     regras: [
         // Passe para trás: aos pés, para segurar.
-        { nome: 'recuo', quando: (o, d) => d.avanco < o.avanco - PassTypeModel.margemRecuo,
-          mistura: { direct: 0.85, space: 0.15 } },
+        {
+            nome: 'recuo', quando: (o, d) => d.avanco < o.avanco - PassTypeModel.margemRecuo,
+            mistura: { direct: 0.85, space: 0.15 }
+        },
 
         // Defesa a saltar o meio-campo, directo para o ataque.
-        { nome: 'defParaAtk', quando: (o, d) => o.sector === 'def' && d.sector === 'atk',
-          mistura: { space: 0.5, leading: 0.5 } },
+        {
+            nome: 'defParaAtk', quando: (o, d) => o.sector === 'def' && d.sector === 'atk',
+            mistura: { space: 0.5, leading: 0.5 }
+        },
 
         // Já no ataque: lá dentro ou a abrir nas pontas.
-        { nome: 'origemAtaque', quando: (o) => o.sector === 'atk',
-          mistura: { direct: 0.25, space: 0.45, leading: 0.3 } },
+        {
+            nome: 'origemAtaque', quando: (o) => o.sector === 'atk',
+            mistura: { direct: 0.25, space: 0.45, leading: 0.3 }
+        },
 
         // Progressão pelo centro a abrir para o lado (def->mid, mid->atk).
-        { nome: 'centroParaLado',
-          quando: (o, d) => o.corredor === 'centro' && d.corredor === 'lado' &&
-                            ((o.sector === 'def' && d.sector === 'mid') ||
-                             (o.sector === 'mid' && d.sector === 'atk')),
-          mistura: { direct: 0.1, space: 0.55, leading: 0.35 } },
+        {
+            nome: 'centroParaLado',
+            quando: (o, d) => o.corredor === 'centro' && d.corredor === 'lado' &&
+                ((o.sector === 'def' && d.sector === 'mid') ||
+                    (o.sector === 'mid' && d.sector === 'atk')),
+            mistura: { direct: 0.1, space: 0.55, leading: 0.35 }
+        },
 
         // Dentro do corredor central, em qualquer sector.
-        { nome: 'centroParaCentro',
-          quando: (o, d) => o.corredor === 'centro' && d.corredor === 'centro',
-          mistura: { direct: 0.3, space: 0.35, leading: 0.35 } }
+        {
+            nome: 'centroParaCentro',
+            quando: (o, d) => o.corredor === 'centro' && d.corredor === 'centro',
+            mistura: { direct: 0.3, space: 0.35, leading: 0.35 }
+        }
     ],
 
     // Tudo o resto (passes laterais dentro do mesmo sector, etc.).
@@ -2291,7 +2301,7 @@ const GoalkeeperDive = {
     vySubidaMax: 4.5,      // velocidade vertical máxima do impulso (m/s)
 
     alcanceBraco: 0.75,    // quanto a mão chega além do corpo — o corpo não
-                           // precisa de percorrer a distância toda
+    // precisa de percorrer a distância toda
     alturaDeitado: 0.42,   // y da origem do modelo com ele deitado de lado
     atritoChao: 3.5,       // desaceleração do deslize no relvado (m/s²)
 
