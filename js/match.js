@@ -1922,13 +1922,13 @@ const Match = {
         if (this.ballVel.lengthSq() > 0.1) {
             let speed = this.ballVel.length();
             _v1.set(this.ballVel.z, 0, -this.ballVel.x).normalize();
-            _q1.setFromAxisAngle(_v1, (speed * this.delta) / (r * BallPhysics.escalaVisual));
+            _q1.setFromAxisAngle(_v1, (speed * this.delta) / r);
             this.ballVisual.quaternion.premultiply(_q1);
             this.ballVisual.quaternion.normalize();
         } else if (this.ballCarrier && this.ballCarrier.velocity.lengthSq() > 0.1) {
             let speed = this.ballCarrier.velocity.length();
             _v1.set(this.ballCarrier.velocity.z, 0, -this.ballCarrier.velocity.x).normalize();
-            _q1.setFromAxisAngle(_v1, (speed * this.delta) / (r * BallPhysics.escalaVisual));
+            _q1.setFromAxisAngle(_v1, (speed * this.delta) / r);
             this.ballVisual.quaternion.premultiply(_q1);
             this.ballVisual.quaternion.normalize();
         }

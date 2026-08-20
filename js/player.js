@@ -1277,7 +1277,7 @@ class FootballPlayer {
         _v1.set(this.model.position.x * 2 - target.x, this.model.position.y, this.model.position.z * 2 - target.z);
         _m1.lookAt(this.model.position, _v1, this.model.up);
         _q1.setFromRotationMatrix(_m1);
-        this.model.quaternion.slerp(_q1, Math.min(1.0, 3.5 * Match.delta));
+        this.model.quaternion.slerp(_q1, Math.min(1.0, 5.5 * Match.delta));
         // A aceleração foi reduzida para ~2.5 (de 4.5) para diminuir a explosão nas corridas
         this.velocity.lerp(desired, Math.min(1.0, 1.8 * Match.delta));
         return this.velocity;
