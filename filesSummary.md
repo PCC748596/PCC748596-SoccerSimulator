@@ -655,9 +655,25 @@ Primeiro a carregar. Não depende de nada além do THREE.
     leva as mãos à bola (estado `'maos'`). Era 1.2 m, e quase toda a defesa
     virava mergulho lateral.
   - `maosDur` 1.0 s — duração do estado `'maos'`.
-- **`GoalkeeperStyle`** — `maxOut` em metros, quanto o GR se afasta da linha:
-  `defensive` 6 (não passa da marca de grande penalidade), `offensive` 20
-  (sweeper). Ver `updateGkStyle` em `bt/team_bt.js`.
+- **`GoalkeeperStyle`** — três medidas em metros por estilo. `depthMin`/`depthMax`
+  são os extremos da curva de `gkAnchor()`: `defensive` 1.2-6.0, `offensive`
+  1.8-11.0. `sweepOut` (6 / 20) é só para a varrida. Ver `updateGkStyle` em
+  `bt/team_bt.js`.
+- **`gkAnchor(ballX, ballZ, ownGoalZ, dirZ, style)`** — a posição de repouso e de
+  defesa do GR, função **pura** (não lê `Match` nem `window`, por isso é testável
+  isolada: `tests/gk_anchor.test.js`). Profundidade cresce com a distância da
+  bola à baliza, com easing quadrático entre `GK_D_NEAR` (16.5 m, borda da área)
+  e `GK_D_FAR` (55 m): bola dentro da área deixa-o em `depthMin`, bola no
+  meio-campo adversário em `depthMax`. O lateral é a bissetriz do ângulo
+  bola-postes, `ballX * (depth / d)`, limitada ao poste menos 0.5 m — o desvio
+  encolhe sozinho conforme ele recua.
+
+  Substituiu quatro fórmulas espalhadas por `updateGK()` cujos coeficientes
+  **subiam** (0.15, 0.35, 0.55) à medida que o atacante se aproximava: quanto
+  maior o perigo, mais o GR saía da baliza.
+- **`gkSweepTarget(...)`** — mesma assinatura, mas vai **na direcção** da bola em
+  vez de recuar, limitado a `sweepOut` e sem nunca ultrapassar a bola. Só é usado
+  no gatilho de sweeper.
 - **`FullBackStyle`** — estilo do lateral. `avancoMax` em **metros** (`defensive`
   2, `offensive` 15) é o que manda; o `comBolaMult` afina o slot mas sozinho
   valia 1-3 m e não dava subida visível. Só actua com bola.
@@ -1039,11 +1055,18 @@ Tudo o que é individual: decisão, movimento e corpo 3D.
     acaba: sai no frame do contacto pé-bola, via `ActionState('gkPunt')`, que é
     também onde o `GK_RELEASE_BALL` é emitido.
 
-  **Estilo (`gkStyleBase`)**: `defensive` nunca sai da linha; `offensive` vira
-  sweeper quando o adversário com bola entra no corredor central sem oposição
-  (ver `updateGkStyle` em `bt/team_bt.js`). O estado corrente fica em
-  `p.gkStyle` e alimenta `GoalkeeperStyle[...].maxOut` no
-  `actGoalkeeperPosition`.
+  **Posicionamento**: repouso e defesa saem todos de `gkAnchor()` (`config.js`).
+  Ele **recua** de forma contínua à medida que o ataque se aproxima, e está
+  praticamente em cima da linha quando a bola entra na área. Ficam de fora, com
+  lógica própria: cruzamento, bola solta perto, espalmar, mergulho, mãos, salto e
+  o posicionamento com posse própria (4 / 8.5 m, fase de construção).
+
+  **Estilo (`gkStyleBase`)**: `defensive` nunca varre; `offensive` vira sweeper
+  quando o adversário com bola entra no corredor central sem oposição (ver
+  `updateGkStyle` em `bt/team_bt.js`). O estado corrente fica em `p.gkStyle`.
+  `offensive` **não** quer dizer "mais adiantado o tempo todo" — fora do gatilho
+  os dois estilos usam a mesma curva, só com valores diferentes; dentro dele,
+  `gkSweepTarget()` substitui a âncora.
 
   A IA reage agressivamente a **bolas soltas na área**, com passo real
   limitado a `speedLerp` m/s (não fracção exponencial da distância restante —
