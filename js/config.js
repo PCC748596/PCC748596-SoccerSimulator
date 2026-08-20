@@ -1379,6 +1379,37 @@ function escolherAparencia(indice, total, seedEquipa) {
     };
 }
 
+/*
+=============================================================================
+INQUIETAÇÃO — quem chega ao alvo não fica estátua
+=============================================================================
+O steerArrive devolve velocidade zero a menos de 0.2 m do alvo, e a partir daí
+o jogador não se mexe mais enquanto o bloco não mudar. O campo enchia-se de
+estátuas.
+
+Isto desloca o ALVO, não o jogador: a suavização do PosicionamentoAI.tick e o
+próprio steerArrive fazem o movimento sair contínuo, não aos saltos.
+
+O deslocamento parte sempre do alvo corrente e NÃO acumula — sem isso a equipa
+derivava devagar para fora da forma ao longo de minutos.
+=============================================================================
+*/
+const RestlessModel = {
+    raio: 2.0,             // metros à volta do alvo
+    limiarChegada: 2.0,    // só mexe quem já lá chegou
+    // Sorteados por jogador, para não pulsarem todos em sincronia.
+    intervaloMin: 1.5,
+    intervaloMax: 3.5
+};
+
+/*
+Ponto a `raio` metros do alvo, na direcção `angulo`. Pura: sem Match, sem
+THREE (ver tests/inquietacao.test.js).
+*/
+function offsetInquietacao(angulo, raio) {
+    return { x: Math.cos(angulo) * raio, z: Math.sin(angulo) * raio };
+}
+
 const CarryModel = {
     leque: [-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2],
     lookAhead: 10.0,      // base de distância (sobrescrita por player.tec * 0.5)

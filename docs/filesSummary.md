@@ -638,6 +638,14 @@ Primeiro a carregar. Não depende de nada além do THREE.
   usar `THREE`** — por isso `PassTypes.frenteDe` tira a orientação do companheiro
   do quaternião por aritmética, em vez de `applyQuaternion` como o
   `pass_candidates.js` faz.
+- **`RestlessModel`** — **micro-movimento nos alvos**: quem chega ao slot deixa de
+  ficar estátua. O `steerArrive` dá velocidade zero a menos de 0.2 m do alvo, e a
+  partir daí o jogador não se mexia mais. Desloca o **alvo** até `raio` (2 m), com
+  ângulo e raio sorteados a cada `intervaloMin`–`intervaloMax` (1.5–3.5 s, para
+  não pulsarem em sincronia). Só age em quem já chegou (`limiarChegada`, 2 m), e
+  nunca no portador nem no `chaser`. **Não acumula** — parte sempre do alvo
+  corrente, senão a equipa derivava para fora da forma ao longo de minutos. Corre
+  antes do tecto do estilo, para não voltar a furá-lo.
 - **`DribbleModel`** — o 1×1: quando o portador tenta passar por um adversário.
 - **`CarryModel`** — a condução ("adiantada de bola"): a bola é fisicamente
   adiantada entre 3.6 e 6.0 m, com o impulso a herdar a velocidade do jogador,

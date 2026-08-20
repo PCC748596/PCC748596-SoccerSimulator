@@ -113,6 +113,12 @@ class FootballPlayer {
         this.markingTarget = null;
         this.marcRef = null;      // adversário que está a acompanhar, ou null
         this.marcTimer = 0;       // segundos desde a última mudança de decisão
+
+        // Micro-movimento no alvo (ver aplicarInquietacao em team_bt.js).
+        this.inqAngulo = 0;
+        this.inqRaio = 0;
+        this.inqTimer = 0;
+        this.inqIntervalo = 0;
         this.isCovering = false;
         this.markCount = 0;
 

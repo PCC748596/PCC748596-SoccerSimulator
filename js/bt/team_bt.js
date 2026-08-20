@@ -1061,6 +1061,45 @@ function aplicarMarcacaoPosicional(p, bb, targetX, targetZ) {
         p.ownGoalZ, distancia, biasMax);
 }
 
+/*
+INQUIETAÇÃO — o micro-movimento de quem já chegou ao alvo.
+
+Só age em quem está a menos de RestlessModel.limiarChegada do alvo: enquanto se
+desloca, o alvo fica quieto, senão o micro-movimento competia com a deslocação e
+o jogador serpenteava pelo campo em vez de ir a direito.
+
+Fora: quem tem a bola e o chaser, que têm destino próprio. O guarda-redes nem
+chega aqui.
+
+Parte sempre do alvo corrente e não acumula — ver RestlessModel em config.js.
+*/
+function aplicarInquietacao(p, bb, targetX, targetZ) {
+    if (typeof RestlessModel === 'undefined' ||
+        typeof offsetInquietacao !== 'function') {
+        return { x: targetX, z: targetZ };
+    }
+    if (p.hasBall || (bb && bb.chaser === p)) return { x: targetX, z: targetZ };
+
+    const R = RestlessModel;
+    const pos = p.model.position;
+    if (Math.hypot(pos.x - targetX, pos.z - targetZ) > R.limiarChegada) {
+        return { x: targetX, z: targetZ };
+    }
+
+    const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
+    p.inqTimer = (p.inqTimer || 0) + dt;
+
+    if (!p.inqIntervalo || p.inqTimer >= p.inqIntervalo) {
+        p.inqAngulo = Math.random() * Math.PI * 2;
+        p.inqRaio = Math.random() * R.raio;
+        p.inqIntervalo = R.intervaloMin + Math.random() * (R.intervaloMax - R.intervaloMin);
+        p.inqTimer = 0;
+    }
+
+    const o = offsetInquietacao(p.inqAngulo, p.inqRaio);
+    return { x: targetX + o.x, z: targetZ + o.z };
+}
+
 const PosicionamentoAI = {
     tick: function (p, bb) {
         if (p.role === 'gk') return;   // o GK posiciona-se em updateGK()
@@ -1083,6 +1122,12 @@ const PosicionamentoAI = {
             ? aplicarMarcacaoPosicional(p, bb, comEstilo.x, comEstilo.z)
             : comEstilo;
 
+        // Sexto passo: quem já chegou não fica estátua. Antes do tecto, para
+        // dois metros de irrequietude não voltarem a furá-lo.
+        const comInquietacao = (typeof aplicarInquietacao === 'function')
+            ? aplicarInquietacao(p, bb, comMarcacao.x, comMarcacao.z)
+            : comMarcacao;
+
         /*
         O tecto do estilo é o ÚLTIMO a falar: o Box-to-Box não passa da entrada
         da área, e a marcação (acima) chega a desviar 10 m no terço de ataque.
@@ -1090,10 +1135,10 @@ const PosicionamentoAI = {
         voltava a furá-lo.
         */
         const comTecto = (typeof aplicarTectoDoEstilo === 'function')
-            ? aplicarTectoDoEstilo(p, comMarcacao.z)
-            : comMarcacao.z;
+            ? aplicarTectoDoEstilo(p, comInquietacao.z)
+            : comInquietacao.z;
 
-        const tx = THREE.MathUtils.clamp(comMarcacao.x, -32, 32);
+        const tx = THREE.MathUtils.clamp(comInquietacao.x, -32, 32);
         const tz = THREE.MathUtils.clamp(comTecto, -50, 50);
 
         const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
