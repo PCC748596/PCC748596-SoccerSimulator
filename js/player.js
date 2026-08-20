@@ -35,6 +35,14 @@ class FootballPlayer {
         this.targetGoalZ = (CAMPO_COMP / 2) * this.dirZ;
         this.ownGoalZ = -(CAMPO_COMP / 2) * this.dirZ;
 
+        /*
+        Aparência (cabelo, pele, chuteiras). Determinística, para o mesmo jogador
+        sair sempre igual entre recargas — ver escolherAparencia em config.js.
+        Cada equipa recebe o seu próprio baralho de onze aparências, com as
+        proporções pedidas garantidas.
+        */
+        this.aparencia = escolherAparencia(this.id, 11, team === 'TeamA' ? 0 : 1);
+
         const gerado = this.buildBody(color1, color2);
         this.model = gerado.corpo; this.rig = gerado.rig;
 
@@ -1578,10 +1586,15 @@ class FootballPlayer {
     }
 
     buildBody(corCamisa, corCalcao) {
-        const blockMat = new THREE.MeshStandardMaterial({ color: 0xdcdde1, roughness: 0.8 }); const jointMat = new THREE.MeshStandardMaterial({ color: 0x7f8fa6, roughness: 0.6 });
+        // Pele e juntas seguem o tom do jogador; as juntas ficam um pouco mais
+        // escuras que a pele, para o contorno das articulações não desaparecer.
+        const ap = this.aparencia || escolherAparencia(0, 11, 0);
+        const corPele = ap.pele;
+        const corJunta = new THREE.Color(corPele).multiplyScalar(0.72).getHex();
+        const blockMat = new THREE.MeshStandardMaterial({ color: corPele, roughness: 0.8 }); const jointMat = new THREE.MeshStandardMaterial({ color: corJunta, roughness: 0.6 });
         const shirtMat = new THREE.MeshStandardMaterial({ color: corCamisa, roughness: 0.9 }); const shortMat = new THREE.MeshStandardMaterial({ color: corCalcao, roughness: 0.9 });
-        const bootMat = new THREE.MeshStandardMaterial({ color: 0xe8ff00, roughness: 0.5 }); const studMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
-        const hairMat = new THREE.MeshStandardMaterial({ color: 0x2c1e16, roughness: 0.9 });
+        const bootMat = new THREE.MeshStandardMaterial({ color: ap.corChuteira, roughness: 0.5 }); const studMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+        const hairMat = new THREE.MeshStandardMaterial({ color: ap.cabelo, roughness: 0.9 });
         const edgeMat = new THREE.LineBasicMaterial({ color: 0x2f3640, linewidth: 2 }); const lineMat = new THREE.LineBasicMaterial({ color: 0x2f3640 });
 
         const cvsV = document.createElement('canvas'); cvsV.width = 512; cvsV.height = 512; const ctxV = cvsV.getContext('2d');

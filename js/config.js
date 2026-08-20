@@ -1213,6 +1213,124 @@ para a baliza adversária) e escolhe a de melhor nota. Quanto mais espaço livre
 maior é o toque à frente.
 Visão de jogo: distância de leitura = técnica * 0.5, ângulo de visão = técnica * 0.7 graus.
 */
+/*
+=============================================================================
+APARÊNCIA DOS JOGADORES
+=============================================================================
+Antes toda a gente saía do mesmo molde: pele 0xdcdde1, cabelo 0x2c1e16 e
+chuteiras amarelas 0xe8ff00, iguais nos vinte e dois.
+
+Cada tipo junta cabelo e pele que combinam — não se sorteiam em separado, senão
+saía cabelo ruivo com pele escura. As chuteiras são independentes: qualquer
+jogador pode calçar qualquer cor.
+
+`peso` é a fatia relativa de cada tipo; não precisam de somar 1, a escolha
+normaliza-os.
+=============================================================================
+*/
+const AppearanceModel = {
+    tipos: [
+        // Castanho claro é o mais comum, como pedido.
+        { nome: 'castanhoClaro', peso: 42, cabelo: 0x8b6b45, pele: 0xe8c9a8 },
+        { nome: 'loiro',         peso: 28, cabelo: 0xd9c37a, pele: 0xf2d7bd },
+        { nome: 'negro',         peso: 22, cabelo: 0x1a1410, pele: 0x6b4630 },
+        // Poucos ruivos, e são os de pele mais clara.
+        { nome: 'ruivo',         peso: 8,  cabelo: 0xb5502a, pele: 0xf6ddc8 }
+    ],
+
+    chuteiras: [
+        { nome: 'vermelha', peso: 30, cor: 0xd62828 },
+        { nome: 'branca',   peso: 28, cor: 0xf5f5f5 },
+        { nome: 'preta',    peso: 25, cor: 0x1c1c1c },
+        { nome: 'rosa',     peso: 17, cor: 0xff5fa2 }
+    ]
+};
+
+/*
+Hash inteiro determinístico, para baralhar sem Math.random. A aparência tem de
+ser ESTÁVEL: com Math.random o mesmo jogador mudava de cabelo a cada recarga e a
+cada reconstrução do modelo.
+*/
+function hashAparencia(seed, sal) {
+    let h = (seed * 2654435761 + sal * 40503) >>> 0;
+    h ^= h >>> 15;
+    h = (h * 2246822519) >>> 0;
+    h ^= h >>> 13;
+    return h >>> 0;
+}
+
+/*
+Reparte `n` lugares por uma lista com `peso`, pelo método do maior resto: dá a
+cada entrada a parte inteira da sua quota e distribui o que sobra por quem tem
+maior resto. Devolve a lista de entradas repetidas, por ordem.
+
+É isto que garante as proporções PEDIDAS em amostras pequenas. Sortear cada
+jogador por hash independente parecia mais simples, mas em 22 amostras dava
+tanto como um negro em vinte e dois e treze chuteiras brancas — o acaso não é
+obrigado a respeitar os pesos, e um plantel é uma amostra pequena.
+*/
+function repartirPorPeso(lista, n) {
+    const total = lista.reduce((soma, item) => soma + item.peso, 0);
+    const quotas = lista.map((item) => {
+        const exacta = (item.peso / total) * n;
+        const inteira = Math.floor(exacta);
+        return { item: item, inteira: inteira, resto: exacta - inteira };
+    });
+
+    let atribuidos = quotas.reduce((soma, q) => soma + q.inteira, 0);
+    const porResto = quotas.slice().sort((a, b) => b.resto - a.resto);
+    for (let i = 0; atribuidos < n; i++, atribuidos++) {
+        porResto[i % porResto.length].inteira++;
+    }
+
+    const saida = [];
+    for (const q of quotas) {
+        for (let k = 0; k < q.inteira; k++) saida.push(q.item);
+    }
+    return saida;
+}
+
+// Baralha uma lista com Fisher-Yates, usando o hash em vez de Math.random.
+function baralharPorHash(lista, seed) {
+    const out = lista.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+        const j = hashAparencia(seed, i) % (i + 1);
+        const tmp = out[i]; out[i] = out[j]; out[j] = tmp;
+    }
+    return out;
+}
+
+/*
+Aparência do jogador `indice` num plantel de `total`, para a equipa `seedEquipa`.
+
+Constrói o plantel inteiro e devolve uma entrada. Recomputar por jogador é
+trabalho a mais irrelevante — são onze entradas, uma vez, na construção das
+equipas — e evita ter de guardar estado partilhado entre jogadores.
+
+Cabelo e pele vêm sempre do MESMO tipo, para não sair ruivo de pele escura. As
+chuteiras são repartidas à parte, e baralhadas com outro sal, para as duas
+listas não ficarem alinhadas — senão todos os ruivos calçavam a mesma cor.
+*/
+function escolherAparencia(indice, total, seedEquipa) {
+    const n = total || 11;
+    const semente = (seedEquipa || 0) + 1;
+
+    const tipos = baralharPorHash(repartirPorPeso(AppearanceModel.tipos, n), semente * 7919);
+    const botas = baralharPorHash(repartirPorPeso(AppearanceModel.chuteiras, n), semente * 104729);
+
+    const i = ((indice % n) + n) % n;
+    const tipo = tipos[i];
+    const bota = botas[i];
+
+    return {
+        tipo: tipo.nome,
+        cabelo: tipo.cabelo,
+        pele: tipo.pele,
+        chuteira: bota.nome,
+        corChuteira: bota.cor
+    };
+}
+
 const CarryModel = {
     leque: [-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2],
     lookAhead: 10.0,      // base de distância (sobrescrita por player.tec * 0.5)

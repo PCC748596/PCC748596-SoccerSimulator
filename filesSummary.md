@@ -1023,6 +1023,21 @@ Tudo o que é individual: decisão, movimento e corpo 3D.
   e o esqueleto; `animateBones(dt)` faz a animação procedural (corrida, salto,
   descanso); `resetBonesToDefault()` volta à pose neutra para evitar glitches;
   `updateShirt(num, pos)` desenha número e posição nas costas via canvas.
+- **Aparência:** `this.aparencia`, posta no construtor a partir de
+  `escolherAparencia(indice, total, seedEquipa)` (`config.js`), dá o cabelo, o
+  tom de pele e a cor das chuteiras. Antes os vinte e dois eram idênticos: pele
+  `0xdcdde1`, cabelo `0x2c1e16`, chuteiras amarelas.
+
+  Cabelo e pele vêm sempre do mesmo `AppearanceModel.tipos` — `castanhoClaro`,
+  `loiro`, `negro`, `ruivo` — para não sair ruivo de pele escura; as chuteiras
+  (`vermelha`, `branca`, `preta`, `rosa`) são repartidas à parte. O tom das
+  juntas sai da pele, escurecido a 72%, para o contorno das articulações não
+  desaparecer.
+
+  A repartição é **exacta**, pelo método do maior resto (`repartirPorPeso`), e
+  não um sorteio por jogador: em 22 amostras o acaso dava um único negro e treze
+  chuteiras brancas. Cada equipa recebe um baralho de onze, baralhado por hash e
+  não por `Math.random`, para a aparência ser estável entre recargas.
 - **Guarda-redes:** `updateGK(dt)` é IA e física à parte — defesas, mergulhos,
   posicionamento, relançamento. O estado é **por instância**: `this.gkEstado`
   (`'idle'` / `'mergulho'` / `'maos'` / `'salto_alto'` / `'apanhar'` /
