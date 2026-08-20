@@ -845,8 +845,11 @@ class FootballPlayer {
             const dx = this.passTargetPos.x - this.model.position.x;
             const dz = this.passTargetPos.z - this.model.position.z;
             const normDir = Math.hypot(dx, dz) || 1;
-            _v1.set(0, 0, 1).applyQuaternion(this.model.quaternion);
-            this.cosCorpoNoPasse = (_v1.x * dx + _v1.z * dz) / normDir;
+            // _v1 esta a guardar o alvo do passe para o codigo dos visuais
+            // logo abaixo — NAO reutilizar aqui. Usa-se _vFrenteCorpo
+            // (config.js) para a frente do jogador.
+            _vFrenteCorpo.set(0, 0, 1).applyQuaternion(this.model.quaternion);
+            this.cosCorpoNoPasse = (_vFrenteCorpo.x * dx + _vFrenteCorpo.z * dz) / normDir;
         }
 
         if (typeof Match !== 'undefined') {
