@@ -1011,6 +1011,56 @@ const TeamAI = {
    Foram apagados com o nivel 2: a marcacao (atribuirMarcacao/cobertura), o
    tackling (TacklingAI) e a malha de passe de Delaunay (TriangulacaoAI).
    ========================================================================= */
+/*
+MARCAÇÃO POSICIONAL — o desvio que faz o jogador acompanhar quem lhe entra no
+setor. Corre depois do estilo inclinar o slot e antes do clamp do campo.
+
+Não é tackling: isto só desloca o ALVO de posicionamento. Nunca muda o estado da
+FSM, nunca manda ninguém à bola. Quem decide ir à bola continua a ser o chaser e
+as folhas actTackle/actSlideTackle da árvore do jogador.
+
+A decisão tem histerese de MarkingModel.histerese segundos, nos dois sentidos —
+quem acompanha continua, quem está no slot fica — com duas saídas de emergência:
+a referência afastar-se para lá de metade do raio, ou desaparecer do campo.
+*/
+function aplicarMarcacaoPosicional(p, bb, targetX, targetZ) {
+    if (typeof MarkingModel === 'undefined' ||
+        typeof escolherReferencia !== 'function') {
+        return { x: targetX, z: targetZ };
+    }
+
+    const M = MarkingModel;
+    const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
+    const adversarios = (bb && bb.opp) ? bb.opp : [];
+
+    p.marcTimer = (p.marcTimer || 0) + dt;
+
+    // A referência ainda serve? Sai já se desapareceu do campo ou se fugiu do
+    // setor — manter a decisão nesses casos era pior do que trocar.
+    if (p.marcRef) {
+        const vivo = adversarios.indexOf(p.marcRef) >= 0;
+        const dx = p.marcRef.model.position.x - targetX;
+        const dz = p.marcRef.model.position.z - targetZ;
+        const fugiu = Math.hypot(dx, dz) > M.raioSetor * 1.5;
+        if (!vivo || fugiu) { p.marcRef = null; p.marcTimer = 0; }
+    }
+
+    if (p.marcTimer >= M.histerese) {
+        p.marcRef = escolherReferencia(targetX, targetZ, adversarios, M.raioSetor);
+        p.marcTimer = 0;
+    }
+
+    if (!p.marcRef) return { x: targetX, z: targetZ };
+
+    const distancia = M.distanciaPorPressao[Tatics.pressaoDefensiva]
+        ?? M.distanciaPorPressao.balanced;
+    const biasMax = M.biasMaxPara(targetZ * p.dirZ);
+
+    return pontoDeMarcacao(targetX, targetZ,
+        p.marcRef.model.position.x, p.marcRef.model.position.z,
+        p.ownGoalZ, distancia, biasMax);
+}
+
 const PosicionamentoAI = {
     tick: function (p, bb) {
         if (p.role === 'gk') return;   // o GK posiciona-se em updateGK()
@@ -1027,8 +1077,14 @@ const PosicionamentoAI = {
             ? aplicarEstiloPosicional(p, bb, targetX, targetZ)
             : { x: targetX, z: targetZ };
 
-        const tx = THREE.MathUtils.clamp(comEstilo.x, -32, 32);
-        const tz = THREE.MathUtils.clamp(comEstilo.z, -50, 50);
+        // Quinto passo: acompanhar quem entra no setor. Depois do estilo, para
+        // a marcação partir do slot que o estilo já inclinou.
+        const comMarcacao = (typeof aplicarMarcacaoPosicional === 'function')
+            ? aplicarMarcacaoPosicional(p, bb, comEstilo.x, comEstilo.z)
+            : comEstilo;
+
+        const tx = THREE.MathUtils.clamp(comMarcacao.x, -32, 32);
+        const tz = THREE.MathUtils.clamp(comMarcacao.z, -50, 50);
 
         const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
         let k = 1 - Math.exp(-PositionSmoothing * dt);

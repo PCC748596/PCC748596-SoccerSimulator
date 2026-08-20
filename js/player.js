@@ -107,7 +107,12 @@ class FootballPlayer {
         // Segundos em que este jogador não pode tocar na bola (ver BallControl).
         this.touchLock = 0;
 
+        // markingTarget e o estado MARKING da FSM continuam mortos (ninguém os
+        // escreve). A marcação posicional usa os dois campos abaixo e nunca
+        // muda de estado na FSM — ver aplicarMarcacaoPosicional em team_bt.js.
         this.markingTarget = null;
+        this.marcRef = null;      // adversário que está a acompanhar, ou null
+        this.marcTimer = 0;       // segundos desde a última mudança de decisão
         this.isCovering = false;
         this.markCount = 0;
 
