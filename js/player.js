@@ -2482,7 +2482,64 @@ class FootballPlayer {
             _v1.set(gkCorpo.position.x, gkCorpo.position.y, gkCorpo.position.z + this.dirZ * 10);
             lookAtBola(gkCorpo, _v1);
 
-            if (t >= (this.gkSegurarDur ?? GoalkeeperPose.segurarDur)) {
+            /*
+            ANDAR COM A BOLA NA MÃO. Ficava completamente imóvel os 5 a 8
+            segundos todos: nem a FSM corre neste estado (só é chamada no ramo
+            'idle'), nem a velocidade sobrevive ao reset no fim do updateGK.
+
+            Anda para o alvo de gkAlvoSegurando (config.js) a segurarVel, com
+            passo limitado — mesmo tratamento do ramo 'idle', para não deslizar
+            quando o alvo salta. Não sai da grande área: com a bola na mão,
+            fora dela é falta.
+            */
+            const alvoSeg = gkAlvoSegurando(this.ownGoalZ, this.dirZ);
+            const dxSeg = alvoSeg.x - gkCorpo.position.x;
+            const dzSeg = alvoSeg.z - gkCorpo.position.z;
+            const distSeg = Math.hypot(dxSeg, dzSeg);
+            const passoSeg = GoalkeeperPose.segurarVel * dt;
+
+            let andouSeg = 0;
+            if (distSeg > 0.15) {
+                const k = Math.min(1, passoSeg / distSeg);
+                gkCorpo.position.x += dxSeg * k;
+                gkCorpo.position.z += dzSeg * k;
+                andouSeg = distSeg * k;
+            }
+
+            // Pernas a acompanhar. Os braços ficam na pose de segurar, acima:
+            // a bola continua fechada no peito enquanto ele anda.
+            if (andouSeg > 0.001) {
+                const Pa = GoalkeeperPose.andar;
+                this.animTimer += andouSeg / 3.0;
+                const tt = ((this.animTimer % 1.0) + 1.0) % 1.0;
+                const poseSeg = getRunPose(tt);
+                gkRig.lLeg.rotation.x = lerpTo(gkRig.lLeg.rotation.x, poseSeg.lHip * Pa.passada, 0.4);
+                gkRig.rLeg.rotation.x = lerpTo(gkRig.rLeg.rotation.x, poseSeg.rHip * Pa.passada, 0.4);
+                gkRig.lKnee.rotation.x = lerpTo(gkRig.lKnee.rotation.x, Pa.kneeBase + poseSeg.lKnee * Pa.passadaJoelho, 0.4);
+                gkRig.rKnee.rotation.x = lerpTo(gkRig.rKnee.rotation.x, Pa.kneeBase + poseSeg.rKnee * Pa.passadaJoelho, 0.4);
+            }
+
+            /*
+            Relançar mais cedo, se já houver linha. `gkPodeLancar` guarda a
+            folga de segurarMinimo para as equipas saírem da área; sem alvo, o
+            relançamento sai na mesma ao fim de segurarDur, logo a seguir.
+
+            O findPassTarget aqui é só o GATILHO — "já há a quem jogar". Quem
+            escolhe mesmo o destinatário é o releaseFromHands, no instante do
+            contacto, e é ele que respeita o Playing Style da equipa.
+
+            Corre a cada 0.25 s e não a cada frame: percorre todos os
+            companheiros e todas as linhas de passe, e nada disto muda de
+            frame para frame.
+            */
+            this.gkProcuraTimer = (this.gkProcuraTimer || 0) + dt;
+            if (t >= GoalkeeperPose.segurarMinimo && this.gkProcuraTimer >= 0.25) {
+                this.gkProcuraTimer = 0;
+                this.gkTemLinha = !!this.findPassTarget();
+            }
+            const lancarCedo = gkPodeLancar(t, this.gkTemLinha);
+
+            if (lancarCedo || t >= (this.gkSegurarDur ?? GoalkeeperPose.segurarDur)) {
                 /*
                 A bola já não sai no mesmo instante em que o tempo de espera
                 acaba: entra o gesto do chuto (GOALKEEPER_KICK_FORWARD_HIGH) e
@@ -2578,6 +2635,9 @@ class FootballPlayer {
         }
         // Não precisa esperar sempre os 8s fixos — 5-8s, sorteado a cada captura.
         this.gkSegurarDur = 5.0 + Math.random() * 3.0;
+        // Procura de linha de passe enquanto segura — ver o ramo 'segurando'.
+        this.gkProcuraTimer = 0;
+        this.gkTemLinha = false;
         /*
         Sem isto, um companheiro já marcado como intendedReceiver de um
         passe/desvio anterior continuava a correr direito pra

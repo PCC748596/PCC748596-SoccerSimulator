@@ -784,6 +784,20 @@ Primeiro a carregar. Não depende de nada além do THREE.
 - **`FullBackStyle`** — estilo do lateral. `avancoMax` em **metros** (`defensive`
   2, `offensive` 15) é o que manda; o `comBolaMult` afina o slot mas sozinho
   valia 1-3 m e não dava subida visível. Só actua com bola.
+- **Guarda-redes com a bola na mão** (`GoalkeeperPose.segurar*`): deixou de ficar
+  estátua os 5 a 8 segundos todos. Anda até `gkAlvoSegurando` — `segurarAvanco`
+  (10 m) à frente da própria linha, bem aquém dos 16.5 m da área, porque com a
+  bola na mão sair dela é falta — a `segurarVel` (2.2 m/s), com as pernas a
+  acompanhar.
+  - **Porque não se mexia:** nenhuma das duas vias que movem um jogador chega a
+    este estado. A FSM só é chamada no ramo `'idle'` do `updateGK`, e o fim do
+    `updateGK` zera a velocidade para qualquer estado que não seja `'idle'`. O
+    ramo `'segurando'` mexe agora na posição directamente.
+  - **Relança mais cedo** se aparecer linha, passado `segurarMinimo` (1.5 s) — a
+    folga para as duas equipas se reorganizarem. O `findPassTarget` é só o
+    gatilho, e corre a cada 0.25 s, não a cada frame; quem escolhe o
+    destinatário continua a ser o `releaseFromHands`, que respeita o Playing
+    Style. Sem linha, o relançamento sai à mesma ao fim de `segurarDur`.
 - **`GoalkeeperKickPower`** (1.15) — multiplicador da **força** do chutão do
   guarda-redes (`puntBall` em `player.js`). Multiplica a velocidade de saída,
   não o alcance: como o alcance vai com o quadrado da velocidade, estes +15% de

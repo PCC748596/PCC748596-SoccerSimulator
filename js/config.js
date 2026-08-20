@@ -1111,6 +1111,29 @@ function gkAnchor(ballX, ballZ, ownGoalZ, dirZ, style) {
 }
 
 /*
+Onde o guarda-redes se põe enquanto segura a bola: `segurarAvanco` metros à
+frente da própria linha, no eixo.
+
+Pura, como a gkAnchor. Existe para ele deixar de ficar completamente parado
+durante os 5 a 8 segundos em que segura — andava zero e o campo ficava à
+espera dele.
+*/
+function gkAlvoSegurando(ownGoalZ, dirZ) {
+    return { x: 0, z: ownGoalZ + GoalkeeperPose.segurarAvanco * dirZ };
+}
+
+/*
+Já pode relançar? Precisa de ter passado `segurarMinimo` — a folga para as
+equipas se reorganizarem — e de haver alguém a quem jogar.
+
+Devolver false não prende ninguém: ao fim de `segurarDur` o relançamento sai à
+mesma, com o gesto do chuto (ver updateGK).
+*/
+function gkPodeLancar(tempoSegurando, temAlvo) {
+    return tempoSegurando >= GoalkeeperPose.segurarMinimo && !!temAlvo;
+}
+
+/*
 Alvo de varrida. Ao contrário de gkAnchor(), vai NA DIRECÇÃO da bola: é a
 situação em que o guarda-redes sai mesmo, porque não há defensor entre o
 atacante e a baliza. sweepOut trava quão longe.
@@ -1183,6 +1206,21 @@ const GoalkeeperPose = {
     // Quanto tempo o GR fica a segurar a bola (agachado a levantar-se) antes
     // de poder relançar o jogo — dá tempo às equipas para se reorganizarem.
     segurarDur: 8.0,
+
+    /*
+    COM A BOLA NA MÃO, o guarda-redes deixa de ficar estátua: avança até
+    `segurarAvanco` metros da própria linha enquanto procura linha de passe.
+
+    O limite é bem aquém dos 16.5 m da grande área — com a bola na mão, sair
+    dela é falta, e não vale a pena andar lá perto da fronteira.
+
+    `segurarMinimo` é o tempo antes do qual não lança, mesmo com alvo à vista:
+    é a folga que as duas equipas precisam para se reorganizarem depois da
+    defesa. Sem ela o relançamento saía no frame seguinte ao da apanhada.
+    */
+    segurarAvanco: 10.0,
+    segurarVel: 2.2,
+    segurarMinimo: 1.5,
 
     // A andar ao longo da baliza a acompanhar o lance: de pé, passada curta.
     andar: {
