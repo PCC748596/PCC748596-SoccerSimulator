@@ -130,10 +130,10 @@ const TouchControls = {
         const btnSpeed = document.getElementById('btn-touch-speed');
         if (btnSpeed) {
             btnSpeed.addEventListener('click', () => {
-                const speeds = [0.5, 1.0, 1.3];
+                const speeds = ['frame', 0.7, 1.0, 1.2];
                 const current = window.speedMultiplier || 1.0;
                 let nextIdx = (speeds.indexOf(current) + 1) % speeds.length;
-                if (nextIdx < 0) nextIdx = 1;
+                if (nextIdx < 0) nextIdx = 2; // Default to 1.0x if not found
                 const nextSpeed = speeds[nextIdx];
                 if (typeof Match !== 'undefined') {
                     Match.setSpeed(nextSpeed);
@@ -310,7 +310,11 @@ const TouchControls = {
         const speedLabel = document.getElementById('touch-speed-label');
         if (speedLabel) {
             const spd = window.speedMultiplier || 1.0;
-            speedLabel.textContent = spd.toFixed(1) + 'x';
+            if (spd === 'frame') {
+                speedLabel.textContent = 'Frame';
+            } else {
+                speedLabel.textContent = spd.toFixed(1) + 'x';
+            }
         }
 
         // Atualiza nome da câmera

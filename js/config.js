@@ -372,8 +372,10 @@ travar só quem corre.
     0.81   -10% de novo, sobre o 0.90 (pedido)
     0.891  +10% sobre o 0.81 (pedido)
     0.8019 -10% sobre o 0.891 (pedido)
+    0.88209 +10% sobre o 0.8019 (pedido)
+    0.793881 -10% sobre o 0.88209 (pedido)
 */
-const GAME_SPEED = 0.88209;
+const GAME_SPEED = 0.793881;
 
 /*
 Duração e escala do relógio de jogo:
@@ -1634,7 +1636,7 @@ oposto (30-45°). Se tentar ir reto, probabilidade de perda é muito maior.
 jogador e pela proximidade do adversário.
 */
 const DribbleModel = {
-    triggerDist: 5.5,     // distância para activar drible 1v1 (adversário à frente)
+    triggerDist: 2.5,     // distância para activar drible 1v1 (adversário à frente)
     angleSide: 0.6,       // ângulo lateral do toque (~35°, entre 30 e 45)
     touchPower: 11.0,     // força do toque lateral
     successBase: 0.60,    // chance base de sucesso

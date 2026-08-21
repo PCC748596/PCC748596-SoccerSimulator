@@ -290,6 +290,7 @@ function bestPassTarget(ctx, preferida) {
 }
 // Remate.
 function actShoot(ctx) {
+    if (ctx.p.aguardarPassada()) return true;
     ctx.p.initiateShoot();
 }
 
@@ -390,6 +391,7 @@ function findCross(ctx) {
 
 function actCross(ctx) {
     const p = ctx.p;
+    if (p.aguardarPassada()) return true;
     p.isCross = true;
     // Consumido em executePassGameplay (fsm.js) para escolher a altura.
     p.crossAlto = ctx.cross.alto;
@@ -398,6 +400,7 @@ function actCross(ctx) {
 
 function actThroughBall(ctx) {
     const lance = ctx.throughBall;
+    if (ctx.p.aguardarPassada()) return true;
     ctx.p.isThroughBall = true;
     // Consumido em executePassGameplay: rasteiro por entre a defesa, ou pelo
     // alto por cima dela (ver findThroughBall).
@@ -458,6 +461,7 @@ aqui desfazia a decisão que acabou de ser tomada.
 */
 function actPassParaAlvo(ctx, alvo) {
     const p = ctx.p;
+    if (p.aguardarPassada()) return true;
     if (typeof PassTypes !== 'undefined') {
         const r = PassTypes.paraMate(p, alvo);
         aplicarMiraDoPasse(p, r.tipo, r.ponto);
@@ -518,6 +522,7 @@ Sem PassTypes carregado, ou sem nada melhor a propor, fica o caminho antigo.
 */
 function actPass(ctx) {
     const p = ctx.p;
+    if (p.aguardarPassada()) return true;
     if (typeof PassTypes === 'undefined') {
         p.passAimPoint = null;
         p.passTipo = 'direct';
@@ -628,6 +633,7 @@ function podeDriblar(ctx) {
 
 function actDribble(ctx) {
     const p = ctx.p;
+    if (p.aguardarPassada()) return true;
     p.dribbleOpponent = ctx.dribbleOpponent;
     if (typeof MatchStats !== 'undefined') MatchStats[p.team].dribles.tentados++;
     p.fsm.changeState('DRIBBLE');
@@ -667,6 +673,7 @@ function findPassBack(ctx) {
 
 function actClearance(ctx) {
     const p = ctx.p;
+    if (p.aguardarPassada()) return true;
     if (typeof MatchStats !== 'undefined') MatchStats[p.team].passes.tentados++;
 
     const meiaLarg = CAMPO_LARG / 2;

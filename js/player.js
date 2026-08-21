@@ -1479,8 +1479,8 @@ class FootballPlayer {
         _m1.lookAt(this.model.position, _v1, this.model.up);
         _q1.setFromRotationMatrix(_m1);
         this.model.quaternion.slerp(_q1, Math.min(1.0, 5.5 * Match.delta));
-        // A aceleração foi reduzida para ~2.5 (de 4.5) para diminuir a explosão nas corridas
-        this.velocity.lerp(desired, Math.min(1.0, 1.8 * Match.delta));
+        // Inércia ajustada para fator 5.0 (curvas bastante responsivas e quase sem derrapagem)
+        this.velocity.lerp(desired, Math.min(1.0, 5.0 * Match.delta));
         return this.velocity;
     }
 
@@ -1491,10 +1491,29 @@ class FootballPlayer {
     meio da passada — parece que o jogador "puxa" a bola de volta.
     */
     emJanelaDeToque(tol = 0.13) {
-        const t = this.animPhase;
-        const d1 = Math.abs(t - 0.25);
-        const d2 = Math.abs(t - 0.75);
+        const t = this.animPhase; // 0..1
+        // R20 (0.333) para uma perna, R40 (0.666) para a outra
+        const d1 = Math.abs(t - 0.333);
+        const d2 = Math.abs(t - 0.666);
         return Math.min(d1, d2) < tol;
+    }
+
+    /*
+    Verifica se a animação está fora do frame ideal (R20/R40) para bater na bola.
+    Usado no Behavior Tree para adiar passes, remates e cruzamentos por uns frames
+    até a perna estar na posição certa (ou abortar a espera se demorar demais).
+    */
+    aguardarPassada() {
+        if (this.velocity.lengthSq() > 2.0 && !this.emJanelaDeToque()) {
+            const dt = (typeof Match !== 'undefined') ? Match.delta : 0.016;
+            this.touchWaitTimer = (this.touchWaitTimer || 0) + dt;
+            const maxWait = (typeof CarryModel !== 'undefined') ? CarryModel.touchMaxWait : 0.3;
+            if (this.touchWaitTimer < maxWait) {
+                return true; // Continuar à espera
+            }
+        }
+        this.touchWaitTimer = 0;
+        return false; // Pode agir
     }
 
     /*

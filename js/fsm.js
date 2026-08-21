@@ -663,15 +663,18 @@ class PlayerFSM {
                     // sem disparar para longe nem perder a velocidade de corrida.
                     const curSpeed = p.velocity.length();
                     let touchPow;
-                    if (nearestOppDist > 16) {
-                        // Campo aberto: avanço fluido
+                    if (nearestOppDist > 15) {
+                        // Campo aberto (> 15m)
                         touchPow = curSpeed * 1.05 + 0.35;
-                    } else if (nearestOppDist > 8) {
-                        // Espaço médio
+                    } else if (nearestOppDist > 10) {
+                        // 10 a 15 metros
                         touchPow = curSpeed * 1.03 + 0.20;
+                    } else if (nearestOppDist > 5) {
+                        // 5 a 10 metros
+                        touchPow = curSpeed * 1.02 + 0.15;
                     } else if (nearestOppDist > DribbleModel.triggerDist) {
-                        // Adversário próximo: toque curto junto ao pé
-                        touchPow = curSpeed * 1.01 + 0.10;
+                        // 0 a 5 metros (toque curto junto ao pé)
+                        touchPow = curSpeed * 1.01 + 0.40;
                     } else {
                         // Adversário muito perto — transição para DRIBBLE 1v1
                         if (nearestOpp && nearestOppDist > 1.2) {
@@ -696,7 +699,7 @@ class PlayerFSM {
                     // Executar o toque à frente com touchLock muito curto (0.08s) para que o
                     // próprio jogador retome a condução de forma fluida sem hesitação.
                     p.hasBall = false;
-                    p.touchLock = 0.08;
+                    p.touchLock = 0.3;
                     p.carryTouchGrace = 1.2;
                     Match.ballCarrier = null;
                     Match.intendedReceiver = p;
@@ -757,7 +760,7 @@ class PlayerFSM {
                         window.bolaChutada = false;
 
                         p.hasBall = false;
-                        p.touchLock = 0.08;
+                        p.touchLock = 0.3;
                         p.carryTouchGrace = 1.2;
                         Match.ballCarrier = null;
                         Match.intendedReceiver = p;

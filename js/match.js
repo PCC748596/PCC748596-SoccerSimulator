@@ -315,6 +315,9 @@ const Match = {
     },
 
     setSpeed: function (speed) {
+        if (speed === 'frame' && window.speedMultiplier === 'frame') {
+            this.stepNextFrame = true;
+        }
         window.speedMultiplier = speed;
         document.querySelectorAll('.btn-speed').forEach(b => b.classList.remove('active'));
         const btn = document.getElementById('spd-' + speed);
