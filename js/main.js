@@ -140,6 +140,21 @@ O anel do "Position BT" desapareceu com o nivel 2. Sobram dois:
     Team BT POS      o slot no bloco, do TeamBT
     PlayingStyleBT   o mesmo slot ja inclinado pelo estilo do jogador
 */
+window.positionBTToggleState = 'OFF';
+function togglePositionBT() {
+    if (window.positionBTToggleState === 'OFF') window.positionBTToggleState = 'TeamA';
+    else if (window.positionBTToggleState === 'TeamA') window.positionBTToggleState = 'TeamB';
+    else if (window.positionBTToggleState === 'TeamB') window.positionBTToggleState = 'Both';
+    else window.positionBTToggleState = 'OFF';
+
+    let uiLabel = window.positionBTToggleState;
+    if (uiLabel === 'TeamA') uiLabel = 'TeamBlue';
+    else if (uiLabel === 'TeamB') uiLabel = 'TeamRed';
+
+    document.getElementById('btn-positionbt').innerText = 'PositionBT: ' + uiLabel;
+    document.getElementById('btn-positionbt').classList.toggle('active', window.positionBTToggleState !== 'OFF');
+}
+
 window.playingStyleBTToggleState = 'OFF';
 function togglePlayingStyleBT() {
     if (window.playingStyleBTToggleState === 'OFF') window.playingStyleBTToggleState = 'TeamA';

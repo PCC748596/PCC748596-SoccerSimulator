@@ -58,6 +58,57 @@ function cederAoBrowser() {
 }
 
 /*
+DESVIO DO ALVO POR ESTADO — quão longe do slot do bloco está o ponto para
+onde cada jogador está mesmo a ir (`dynamicTarget` contra `slotTarget`, os
+anéis maior e médio do debug).
+
+Existe por causa das linhas enormes vistas no ecrã: um desvio de 10 m tem
+explicação (marcação, estilo), um de 30 m não tem, e sem separar por estado
+não se sabe se vem do chaser a ir à bola — onde é normal — ou de quem devia
+estar quieto na posição.
+*/
+function criarDesvioStats() { return {}; }
+
+function registarDesvios(stats, lista) {
+    for (const p of lista) {
+        if (!p || !p.slotTarget || !p.dynamicTarget || !p.fsm) continue;
+        const estado = p.fsm.currentState;
+        let st = stats[estado];
+        if (!st) st = stats[estado] = { n: 0, soma: 0, soma2: 0, max: 0, maxPos: null };
+
+        const d = Math.hypot(
+            p.dynamicTarget.x - p.slotTarget.x,
+            p.dynamicTarget.z - p.slotTarget.z);
+
+        st.n++;
+        st.soma += d;
+        st.soma2 += d * d;
+        if (d > st.max) {
+            st.max = d;
+            st.maxPos = p.pos;
+        }
+    }
+}
+
+function resumirDesvios(stats) {
+    const linhas = [];
+    for (const estado in stats) {
+        const st = stats[estado];
+        if (!st.n) continue;
+        linhas.push({
+            estado: estado,
+            frames: st.n,
+            desvioMedioM: +(st.soma / st.n).toFixed(2),
+            desvioRmsM: +Math.sqrt(st.soma2 / st.n).toFixed(2),
+            desvioMaxM: +st.max.toFixed(2),
+            posicaoDoMax: st.maxPos
+        });
+    }
+    linhas.sort((a, b) => b.desvioMaxM - a.desvioMaxM);
+    return linhas;
+}
+
+/*
 =============================================================================
 CALIBRAÇÃO DE PLAYING STYLES — dispara mesmo? move de forma coerente?
 =============================================================================
@@ -91,7 +142,8 @@ function registarEstilos(stats, lista) {
                 style: p.playingStyle, pos: p.pos,
                 framesAtivo: 0, framesTotal: 0, ativacoes: 0,
                 dxSum: 0, dzSum: 0, dx2Sum: 0, dz2Sum: 0,
-                offMax: 0
+                offMax: 0,
+                totX2Sum: 0, totZ2Sum: 0, totMax: 0
             };
         }
 
@@ -106,12 +158,30 @@ function registarEstilos(stats, lista) {
         if (!ativo) continue;
 
         st.framesAtivo++;
-        const dx = p.dynamicTarget.x - p.slotTarget.x;
-        const dz = p.dynamicTarget.z - p.slotTarget.z;
+
+        /*
+        DOIS deslocamentos, e a diferença entre eles é o ponto todo.
+
+        `styleTarget` é o posto DEPOIS do estilo e ANTES da marcação (o
+        postoBase do PosicionamentoAI); `dynamicTarget` é o alvo final, com
+        marcação, inquietação, tecto e alisamento por cima. Enquanto se media
+        só o final contra o slot, um estilo que não fizesse nada aparecia com
+        metros de deslocamento — os metros eram da marcação — e o `semEfeito`
+        nunca disparava. O estilo mede-se pelo styleTarget.
+        */
+        const alvoEstilo = p.styleTarget || p.dynamicTarget;
+        const dx = alvoEstilo.x - p.slotTarget.x;
+        const dz = alvoEstilo.z - p.slotTarget.z;
         st.dxSum += dx; st.dzSum += dz;
         st.dx2Sum += dx * dx; st.dz2Sum += dz * dz;
         const off = Math.hypot(dx, dz);
         if (off > st.offMax) st.offMax = off;
+
+        const tdx = p.dynamicTarget.x - p.slotTarget.x;
+        const tdz = p.dynamicTarget.z - p.slotTarget.z;
+        st.totX2Sum += tdx * tdx; st.totZ2Sum += tdz * tdz;
+        const tot = Math.hypot(tdx, tdz);
+        if (tot > st.totMax) st.totMax = tot;
     }
 }
 
@@ -238,8 +308,10 @@ function resumirEstilos(stats) {
             posicao: st.pos,
             ativacoes: st.ativacoes,
             pctTempoAtivo: st.framesTotal ? +(100 * st.framesAtivo / st.framesTotal).toFixed(1) : 0,
-            deslocamentoMedioM: +rms.toFixed(2),
-            deslocamentoMaxM: +st.offMax.toFixed(2),
+            deslocamentoEstiloM: +rms.toFixed(2),
+            deslocamentoEstiloMaxM: +st.offMax.toFixed(2),
+            deslocamentoTotalM: +Math.sqrt((st.totX2Sum + st.totZ2Sum) / n).toFixed(2),
+            deslocamentoTotalMaxM: +st.totMax.toFixed(2),
             desvioPadraoXM: +stdDx.toFixed(2),
             desvioPadraoZM: +stdDz.toFixed(2),
             semEfeito: st.ativacoes > 0 && rms < 0.3
@@ -289,6 +361,14 @@ const Sim = {
         this.heatmap = criarHeatmap(opts.cellSize);
         window.isPaused = false;
 
+        // Telemetria do passe: acumula o LOTE inteiro (o MatchStats.reset
+        // entre jogos não lhe toca), por isso limpa-se aqui no arranque.
+        if (typeof MatchStats !== 'undefined') {
+            MatchStats.amostrasPasse = [];
+            MatchStats.relogio = 0;
+        }
+
+        const desvioStats = criarDesvioStats();
         const estiloStats = calibrarEstilos ? criarEstiloStats() : null;
         const estilosAnteriores = calibrarEstilos ? forcarEstilosLigados() : null;
 
@@ -328,6 +408,13 @@ const Sim = {
                         registarEstilos(estiloStats, Match.players);
                         registarEstilos(estiloStats, Match.opponents);
                     }
+                    // O desvio por estado mede-se sempre (não depende dos
+                    // estilos estarem a ser calibrados), pela mesma razão só
+                    // com o nível 2 a correr.
+                    if (Match.nivel2Activo()) {
+                        registarDesvios(desvioStats, Match.players);
+                        registarDesvios(desvioStats, Match.opponents);
+                    }
                 }
                 passosFeitos += lote;
                 await cederAoBrowser();
@@ -357,6 +444,18 @@ const Sim = {
             }
         }
 
+        const relatorioDesvios = resumirDesvios(desvioStats);
+        if (relatorioDesvios.length) {
+            console.log('Sim: desvio do alvo (dynamicTarget) ao slot do bloco, por estado');
+            console.table(relatorioDesvios);
+        }
+
+        const relatorioPasses = (typeof MatchStats !== 'undefined') ? MatchStats.resumoPasses() : null;
+        if (relatorioPasses && relatorioPasses.length) {
+            console.log('Sim: passes por faixa de distância');
+            console.table(relatorioPasses);
+        }
+
         const relatorioEstilos = estiloStats ? resumirEstilos(estiloStats) : null;
         if (estilosAnteriores) restaurarEstilos(estilosAnteriores);
         if (relatorioEstilos) {
@@ -379,7 +478,17 @@ const Sim = {
             duracaoRealSeg: Number(duracaoReal),
             resultados: this.resultados,
             heatmap: this.heatmap,
-            estilos: relatorioEstilos
+            estilos: relatorioEstilos,
+            passes: relatorioPasses,
+            desvios: relatorioDesvios,
+            /*
+            Amostras cruas só a pedido (`opts.exportarAmostras`): são
+            milhares, e enchiam o JSON exportado sem que a tabela resumo
+            precise delas. Ficam sempre em MatchStats.amostrasPasse para
+            quem as quiser cruzar na consola.
+            */
+            amostrasPasse: (opts.exportarAmostras && typeof MatchStats !== 'undefined')
+                ? MatchStats.amostrasPasse : null
         };
         this.exportar(relatorio);
         return relatorio;

@@ -41,7 +41,14 @@ function recortarFuncao(src, nome) {
 
 /* ------------------------------------------------------------------ */
 
-function montarApoio(distanciasAoLongoDoZ) {
+/*
+`tectoPorLado` é passado de propósito em vez de se ler o valor do painel: o
+comportamento do apoio (quem fica com a vaga, empates, lados da bola) tem de
+ser o mesmo esteja a funcionalidade ligada ou não. Enquanto os testes liam o
+SupportModel.maxPorLado tal como está em config.js, desligar o apoio no painel
+punha sete testes a vermelho sem haver defeito nenhum.
+*/
+function montarApoio(distanciasAoLongoDoZ, tectoPorLado) {
     // Bola na origem; cada jogador a `d` metros dela, todos do mesmo lado.
     const bola = { x: 0, y: 0, z: 0 };
     const equipa = distanciasAoLongoDoZ.map((d, i) => ({
@@ -64,40 +71,50 @@ function montarApoio(distanciasAoLongoDoZ) {
         recortarFuncao(PLAYER_BT, 'distDisputaApoio') + '\n' +
         recortarFuncao(PLAYER_BT, 'temVagaDeApoio') +
         '\nthis.f = temVagaDeApoio; this.SM = SupportModel;', sandbox);
+    if (typeof tectoPorLado === 'number') sandbox.SM.maxPorLado = tectoPorLado;
     const ctx = (p) => ({ p, teammates: equipa, bb: { ballZ: 0 } });
     return { equipa, temVaga: (p) => sandbox.f(ctx(p), true), max: sandbox.SM.maxPorLado, sandbox };
 }
 
-test('apoio: tecto é 1 por lado (1 FWR, 1 AFT)', () => {
-    assert.strictEqual(montarApoio([1]).max, 1);
+test('apoio: tecto a 0 desliga o apoio por completo', () => {
+    // Regressão: o corte do tecto vivia só DENTRO do ciclo dos companheiros,
+    // por isso quem estivesse sozinho do seu lado da bola saía por baixo com
+    // vaga — FWR_SUPPORT com o apoio desligado no painel.
+    const { equipa, temVaga } = montarApoio([1], 0);
+    assert.strictEqual(equipa.filter(temVaga).length, 0);
+});
+
+test('apoio: tecto a 0 não dá vaga nem havendo vários candidatos', () => {
+    const { equipa, temVaga } = montarApoio([1, 2, 3], 0);
+    assert.strictEqual(equipa.filter(temVaga).length, 0);
 });
 
 test('apoio: só o mais perto da bola fica com vaga', () => {
     // Distâncias crescentes: 0 é o mais perto.
-    const { equipa, temVaga } = montarApoio([1, 2, 3, 4, 5]);
+    const { equipa, temVaga } = montarApoio([1, 2, 3, 4, 5], 1);
     const comVaga = equipa.filter(temVaga).map(p => p.id);
     assert.deepStrictEqual(comVaga, [0]);
 });
 
 test('apoio: ordem da lista não altera quem fica com a vaga', () => {
-    const { equipa, temVaga } = montarApoio([5, 1, 4, 2, 3]);
+    const { equipa, temVaga } = montarApoio([5, 1, 4, 2, 3], 1);
     const comVaga = equipa.filter(temVaga).map(p => p.id);
     assert.deepStrictEqual(comVaga, [1]); // o de distância 1
 });
 
 test('apoio: empate exacto desempata pelo id e não dá 2 vagas', () => {
-    const { equipa, temVaga } = montarApoio([2, 2, 2, 2]);
+    const { equipa, temVaga } = montarApoio([2, 2, 2, 2], 1);
     const comVaga = equipa.filter(temVaga).map(p => p.id);
     assert.deepStrictEqual(comVaga, [0]);
 });
 
 test('apoio: com 1 candidato ele tem vaga', () => {
-    const { equipa, temVaga } = montarApoio([3]);
+    const { equipa, temVaga } = montarApoio([3], 1);
     assert.strictEqual(equipa.filter(temVaga).length, 1);
 });
 
 test('apoio: o portador não ocupa vaga', () => {
-    const { equipa, temVaga, sandbox } = montarApoio([1, 2, 3, 4]);
+    const { equipa, temVaga, sandbox } = montarApoio([1, 2, 3, 4], 1);
     // Sem portador, o mais perto (0) leva a vaga.
     assert.deepStrictEqual(equipa.filter(temVaga).map(p => p.id), [0]);
     // Com o 0 a conduzir, ele deixa de contar e a vaga dele passa ao 1.
@@ -110,7 +127,7 @@ test('apoio: o portador não ocupa vaga', () => {
 });
 
 test('apoio: jogadores do outro lado da bola não gastam vaga', () => {
-    const { equipa, temVaga } = montarApoio([1, 2, 3, 4]);
+    const { equipa, temVaga } = montarApoio([1, 2, 3, 4], 1);
     // Todos estão em z=10 > ballZ=0, logo do mesmo lado (aFrenteDaBola=true).
     // Empurrar o primeiro para trás da bola liberta a vaga dele para a frente.
     equipa[0].model.position.z = -10;
@@ -119,7 +136,7 @@ test('apoio: jogadores do outro lado da bola não gastam vaga', () => {
 });
 
 test('apoio: guarda-redes (role gk) nunca recebe vaga de apoio nem altera alvo para FWR/AFT', () => {
-    const { equipa, temVaga } = montarApoio([1, 2, 3, 4]);
+    const { equipa, temVaga } = montarApoio([1, 2, 3, 4], 1);
     equipa[0].role = 'gk'; // o mais perto da bola é o GK
     assert.strictEqual(temVaga(equipa[0]), false, 'o guarda-redes nunca deve ter vaga de apoio');
     // A vaga deve ir para o jogador de campo mais próximo (1)

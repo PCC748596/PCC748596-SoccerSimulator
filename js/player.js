@@ -1387,9 +1387,17 @@ class FootballPlayer {
         }
 
         /*
-        Anel grande = Team BT POS: o slot puro do nível 1, sem desvios.
-        Anel pequeno = Position BT: o ALVO A SÉRIO, `dynamicTarget` — o
-        mesmo ponto para onde o steerArrive conduz o jogador.
+        Três anéis, um por etapa do posicionamento, do maior ao menor:
+
+        - Team BT POS (grande)   `slotTarget`     slot puro do bloco
+        - Position BT (médio)    `dynamicTarget`  alvo final, o que o
+                                                  steerArrive persegue
+        - PlayingStyleBT (menor) `styleTarget`    slot + estilo, antes da
+                                                  marcação
+
+        A linha liga o anel grande ao menor: é o desvio que o estilo mete, e
+        só ele. O que vai do menor ao médio é marcação + inquietação + tecto
+        + alisamento.
 
         Mostrava o `tacticalTarget`, que é o alvo do nível 2 ANTES da camada
         posicional do playing style, e antes das passagens que correm depois
@@ -1413,6 +1421,8 @@ class FootballPlayer {
             (window.teamBTPosState === this.team || window.teamBTPosState === 'Both');
         const showForStyle = nivel2 &&
             (window.playingStyleBTToggleState === this.team || window.playingStyleBTToggleState === 'Both');
+        const showForPosition = nivel2 &&
+            (window.positionBTToggleState === this.team || window.positionBTToggleState === 'Both');
         const teamTarget = this.slotTarget || this.tacticalTarget || this.dynamicTarget;
         const styleTarget = this.styleTarget || this.dynamicTarget;
 
@@ -1425,18 +1435,45 @@ class FootballPlayer {
             }
         }
 
-        // Liga o slot do TeamBT ao alvo já inclinado pelo estilo: a linha É
-        // o desvio que o estilo introduz. Ligava o slot ao anel do nível 2,
-        // que deixou de existir.
+        /*
+        Linha da cadeia de montagem: slot -> slot+estilo -> alvo final, pela
+        ordem por que o posicionamento os calcula. Desenha o troço entre os
+        anéis LIGADOS, sejam dois ou três — antes exigia TeamBT E
+        PlayingStyleBT ao mesmo tempo, e com qualquer outra combinação de
+        botões não aparecia linha nenhuma.
+
+        Cada troço tem um significado: slot -> estilo é o desvio do playing
+        style; estilo -> final é marcação + inquietação + tecto + alisamento.
+        */
         if (this.btLine) {
-            if (showForTeam && showForStyle && teamTarget && styleTarget) {
+            const pontos = [];
+            if (showForTeam && teamTarget) pontos.push(teamTarget);
+            if (showForStyle && styleTarget) pontos.push(styleTarget);
+            if (showForPosition && this.dynamicTarget) pontos.push(this.dynamicTarget);
+
+            if (pontos.length >= 2) {
                 const arr = this.btLineGeo.attributes.position.array;
-                arr[0] = teamTarget.x; arr[1] = 0.055; arr[2] = teamTarget.z;
-                arr[3] = styleTarget.x; arr[4] = 0.055; arr[5] = styleTarget.z;
+                for (let i = 0; i < 3; i++) {
+                    // Com só dois anéis ligados, o terceiro vértice repete o
+                    // último: o segmento degenerado não se vê.
+                    const pt = pontos[Math.min(i, pontos.length - 1)];
+                    arr[i * 3] = pt.x;
+                    arr[i * 3 + 1] = 0.055;
+                    arr[i * 3 + 2] = pt.z;
+                }
                 this.btLineGeo.attributes.position.needsUpdate = true;
                 this.btLine.visible = true;
             } else {
                 this.btLine.visible = false;
+            }
+        }
+
+        if (this.positionTargetGroup) {
+            if (showForPosition && this.dynamicTarget) {
+                this.positionTargetGroup.visible = true;
+                this.positionTargetGroup.position.set(this.dynamicTarget.x, 0.06, this.dynamicTarget.z);
+            } else {
+                this.positionTargetGroup.visible = false;
             }
         }
 
@@ -2077,12 +2114,15 @@ class FootballPlayer {
             }
 
             /*
-            Linha entre os dois anéis: liga o slot do TeamBT ao alvo já
-            inclinado pelo estilo. O comprimento dela é literalmente o
-            desvio que o Playing Style introduz.
+            Linha da cadeia de posicionamento: liga os anéis LIGADOS pela
+            ordem em que são calculados — slot do TeamBT, slot+estilo, alvo
+            final. O troço slot -> estilo é literalmente o desvio que o
+            Playing Style introduz.
             */
             this.btLineGeo = new THREE.BufferGeometry();
-            this.btLineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+            // Três vértices: slot -> slot+estilo -> alvo final (ver o desenho
+            // por frame, mais acima). Eram dois, e só davam para um troço.
+            this.btLineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
             this.btLine = new THREE.Line(this.btLineGeo, new THREE.LineBasicMaterial({ color: ringColorNum }));
             this.btLine.visible = false;
             if (typeof Match !== 'undefined' && Match.scene) {
@@ -2090,8 +2130,26 @@ class FootballPlayer {
             }
 
             /*
-            Anel do "PlayingStyle": o alvo depois do desvio pessoal do
-            estilo — o mesmo ponto que o steerArrive persegue.
+            Anel do "PositionBT" (médio): o alvo A SÉRIO — `dynamicTarget`, o
+            ponto que o steerArrive persegue, já com marcação, inquietação,
+            tecto e alisamento. É o fim da linha de montagem; os outros dois
+            anéis são etapas dela.
+            */
+            this.positionTargetGroup = new THREE.Group();
+            this.positionTargetGroup.visible = false;
+            let posRing = new THREE.Mesh(
+                new THREE.RingGeometry(0.5, 0.62, 24),
+                new THREE.MeshBasicMaterial({ color: ringColorNum, side: THREE.DoubleSide })
+            );
+            posRing.rotation.x = -Math.PI / 2;
+            this.positionTargetGroup.add(posRing);
+            if (typeof Match !== 'undefined' && Match.scene) {
+                Match.scene.add(this.positionTargetGroup);
+            }
+
+            /*
+            Anel do "PlayingStyle" (menor): o posto depois do desvio pessoal do
+            estilo e ANTES da marcação (p.postoBase).
             */
             this.styleTargetGroup = new THREE.Group();
             this.styleTargetGroup.visible = false;

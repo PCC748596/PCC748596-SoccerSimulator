@@ -573,15 +573,32 @@ const BlockShape = {
     },
 
     /*
-    Basculação do bloco: que fracção da posição lateral da bola o centro do 
-    bloco acompanha (reduz o "magnetismo" para ancorar a equipa no centro).
-    Amarrado ao Width Compactness a pedido do utilizador.
+    JÁ NÃO É LIDO. Era a fracção da posição lateral da bola que o centro do
+    bloco acompanhava — com a bola em x = 20 e `median`, o centro ia a x = 14.
+    O centro em X passou a seguir a bola 1:1 (ver computeBlock), porque o bloco
+    a andar menos do que a bola é o que deixa o portador sozinho na borda.
+
+    Fica aqui, e não apagado, para quem quiser voltar a atenuar saber onde
+    estava — mas hoje mexer nestes números não faz nada.
     */
     basculacao: {
         short: 0.60,
         median: 0.70,
         large: 0.80
     },
+
+    /*
+    SEGUIMENTO DA BOLA pelo centro do bloco, nos dois eixos, em 1/s (ver
+    seguirBola em utils.js). 3.0 dá uma constante de tempo de 1/3 de segundo:
+    com a bola a 10 m/s o centro fica ~3.3 m atrás dela, o suficiente para
+    filtrar ressaltos sem o bloco se arrastar.
+
+    Isto era feito pelo `momentumZ`, com constantes de MOMENTUM: 2.5 s a
+    defender e 4.0 s com a bola a recuar, ou seja 25 a 40 m de atraso à
+    velocidade de um passe. Momentum é o lado do campo (eixo X); o seguimento
+    da bola ao longo do campo é outra coisa e tem outro ritmo.
+    */
+    seguimentoBola: 3.0,
 
     /*
     LIMITES DO RECTÂNGULO — as linhas do campo, e mais nada.
@@ -2056,7 +2073,26 @@ const SupportModel = {
         raioMax: 18.0,
         desvioMax: 8.0,
         margemLinha: 2.0,
-        margemAdversario: 3.0
+        margemAdversario: 3.0,
+
+        /*
+        PESOS DA ESCOLHA DO PONTO (ver notaPontoDeApoio em utils.js).
+
+        Entre os pontos que servem, escolhia-se o mais BARATO — o mais perto
+        do slot. Era isso que punha o médio a fechar para dentro em vez de se
+        pôr no vão entre dois adversários: o ponto cómodo passava no teste
+        binário de "linha livre" à tangente e ganhava ao vão aberto que
+        ficava dois metros mais longe.
+
+        `pesoFolgaLinha` acima do `pesoFolgaPonto` de propósito: o que faz o
+        jogo acontecer é a bola conseguir lá chegar, não ele estar sozinho.
+        Com `pesoCusto` a 0.5, cada metro extra de caminho paga-se com 0.42 m
+        de linha mais aberta.
+        */
+        pesoFolgaLinha: 1.2,
+        pesoFolgaPonto: 1.0,
+        pesoCusto: 0.5,
+        folgaCap: 8.0
     }
 };
 
@@ -2544,7 +2580,11 @@ internos (`defesa`/`balanceado`/`ataque`) não mudaram, só o rótulo na UI.
 */
 const MentalidadeModel = {
     /*
-    `blocoZ` desloca o centro do bloco em relação à BOLA; `tectoBloco` é o mais
+    `tectoBloco` JÁ NÃO É LIDO pelo computeBlock: corria no fim e desfazia o
+    seguimento da bola (era ele que prendia o bloco no meio-campo com a bola no
+    terço de ataque). A Mentalidade fala uma vez, pelo `blocoZ`.
+
+    `blocoZ` desloca o centro do bloco em relação à BOLA; `tectoBloco` era o mais
     longe que esse centro pode ir, medido do meio-campo, no referencial de
     ataque.
 
@@ -2836,15 +2876,41 @@ function atribuirApoios(o) {
     const angulos = [-150, -110, -70, -35, 0, 35, 70, 110, 150];
     const raios = [o.raioMin, (o.raioMin + o.raioMax) / 2, o.raioMax];
 
+    /*
+    Cada ponto que serve leva já a folga da linha do portador e a folga ao
+    adversário mais perto — a parte da nota que não depende de QUEM vai lá.
+    Ver notaPontoDeApoio (utils.js); o custo do candidato entra depois.
+    */
     const pontos = [];
     for (const grau of angulos) {
         for (const raio of raios) {
             const rad = grau * Math.PI / 180;
             const x = port.x + Math.sin(rad) * raio;
             const z = port.z + Math.cos(rad) * raio * dirZ;
-            if (serve(x, z)) pontos.push({ x: x, z: z });
+            if (!serve(x, z)) continue;
+
+            let folgaPonto = Infinity;
+            for (const a of o.adversarios) {
+                const d = Math.hypot(a.x - x, a.z - z);
+                if (d < folgaPonto) folgaPonto = d;
+            }
+
+            pontos.push({
+                x: x,
+                z: z,
+                folgaLinha: folgaDaLinha(port.x, port.z, x, z, o.adversarios),
+                folgaPonto: folgaPonto
+            });
         }
     }
+
+    // Nota de um ponto PARA UM CANDIDATO: a parte do ponto, menos o que lhe
+    // custa sair do slot.
+    const notaPara = (ponto, c) => notaPontoDeApoio({
+        folgaLinha: ponto.folgaLinha,
+        folgaPonto: ponto.folgaPonto,
+        custoSlot: Math.hypot(ponto.x - c.slotX, ponto.z - c.slotZ)
+    }, o.pesos);
 
     /*
     REANCORAGEM: quem ja apoiava mas cujo ponto deixou de servir (a bola
@@ -2858,12 +2924,14 @@ function atribuirApoios(o) {
         if (escolhidos.length >= o.maxApoios) break;
         if (usados.has(c.id) || !c.apoioActual) continue;
 
-        let melhor = null, melhorCusto = Infinity;
+        let melhor = null, melhorNota = -Infinity;
         for (const ponto of pontos) {
             if (!longeDosOutros(ponto.x, ponto.z)) continue;
             const custo = Math.hypot(ponto.x - c.slotX, ponto.z - c.slotZ);
-            if (custo > o.desvioMax || custo >= melhorCusto) continue;
-            melhorCusto = custo;
+            if (custo > o.desvioMax) continue;
+            const nota = notaPara(ponto, c);
+            if (nota <= melhorNota) continue;
+            melhorNota = nota;
             melhor = ponto;
         }
         if (!melhor) continue;
@@ -2872,17 +2940,21 @@ function atribuirApoios(o) {
         escolhidos.push({ id: c.id, x: melhor.x, z: melhor.z });
     }
 
-    // Leilao guloso para o resto: o par mais barato fecha primeiro.
+    /*
+    Leilao guloso para o resto: fecha primeiro o par de MAIOR NOTA, não o de
+    menor custo. O `desvioMax` continua a ser um corte duro — a nota escolhe
+    entre pontos alcançáveis, não autoriza travessias do campo.
+    */
     const pares = [];
     for (const c of o.candidatos) {
         if (usados.has(c.id)) continue;
         for (let i = 0; i < pontos.length; i++) {
             const custo = Math.hypot(pontos[i].x - c.slotX, pontos[i].z - c.slotZ);
             if (custo > o.desvioMax) continue;
-            pares.push({ id: c.id, i: i, custo: custo });
+            pares.push({ id: c.id, i: i, nota: notaPara(pontos[i], c) });
         }
     }
-    pares.sort((a, b) => a.custo - b.custo);
+    pares.sort((a, b) => b.nota - a.nota);
 
     for (const par of pares) {
         if (escolhidos.length >= o.maxApoios) break;

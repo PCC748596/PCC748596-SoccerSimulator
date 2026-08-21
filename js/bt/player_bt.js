@@ -749,44 +749,24 @@ mesma bola: só reage quem tem vantagem real sobre quem já está encarregue del
 */
 function podeIntercetar(ctx) {
     const p = ctx.p;
-    if (Match.ballCarrier) return false;                 // bola já tem dono
-    if (Match.state !== 'PLAY') return false;
+    const bb = ctx.bb;
+
+    /*
+    A escolha é do nível 1 (pickIntercetor, team_bt.js): um intercetor por
+    equipa e por frame, com todas as condições — bola solta, jogo a correr,
+    janela da percepção, não ser chaser/destinatário/marcador, e bater quem
+    já vai à bola.
+
+    Era decidido aqui, jogador a jogador, com uma reivindicação no
+    blackboard que só travava quem corresse DEPOIS e fosse pior — e por isso
+    dois jogadores da mesma equipa ficavam em INTERCEPT ao mesmo tempo.
+    */
+    if (!bb || bb.intercetor !== p) return false;
 
     const bola = p.blackboard && p.blackboard.ball;
-    if (!bola || !bola.interceptable || !bola.interceptionPoint) return false;
-    if (bola.timeToIntercept > PerceptionModel.janelaIntercetar) return false;
-
-    // O chaser e o destinatário já têm folha própria — não duplicar.
-    if (Match.chaserA === p || Match.chaserB === p) return false;
-    if (Match.intendedReceiver === p) return false;
-    // Quem marca não larga o homem para ir cortar uma bola.
-    if (estouAMarcar(p)) return false;
-
-    const meu = bola.timeToIntercept;
-    const margem = PerceptionModel.margemMelhor;
-
-    // Melhor do que quem já vai lá? Compara com o tempo de interceptação
-    // deles, não com a distância — é a bola que se move, não o alvo.
-    //
-    // `bb.intercetorFrame` cobre o caso que chaser/intendedReceiver não
-    // cobriam: DOIS jogadores que não são nem chaser nem destinatário,
-    // ambos elegíveis no MESMO frame — cada um só se comparava contra
-    // chaser/receiver, nunca um contra o outro, e os dois passavam
-    // (ver bug reportado: 2 jogadores em INTERCEPT ao mesmo tempo). Como o
-    // nível 3 corre em sequência por jogador dentro do mesmo frame, quem já
-    // reivindicou fica visível para os próximos da equipa.
-    const bb = ctx.bb;
-    const jaVaoLa = [Match.chaserA, Match.chaserB, Match.intendedReceiver, bb && bb.intercetorFrame];
-    for (const outro of jaVaoLa) {
-        if (!outro || outro === p) continue;
-        const bOutro = outro.blackboard && outro.blackboard.ball;
-        // Sem dados do outro, assume-se que ele trata disto.
-        const tOutro = (bOutro && bOutro.interceptable) ? bOutro.timeToIntercept : Infinity;
-        if (tOutro <= meu + margem) return false;
-    }
+    if (!bola || !bola.interceptionPoint) return false;
 
     ctx.pontoIntercepcao = bola.interceptionPoint;
-    if (bb) bb.intercetorFrame = p;
     return true;
 }
 
@@ -911,6 +891,19 @@ function temVagaDeApoio(ctx, aFrenteDaBola) {
     // Quem vai buscar a bola (destinatário de um passe, ou do seu próprio
     // toque de condução) tem tarefa; apoiar é para os outros.
     if (Match.intendedReceiver === p) return false;
+    /*
+    Tecto a zero é o apoio DESLIGADO, e tem de ser verificado ANTES do ciclo.
+
+    O corte vivia só lá dentro (`if (melhores >= maxPorLado) return false`),
+    portanto só falava se houvesse pelo menos um companheiro a chegar ao fim
+    do corpo do ciclo. Quem estivesse sozinho do seu lado da bola — todos os
+    outros filtrados pelos `continue` — saía por baixo com `return true` e
+    entrava em FWR/AFT_SUPPORT mesmo com o tecto a 0. Era o caso reportado:
+    um jogador isolado à frente da bola rotulado FWR_SUPPORT com o apoio
+    desligado no painel.
+    */
+    if (SupportModel.maxPorLado <= 0) return false;
+
     const bola = Match.ball.position;
     const minhaDist = distDisputaApoio(p, bola);
     let melhores = 0;
@@ -1245,6 +1238,28 @@ function actRunIntoSpace(ctx) {
         p.runTarget = { x: destino.x, z: destino.z };
         p.runTimer = R.duracao;
         p.runCarrier = Match.ballCarrier;
+    }
+
+    /*
+    REVALIDAÇÃO POR FRAME contra a linha de fora-de-jogo.
+
+    A corrida é fixada `R.duracao` segundos (4 s) e só o instante do arranque
+    passava pelo corte da linha (destinoDeCorrida). Nesses 4 s a última linha
+    adversária sobe, ou a bola avança, e o jogador continuava a correr para um
+    ponto entretanto ilegal — era o caso reportado dos dummy runners a passar
+    a linha.
+
+    Se o corte deixar o destino atrás do próprio jogador, a corrida deixou de
+    fazer sentido: aborta e volta a posicionar-se.
+    */
+    const limite = (ctx.bb && typeof ctx.bb.offsideLimitDir === 'number') ? ctx.bb.offsideLimitDir : null;
+    const avancoAlvo = avancoLegalDeCorrida(p.runTarget.z * p.dirZ, limite);
+    p.runTarget.z = avancoAlvo * p.dirZ;
+
+    if (avancoAlvo <= p.model.position.z * p.dirZ) {
+        p.runTimer = 0;
+        actHoldPosition(ctx);
+        return;
     }
 
     p.dynamicTarget.set(p.runTarget.x, ALTURA_BASE_Y, p.runTarget.z);

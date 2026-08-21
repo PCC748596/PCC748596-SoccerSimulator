@@ -85,6 +85,7 @@ class TeamBlackboard {
         this.advanceFactor = 0.0;
 
         this.chaser = null;
+        this.intercetor = null;   // quem vai cortar a bola solta (pickIntercetor)
         this.carrier = null;      // portador da bola desta equipa
         this.oppCarrier = null;   // portador adversário
         this.flankAlert = null;
@@ -99,7 +100,11 @@ class TeamBlackboard {
         `congestion`/`aggression` são recalculados do zero a cada gather().
         */
         this.momentumX = 0;                          // -1 (esq) .. +1 (dir), suavizado
-        this.momentumZ = 0;                          // Z do mundo em metros, suavizado
+        // Posição longitudinal da bola, suavizada — o centro do bloco em Z.
+        // Não confundir com momentumX, que é o LADO do campo (ver
+        // updateMomentum e seguirBolaZ em utils.js).
+        this.bolaZSuave = 0;
+        this.bolaXSuave = 0;
         this.congestion = { esq: 0, centro: 0, dir: 0 };
         this.aggression = 0.5;                        // 0..1, ver computeAggression
 
@@ -140,11 +145,6 @@ class TeamBlackboard {
             this.state = (this.possessionTime < 3) ? TeamState.TRANSITION_DEFENSIVE : TeamState.DEFENSIVE;
         }
 
-        // Reivindicação de "vou intercetar" desta equipa neste frame — ver
-        // podeIntercetar em player_bt.js. Limpa aqui (nível 1, antes do nível
-        // 3 correr para todos os jogadores da equipa).
-        this.intercetorFrame = null;
-
         // Vãos já escolhidos por colegas neste frame (Fox in the Box/Goal
         // Poacher) — ver melhorVaoX em position_bt.js. Limpa aqui, antes do
         // nível 2 correr jogador a jogador.
@@ -178,38 +178,38 @@ TeamPlayStyles) para o catálogo de pesos que estas funções consultam.
 =============================================================================
 */
 
-// EMA do lado do campo onde a bola anda — sem isto qualquer troca lateral
-// de bola mudava o "lado" instantaneamente; suavizado, um passe isolado
-// pro lado oposto não vira Momentum sozinho, precisa insistir.
+/*
+MOMENTUM é o LADO do campo onde o jogo está a acontecer: eixo X, a largura,
+os sectores Left/Right/Center. É isto e só isto.
+
+Suavizado porque uma troca lateral isolada não é momentum — um passe para o
+outro lado não vira o jogo sozinho, precisa de insistir.
+
+O `bolaZSuave`, mais abaixo, é outra coisa e por isso mudou de nome: a posição
+LONGITUDINAL da bola, que dá o centro do bloco. Chamava-se `momentumZ` e, por
+causa do nome, tinha constantes de tempo de momentum — 2.5 s a defender, 4.0 s
+com a bola a recuar. Um seguimento com 2.5 s de constante fica ~25 m atrás de
+uma bola a 10 m/s, e era isso que punha os dois rectângulos do TeamBT atrás da
+jogada em vez de sobre ela.
+*/
 function updateMomentum(bb, dt) {
     const alvoX = THREE.MathUtils.clamp(bb.ballX / (CAMPO_LARG / 2), -1, 1);
     const kX = 1 - Math.exp(-0.8 * dt);
     bb.momentumX += (alvoX - bb.momentumX) * kX;
-    
-    let alvoZ = bb.ballZ;
-    if (bb.state === TeamState.TRANSITION_OFFENSIVE) {
-        alvoZ += 10 * bb.dir;
-    } else if (bb.state === TeamState.TRANSITION_DEFENSIVE) {
-        alvoZ -= 3 * bb.dir;
-    }
 
-    let kZ;
-    if (bb.isAttacking) {
-        if (alvoZ * bb.dir < bb.momentumZ * bb.dir) kZ = 1 - Math.exp(-0.25 * dt);
-        else kZ = 1 - Math.exp(-1.5 * dt);
-    } else {
-        // Reduzido de -1.0 para -0.4 para a transição defensiva ser mais gradual
-        kZ = 1 - Math.exp(-0.4 * dt);
-    }
     /*
-    Salto instantâneo só quando a bola foi REPOSTA (fora de PLAY: golo, canto,
-    lançamento). Em jogo o teste era `|alvoZ - momentumZ| > 30`, e qualquer
-    alívio ou bola longa punha o centro do bloco no destino num único frame —
-    os onze alvos saltavam juntos.
+    Seguimento longitudinal: a bola, e mais nada.
+
+    Os offsets de estado saíram daqui. Estavam nos DOIS sítios — este somava
+    +10 m em TRANSITION_OFFENSIVE ao alvo do seguimento e o computeBlock
+    somava outros +10 ao centro, o que dava 20 m de avanço numa transição em
+    vez dos 10 pedidos (e -10 em vez de -7 na defensiva, misturado com o -3
+    daqui). O offset de estado é decisão de POSTURA e pertence ao computeBlock,
+    onde vive o resto da forma do bloco; aqui só se segue a bola.
     */
     const reposta = (typeof Match !== 'undefined' && Match.state !== 'PLAY');
-    if (reposta || dt >= 1) bb.momentumZ = alvoZ;
-    else bb.momentumZ += (alvoZ - bb.momentumZ) * kZ;
+    bb.bolaZSuave = seguirBola(bb.bolaZSuave, bb.ballZ, BlockShape.seguimentoBola, dt, reposta);
+    bb.bolaXSuave = seguirBola(bb.bolaXSuave, bb.ballX, BlockShape.seguimentoBola, dt, reposta);
 }
 
 // Congestão por banda lateral (esq/centro/dir, mesmo corte de
@@ -345,6 +345,65 @@ function pickChaser(bb) {
             MatchStats[bb.team].trocasChaser++;
         }
     }
+}
+
+
+/*
+QUEM INTERCEPTA — decisão colectiva, uma por equipa e por frame, tal como o
+chaser logo acima.
+
+Era decidida dentro da árvore de cada jogador (podeIntercetar, player_bt.js),
+com uma reivindicação no blackboard: quem corresse primeiro reivindicava e os
+seguintes só cediam se fossem PIORES. Um jogador MELHOR a correr depois
+reivindicava na mesma, e o primeiro já tinha mudado de estado nesse frame —
+ficavam dois em INTERCEPT, e de forma permanente, porque a ordem da lista da
+equipa não muda de frame para frame. A conta está em escolherIntercetor
+(utils.js), com testes em tests/intercetor.test.js.
+
+Elegibilidade: bola solta, jogo a correr, a percepção diz que ele lá chega
+dentro da janela, e não é nem o chaser, nem o destinatário do passe, nem
+alguém que esteja a marcar um homem.
+*/
+function pickIntercetor(bb) {
+    bb.intercetor = null;
+
+    if (typeof Match === 'undefined') return;
+    if (Match.ballCarrier) return;                // bola já tem dono
+    if (Match.state !== 'PLAY') return;
+    if (typeof PerceptionModel === 'undefined') return;
+
+    const janela = PerceptionModel.janelaIntercetar;
+    const margem = PerceptionModel.margemMelhor;
+
+    const candidatos = [];
+    for (const p of bb.outfield) {
+        if (!p || p.role === 'gk') continue;
+        if (bb.chaser === p) continue;
+        if (Match.intendedReceiver === p) continue;
+        if (typeof estouAMarcar === 'function' && estouAMarcar(p)) continue;
+
+        const bola = p.blackboard && p.blackboard.ball;
+        if (!bola || !bola.interceptable || !bola.interceptionPoint) continue;
+        if (bola.timeToIntercept > janela) continue;
+
+        candidatos.push({ p: p, t: bola.timeToIntercept });
+    }
+    if (!candidatos.length) return;
+
+    /*
+    O tempo de quem JÁ está encarregue da bola. Sem dados de percepção
+    assume-se que ele trata disto (Infinity seria o contrário: mandava toda a
+    gente atrás da bola).
+    */
+    let tQuemJaVai = Infinity;
+    for (const outro of [bb.chaser, Match.intendedReceiver]) {
+        if (!outro) continue;
+        const bOutro = outro.blackboard && outro.blackboard.ball;
+        const t = (bOutro && bOutro.interceptable) ? bOutro.timeToIntercept : 0;
+        if (t < tQuemJaVai) tQuemJaVai = t;
+    }
+
+    bb.intercetor = escolherIntercetor(candidatos, tQuemJaVai, margem);
 }
 
 /*
@@ -525,7 +584,7 @@ function computeBlock(bb) {
         defende afasta-se a mesma folga, mas para o LADO OPOSTO — ver o bloco
         no fim desta função, depois dos travões.
         */
-        centro = (bb.momentumZ * bb.dir) + 10 + ment.blocoZ + BlockShape.avancoTiroMeta;
+        centro = (bb.bolaZSuave * bb.dir) + 10 + ment.blocoZ + BlockShape.avancoTiroMeta;
     } else if (gkHoldingBall) {
         /*
         O nosso guarda-redes tem a bola nas mãos: o bloco sobe e dá-lhe espaço
@@ -535,108 +594,50 @@ function computeBlock(bb) {
         */
         centro = -26.5 + BlockShape.recuoGkComBola;
     } else {
-        // O centro do bloco no eixo Z acompanha a bola.
-        centro = bb.momentumZ * bb.dir;
-
-        if (typeof TeamState !== 'undefined') {
-            if (bb.state === TeamState.TRANSITION_OFFENSIVE) {
-                centro += 10;
-            } else if (bb.state === TeamState.OFFENSIVE) {
-                centro += 7;
-            } else if (bb.state === TeamState.TRANSITION_DEFENSIVE || bb.state === TeamState.DEFENSIVE) {
-                centro -= 7;
-            }
-        }
-
-        // O centro não pode ficar para trás da linha da bola (longitudinalmente)
-        const bolaDir = bb.ballZ * bb.dir;
-        if (bb.isAttacking) {
-            if (centro < bolaDir) centro = bolaDir;
-        } else {
-            if (centro > bolaDir) centro = bolaDir;
-        }
-
         /*
-        MENTALIDADE: o offset do painel, aplicado ao bloco INTEIRO e nas DUAS
-        fases. Antes vivia so neste ramo `isAttacking`, e o ramo sem bola nao
-        tinha termo nenhum - em Muito Ofensiva a perda de posse mudava o centro
-        de +12+5 para -3, 20 m num frame, e a equipa toda arrancava para tras.
+        CENTRO DO BLOCO = BOLA + MENTALIDADE. Mais nada.
+
+        Tinha três termos por cima da bola: +10 m em transição ofensiva, +7 em
+        posse, -7 a defender (offsets de estado), e depois dois travões que
+        prendiam o centro à linha da bola. Somados, o bloco andava sempre
+        menos do que a bola e ficava para trás — o portador chegava à borda do
+        rectângulo e os companheiros não o acompanhavam, que é o que faz o
+        jogo não acontecer.
+
+        A Mentalidade é o único deslocamento: os metros que o painel manda
+        avançar (ofensiva) ou recuar (defensiva) em relação à bola.
         */
-        centro += ment.blocoZ;
+        centro = (bb.bolaZSuave * bb.dir) + ment.blocoZ;
     }
 
     let z0 = centro - (profundidade / 2);
     let z1 = centro + (profundidade / 2);
 
     /*
-    Tecto da TRASEIRA do bloco: e aqui que o ajuste "Linha Defensiva" do painel
-    entra, porque a linha do fora-de-jogo E a traseira do bloco (bb.defLineDir,
-    no fim desta funcao). Enquanto eram dois calculos independentes discordavam
-    uns 10 m: os defesas recebiam o slot na traseira do bloco e o holdOffsideLine
-    puxava-os logo a seguir todos para o MESMO z da outra linha - a ultima linha
-    saia achatada, quatro jogadores no mesmo ponto.
+    O QUE JÁ NÃO CORRE AQUI, E PORQUÊ.
+
+    Havia três travões nas BORDAS do rectângulo — o tecto da Linha Defensiva
+    sobre z0, o fora-de-jogo sobre z1, e o escape "a bola tem de caber dentro
+    do bloco" — e os três, ao tocarem numa borda, recalculavam a outra
+    (`z1 = z0 + profundidade`). Ou seja: mexiam no CENTRO.
+
+    O caso que se via no ecrã: o fora-de-jogo prende z1 na última linha
+    adversária, que anda ao pé da bola, e z0 desce para `z1 - profundidade` —
+    o centro do rectângulo fica METADE DA PROFUNDIDADE atrás da bola, uns 15 m.
+    O mesmo do outro lado com o tecto da Linha Defensiva, que é um z absoluto
+    (-18.25 em "medium") e prendia o bloco a defender no meio-campo por muito
+    que a bola subisse.
+
+    O centro é a bola mais a Mentalidade, e mais nada. As duas regras que estes
+    travões serviam continuam a existir, mas onde pertencem:
+
+        fora-de-jogo   quem não pode passar a linha é o JOGADOR, e isso é
+                       tratado no destino da corrida (avancoLegalDeCorrida) e
+                       na escolha do passe (pass_candidates)
+        última linha   a traseira a defender é calculada logo abaixo, a partir
+                       do adversário mais recuado (recuoDaUltimaLinha), e é lá
+                       que o piso do guarda-redes entra
     */
-    if (!bb.isAttacking) {
-        /*
-        A Mentalidade desloca o tecto com o resto do bloco. Sem isto ela nao
-        chegava a ver-se a defender: com a bola no meio-campo e "Linha
-        Defensiva: Medium", o tecto -18.25 travava na mesma altura tanto a
-        Equilibrada como a Muito Ofensiva, e a diferenca entre as duas voltava
-        a aparecer de golpe na recuperacao da posse - o salto de 20 m que se
-        queria tirar. Com o tecto deslocado o salto e igual em todas as
-        mentalidades (~8 m) e vem so da postura.
-        */
-        const tectoBase = TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium;
-        const tectoLinha = tectoBase + ment.blocoZ;
-        if (z0 > tectoLinha) {
-            z0 = tectoLinha;
-            z1 = z0 + profundidade;
-        }
-
-        /*
-        A BOLA TEM DE CABER DENTRO DO BLOCO.
-
-        O tecto acima e ABSOLUTO: com "Linha Defensiva: Medium" prendia z0 em
-        -18.25 e, por tabela, o centro em -3.2 - o bloco ficava parado no
-        meio-campo enquanto a bola andava ate a linha de fundo adversaria.
-        Medido: d(centro)/d(bola) = 0.00 em todo o meio campo de ataque.
-
-        Este escape existia no antigo computeDefensiveLine
-        (`Math.max(lineDir, ballDir - blockDepthDef)`) e veio-se abaixo com
-        ele. Sem isto os defesas seguram-se la atras enquanto um colega
-        pressiona 60 m a frente. Corre DEPOIS do tecto, de proposito: e o
-        tecto que cede, nao a coesao do bloco.
-        */
-        const bolaDir = bb.momentumZ * bb.dir;
-        if (z1 < bolaDir) {
-            z1 = bolaDir;
-            z0 = z1 - profundidade;
-        }
-
-        /*
-        Limite duro do avanço sem bola, agora pela MENTALIDADE: é ela que manda
-        onde o bloco se põe em relação à bola, e o tecto é a outra metade dessa
-        decisão. É o ÚLTIMO a falar — decide até onde a equipa acompanha uma
-        bola que está no campo adversário — e por isso ganha ao escape acima.
-
-        Era do Defensive Pressure, que passou a ser a distância de marcação. Com
-        Equilibrada o tecto é 0: o bloco não passa do meio-campo.
-        */
-        const pressCap = ment.tectoBloco;
-        const centroAtual = (z0 + z1) / 2;
-        if (centroAtual > pressCap) {
-            z0 -= (centroAtual - pressCap);
-            z1 -= (centroAtual - pressCap);
-        }
-    }
-
-    // O fora-de-jogo trava a frente do bloco (so a atacar)
-    if (bb.isAttacking && bb.offsideLimitDir !== null && bb.offsideLimitDir !== undefined) {
-        if (z1 > bb.offsideLimitDir) {
-            z1 = bb.offsideLimitDir;
-            z0 = z1 - profundidade;
-        }
-    }
 
     /*
     PROFUNDIDADE DA ÚLTIMA LINHA A DEFENDER.
@@ -682,6 +683,11 @@ function computeBlock(bb) {
         const tectoBase = TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium;
         const tectoDir = tectoBase + ment.blocoZ;
 
+        /*
+        Este é o ÚNICO sítio que ainda desloca o rectângulo, e desloca-o
+        inteiro: o bloco não encolhe. É um limite físico — atrás do
+        guarda-redes não há campo — e por isso ganha ao seguimento da bola.
+        */
         const z0Novo = recuoDaUltimaLinha(z0, maisRecuadoDir, distMarca, pisoDir, tectoDir);
         if (z0Novo !== z0) {
             z0 = z0Novo;
@@ -725,60 +731,44 @@ function computeBlock(bb) {
         z1 -= BlockShape.avancoTiroMeta;
     }
 
-    const fundo = CAMPO_COMP / 2;
+    /*
+    As linhas de fundo NÃO tocam no rectângulo — nem o empurram nem o cortam.
 
-    if (z0 < -fundo) {
-        z0 = -fundo;
-        z1 = z0 + profundidade;
-    }
-    if (z1 > fundo) {
-        z1 = fundo;
-        z0 = z1 - profundidade;
-    }
+    Empurrá-lo tirava o centro de cima da bola (com a bola junto à linha de
+    fundo, o bloco inteiro recuava meia profundidade); cortá-lo encolhia-o, e
+    um bloco que encolhe junta as linhas umas nas outras. O rectângulo é a
+    forma que a equipa QUER ter, e tem sempre o mesmo tamanho; quem não pode
+    sair do campo é o jogador, e o alvo de cada um já é limitado ao campo no
+    fim do PosicionamentoAI.tickFinal.
+    */
 
     /* --- largura -------------------------------------------------------- */
 
     const largura = CAMPO_LARG * B.amplitude[compac];
     const meiaLarg = largura / 2;
 
-    // Limite lateral: a LINHA LATERAL. A borda do bloco encosta-lhe.
-    const borda = CAMPO_LARG / 2;
-    const maxCentroX = borda - meiaLarg;
-
     /*
-    BASCULACAO: o centro do rectangulo ACOMPANHA A BOLA, 1:1, ate onde o campo
-    deixa.
+    LARGURA: o centro é o X DA BOLA, e a linha lateral não lhe toca — mesma
+    regra do eixo Z.
 
-    Nao e uma fraccao do desvio da bola. Com a bola em x = 10 o centro esta em
-    x = 10; a partir dai o rectangulo encosta a margem e o centro fica em
-    maxCentroX (a folga entre a borda do bloco e a margem do campo), que e o
-    mais longe que ele pode ir sem sair do campo.
+    Estava ao contrário: o centro era limitado a `borda - meiaLarg` para o
+    rectângulo nunca sair do campo. Com a compacidade normal isso dá ±15 m e a
+    bola vai a ±33 — o centro parava a meio caminho e o bloco não acompanhava
+    a bola nas alas, que é metade do problema de "não usa os lados do campo".
 
-    Duas versoes anteriores escalavam o desvio - `momentumX * maxCentroX`
-    (1:0.34) e `momentumX * (CAMPO_LARG/2) * BlockShape.bascular` (1:0.22) - e
-    o bloco andava sempre muito menos do que a bola.
+    Cortar o rectângulo na linha em vez de o empurrar resolvia o centro mas
+    encolhia o bloco, e medido dava a defesa emboladas: quatro defesas com os
+    alvos a menos de 3 m uns dos outros em 95% do tempo. O rectângulo mantém
+    sempre o tamanho; a parte que fica fora do campo é aparada no alvo de cada
+    jogador, um a um.
     */
-    // O utilizador pediu para atenuar o magnetismo (basculação) para 60, 70 e 80% 
-    // com base na configuração de Width Compactness (short, median, large).
-    const basculacao = (BlockShape.basculacao && BlockShape.basculacao[compac]) ? BlockShape.basculacao[compac] : 0.7;
-    
-    let centroX = THREE.MathUtils.clamp(
-        bb.momentumX * (CAMPO_LARG / 2) * basculacao, -maxCentroX, maxCentroX);
-
-    // Garante apenas que a BORDA do time cubra a bola, não que o CENTRO cubra a bola
-    // (Isso evitava que o time inteiro fosse atirado para a lateral)
-    let bolaX = bb.ballX;
-    if (bolaX > 0 && (centroX + meiaLarg) < bolaX) centroX = bolaX - meiaLarg;
-    if (bolaX < 0 && (centroX - meiaLarg) > bolaX) centroX = bolaX + meiaLarg;
-
-    // Sem basculacao extra por postura: o centro segue a bola e mais nada.
-
-    // Garante que o rectangulo nao sai do campo
-    centroX = THREE.MathUtils.clamp(centroX, -maxCentroX, maxCentroX);
+    const centroX = bb.bolaXSuave;
+    const x0 = centroX - meiaLarg;
+    const x1 = centroX + meiaLarg;
 
     bb.bloco = {
-        x0: centroX - meiaLarg,
-        x1: centroX + meiaLarg,
+        x0: x0,
+        x1: x1,
         z0: z0,
         z1: z1,
         modo: modo
@@ -851,15 +841,26 @@ function deslocamentoDeCorredor(o) {
         return -pCorredor * 4.0;
     }
 
+    /*
+    A BASCULAÇÃO JÁ FOI FEITA PELO BLOCO.
+
+    Estes deslocamentos — 3.5 m para o defesa no corredor central, 5.0 m para o
+    lateral do lado oposto — foram calibrados quando o centro do rectângulo
+    seguia a bola só a 0.7 em X (`BlockShape.basculacao`) e a equipa tinha de
+    compensar por jogador. Com o bloco a acompanhar a bola 1:1, isto passou a
+    somar-se por cima: medido, o lateral do lado oposto colava-se ao central
+    (1.5 m) e os quatro defesas ficavam com os alvos a menos de 3 m uns dos
+    outros em 92% do tempo.
+
+    Fica um resto pequeno, só para a linha não ficar perfeitamente recta: quem
+    está do lado contrário ao da bola fecha um pouco, e mais nada.
+    */
     if (pCorredor === 0) {
-        // Corredor central: o defesa desliza com a linha, o medio menos —
-        // senao a linha defensiva parte-se ao meio na basculacao.
-        return ballCorredor * (o.isDefesa ? 3.5 : 2.0);
+        return ballCorredor * (o.isDefesa ? 1.5 : 1.0);
     }
 
     if (pCorredor === -ballCorredor) {
-        // Lado oposto: fecha, mas em bloco (ver o comentario acima).
-        return ballCorredor * (o.isLateral ? 5.0 : 4.0);
+        return ballCorredor * (o.isLateral ? 2.0 : 1.5);
     }
 
     // Mesmo lado da bola: o lateral abre para dar linha de passe pela ala, e
@@ -935,8 +936,40 @@ function slotNoBloco(p, bb) {
     // borda do bloco ja encosta a linha lateral.
     const u = THREE.MathUtils.clamp(0.5 + (p.slot.u - 0.5) * fecho * fechoSec, 0.02, 0.98);
 
-    let xTarget = bloco.x0 + u * (bloco.x1 - bloco.x0);
-    const zTarget = (bloco.z0 + v * (bloco.z1 - bloco.z0)) * bb.dir;
+    /*
+    O rectângulo segue a bola e nunca encolhe, por isso com a bola na ala fica
+    com boa parte fora do campo. Os slots não podem ir para lá — e as duas
+    saídas óbvias são ambas más:
+
+        clamp por jogador   empilha-os todos em cima da linha lateral (medido:
+                            quatro defesas com os alvos a menos de 3 m em 95%
+                            do tempo)
+        mapear na janela    reparte-os pela parte de dentro, mas isso ENCOLHE
+                            o espaçamento — a última linha passou de 30 para
+                            19 m de largura, com o lateral a 2.8 m do central
+
+    Em vez disso, a linha DESLOCA-SE para dentro em bloco: mantém a largura e
+    o espaçamento que a formação pediu, e entra toda no campo. É o que uma
+    equipa faz com a bola encostada à linha — bascula, não se espalma contra
+    a bandeirola nem se junta toda no meio.
+
+    O rectângulo desenhado não muda: ele é a forma que a equipa QUER ter,
+    centrada na bola. Isto é só onde os pés cabem.
+    */
+    const MARGEM_LINHA_SLOT = 1.5;
+    const limX = CAMPO_LARG / 2 - MARGEM_LINHA_SLOT;
+    const limZ = CAMPO_COMP / 2 - MARGEM_LINHA_SLOT;
+
+    const dentro = (v0, v1, lim) => {
+        if (v1 > lim) return -(v1 - lim);      // empurra para dentro pela direita
+        if (v0 < -lim) return (-lim - v0);     // e pela esquerda
+        return 0;
+    };
+    const empurraX = dentro(bloco.x0, bloco.x1, limX);
+    const empurraZ = dentro(bloco.z0, bloco.z1, limZ);
+
+    let xTarget = bloco.x0 + u * (bloco.x1 - bloco.x0) + empurraX;
+    const zTarget = ((bloco.z0 + v * (bloco.z1 - bloco.z0)) + empurraZ) * bb.dir;
 
     const ballX = bb.ballX || 0;
     const CORREDOR_LIMITE = 11.33; 
@@ -980,11 +1013,14 @@ function slotNoBloco(p, bb) {
     amostras, com o maximo em |x| = 37.6 numa meia-largura de 34 (o anel
     grande do debug via-se fora do campo, ao lado do rectangulo).
 
-    Limita ao BLOCO e nao ao campo: o rectangulo ja encosta a linha lateral
-    quando quer (ver computeBloco), e limitar ao campo deixava passar alvos
-    fora do bloco na mesma — que e o que o anel de debug denuncia.
+    Limita ao BLOCO — mas ao bloco JÁ DESLOCADO para dentro do campo
+    (`empurraX`), senão o limite desfaz o deslocamento: quem tinha sido
+    empurrado para dentro voltava a ser preso na borda original e a última
+    linha juntava-se toda aí. Medido antes de corrigir: a linha defensiva com
+    23 m de largura em vez dos 30 que a formação pede, com o lateral a 3.4 m
+    do central.
     */
-    xTarget = THREE.MathUtils.clamp(xTarget, bloco.x0, bloco.x1);
+    xTarget = THREE.MathUtils.clamp(xTarget, bloco.x0 + empurraX, bloco.x1 + empurraX);
 
     return {
         x: xTarget,
@@ -1107,6 +1143,9 @@ const TeamAI = {
         bb.gather(match);
 
         pickChaser(bb);
+        // Depois do chaser, de propósito: o intercetor tem de bater o tempo
+        // de quem já vai à bola, e o chaser deste frame é quem já vai lá.
+        pickIntercetor(bb);
         updateGkStyle(bb);
         // Estilos de jogo: avalia condições e emite eventos nas transições.
         if (typeof PlayingStyleEvents !== 'undefined') PlayingStyleEvents.tick(bb);
@@ -1356,7 +1395,14 @@ function atribuirApoiosDaEquipa(lista, bb) {
         raioMax: C.raioMax,
         desvioMax: C.desvioMax,
         margemLinha: C.margemLinha,
-        margemAdversario: C.margemAdversario
+        margemAdversario: C.margemAdversario,
+        // Pesos da escolha do ponto (ver notaPontoDeApoio, utils.js).
+        pesos: {
+            pesoFolgaLinha: C.pesoFolgaLinha,
+            pesoFolgaPonto: C.pesoFolgaPonto,
+            pesoCusto: C.pesoCusto,
+            folgaCap: C.folgaCap
+        }
     });
 
     const comApoio = new Set(escolhidos.map(e => e.id));
@@ -1440,8 +1486,16 @@ const PosicionamentoAI = {
         p.tacticalTarget.z = lerp(p.tacticalTarget.z, tz, k);
         p.tacticalTarget.y = ALTURA_BASE_Y;
 
-        if (!p.styleTarget) p.styleTarget = new THREE.Vector3(tx, ALTURA_BASE_Y, tz);
-        p.styleTarget.copy(p.tacticalTarget);
+        /*
+        Anel do PlayingStyleBT: o posto DEPOIS do estilo e ANTES da marcação —
+        p.postoBase, escrito no tickBase. Era uma cópia do alvo final, e por
+        isso coincidia com o anel do PositionBT: desligar os estilos não mudava
+        nada nos anéis, porque o que ali se via era marcação + inquietação +
+        alisamento. Assim a linha entre o anel do TeamBT e este É o desvio do
+        estilo, e mais nada.
+        */
+        if (!p.styleTarget) p.styleTarget = new THREE.Vector3(0, ALTURA_BASE_Y, 0);
+        p.styleTarget.set(comEstilo.x, ALTURA_BASE_Y, comEstilo.z);
 
         p.dynamicTarget.x = lerp(p.dynamicTarget.x, tx, k);
         p.dynamicTarget.z = lerp(p.dynamicTarget.z, tz, k);

@@ -124,6 +124,41 @@ const Match = {
         this.btPosRectB.visible = false;
         this.scene.add(this.btPosRectB);
 
+        /*
+        DIAGONAIS DO BLOCO: as duas diagonais do rectângulo, que se cruzam no
+        centro dele. Servem para ler de relance se o centro do bloco está
+        mesmo sobre a bola — a olho, num rectângulo grande, não se distingue
+        um centro certo de um centro 8 m atrás.
+
+        LineSegments com 4 vértices = dois segmentos independentes (canto a
+        canto), ao contrário do LineLoop do contorno.
+        */
+        const criarDiagonais = (cor) => {
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(4 * 3), 3));
+            const linha = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: 0.45 }));
+            linha.visible = false;
+            this.scene.add(linha);
+            return linha;
+        };
+        this.btPosDiagA = criarDiagonais(0x3498db);
+        this.btPosDiagB = criarDiagonais(0xe74c3c);
+
+        // Marca do centro do bloco — o ponto onde as diagonais se cruzam.
+        const criarCentro = (cor) => {
+            const m = new THREE.Mesh(
+                new THREE.RingGeometry(0.55, 0.85, 24),
+                new THREE.MeshBasicMaterial({ color: cor, side: THREE.DoubleSide })
+            );
+            m.rotation.x = -Math.PI / 2;
+            m.position.y = 0.06;
+            m.visible = false;
+            this.scene.add(m);
+            return m;
+        };
+        this.btPosCentroA = criarCentro(0x3498db);
+        this.btPosCentroB = criarCentro(0xe74c3c);
+
         this.passTargetVisual = new THREE.Mesh(
             new THREE.CircleGeometry(0.5, 32),
             new THREE.MeshBasicMaterial({ color: 0xffff00, side: THREE.DoubleSide })
@@ -1217,6 +1252,9 @@ const Match = {
             ? MatchDuration.timeScale
             : 4.5;
         this.tempoDeJogo += dt * clockScale;
+        // Relógio em segundos simulados, para a telemetria do passe (o
+        // tempoDeJogo acima vem multiplicado pelo timeScale).
+        if (typeof MatchStats !== 'undefined') MatchStats.tick(dt);
         this.updatePlacar();
 
         if (this.state === 'CORNER_KICK') {
@@ -1307,8 +1345,12 @@ const Match = {
 
         this.btPosRectA.visible = false;
         this.btPosRectB.visible = false;
+        this.btPosDiagA.visible = false;
+        this.btPosDiagB.visible = false;
+        this.btPosCentroA.visible = false;
+        this.btPosCentroB.visible = false;
 
-        const updateRect = (teamName, rectMesh) => {
+        const updateRect = (teamName, rectMesh, diagMesh, centroMesh) => {
             const bb = (typeof TeamAI !== 'undefined' && TeamAI.blackboards) ? TeamAI.blackboards[teamName] : null;
             if (bb) {
                 rectMesh.visible = true;
@@ -1326,14 +1368,27 @@ const Match = {
                 pts[6] = x1; pts[7] = 0.05; pts[8] = maxZ;
                 pts[9] = x0; pts[10] = 0.05; pts[11] = maxZ;
                 rectMesh.geometry.attributes.position.needsUpdate = true;
+
+                // Diagonais canto a canto, e a marca no cruzamento delas.
+                diagMesh.visible = true;
+                const d = diagMesh.geometry.attributes.position.array;
+                d[0] = x0; d[1] = 0.05; d[2] = minZ;
+                d[3] = x1; d[4] = 0.05; d[5] = maxZ;
+                d[6] = x1; d[7] = 0.05; d[8] = minZ;
+                d[9] = x0; d[10] = 0.05; d[11] = maxZ;
+                diagMesh.geometry.attributes.position.needsUpdate = true;
+
+                centroMesh.visible = true;
+                centroMesh.position.x = (x0 + x1) / 2;
+                centroMesh.position.z = (minZ + maxZ) / 2;
             }
         };
 
         if (window.teamBTPosState === 'TeamA' || window.teamBTPosState === 'Both') {
-            updateRect('TeamA', this.btPosRectA);
+            updateRect('TeamA', this.btPosRectA, this.btPosDiagA, this.btPosCentroA);
         }
         if (window.teamBTPosState === 'TeamB' || window.teamBTPosState === 'Both') {
-            updateRect('TeamB', this.btPosRectB);
+            updateRect('TeamB', this.btPosRectB, this.btPosDiagB, this.btPosCentroB);
         }
 
         const allPlayers = this.players.concat(this.opponents);

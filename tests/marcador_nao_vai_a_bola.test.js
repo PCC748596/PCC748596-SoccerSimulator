@@ -62,9 +62,22 @@ test('o perseguidor da outra equipa também é reconhecido', () => {
 
 /* ---------------------------------------------------------------- */
 
-test('podeIntercetar recusa quem está a marcar', () => {
-    const corpo = recortarFuncao(BT, 'podeIntercetar');
+/*
+A escolha do intercetor passou para o nível 1 (pickIntercetor, team_bt.js),
+para não haver dois jogadores da mesma equipa a interceptar ao mesmo tempo —
+ver tests/intercetor.test.js. A exclusão de quem marca foi com ela, e é lá
+que tem de continuar a existir.
+*/
+test('a escolha do intercetor exclui quem está a marcar', () => {
+    const TEAM = fs.readFileSync(path.join(raiz, 'js', 'bt', 'team_bt.js'), 'utf8');
+    const corpo = recortarFuncao(TEAM, 'pickIntercetor');
     assert.ok(/estouAMarcar\(p\)/.test(corpo),
-        'a interceptacao nao verifica se o jogador esta a marcar');
+        'a escolha do intercetor nao verifica se o jogador esta a marcar');
+});
+
+test('podeIntercetar limita-se a obedecer à escolha da equipa', () => {
+    const corpo = recortarFuncao(BT, 'podeIntercetar');
+    assert.ok(/bb\.intercetor !== p/.test(corpo),
+        'a folha da arvore voltou a decidir sozinha quem intercepta');
 });
 

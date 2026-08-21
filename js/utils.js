@@ -847,6 +847,25 @@ function linhaLivre(ax, az, bx, bz, obstaculos, margem) {
 }
 
 /*
+Corte de um avanço (z * dirZ) pela linha de fora-de-jogo publicada pelo nível
+1 (`bb.offsideLimitDir`, já no referencial de ataque). `null`/`undefined`
+significa que não há linha publicada — a equipa não tem a posse — e nesse caso
+não há nada a respeitar.
+
+Vive aqui, separada, porque tem DOIS chamadores: a escolha do destino da
+corrida (destinoDeCorrida, logo abaixo) e a revalidação por frame em
+actRunIntoSpace. Só a primeira existia, e a corrida ficava depois fixa 4
+segundos — tempo mais do que suficiente para a última linha subir e o destino
+passar a ilegal, com o jogador a correr para lá na mesma.
+*/
+function avancoLegalDeCorrida(avanco, offsideLimitDir) {
+    const MARGEM_FORA_DE_JOGO = 0.5;
+    if (typeof offsideLimitDir !== 'number') return avanco;
+    const tecto = offsideLimitDir - MARGEM_FORA_DE_JOGO;
+    return (avanco > tecto) ? tecto : avanco;
+}
+
+/*
 DESTINO DE UMA CORRIDA AO ESPACO.
 
 O candidato bruto vem do SpatialGrid (a celula mais vazia num raio a frente
@@ -872,18 +891,15 @@ Pura: sem Match, sem SpatialGrid, sem THREE.
 function destinoDeCorrida(o) {
     const MINIMO = 6.0;        // menos do que isto e um passo, nao uma corrida
     const MARGEM_LINHA = 2.0;  // folga para as linhas laterais e de fundo
-    const MARGEM_FORA_DE_JOGO = 0.5;
 
     const dirZ = o.dirZ;
     const avancoJogador = o.pz * dirZ;
     let alvoX = o.candidatoX;
     let avancoAlvo = o.candidatoZ * dirZ;
 
-    // Aquem da linha de fora-de-jogo, se houver uma.
-    if (typeof o.offsideLimitDir === 'number') {
-        const tecto = o.offsideLimitDir - MARGEM_FORA_DE_JOGO;
-        if (avancoAlvo > tecto) avancoAlvo = tecto;
-    }
+    // Aquem da linha de fora-de-jogo, se houver uma (ver avancoLegalDeCorrida,
+    // partilhada com a revalidacao por frame em actRunIntoSpace).
+    avancoAlvo = avancoLegalDeCorrida(avancoAlvo, o.offsideLimitDir);
 
     // Dentro do campo.
     const meiaLarg = CAMPO_LARG / 2 - MARGEM_LINHA;
@@ -1004,4 +1020,117 @@ function graceDeConducao(hasBall, grace, outroTemBola, dt) {
     if (hasBall || outroTemBola) return 0;
     if (grace > 0) return Math.max(0, grace - dt);
     return 0;
+}
+
+/*
+QUEM INTERCEPTA, UM POR EQUIPA.
+
+`lista` são os candidatos elegíveis, cada um `{ p, t }` com o tempo de
+interceptação vindo da percepção. `tQuemJaVai` é o melhor tempo entre os que
+já estão encarregues da bola (chaser, destinatário do passe); `margem` é o
+quanto é preciso batê-los para valer a pena mandar mais alguém.
+
+Era decidido dentro da árvore, por cada jogador, com uma reivindicação escrita
+no blackboard: quem corresse primeiro reivindicava, e os seguintes só cediam
+se fossem PIORES. Um jogador melhor a correr depois reivindicava também — e o
+primeiro já tinha mudado de estado nesse frame. Resultado: dois jogadores da
+mesma equipa em INTERCEPT, e permanente, porque a ordem da lista não muda
+entre frames. Escolher aqui, de uma vez, tira a ordem da equação.
+
+Empate no tempo resolve-se pelo primeiro da lista — estável, porque a lista da
+equipa mantém a ordem de frame para frame.
+*/
+function escolherIntercetor(lista, tQuemJaVai, margem) {
+    let melhor = null;
+    for (const c of lista) {
+        if (!c || !c.p) continue;
+        if (melhor === null || c.t < melhor.t) melhor = c;
+    }
+    if (melhor === null) return null;
+
+    const limite = (typeof tQuemJaVai === 'number') ? tQuemJaVai : Infinity;
+    if (melhor.t + margem >= limite) return null;
+    return melhor.p;
+}
+
+/*
+FOLGA DA LINHA: a que distância passa o adversário mais próximo do segmento
+A->B. É a versão contínua do `linhaLivre` (que só responde passa/não passa) e
+serve para PONTUAR uma linha de passe em vez de a aceitar ou rejeitar.
+
+`Infinity` quando não há ninguém — o chamador é que decide o tecto.
+*/
+function folgaDaLinha(ax, az, bx, bz, obstaculos) {
+    if (!obstaculos || !obstaculos.length) return Infinity;
+
+    const dx = bx - ax;
+    const dz = bz - az;
+    const len2 = dx * dx + dz * dz;
+    let melhor = Infinity;
+
+    for (const o of obstaculos) {
+        if (!o) continue;
+        let t = 0;
+        if (len2 > 0.000001) {
+            t = ((o.x - ax) * dx + (o.z - az) * dz) / len2;
+            t = Math.max(0, Math.min(1, t));
+        }
+        const px = ax + dx * t;
+        const pz = az + dz * t;
+        const d = Math.hypot(o.x - px, o.z - pz);
+        if (d < melhor) melhor = d;
+    }
+    return melhor;
+}
+
+/*
+NOTA DE UM PONTO DE APOIO — quanto vale oferecer-se ali.
+
+O `atribuirApoios` filtrava os pontos por linha livre (binário) e depois
+escolhia entre eles o MAIS BARATO, isto é, o mais perto do slot do bloco. Em
+campo lia-se como o médio a fechar para dentro em vez de se pôr no vão entre
+dois adversários: o ponto cómodo tinha linha "livre" à tangente e ganhava ao
+vão aberto que ficava dois metros mais longe.
+
+Três termos:
+    folgaLinha   a que distância passa o adversário mais perto do caminho da
+                 bola (folgaDaLinha) — é isto que abre a linha de passe
+    folgaPonto   a que distância fica o adversário mais perto do PONTO — um
+                 ponto colado a um marcador não é opção, é disputa
+    custoSlot    metros que ele tem de sair do slot do bloco para lá ir
+
+Os dois primeiros têm tecto (`folgaCap`): uma linha completamente vazia não
+pode valer infinito, senão o ponto do outro lado do campo ganha sempre.
+*/
+function notaPontoDeApoio(o, pesos) {
+    const cap = pesos.folgaCap;
+    const folgaLinha = Math.min(o.folgaLinha, cap);
+    const folgaPonto = Math.min(o.folgaPonto, cap);
+
+    return folgaLinha * pesos.pesoFolgaLinha
+        + folgaPonto * pesos.pesoFolgaPonto
+        - o.custoSlot * pesos.pesoCusto;
+}
+
+/*
+SEGUIMENTO DA BOLA — o centro do bloco, usado nos DOIS eixos.
+
+NÃO é momentum. Momentum é o LADO do campo onde o jogo está a acontecer:
+eixo X, largura, sectores Left/Right/Center (ver bb.momentumX). Isto é outra
+coisa: onde a bola está ao longo do campo, suavizado o suficiente para os onze
+alvos não tremerem com cada ressalto.
+
+Vivia com o nome `momentumZ` e, por causa do nome, com constantes de tempo de
+momentum: 2.5 s a defender e 4.0 s com a bola a recuar. Um seguimento com 2.5 s
+de constante fica ~25 m atrás de uma bola a 10 m/s — era isso que punha os dois
+rectângulos do TeamBT atrás da jogada.
+
+Simétrico de propósito: a assimetria antiga colava o bloco ao ataque e
+arrastava-o no recuo. `reposta` é a bola fora de jogo (golo, canto,
+lançamento), onde o centro salta em vez de deslizar pelo campo.
+*/
+function seguirBola(actual, alvo, k, dt, reposta) {
+    if (reposta || dt >= 1) return alvo;
+    const passo = 1 - Math.exp(-k * dt);
+    return actual + (alvo - actual) * passo;
 }

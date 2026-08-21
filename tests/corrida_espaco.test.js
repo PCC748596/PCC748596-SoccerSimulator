@@ -31,6 +31,10 @@ function montar() {
     vm.createContext(sandbox);
     vm.runInContext(
         'const CAMPO_LARG = 68; const CAMPO_COMP = 106;\n' +
+        // O corte pela linha de fora-de-jogo saiu para uma funcao propria,
+        // partilhada com a revalidacao por frame da corrida (ver
+        // tests/corrida_impedimento.test.js) — tem de vir junto.
+        recortarFuncao(UTILS, 'avancoLegalDeCorrida') + String.fromCharCode(10) +
         recortarFuncao(UTILS, 'destinoDeCorrida') +
         '\nthis.destino = destinoDeCorrida;', sandbox);
     return sandbox.destino;

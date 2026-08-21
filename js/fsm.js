@@ -223,7 +223,16 @@ function executePassGameplay(p) {
     Match.passTargetPos = { x: p.passTargetPos.x, z: p.passTargetPos.z };
     Match.lastTouchedTeam = p.team;
     Match.lastTouchedPlayer = p;
-    if (typeof MatchStats !== 'undefined') MatchStats.registarPasseIniciado(p.team, tipoPasseStats);
+    if (typeof MatchStats !== 'undefined') {
+        // Telemetria: distância pedida, se saiu pelo alto e com que
+        // velocidade horizontal. Ver MatchStats.resumoPasses.
+        MatchStats.registarPasseIniciado(p.team, tipoPasseStats, {
+            dist: distToTarget,
+            alto: Match.ballVel.y > 0.01,
+            vx: Match.ballVel.x,
+            vz: Match.ballVel.z
+        });
+    }
 }
 
 class PlayerFSM {

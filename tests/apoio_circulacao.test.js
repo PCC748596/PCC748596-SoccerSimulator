@@ -37,6 +37,10 @@ function montar() {
     vm.runInContext(
         'const CAMPO_LARG = 68; const CAMPO_COMP = 106;\n' +
         recortarFuncao(UTILS, 'linhaLivre') + '\n' +
+        // A escolha do ponto passou a ser pontuada (folga da linha e do
+        // ponto contra o custo de la ir) — ver tests/apoio_linha_passe.
+        recortarFuncao(UTILS, 'folgaDaLinha') + String.fromCharCode(10) +
+        recortarFuncao(UTILS, 'notaPontoDeApoio') + String.fromCharCode(10) +
         recortarFuncao(CONFIG, 'atribuirApoios') + '\n' +
         'this.atribuir = atribuirApoios;', sandbox);
     return sandbox.atribuir;
@@ -44,7 +48,8 @@ function montar() {
 
 const OPTS = {
     maxApoios: 3, raioMin: 10, raioMax: 18, desvioMax: 8,
-    margemLinha: 2.0, margemAdversario: 3.0
+    margemLinha: 2.0, margemAdversario: 3.0,
+    pesos: { pesoFolgaLinha: 1.2, pesoFolgaPonto: 1.0, pesoCusto: 0.5, folgaCap: 8.0 }
 };
 
 // Portador do TeamA (ataca +z) no meio-campo.
