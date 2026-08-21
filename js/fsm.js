@@ -590,8 +590,8 @@ class PlayerFSM {
                                     const projZ = pz + t * dz;
                                     const distToLine = Math.hypot(plx - projX, plz - projZ);
                                     
-                                    // Corredor de 2.5m de largura
-                                    if (distToLine < 2.5) {
+                                    // Corredor de 1.2m de largura (passar entre os jogadores)
+                                    if (distToLine < 1.2) {
                                         const distObstacle = Math.hypot(plx - px, plz - pz);
                                         if (distObstacle < maisPerto) maisPerto = distObstacle;
                                     }

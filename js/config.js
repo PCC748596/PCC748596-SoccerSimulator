@@ -82,8 +82,8 @@ const GoalNet = {
     */
     profTopo: 0.8,
     profBase: 2.0,
-    restituicao: 0.12,
-    atrito: 0.72,
+    restituicao: 0.02,
+    atrito: 0.35,
 
     /*
     MALHA — quantos quadrados por face. Antes cada face era UM quad de quatro
@@ -267,7 +267,9 @@ const ActionAnimClips = {
     gkPunt: { duration: 0.85, contactTime: 8 / 11 },
     // Tiro de meta: mesmo gesto (GOALKEEPER_KICK_FORWARD_HIGH), mais rápido —
     // vem do chão numa cobrança, não da espera com a bola nas mãos.
-    gkPuntChao: { duration: 0.65, contactTime: 8 / 11 }
+    gkPuntChao: { duration: 0.65, contactTime: 8 / 11 },
+    // Lançamento com as mãos do guarda-redes
+    gkThrow: { duration: 0.70, contactTime: 8 / 11 }
 };
 
 /*
@@ -326,6 +328,27 @@ const GoalkeeperKickClip = {
     largaBolaEm: 5 / 11,
     alturaMao: 1.15,
     alturaPe: 0.25
+};
+
+const GoalkeeperThrowPower = 1.0;
+
+const GoalkeeperThrowClip = {
+    bracoLancamento: 'r', // Braço que lança a bola
+    frames: [
+        // chest, coxaL, joelhoL, coxaR, joelhoR, bracoLx, bracoLz, bracoRx, bracoRz, cotoveloL, cotoveloR, altura
+        { chest: 0.05, coxaL: 0.05, joelhoL: 0.12, coxaR: 0.05, joelhoR: 0.12, bracoLx: -0.9, bracoLz: 0.05, bracoRx: -0.9, bracoRz: -0.05, cotoveloL: -2.0, cotoveloR: -2.0, altura: 0 },
+        { chest: 0.00, coxaL: 0.05, joelhoL: 0.12, coxaR: 0.20, joelhoR: 0.15, bracoLx: -0.9, bracoLz: 0.20, bracoRx: -0.2, bracoRz: -0.50, cotoveloL: -1.5, cotoveloR: -1.0, altura: 0 },
+        { chest: -0.10, coxaL: 0.10, joelhoL: 0.15, coxaR: 0.40, joelhoR: 0.20, bracoLx: -1.0, bracoLz: 0.30, bracoRx: 0.5, bracoRz: -1.00, cotoveloL: -1.0, cotoveloR: -0.5, altura: -0.02 },
+        { chest: -0.20, coxaL: 0.15, joelhoL: 0.20, coxaR: 0.60, joelhoR: 0.30, bracoLx: -1.1, bracoLz: 0.40, bracoRx: 1.2, bracoRz: -1.20, cotoveloL: -0.8, cotoveloR: -0.3, altura: -0.04 },
+        { chest: -0.10, coxaL: 0.10, joelhoL: 0.15, coxaR: 0.30, joelhoR: 0.20, bracoLx: -1.0, bracoLz: 0.30, bracoRx: -1.0, bracoRz: -0.80, cotoveloL: -0.5, cotoveloR: -0.2, altura: -0.02 },
+        { chest: 0.05, coxaL: 0.00, joelhoL: 0.10, coxaR: -0.10, joelhoR: 0.10, bracoLx: -0.8, bracoLz: 0.20, bracoRx: -1.8, bracoRz: -0.20, cotoveloL: -0.3, cotoveloR: -0.1, altura: 0.00 },
+        { chest: 0.15, coxaL: -0.10, joelhoL: 0.05, coxaR: -0.30, joelhoR: 0.05, bracoLx: -0.6, bracoLz: 0.10, bracoRx: -2.2, bracoRz: -0.10, cotoveloL: -0.2, cotoveloR: -0.05, altura: 0.02 },
+        { chest: 0.20, coxaL: -0.15, joelhoL: 0.00, coxaR: -0.40, joelhoR: 0.00, bracoLx: -0.4, bracoLz: 0.05, bracoRx: -2.5, bracoRz: 0.00, cotoveloL: -0.1, cotoveloR: 0.0, altura: 0.04 },
+        { chest: 0.25, coxaL: -0.20, joelhoL: 0.00, coxaR: -0.50, joelhoR: 0.00, bracoLx: -0.2, bracoLz: 0.05, bracoRx: -1.5, bracoRz: 0.00, cotoveloL: -0.1, cotoveloR: -0.2, altura: 0.02 },
+        { chest: 0.15, coxaL: -0.10, joelhoL: 0.05, coxaR: -0.30, joelhoR: 0.05, bracoLx: 0.0, bracoLz: 0.05, bracoRx: -0.5, bracoRz: 0.00, cotoveloL: -0.1, cotoveloR: -0.5, altura: 0.00 },
+        { chest: 0.10, coxaL: 0.00, joelhoL: 0.10, coxaR: -0.10, joelhoR: 0.10, bracoLx: 0.0, bracoLz: 0.05, bracoRx: 0.0, bracoRz: -0.05, cotoveloL: -0.5, cotoveloR: -1.0, altura: 0.00 },
+        { chest: 0.05, coxaL: 0.05, joelhoL: 0.12, coxaR: 0.05, joelhoR: 0.12, bracoLx: -0.2, bracoLz: 0.10, bracoRx: -0.2, bracoRz: -0.10, cotoveloL: -0.8, cotoveloR: -0.8, altura: 0.00 }
+    ]
 };
 
 // window.goleiroEstado, window.goleiroReagiu e window.delayReacaoCalculado
@@ -902,7 +925,7 @@ const PassModel = {
     */
     bloqueioMin: 2,             // quantos adversários fecham o caminho
     bloqueioDist: 14.0,         // até que distância à frente conta
-    bloqueioLargura: 6.0,       // meia-largura do corredor
+    bloqueioLargura: 3.5,       // meia-largura do corredor
 
     throughBallGap: 14.0,       // quão atrás da linha o colega pode estar
     throughBallDepth: 9.0,      // metros além da linha onde se põe a bola
@@ -1548,8 +1571,8 @@ const CarryModel = {
 
     pesoProgresso fica em 1.0 de propósito: é a unidade de referência.
     */
-    pesoEspacoMin: 1.0,   // técnica <= tecEspacoMin
-    pesoEspacoMax: 2.4,   // técnica >= tecEspacoMax
+    pesoEspacoMin: 1.2,   // técnica <= tecEspacoMin
+    pesoEspacoMax: 2.88,  // técnica >= tecEspacoMax
     tecEspacoMin: 40,
     tecEspacoMax: 90,
     pesoProgresso: 1.0,

@@ -1031,7 +1031,7 @@ const Match = {
 
     Usado tanto pelo botão do painel como no reinício automático após golo.
     */
-    resetPlay: function () {
+    resetPlay: function (forcingKickoffTeam = null) {
         this.state = 'PLAY'; this.ballVel.set(0, 0, 0);
 
         this.intendedReceiver = null;
@@ -1121,8 +1121,8 @@ const Match = {
             });
         });
 
-        // Sorteio do time que dá a saída.
-        const startA = Math.random() < 0.5;
+        // Sorteio do time que dá a saída, ou usa o time forçado.
+        const startA = forcingKickoffTeam ? (forcingKickoffTeam === 'TeamA') : (Math.random() < 0.5);
         const takerList = startA ? this.players : this.opponents;
         const attDir = startA ? 1 : -1;
 
@@ -2082,6 +2082,9 @@ const Match = {
                     this.state = 'GOAL';
                     this.goalSequenceStage = 0;
                     this.tempoParada = 0;
+                    
+                    // zSinal < 0 é a baliza do TeamA, então quem levou o golo (e sai com a bola) é o TeamA
+                    this.nextKickoffTeam = (zSinal < 0) ? 'TeamA' : 'TeamB';
 
                     if (typeof MatchStats !== 'undefined' && MatchStats[this.lastTouchedTeam]) {
                         MatchStats[this.lastTouchedTeam].remates.golos++;
@@ -2252,7 +2255,8 @@ const Match = {
                 if (this.tempoParada > 1.0) {
                     this.tempoParada = 0;
                     this.goalSequenceStage = undefined;
-                    this.resetPlay();
+                    this.resetPlay(this.nextKickoffTeam);
+                    this.nextKickoffTeam = null;
                 }
             }
         } else if (this.state === 'OUT' && this.ballVel.lengthSq() < 0.5) {

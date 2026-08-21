@@ -23,6 +23,30 @@ function amostrarClipChuteGR(norm) {
     };
 }
 
+function amostrarClipLancamentoGR(norm) {
+    const fr = GoalkeeperThrowClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => a[k] + (b[k] - a[k]) * u;
+    return {
+        chest: mix('chest'),
+        coxaL: mix('coxaL'),
+        joelhoL: mix('joelhoL'),
+        coxaR: mix('coxaR'),
+        joelhoR: mix('joelhoR'),
+        bracoLx: mix('bracoLx'),
+        bracoLz: mix('bracoLz'),
+        bracoRx: mix('bracoRx'),
+        bracoRz: mix('bracoRz'),
+        cotoveloL: mix('cotoveloL'),
+        cotoveloR: mix('cotoveloR'),
+        altura: mix('altura')
+    };
+}
+
 class FootballPlayer {
     constructor(id, color1, color2, team) {
         this.id = id; this.team = team; this.role = 'def';
@@ -1250,6 +1274,17 @@ class FootballPlayer {
                         ((this.gkKickNorm || 0) - K.largaBolaEm) / (cont - K.largaBolaEm), 0, 1);
                     maoY = this.model.position.y + K.alturaMao + (K.alturaPe - K.alturaMao) * u;
                     avancoBola = 0.3 + 0.35 * u;
+                } else if (this.gkEstado === 'lancando') {
+                    // Animação manual para a bola acompanhar a mão durante o lançamento
+                    const u = this.gkKickNorm || 0;
+                    if (u < 0.6) {
+                        maoY = this.model.position.y + 1.15 + (1.6 - 1.15) * (u / 0.6);
+                        avancoBola = 0.3 - 0.5 * (u / 0.6);
+                    } else {
+                        const rel = (u - 0.6) / 0.4;
+                        maoY = this.model.position.y + 1.6 - (1.6 - 1.4) * rel;
+                        avancoBola = -0.2 + 0.8 * rel;
+                    }
                 }
                 let maoOffset = new THREE.Vector3(0, 0, avancoBola).applyQuaternion(this.model.quaternion);
                 Match.ball.position.lerp(this.model.position.clone().add(maoOffset).setY(maoY), 0.5);
@@ -1421,8 +1456,15 @@ class FootballPlayer {
         if (brakingDist > 0 && d < brakingDist) desired.multiplyScalar(maxSpeed * (d / brakingDist));
         else desired.multiplyScalar(maxSpeed);
 
-        // Corpo vira para a direcção do movimento
-        _v1.set(this.model.position.x * 2 - target.x, this.model.position.y, this.model.position.z * 2 - target.z);
+        // Corpo vira para a direcção do movimento (ou para a bola ao defender/apoiar)
+        let lookTarget = target;
+        if (this.fsm && Match.ball) {
+            const s = this.fsm.currentState;
+            if (s === 'MARKING' || s === 'BLOCKING' || s === 'AFT_SUPPORT' || s === 'SUPPORT_PASS') {
+                lookTarget = Match.ball.position;
+            }
+        }
+        _v1.set(this.model.position.x * 2 - lookTarget.x, this.model.position.y, this.model.position.z * 2 - lookTarget.z);
         _m1.lookAt(this.model.position, _v1, this.model.up);
         _q1.setFromRotationMatrix(_m1);
         this.model.quaternion.slerp(_q1, Math.min(1.0, 5.5 * Match.delta));
@@ -2763,33 +2805,76 @@ class FootballPlayer {
             const lancarCedo = gkPodeLancar(t, this.gkTemLinha);
 
             if (lancarCedo || t >= (this.gkSegurarDur ?? GoalkeeperPose.segurarDur)) {
-                /*
-                A bola já não sai no mesmo instante em que o tempo de espera
-                acaba: entra o gesto do chuto (GOALKEEPER_KICK_FORWARD_HIGH) e
-                é o ActionState que dispara o relançamento no frame do contacto
-                pé-bola — mesmo padrão do passe (ver ActionAnimClips.pass).
-                */
-                this.gkEstado = 'chutando';
-                this.gkTempoMergulho = 0;
-                this.gkKickNorm = 0;
-                this.gkKickAction = new ActionState('gkPunt', {
-                    onContact: () => {
-                        this.releaseFromHands();
-                        if (typeof EventBus !== 'undefined') EventBus.emit('GK_RELEASE_BALL', { team: this.team, gk: this });
-                    }
-                });
+                
+                this.gkReleaseTarget = this.chooseReleaseTarget();
+                const dist = this.gkReleaseTarget ? this.model.position.distanceTo(this.gkReleaseTarget.model.position) : Infinity;
+
+                if (dist < 30) {
+                    this.gkEstado = 'lancando';
+                    this.gkTempoMergulho = 0;
+                    this.gkKickNorm = 0;
+                    this.gkKickAction = new ActionState('gkThrow', {
+                        onContact: () => {
+                            this.executeRelease(this.gkReleaseTarget);
+                            if (typeof EventBus !== 'undefined') EventBus.emit('GK_RELEASE_BALL', { team: this.team, gk: this });
+                        }
+                    });
+                } else {
+                    this.gkEstado = 'chutando';
+                    this.gkTempoMergulho = 0;
+                    this.gkKickNorm = 0;
+                    this.gkKickAction = new ActionState('gkPunt', {
+                        onContact: () => {
+                            this.executeRelease(this.gkReleaseTarget);
+                            if (typeof EventBus !== 'undefined') EventBus.emit('GK_RELEASE_BALL', { team: this.team, gk: this });
+                        }
+                    });
+                }
             }
-        } else if (this.gkEstado === 'chutando') {
-            /*
-            GOALKEEPER_KICK_FORWARD_HIGH — 12 keyframes em GoalkeeperKickClip,
-            amostrados por tempo normalizado. O ActionState só trata do tempo e
-            do instante do contacto; a pose é toda aplicada aqui.
-            */
+        } else if (this.gkEstado === 'chutando' || this.gkEstado === 'lancando') {
+            const isThrow = (this.gkEstado === 'lancando');
             const normK = this.gkKickAction ? this.gkKickAction.update(dt, this) : 1;
             this.gkKickNorm = normK;
-            const K = amostrarClipChuteGR(normK);
-
-            const chuteR = (GoalkeeperKickClip.pernaChute === 'r');
+            
+            if (isThrow) {
+                const K = amostrarClipLancamentoGR(normK);
+                gkRig.chest.rotation.x = K.chest;
+                gkRig.lLeg.rotation.x = K.coxaL;
+                gkRig.lKnee.rotation.x = K.joelhoL;
+                gkRig.rLeg.rotation.x = K.coxaR;
+                gkRig.rKnee.rotation.x = K.joelhoR;
+                
+                gkRig.lArm.rotation.x = K.bracoLx;
+                gkRig.lArm.rotation.z = K.bracoLz;
+                gkRig.rArm.rotation.x = K.bracoRx;
+                gkRig.rArm.rotation.z = K.bracoRz;
+                
+                gkRig.lElbow.rotation.x = K.cotoveloL;
+                gkRig.rElbow.rotation.x = K.cotoveloR;
+            } else {
+                const K = amostrarClipChuteGR(normK);
+                const chuteR = (GoalkeeperKickClip.pernaChute === 'r');
+                const pernaC = chuteR ? gkRig.rLeg : gkRig.lLeg;
+                const joelhoC = chuteR ? gkRig.rKnee : gkRig.lKnee;
+                const pernaA = chuteR ? gkRig.lLeg : gkRig.rLeg;
+                const joelhoA = chuteR ? gkRig.lKnee : gkRig.rKnee;
+                pernaC.rotation.x = K.coxaChute;
+                joelhoC.rotation.x = K.joelhoChute;
+                pernaA.rotation.x = K.coxaApoio;
+                joelhoA.rotation.x = K.joelhoApoio;
+                pernaC.rotation.z = 0;
+                pernaA.rotation.z = 0;
+                gkRig.chest.rotation.x = K.chest;
+                gkRig.lArm.rotation.x = K.bracoX;
+                gkRig.rArm.rotation.x = K.bracoX;
+                gkRig.lElbow.rotation.x = K.cotovelo;
+                gkRig.rElbow.rotation.x = K.cotovelo;
+                // Braços vão abrindo do fecho na bola (bracoZ 0.05) para o
+                // equilíbrio, à medida que o gesto avança.
+                const abreBraco = 0.05 + 0.45 * normK;
+                gkRig.lArm.rotation.z = abreBraco;
+                gkRig.rArm.rotation.z = -abreBraco;
+            }(GoalkeeperKickClip.pernaChute === 'r');
             const pernaC = chuteR ? gkRig.rLeg : gkRig.lLeg;
             const joelhoC = chuteR ? gkRig.rKnee : gkRig.lKnee;
             const pernaA = chuteR ? gkRig.lLeg : gkRig.rLeg;
@@ -2906,7 +2991,7 @@ class FootballPlayer {
     pedido do utilizador — o relançamento é agora sempre o chutão do
     puntBall(), com elevação e direcção sorteadas lá dentro.
     */
-    releaseFromHands() {
+    chooseReleaseTarget() {
         const teamStyle = (typeof Tatics !== 'undefined' && Tatics.teamPlayStyle) ? Tatics.teamPlayStyle : 'positional';
         const myTeam = (this.team === 'TeamA') ? Match.players : Match.opponents;
         
@@ -2922,10 +3007,13 @@ class FootballPlayer {
 
         if (teamStyle === 'positional' || teamStyle === 'possession') {
             if (rand < 0.4) {
-                let c = getCandidates(['LB', 'LWB']);
+                let c = getCandidates(['LB', 'LWB', 'CB']);
                 if (c) targetPlayer = pickRandom(c);
             } else if (rand < 0.8) {
-                let c = getCandidates(['RB', 'RWB']);
+                let c = getCandidates(['RB', 'RWB', 'CB']);
+                if (c) targetPlayer = pickRandom(c);
+            } else {
+                let c = getCandidates(['CB']);
                 if (c) targetPlayer = pickRandom(c);
             }
         } else if (teamStyle === 'direct') {
@@ -2952,29 +3040,37 @@ class FootballPlayer {
             if (c) targetPlayer = pickRandom(c);
         }
 
-        if (targetPlayer) {
-            this.passTarget = targetPlayer;
-            this.passTargetPos = targetPlayer.model.position.clone();
-            
-            const dist = this.model.position.distanceTo(targetPlayer.model.position);
-            if (dist > 25) {
-                this.isThroughBall = true;
-                this.throughBallTarget = targetPlayer.model.position.clone();
-                this.throughBallAlto = true;
-            } else {
-                this.isThroughBall = false;
-                this.isCross = false;
-            }
+        if (!targetPlayer) {
+            const anyone = myTeam.filter(p => p !== this);
+            if (anyone.length > 0) targetPlayer = pickRandom(anyone);
+        }
+        return targetPlayer;
+    }
 
-            if (typeof executePassGameplay !== 'undefined') {
-                executePassGameplay(this);
-            } else {
-                this.puntBall();
-            }
+    executeRelease(targetPlayer) {
+        if (!targetPlayer) {
+            this.puntBall();
             return;
         }
 
-        this.puntBall();
+        this.passTarget = targetPlayer;
+        this.passTargetPos = targetPlayer.model.position.clone();
+        
+        const dist = this.model.position.distanceTo(targetPlayer.model.position);
+        if (dist > 30) {
+            this.isThroughBall = true;
+            this.throughBallTarget = targetPlayer.model.position.clone();
+            this.throughBallAlto = true;
+        } else {
+            this.isThroughBall = false;
+            this.isCross = false;
+        }
+
+        if (typeof executePassGameplay !== 'undefined') {
+            executePassGameplay(this);
+        } else {
+            this.puntBall();
+        }
     }
 
     /*
