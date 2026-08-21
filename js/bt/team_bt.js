@@ -639,23 +639,53 @@ function computeBlock(bb) {
     }
 
     /*
-    Limite traseiro do bloco na defesa protegido pelo guarda-redes:
-    Se o guarda-redes estiver dentro da área, o limite traseiro (z0) do 
-    retângulo não recua mais do que 1 metro à sua frente.
+    PROFUNDIDADE DA ÚLTIMA LINHA A DEFENDER.
+
+    O limite à frente do guarda-redes é o recuo MÁXIMO — o piso — e não o sítio
+    onde a linha se põe. Era usado como sítio: com a bola no nosso meio-campo o
+    `centro` segue-a menos 7 m e punha a traseira atrás da própria baliza, o
+    limite repunha-a em gk+1, e como a traseira do bloco É o slot da última
+    linha (ver slotNoBloco, v=0) os defesas iam todos parar à linha do
+    guarda-redes com os atacantes soltos à frente.
+
+    Quem manda na profundidade é a marcação: a linha fica MarkingModel
+    .distanciaPorPressao metros atrás do adversário mais recuado (Defensive
+    Pressure: low 4.5 / balanced 3.0 / high 1.5). A conta está em
+    recuoDaUltimaLinha (config.js), com testes em tests/linha_recuo.test.js.
+
+    O guarda-redes adversário não conta como referência — ir marcá-lo não é
+    defender, e ele está sempre atrás de todos.
     */
     if (!bb.isAttacking && typeof Match !== 'undefined') {
         const list = bb.team === 'TeamA' ? Match.players : Match.opponents;
         const gk = list.find(p => p.role === 'gk');
+
+        let pisoDir = -CAMPO_COMP / 2;
         if (gk) {
             const gkPosDir = gk.model.position.z * bb.dir;
             const linhaArea = (-CAMPO_COMP / 2) + 16.5;
-            if (gkPosDir <= linhaArea) {
-                const recuoMax = gkPosDir + 1.0;
-                if (z0 < recuoMax) {
-                    z0 = recuoMax;
-                    z1 = z0 + profundidade;
-                }
-            }
+            if (gkPosDir <= linhaArea) pisoDir = gkPosDir + 1.0;
+        }
+
+        let maisRecuadoDir = null;
+        for (const o of (bb.opp || [])) {
+            if (!o || o.role === 'gk' || !o.model) continue;
+            const oDir = o.model.position.z * bb.dir;
+            if (maisRecuadoDir === null || oDir < maisRecuadoDir) maisRecuadoDir = oDir;
+        }
+
+        const distMarca = (typeof MarkingModel !== 'undefined')
+            ? (MarkingModel.distanciaPorPressao[Tatics.pressaoDefensiva]
+                ?? MarkingModel.distanciaPorPressao.balanced)
+            : 3.0;
+
+        const tectoBase = TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium;
+        const tectoDir = tectoBase + ment.blocoZ;
+
+        const z0Novo = recuoDaUltimaLinha(z0, maisRecuadoDir, distMarca, pisoDir, tectoDir);
+        if (z0Novo !== z0) {
+            z0 = z0Novo;
+            z1 = z0 + profundidade;
         }
     }
 

@@ -1235,15 +1235,12 @@ class FootballPlayer {
         graça, cada recuperação zerava o timer e reactivava o "Dominar"
         (~3s) no meio da corrida — domina/adianta, domina/adianta.
         */
-        if (this.hasBall) {
-            this.decisionTimer += dt;
-            this.carryTouchGrace = 0;
-        } else if (this.carryTouchGrace > 0) {
-            this.carryTouchGrace -= dt;
-            this.decisionTimer += dt;
-        } else {
-            this.decisionTimer = 0;
-        }
+        const graceActiva = this.carryTouchGrace > 0;
+        const outroTemBola = !!(Match.ballCarrier && Match.ballCarrier !== this);
+        this.carryTouchGrace = graceDeConducao(this.hasBall, this.carryTouchGrace, outroTemBola, dt);
+
+        if (this.hasBall || (graceActiva && !outroTemBola)) this.decisionTimer += dt;
+        else this.decisionTimer = 0;
 
         if (this.role === 'gk' && Match.state !== 'CORNER_KICK') {
             // Corre também durante GOAL_KICK: é o updateGK que conduz o gesto

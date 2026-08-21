@@ -988,3 +988,20 @@ function notaDireccaoCarry(espaco, progresso, sectorPen, tec) {
         + progresso * C.pesoProgresso
         - sectorPen * C.pesoSector;
 }
+
+/*
+Graça de condução (p.carryTouchGrace): a janela entre soltar a bola no toque
+à frente do CARRY e voltar a tocá-la. Durante ela o BT ainda trata o jogador
+como portador (temBola em player_bt.js), senão o instante de hasBall=false
+mandava-o para SemBola e ele abandonava a bola que acabara de tocar.
+
+`outroTemBola` é o que fecha o buraco: enquanto a bola anda solta à frente,
+um adversário — ou um colega — pode ficar com ela. Sem este corte o antigo
+portador continuava com a graça a correr e ficavam DOIS jogadores em CARRY
+ao mesmo tempo. A graça só cobre a bola que continua a ser dele.
+*/
+function graceDeConducao(hasBall, grace, outroTemBola, dt) {
+    if (hasBall || outroTemBola) return 0;
+    if (grace > 0) return Math.max(0, grace - dt);
+    return 0;
+}

@@ -659,22 +659,33 @@ class PlayerFSM {
                         }
                     }
 
-                    // Toque suave e controlado: mantém a bola cerca de 0.8m a 1.2m à frente da passada,
-                    // sem disparar para longe nem perder a velocidade de corrida.
+                    /*
+                    Distância do toque: a bola é adiantada uma distância ALVO em
+                    metros (CarryModel.touchLong/Medium/Short), não uma fracção da
+                    velocidade. A versão anterior somava 0.15 a 0.35 m/s à velocidade
+                    de corrida; com o atrito de rolamento real (μg = 3.73 m/s²) esse
+                    excesso morria em menos de 0.1 s e a bola ficava colada ao pé —
+                    o toque à frente não se via.
+
+                    Física: com o portador a velocidade constante, a bola afasta-se
+                    até o excesso u ser consumido pelo atrito, ou seja lead = u²/(2a).
+                    Logo u = sqrt(2 * a * lead) e a potência do toque é curSpeed + u.
+                    */
                     const curSpeed = p.velocity.length();
-                    let touchPow;
+                    const atritoBola = BallPhysics.atritoRolamento * BallPhysics.gravidade;
+                    let leadDist;
                     if (nearestOppDist > 15) {
-                        // Campo aberto (> 15m)
-                        touchPow = curSpeed * 1.05 + 0.35;
+                        // Campo aberto (> 15m) — toque longo
+                        leadDist = CarryModel.touchLong;
                     } else if (nearestOppDist > 10) {
-                        // 10 a 15 metros
-                        touchPow = curSpeed * 1.03 + 0.20;
+                        // 10 a 15 metros — toque médio
+                        leadDist = CarryModel.touchMedium;
                     } else if (nearestOppDist > 5) {
-                        // 5 a 10 metros
-                        touchPow = curSpeed * 1.02 + 0.15;
+                        // 5 a 10 metros — toque curto
+                        leadDist = CarryModel.touchShort;
                     } else if (nearestOppDist > DribbleModel.triggerDist) {
-                        // 0 a 5 metros (toque curto junto ao pé)
-                        touchPow = curSpeed * 1.01 + 0.40;
+                        // 0 a 5 metros — toque muito curto, bola junto ao pé
+                        leadDist = CarryModel.touchShort * 0.5;
                     } else {
                         // Adversário muito perto — transição para DRIBBLE 1v1
                         if (nearestOpp && nearestOppDist > 1.2) {
@@ -698,9 +709,20 @@ class PlayerFSM {
 
                     // Executar o toque à frente com touchLock muito curto (0.08s) para que o
                     // próprio jogador retome a condução de forma fluida sem hesitação.
+                    const excesso = Math.sqrt(2 * atritoBola * leadDist);
+                    const touchPow = curSpeed + excesso;
+
+                    /*
+                    A graça de condução tem de cobrir o tempo real até recuperar a
+                    bola, senão o BT dá a posse por perdida a meio do toque longo.
+                    O afastamento fecha em t = 2u/a (subida e regresso ao pé); mais
+                    uma margem, e um tecto para não ficar preso a uma bola perdida.
+                    */
+                    const tempoRecuperacao = 2 * excesso / atritoBola;
+
                     p.hasBall = false;
                     p.touchLock = 0.3;
-                    p.carryTouchGrace = 1.2;
+                    p.carryTouchGrace = Math.min(3.0, tempoRecuperacao + 0.5);
                     Match.ballCarrier = null;
                     Match.intendedReceiver = p;
                     Match.ballVel.copy(forward).multiplyScalar(touchPow);

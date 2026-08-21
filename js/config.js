@@ -1605,9 +1605,9 @@ const CarryModel = {
     distanciaMax: 16.0,
 
     // Toques de condução — distância do toque depende do espaço à frente
-    touchLong: 7.0,       // toque longo (campo aberto, adversário > 15m)
-    touchMedium: 4.0,     // toque médio (adversário entre 8-15m)
-    touchShort: 2.4,      // toque curto (adversário perto < 8m)
+    touchLong: 3.5,       // toque longo (campo aberto, adversário > 15m)
+    touchMedium: 2.0,     // toque médio (adversário entre 8-15m)
+    touchShort: 1.2,      // toque curto (adversário perto < 8m)
     touchPower: 8.0,      // força base do toque (m/s)
     touchCooldown: 0.4,   // tempo mínimo entre toques (seg)
     touchMaxWait: 0.18,   // espera máx. pela janela da passada antes de forçar o toque (seg)
@@ -1938,6 +1938,40 @@ function atribuirMarcacoes(marcadores, adversarios, raio) {
     }
 
     return escolha;
+}
+
+/*
+TRASEIRA DA ÚLTIMA LINHA A DEFENDER, em metros no referencial de ataque da
+equipa (o `dir` do TeamBT: a própria baliza é o valor mais negativo).
+
+O limite à frente do guarda-redes é um PISO — o recuo MÁXIMO — e não um
+destino. Era usado como destino: o `centro` do bloco segue a bola menos 7 m,
+o que com a bola no nosso meio-campo punha a traseira do rectângulo bem atrás
+da baliza, e o limite repunha-a exactamente em gk+folga. Como a traseira do
+bloco É o slot da última linha, os defesas iam todos parar à linha do
+guarda-redes, com os atacantes soltos 10 m à frente.
+
+A profundidade a sério vem de quem se está a marcar: a linha põe-se
+`distancia` metros atrás do adversário mais recuado (a distância do Defensive
+Pressure, MarkingModel.distanciaPorPressao). Só se o atacante já estiver em
+cima da baliza é que o piso passa a mandar.
+
+Este ajuste NUNCA sobe a linha por si: se o bloco já está à frente do ponto de
+marcação, fica onde estava. `tectoDir` é o tecto da Linha Defensiva do painel,
+que continua a travar a subida — mas o piso ganha-lhe, porque estar atrás do
+guarda-redes não é opção.
+*/
+function recuoDaUltimaLinha(z0Dir, maisRecuadoDir, distancia, pisoDir, tectoDir) {
+    let z = z0Dir;
+
+    if (maisRecuadoDir !== null && maisRecuadoDir !== undefined) {
+        const atrasDoHomem = maisRecuadoDir - distancia;
+        if (z < atrasDoHomem) z = atrasDoHomem;
+        if (tectoDir !== null && tectoDir !== undefined && z > tectoDir) z = tectoDir;
+    }
+
+    if (z < pisoDir) z = pisoDir;
+    return z;
 }
 
 /*
