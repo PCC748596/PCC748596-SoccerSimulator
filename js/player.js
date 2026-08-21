@@ -1334,7 +1334,7 @@ class FootballPlayer {
         }
 
         // Atualização da UI flutuante (PlayerNumber, PlayerBT, PlayerPOS e PlayerPlayingStyle)
-        if (this.inViewport && (window.showPlayerNumber || window.showPlayerBT || window.showPlayerPOS || window.showPlayerPlayingStyle || window.showPlayerPoints)) {
+        if (this.inViewport && (window.showPlayerNumber || window.showPlayerBT || window.showPlayerPOS || window.showPlayerPlayingStyle || window.showPlayerPoints || window.speedMultiplier === "frame")) {
             this.labelSprite.visible = true;
             let parts = [];
             if (window.showPlayerNumber) parts.push(this.num);
@@ -1342,12 +1342,23 @@ class FootballPlayer {
             if (window.showPlayerBT) parts.push(this.fsm.currentState);
             if (window.showPlayerPlayingStyle && this.playingStyle && !this.playingStyleDesligado) parts.push(this.playingStyle);
             if (window.showPlayerPoints && this.debugPoints) {
-                let pts = Object.entries(this.debugPoints).map(([k,v]) => `${k}:${v}`).join(' | ');
+                let pts = Object.entries(this.debugPoints).map(([k,v]) => `${k}:${v}`).join(" | ");
                 if (pts) parts.push(pts);
             }
+            if (window.speedMultiplier === "frame") {
+                let fr = "";
+                if (this.actionState) {
+                    fr = `A${Math.floor(this.actionState.t * 60)}`;
+                } else if (this.gkKickAction) {
+                    fr = `G${Math.floor(this.gkKickAction.t * 60)}`;
+                } else {
+                    let t = ((this.animTimer % 1.0) + 1.0) % 1.0;
+                    fr = `R${Math.floor(t * 60)}`;
+                }
+                parts.push(fr);
+            }
             let text = parts.join(" | ");
-
-            if (text !== this.lastLabelText) {
+            if (text !== this.lastLabelText || window.speedMultiplier === "frame") {
                 this.lastLabelText = text;
                 this.labelCtx.clearRect(0, 0, 1024, 128);
                 
@@ -2836,8 +2847,9 @@ class FootballPlayer {
             const normK = this.gkKickAction ? this.gkKickAction.update(dt, this) : 1;
             this.gkKickNorm = normK;
             
+            let K;
             if (isThrow) {
-                const K = amostrarClipLancamentoGR(normK);
+                K = amostrarClipLancamentoGR(normK);
                 gkRig.chest.rotation.x = K.chest;
                 gkRig.lLeg.rotation.x = K.coxaL;
                 gkRig.lKnee.rotation.x = K.joelhoL;
@@ -2852,7 +2864,7 @@ class FootballPlayer {
                 gkRig.lElbow.rotation.x = K.cotoveloL;
                 gkRig.rElbow.rotation.x = K.cotoveloR;
             } else {
-                const K = amostrarClipChuteGR(normK);
+                K = amostrarClipChuteGR(normK);
                 const chuteR = (GoalkeeperKickClip.pernaChute === 'r');
                 const pernaC = chuteR ? gkRig.rLeg : gkRig.lLeg;
                 const joelhoC = chuteR ? gkRig.rKnee : gkRig.lKnee;
@@ -2874,29 +2886,7 @@ class FootballPlayer {
                 const abreBraco = 0.05 + 0.45 * normK;
                 gkRig.lArm.rotation.z = abreBraco;
                 gkRig.rArm.rotation.z = -abreBraco;
-            }(GoalkeeperKickClip.pernaChute === 'r');
-            const pernaC = chuteR ? gkRig.rLeg : gkRig.lLeg;
-            const joelhoC = chuteR ? gkRig.rKnee : gkRig.lKnee;
-            const pernaA = chuteR ? gkRig.lLeg : gkRig.rLeg;
-            const joelhoA = chuteR ? gkRig.lKnee : gkRig.rKnee;
-
-            pernaC.rotation.x = K.coxaChute;
-            joelhoC.rotation.x = K.joelhoChute;
-            pernaA.rotation.x = K.coxaApoio;
-            joelhoA.rotation.x = K.joelhoApoio;
-            pernaC.rotation.z = 0;
-            pernaA.rotation.z = 0;
-
-            gkRig.chest.rotation.x = K.chest;
-            gkRig.lArm.rotation.x = K.bracoX;
-            gkRig.rArm.rotation.x = K.bracoX;
-            gkRig.lElbow.rotation.x = K.cotovelo;
-            gkRig.rElbow.rotation.x = K.cotovelo;
-            // Braços vão abrindo do fecho na bola (bracoZ 0.05) para o
-            // equilíbrio, à medida que o gesto avança.
-            const abreBraco = 0.05 + 0.45 * normK;
-            gkRig.lArm.rotation.z = abreBraco;
-            gkRig.rArm.rotation.z = -abreBraco;
+            }
 
             gkRig.pelvis.rotation.x = 0;
             gkRig.pelvis.rotation.z = 0;

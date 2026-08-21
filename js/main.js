@@ -452,7 +452,14 @@ function animate(time) {
     if (!window.isPaused) {
         // GAME_SPEED é o ritmo base da partida (config.js); o speedMultiplier
         // continua a ser só o controlo 0.5x/1.0x/1.3x do painel.
-        Match.update(delta * window.speedMultiplier * GAME_SPEED);
+        if (window.speedMultiplier === 'frame') {
+            if (Match.stepNextFrame) {
+                Match.stepNextFrame = false;
+                Match.update((1/60) * GAME_SPEED);
+            }
+        } else {
+            Match.update(delta * window.speedMultiplier * GAME_SPEED);
+        }
     }
 
     if (TeamAI && TeamAI.blackboards) {

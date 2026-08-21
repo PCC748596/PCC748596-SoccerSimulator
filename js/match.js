@@ -259,9 +259,10 @@ const Match = {
                 this.offsideLineA.visible = this.showOffsideLines;
                 this.offsideLineB.visible = this.showOffsideLines;
             }
-            if (e.key === '1') this.setSpeed(0.5);
+            if (e.key === 'f' || e.key === 'F') this.setSpeed('frame');
+            if (e.key === '1') this.setSpeed(0.7);
             if (e.key === '2') this.setSpeed(1.0);
-            if (e.key === '3') this.setSpeed(1.3);
+            if (e.key === '3') this.setSpeed(1.2);
             if (e.key === '4') this.setCameraMode('center');
             if (e.key === '5') this.setCameraMode('sideline');
             if (e.key === '6') this.setCameraMode('topdown');
@@ -408,7 +409,7 @@ const Match = {
             this.discoBola = new THREE.Group();
 
             this.discoIcon = new THREE.Mesh(
-                new THREE.CircleGeometry(0.4675, 20),
+                new THREE.CircleGeometry(0.4675 * 0.75, 20),
                 new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })
             );
             this.discoIcon.rotation.x = -Math.PI / 2;
@@ -426,7 +427,7 @@ const Match = {
             let texS = new THREE.CanvasTexture(cvsS);
             
             this.discoSombra = new THREE.Mesh(
-                new THREE.PlaneGeometry(1.0, 1.0),
+                new THREE.PlaneGeometry(1.0 * 0.75, 1.0 * 0.75),
                 new THREE.MeshBasicMaterial({ map: texS, transparent: true, depthWrite: false })
             );
             this.discoSombra.rotation.x = -Math.PI / 2;

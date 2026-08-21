@@ -1621,7 +1621,7 @@ const CarryModel = {
     apontar para dentro da faixa, senão o
     jogador continuava a correr contra a linha sem nunca poder tocar.
     */
-    margemLinhaFundo: 6.0
+    margemLinhaFundo: 0.0
 };
 
 /*
