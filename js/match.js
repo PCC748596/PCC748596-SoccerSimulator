@@ -359,20 +359,109 @@ const Match = {
         const tatico = (window.cameraMode === 'topdown');
 
         if (!this.discoBola) {
-            this.discoBola = new THREE.Mesh(
-                new THREE.CircleGeometry(0.55, 20),
-                new THREE.MeshBasicMaterial({ color: 0xffffff })
+            let cvs = document.createElement('canvas');
+            cvs.width = 128; cvs.height = 128;
+            let ctx = cvs.getContext('2d');
+            
+            // Desenha a bola (branco com pentágonos pretos)
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(64, 64, 60, 0, Math.PI*2);
+            ctx.fill();
+            
+            ctx.fillStyle = '#1a1a1a';
+            // Pentágono central
+            ctx.beginPath();
+            for (let i=0; i<5; i++) {
+                let a = (Math.PI*2/5)*i - Math.PI/2;
+                let px = 64 + 18*Math.cos(a);
+                let py = 64 + 18*Math.sin(a);
+                if (i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+            // Pentágonos exteriores
+            for (let i=0; i<5; i++) {
+                let a = (Math.PI*2/5)*i - Math.PI/2;
+                let cx = 64 + 44*Math.cos(a);
+                let cy = 64 + 44*Math.sin(a);
+                ctx.beginPath();
+                for (let j=0; j<5; j++) {
+                    let a2 = (Math.PI*2/5)*j + a;
+                    let px = cx + 14*Math.cos(a2);
+                    let py = cy + 14*Math.sin(a2);
+                    if (j===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                ctx.fill();
+            }
+            
+            // Borda exterior
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = '#cccccc';
+            ctx.beginPath();
+            ctx.arc(64, 64, 60, 0, Math.PI*2);
+            ctx.stroke();
+
+            let tex = new THREE.CanvasTexture(cvs);
+
+            this.discoBola = new THREE.Group();
+
+            this.discoIcon = new THREE.Mesh(
+                new THREE.CircleGeometry(0.4675, 20),
+                new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })
             );
-            this.discoBola.rotation.x = -Math.PI / 2;
+            this.discoIcon.rotation.x = -Math.PI / 2;
+            this.discoBola.add(this.discoIcon);
+
+            // Sombra
+            let cvsS = document.createElement('canvas');
+            cvsS.width = 64; cvsS.height = 64;
+            let ctxS = cvsS.getContext('2d');
+            let grad = ctxS.createRadialGradient(32, 32, 0, 32, 32, 32);
+            grad.addColorStop(0, 'rgba(0,0,0,0.6)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctxS.fillStyle = grad;
+            ctxS.fillRect(0,0,64,64);
+            let texS = new THREE.CanvasTexture(cvsS);
+            
+            this.discoSombra = new THREE.Mesh(
+                new THREE.PlaneGeometry(1.0, 1.0),
+                new THREE.MeshBasicMaterial({ map: texS, transparent: true, depthWrite: false })
+            );
+            this.discoSombra.rotation.x = -Math.PI / 2;
+            this.discoSombra.position.y = -0.01;
+            this.discoBola.add(this.discoSombra);
+
             this.discoBola.visible = false;
             this.scene.add(this.discoBola);
         }
 
         this.discoBola.visible = tatico;
-        // Ligeiramente acima dos discos dos jogadores: a bola nunca fica
-        // escondida por baixo de quem a tem.
-        this.discoBola.position.set(this.ball.position.x, 0.06, this.ball.position.z);
         this.ball.visible = !tatico;
+
+        if (tatico) {
+            // BallPhysics.raio approx 0.11
+            let altura = Math.max(0, this.ball.position.y - 0.11); 
+            
+            // Aumenta o tamanho do ícone da bola em até 35% no ápice
+            let escalaBola = 1.0 + Math.min(0.35, altura * 0.08); 
+            this.discoIcon.scale.set(escalaBola, escalaBola, escalaBola);
+            
+            // Para dar ainda mais a sensação de 3D, a bola "sobe" um pouquinho para o Sul (Z+) no ecrã
+            // simulando a perspectiva da câmara que não é 100% perfeitamente a pino ou apenas a paralaxe.
+            this.discoIcon.position.z = altura * 0.3;
+
+            // Suaviza a sombra conforme a bola sobe
+            let opacidadeSombra = Math.max(0.15, 1.0 - altura * 0.15);
+            this.discoSombra.material.opacity = opacidadeSombra;
+            // E a sombra cresce ligeiramente e fica difusa
+            let escalaSombra = 1.0 + Math.min(0.5, altura * 0.1);
+            this.discoSombra.scale.set(escalaSombra, escalaSombra, escalaSombra);
+
+            // Mantemos o grupo na vertical da sombra
+            this.discoBola.position.set(this.ball.position.x, 0.06, this.ball.position.z);
+        }
     },
 
     updateCamera: function () {
@@ -750,6 +839,7 @@ const Match = {
         o painel de publicidade opaco em baixo e a rede de protecção
         translúcida por cima.
         */
+        /* (Removido visualmente a pedido do utilizador)
         {
             const BC = BarreiraCampo;
             const matPainel = new THREE.MeshStandardMaterial({
@@ -781,6 +871,7 @@ const Match = {
             paredeBarreira(largTotal, 0.4, 0, -BC.z);
             paredeBarreira(largTotal, 0.4, 0, BC.z);
         }
+        */
 
         seatMesh.instanceMatrix.needsUpdate = true;
         if (seatMesh.instanceColor) seatMesh.instanceColor.needsUpdate = true;

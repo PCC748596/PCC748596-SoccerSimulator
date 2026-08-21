@@ -541,6 +541,8 @@ function computeBlock(bb) {
         if (typeof TeamState !== 'undefined') {
             if (bb.state === TeamState.TRANSITION_OFFENSIVE) {
                 centro += 10;
+            } else if (bb.state === TeamState.OFFENSIVE) {
+                centro += 7;
             } else if (bb.state === TeamState.TRANSITION_DEFENSIVE || bb.state === TeamState.DEFENSIVE) {
                 centro -= 7;
             }
@@ -726,13 +728,18 @@ function computeBlock(bb) {
     (1:0.34) e `momentumX * (CAMPO_LARG/2) * BlockShape.bascular` (1:0.22) - e
     o bloco andava sempre muito menos do que a bola.
     */
+    // O utilizador pediu para atenuar o magnetismo (basculação) para 60, 70 e 80% 
+    // com base na configuração de Width Compactness (short, median, large).
+    const basculacao = (BlockShape.basculacao && BlockShape.basculacao[compac]) ? BlockShape.basculacao[compac] : 0.7;
+    
     let centroX = THREE.MathUtils.clamp(
-        bb.momentumX * (CAMPO_LARG / 2), -maxCentroX, maxCentroX);
+        bb.momentumX * (CAMPO_LARG / 2) * basculacao, -maxCentroX, maxCentroX);
 
-    // O centro não pode ficar para trás da linha da bola (lateralmente)
+    // Garante apenas que a BORDA do time cubra a bola, não que o CENTRO cubra a bola
+    // (Isso evitava que o time inteiro fosse atirado para a lateral)
     let bolaX = bb.ballX;
-    if (bolaX > 0 && centroX < bolaX) centroX = bolaX;
-    if (bolaX < 0 && centroX > bolaX) centroX = bolaX;
+    if (bolaX > 0 && (centroX + meiaLarg) < bolaX) centroX = bolaX - meiaLarg;
+    if (bolaX < 0 && (centroX - meiaLarg) > bolaX) centroX = bolaX + meiaLarg;
 
     // Sem basculacao extra por postura: o centro segue a bola e mais nada.
 
@@ -1391,7 +1398,7 @@ const PosicionamentoAI = {
             ? aplicarTectoDoEstilo(p, comInquietacao.z)
             : comInquietacao.z;
 
-        const tx = THREE.MathUtils.clamp(comInquietacao.x, -32, 32);
+        const tx = THREE.MathUtils.clamp(comInquietacao.x, -34, 34);
         const tz = THREE.MathUtils.clamp(comTecto, -50, 50);
 
         const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;

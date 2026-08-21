@@ -241,7 +241,7 @@ existe pela mesma razão nos estádios a sério.
 =============================================================================
 */
 const BarreiraCampo = {
-    x: (CAMPO_LARG / 2) + 3.0,
+    x: (CAMPO_LARG / 2),
     z: (CAMPO_COMP / 2) + 4.0,
     alturaPainel: 1.1,      // muro de publicidade, opaco
     alturaRede: 4.5,        // rede de protecção por cima, translúcida
@@ -545,6 +545,17 @@ const BlockShape = {
         short: 0.60,          // 60%
         median: 0.70,         // 70%
         large: 0.80           // 80%
+    },
+
+    /*
+    Basculação do bloco: que fracção da posição lateral da bola o centro do 
+    bloco acompanha (reduz o "magnetismo" para ancorar a equipa no centro).
+    Amarrado ao Width Compactness a pedido do utilizador.
+    */
+    basculacao: {
+        short: 0.60,
+        median: 0.70,
+        large: 0.80
     },
 
     /*
@@ -922,10 +933,10 @@ const PassModel = {
     */
     distMinLonga: 20.0,
     distAereo: 20.0,
-    elevacaoCurta: 28 * Math.PI / 180,
-    elevacaoLonga: 30 * Math.PI / 180,
-    elevacaoCruzamento: 26 * Math.PI / 180,
-    elevacaoLancamento: 28 * Math.PI / 180,
+    elevacaoCurta: 24 * Math.PI / 180,
+    elevacaoLonga: 25 * Math.PI / 180,
+    elevacaoCruzamento: 22 * Math.PI / 180,
+    elevacaoLancamento: 24 * Math.PI / 180,
 
     /*
     --- Os três tipos de bola alta ------------------------------------------
@@ -1948,7 +1959,7 @@ os N melhores candidatos (os mais perto da bola) e o resto vai ocupar a
 posição normal (MOVE_TO_POS), que é o que já devia acontecer.
 */
 const SupportModel = {
-    maxPorLado: 1,
+    maxPorLado: 0, // Desabilitado a pedido do utilizador (era 1)
 
     /*
     Distância à BOLA/CARRY a que o apoio se coloca.

@@ -1062,7 +1062,7 @@ class PlayerFSM {
 
                         if (bloqueado) {
                             // Bola desviada, curta e fraca — não mira a baliza.
-                            pow = 5.0 + Math.random() * 3.0;
+                            pow = 4.0 + Math.random() * 2.4;
                             alvoX = p.model.position.x + (Math.random() - 0.5) * 4.0;
                             alvoY = 0.3;
                         } else {
@@ -1071,7 +1071,7 @@ class PlayerFSM {
                             // perto do poste (ângulo difícil); perder deixa mais central.
                             const venceuGK = gkDef ? venceuDuelo(p.skillFor('TEC'), gkDef.skillFor('GK'), 0.5) : true;
                             const cantoC = venceuGK ? maxC * 0.9 : maxC * 0.5;
-                            pow = 22.0 + ((p.skillFor('TEC') - 50) / 50) * 16.0;
+                            pow = (22.0 + ((p.skillFor('TEC') - 50) / 50) * 16.0) * 0.8;
                             alvoX = (Math.random() > 0.5 ? 1 : -1) * cantoC;
                             alvoY = Math.random() > 0.5 ? 2.0 : 0.4;
                         }

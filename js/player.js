@@ -273,6 +273,7 @@ class FootballPlayer {
 
             _line1.set(this.model.position, optPos);
             let minOppDist = 999;
+            let distMarcador = 999;
             for (let i = 0; i < opponents.length; i++) {
                 let opp = opponents[i];
                 if (opp.role === 'gk') continue;
@@ -281,12 +282,31 @@ class FootballPlayer {
                 if (d < minOppDist) {
                     minOppDist = d;
                 }
+                let dMarc = optPos.distanceTo(opp.model.position);
+                if (dMarc < distMarcador) {
+                    distMarcador = dMarc;
+                }
             }
 
             if (minOppDist < safetyLimit) continue;
 
             let score = 100;
             score += minOppDist * 10; 
+            
+            let inDefensiveZone = (ownZ * dirZ < -10) || (optPos.z * dirZ < -10); 
+            let isDefender = (this.role === 'def' || this.role === 'gk' || opt.role === 'def');
+            
+            if (distMarcador >= 4.0) {
+                score += 300;
+            } else if (distMarcador >= 2.5) {
+                score += 100;
+            } else {
+                if (inDefensiveZone || isDefender) {
+                    score -= 550;
+                } else {
+                    score -= 165;
+                }
+            }
 
             let progression = (optPos.z - ownZ) * dirZ;
             if (progression > 0) {
@@ -595,7 +615,7 @@ class FootballPlayer {
             const distReal = this.model.position.distanceTo(opt.model.position);
 
             // Distância máxima baseada no skill de passe (skill * 0.6)
-            let maxDist = Math.max(10, skillVal * 0.6); 
+            let maxDist = Math.max(10, skillVal * 0.6);
             if (dist > maxDist || dist < 2.0 || distReal < 3.0) continue;
 
             // Evitar passes para fora do campo
@@ -603,6 +623,7 @@ class FootballPlayer {
 
             _line1.set(this.model.position, optPos);
             let minOppDist = 999, oppMaisPerto = null;
+            let distMarcador = 999;
             for (let i = 0; i < opponents.length; i++) {
                 let opp = opponents[i];
                 if (opp.role === 'gk') continue;
@@ -611,6 +632,10 @@ class FootballPlayer {
                 if (d < minOppDist) {
                     minOppDist = d;
                     oppMaisPerto = opp;
+                }
+                let dMarc = optPos.distanceTo(opp.model.position);
+                if (dMarc < distMarcador) {
+                    distMarcador = dMarc;
                 }
             }
 
@@ -643,8 +668,28 @@ class FootballPlayer {
             */
             let score = notaDistanciaPasse(dist, circulacao, verticalidade);
 
-            // Bónus por estar livre de marcação
+            // Bónus por linha de passe livre (antigo)
             score += Math.min(50, Math.max(0, (minOppDist - safetyLimit) * 8));
+
+            // Bónus/Penalidade ABSOLUTA pela marcação do RECEBEDOR
+            // Um jogador livre tem que SEMPRE ganhar de um marcado
+            let inDefensiveZone = (ownZ * dirZ < -10) || (optPos.z * dirZ < -10); 
+            let isDefender = (this.role === 'def' || this.role === 'gk' || opt.role === 'def');
+            
+            if (distMarcador >= 4.0) {
+                // Muito espaço, bónus esmagador para garantir que a bola vá para ele (ex: pontas)
+                score += 300;
+            } else if (distMarcador >= 2.5) {
+                // Algum espaço
+                score += 100;
+            } else {
+                // Marcado de perto (distMarcador < 2.5). Penalização severa.
+                if (inDefensiveZone || isDefender) {
+                    score -= 550; // Erro fatal na defesa (aumentada em 10%)
+                } else {
+                    score -= 165; // Aumentada em 10%
+                }
+            }
 
             // Bónus de prioridade de passes (Triangulações)
             let priorityBonus = 0;
@@ -1887,11 +1932,46 @@ class FootballPlayer {
         if (!this.discoTatico) {
             this.discoTatico = new THREE.Mesh(
                 new THREE.CircleGeometry(0.85, 24),
-                new THREE.MeshBasicMaterial({ color: this.corCamisa })
+                new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })
             );
             this.discoTatico.rotation.x = -Math.PI / 2;
             this.discoTatico.visible = false;
             Match.scene.add(this.discoTatico);
+        }
+
+        if (this.discoTaticoTexNum !== num || this.discoTaticoTexTeam !== this.team) {
+            let dtCanvas = document.createElement('canvas');
+            dtCanvas.width = 128; dtCanvas.height = 128;
+            let dtCtx = dtCanvas.getContext('2d');
+            
+            let isTeamA = (this.team === 'TeamA');
+            let borderColor = isTeamA ? '#000000' : '#ffffff';
+            let textColor = isTeamA ? '#000000' : '#ffffff';
+            
+            dtCtx.fillStyle = this.corCamisa;
+            dtCtx.beginPath();
+            dtCtx.arc(64, 64, 58, 0, Math.PI * 2);
+            dtCtx.fill();
+            
+            dtCtx.lineWidth = 8;
+            dtCtx.strokeStyle = borderColor;
+            dtCtx.stroke();
+            
+            dtCtx.fillStyle = textColor;
+            dtCtx.font = 'bold 54px sans-serif';
+            dtCtx.textAlign = 'center';
+            dtCtx.textBaseline = 'middle';
+            dtCtx.save();
+            dtCtx.translate(64, 64);
+            dtCtx.rotate(-Math.PI / 2);
+            dtCtx.fillText(num, 0, 0);
+            dtCtx.restore();
+            
+            let dtTex = new THREE.CanvasTexture(dtCanvas);
+            this.discoTatico.material.map = dtTex;
+            this.discoTatico.material.needsUpdate = true;
+            this.discoTaticoTexNum = num;
+            this.discoTaticoTexTeam = this.team;
         }
 
         if (!this.btTargetGroup) {
