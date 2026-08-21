@@ -212,7 +212,7 @@ const BallPhysics = {
     cd: 0.25,               // coeficiente de arrasto
     restituicao: 0.60,      // ressalto vertical em relva
     atritoRessalto: 0.75,   // perda horizontal em cada ressalto
-    atritoRolamento: 0.38,  // μ de rolamento em relva (real: 0.3–0.5)
+    atritoRolamento: 0.50,  // μ de rolamento em relva (aumentado para passes mais fortes na saída)
     vMinRessalto: 0.6,      // abaixo disto não ressalta, assenta
     vMinRolar: 0.25,        // abaixo disto pára de vez
 
@@ -1622,9 +1622,9 @@ const CarryModel = {
     distanciaMax: 16.0,
 
     // Toques de condução — distância do toque depende do espaço à frente
-    touchLong: 3.5,       // toque longo (campo aberto, adversário > 15m)
-    touchMedium: 2.0,     // toque médio (adversário entre 8-15m)
-    touchShort: 1.2,      // toque curto (adversário perto < 8m)
+    touchLong: 2.8,       // toque longo (campo aberto, adversário > 15m)
+    touchMedium: 1.6,     // toque médio (adversário entre 8-15m)
+    touchShort: 0.96,     // toque curto (adversário perto < 8m)
     touchPower: 8.0,      // força base do toque (m/s)
     touchCooldown: 0.4,   // tempo mínimo entre toques (seg)
     touchMaxWait: 0.18,   // espera máx. pela janela da passada antes de forçar o toque (seg)
@@ -2703,10 +2703,28 @@ const Tatics = {
     copiada à mão, dentro de findPassTarget (player.js). Agora é uma só.
     */
     sectorDeX: function (x, dirZ) {
-        const xAtk = x * dirZ;
-        if (xAtk < -10) return 'esq';
-        if (xAtk > 10) return 'dir';
+        // Normaliza de -1 a 1 baseado na largura do campo
+        const normX = (x * dirZ) / (CAMPO_LARG / 2);
+        if (normX < -0.4) return 'esq';
+        if (normX > 0.4) return 'dir';
         return 'cen';
+    },
+
+    /*
+    Retorna a prioridade (0 a 1) do setor, baseada em quantos estão ativos.
+    */
+    prioridadeSector: function(sector) {
+        const activeCount = this.setores.length;
+        if (activeCount === 0 || activeCount === 3) return 0.333;
+        
+        const isActive = this.setores.includes(sector);
+        if (activeCount === 1) {
+            return isActive ? 0.60 : 0.20;
+        }
+        if (activeCount === 2) {
+            return isActive ? 0.40 : 0.20;
+        }
+        return 0.333;
     },
 
     /*
@@ -2724,19 +2742,18 @@ const Tatics = {
         if (!activos || activos.length === 0) return 0;
         if (activos.indexOf(this.sectorDeX(x, dirZ)) >= 0) return 0;
 
-        const xAtk = x * dirZ;
+        const normX = (x * dirZ) / (CAMPO_LARG / 2);
         let melhor = Infinity;
         for (const s of activos) {
-            // Distância à BORDA do sector activo, não ao seu centro.
+            // Distância à BORDA do sector activo em escala normalizada [0..1]
             let d;
-            if (s === 'esq') d = xAtk - (-10);
-            else if (s === 'dir') d = 10 - xAtk;
-            else d = Math.abs(xAtk) - 10;
+            if (s === 'esq') d = normX - (-0.4);
+            else if (s === 'dir') d = 0.4 - normX;
+            else d = Math.abs(normX) - 0.4;
             if (d < melhor) melhor = d;
         }
 
-        const meiaLarg = CAMPO_LARG / 2;
-        return Math.max(0, Math.min(1, melhor / meiaLarg));
+        return Math.max(0, Math.min(1, melhor));
     },
 
     update: function () {

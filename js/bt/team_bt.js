@@ -579,12 +579,10 @@ function computeBlock(bb) {
         centro = 0;
     } else if (isGoalKick && bb.isAttacking) {
         /*
-        No próprio tiro de meta o time sobe: 10 m de base mais o avancoTiroMeta,
-        para dar espaço ao guarda-redes em vez de lhe ficar em cima. O time que
-        defende afasta-se a mesma folga, mas para o LADO OPOSTO — ver o bloco
-        no fim desta função, depois dos travões.
+        No próprio tiro de meta, o centro fica a 15 metros da linha da grande área.
         */
-        centro = (bb.bolaZSuave * bb.dir) + 10 + ment.blocoZ + BlockShape.avancoTiroMeta;
+        const linhaArea = (-CAMPO_COMP / 2) + 16.5;
+        centro = linhaArea + 15;
     } else if (gkHoldingBall) {
         /*
         O nosso guarda-redes tem a bola nas mãos: o bloco sobe e dá-lhe espaço
@@ -721,26 +719,22 @@ function computeBlock(bb) {
     }
 
     /*
-    Tiro de meta adversário: o mesmo raciocínio, e pela mesma razão corre aqui
-    em baixo. O ramo do centro pôs este bloco no meio-campo (centro = 0); esta
-    folga afasta-o mais BlockShape.avancoTiroMeta da baliza onde a bola está,
-    tanto quanto o time que bate sobe do outro lado.
+    Tiro de meta adversário foi removido daqui para garantir que o time que defende 
+    permaneça estritamente no meio-campo (centro = 0), sem deslocamentos extras.
     */
-    if (defendingGoalKick) {
-        z0 -= BlockShape.avancoTiroMeta;
-        z1 -= BlockShape.avancoTiroMeta;
-    }
 
     /*
-    As linhas de fundo NÃO tocam no rectângulo — nem o empurram nem o cortam.
-
-    Empurrá-lo tirava o centro de cima da bola (com a bola junto à linha de
-    fundo, o bloco inteiro recuava meia profundidade); cortá-lo encolhia-o, e
-    um bloco que encolhe junta as linhas umas nas outras. O rectângulo é a
-    forma que a equipa QUER ter, e tem sempre o mesmo tamanho; quem não pode
-    sair do campo é o jogador, e o alvo de cada um já é limitado ao campo no
-    fim do PosicionamentoAI.tickFinal.
+    LIMITES: as LINHAS DE FUNDO. O rectângulo desloca-se inteiro
+    para dentro do campo e NUNCA muda de tamanho, evitando a deformação.
     */
+    const maxZ = CAMPO_COMP / 2;
+    if (z0 < -maxZ) {
+        z1 += (-maxZ - z0);
+        z0 = -maxZ;
+    } else if (z1 > maxZ) {
+        z0 -= (z1 - maxZ);
+        z1 = maxZ;
+    }
 
     /* --- largura -------------------------------------------------------- */
 
@@ -748,23 +742,21 @@ function computeBlock(bb) {
     const meiaLarg = largura / 2;
 
     /*
-    LARGURA: o centro é o X DA BOLA, e a linha lateral não lhe toca — mesma
-    regra do eixo Z.
-
-    Estava ao contrário: o centro era limitado a `borda - meiaLarg` para o
-    rectângulo nunca sair do campo. Com a compacidade normal isso dá ±15 m e a
-    bola vai a ±33 — o centro parava a meio caminho e o bloco não acompanhava
-    a bola nas alas, que é metade do problema de "não usa os lados do campo".
-
-    Cortar o rectângulo na linha em vez de o empurrar resolvia o centro mas
-    encolhia o bloco, e medido dava a defesa emboladas: quatro defesas com os
-    alvos a menos de 3 m uns dos outros em 95% do tempo. O rectângulo mantém
-    sempre o tamanho; a parte que fica fora do campo é aparada no alvo de cada
-    jogador, um a um.
+    LARGURA: empurra o bloco para dentro do campo nas laterais
+    para que fique limitado e não se deforme.
     */
     const centroX = bb.bolaXSuave;
-    const x0 = centroX - meiaLarg;
-    const x1 = centroX + meiaLarg;
+    let x0 = centroX - meiaLarg;
+    let x1 = centroX + meiaLarg;
+
+    const maxX = CAMPO_LARG / 2;
+    if (x0 < -maxX) {
+        x1 += (-maxX - x0);
+        x0 = -maxX;
+    } else if (x1 > maxX) {
+        x0 -= (x1 - maxX);
+        x1 = maxX;
+    }
 
     bb.bloco = {
         x0: x0,

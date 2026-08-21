@@ -753,9 +753,8 @@ class FootballPlayer {
 
             // Setores
             let optSec = getSectorOfX(optPos.x);
-            if (Tatics.setores.includes(optSec)) {
-                score += 30 * (teamStyle ? teamStyle.corredores : 1.0);
-            }
+            let secPriority = typeof Tatics.prioridadeSector === 'function' ? Tatics.prioridadeSector(optSec) : 0;
+            score += (secPriority * 100) * (teamStyle ? teamStyle.corredores : 1.0);
 
             // Progressão
             let progression = (optPos.z - ownZ) * dirZ;
@@ -1500,6 +1499,24 @@ class FootballPlayer {
         desired.normalize();
         if (brakingDist > 0 && d < brakingDist) desired.multiplyScalar(maxSpeed * (d / brakingDist));
         else desired.multiplyScalar(maxSpeed);
+
+        const bb = (typeof TeamAI !== 'undefined') ? TeamAI.get(this.team) : null;
+        if (bb && target === this.dynamicTarget && this.role !== 'gk' && typeof TeamState !== 'undefined') {
+            const isTransOff = bb.state === TeamState.TRANSITION_OFFENSIVE;
+            const isTransDef = bb.state === TeamState.TRANSITION_DEFENSIVE;
+            const dz = target.z - this.model.position.z;
+
+            // Na transição ofensiva, se o alvo está atrás do jogador, move 1/3 para a frente
+            if (isTransOff && (dz * this.dirZ) < -0.5) {
+                desired.z = this.dirZ * (maxSpeed / 3.0);
+                desired.x *= 0.33; 
+            } 
+            // Na transição defensiva, se o alvo está à frente do jogador, move 1/3 para trás
+            else if (isTransDef && (dz * this.dirZ) > 0.5) {
+                desired.z = -this.dirZ * (maxSpeed / 3.0);
+                desired.x *= 0.33;
+            }
+        }
 
         // Corpo vira para a direcção do movimento (ou para a bola ao defender/apoiar)
         let lookTarget = target;
