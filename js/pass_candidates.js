@@ -127,30 +127,22 @@ const PassCandidates = {
             const mx = mate.model.position.x, mz = mate.model.position.z;
 
             /*
-            FRENTE = para onde o jogador está VIRADO.
+            FRENTE = direcção do movimento, ou direcção de ataque se parado.
 
-            Duas versões erradas antes desta:
-
-            1. `mate.dirZ` — o eixo de ataque da equipa (±Z). O leque
-               apontava para a baliza adversária viesse o jogador de onde
-               viesse, de través com a corrida dele.
-            2. a velocidade — certa a correr, mas nula quem está parado, e
-               aí caía outra vez no `dirZ`: corpo virado para um lado, os
-               49 pontos para o outro.
-
-            A orientação do modelo resolve os dois casos de uma vez. Não é
-            um terceiro critério: o `steerArrive` roda o corpo para o alvo
-            do movimento todos os frames, por isso a correr ela JÁ é a
-            direcção da corrida — e parado continua a dizer alguma coisa
-            (para onde ele olha), que é o que a velocidade não faz.
-
-            Frente local do modelo é +Z: o steerArrive monta a rotação com
-            `lookAt(pos, pos*2 - alvo)`, cujo eixo +Z fica a apontar ao
-            alvo. Ver player.js.
+            A versão anterior usava `mate.model.quaternion`, mas o `steerArrive` 
+            agora roda o corpo do jogador para olhar para a bola quando está em 
+            AFT_SUPPORT. Isso fazia o leque apontar a 90 graus (para a bola) 
+            e os passes no vazio iam de lado!
             */
-            _vFwd.set(0, 0, 1).applyQuaternion(mate.model.quaternion);
-            _vFwd.y = 0;
-            let fx = _vFwd.x, fz = _vFwd.z;
+            let fx, fz;
+            const velLen = Math.hypot(mate.velocity.x, mate.velocity.z);
+            if (velLen > 0.5) {
+                fx = mate.velocity.x;
+                fz = mate.velocity.z;
+            } else {
+                fx = 0;
+                fz = mate.dirZ;
+            }
             const lenF = Math.hypot(fx, fz);
             if (lenF > 0.001) { fx /= lenF; fz /= lenF; } else { fx = 0; fz = mate.dirZ; }
 

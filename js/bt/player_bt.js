@@ -532,7 +532,9 @@ function actPass(ctx) {
 
     const E = PassTypeModel.escolha;
     const escolha = PassTypes.escolher(p, ctx.passTarget);
-    const boa = escolha && escolha.mate && escolha.nota >= E.notaMinima;
+    // Se está sob pressão na defesa, a nota mínima é ignorada para forçar o passe e evitar perder a bola
+    const naDefesaSobPressao = ctx.underPressure && (p.model.position.z * p.dirZ < 0);
+    const boa = escolha && escolha.mate && (escolha.nota >= E.notaMinima || naDefesaSobPressao);
 
     if (boa) {
         p.carryRecuo = false;
@@ -590,6 +592,7 @@ function podeDriblar(ctx) {
     const tec = p.skillFor ? p.skillFor('TEC') : ctx.skillTec;
     if (tec < 75) return false;
     if (p.fsm.currentState === 'DRIBBLE') return false;
+    if (p.model.position.z * p.dirZ < 0) return false; // Na defesa, prioriza o passe em vez do drible
 
     // Verificar se há adversário próximo à sua frente bloqueando a passagem
     let oppProximo = null;
@@ -1312,6 +1315,9 @@ function actHoldPosition(ctx) {
     } else if (p.isCovering) {
         p.apoioAtivo = false;
         p.fsm.changeState('BLOCKING');
+    } else if (ctx.bb && !ctx.bb.isAttacking) {
+        p.apoioAtivo = false;
+        p.fsm.changeState('BLOCKING'); // Movimenta-se de frente para a bola ao defender
     } else {
         p.apoioAtivo = false;
         p.fsm.changeState('MOVE_TO_POS');

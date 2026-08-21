@@ -2704,9 +2704,10 @@ const Tatics = {
     */
     sectorDeX: function (x, dirZ) {
         // Normaliza de -1 a 1 baseado na largura do campo
+        // normX < 0 significa lado direito do jogador (RB tem fData.x negativo)
         const normX = (x * dirZ) / (CAMPO_LARG / 2);
-        if (normX < -0.4) return 'esq';
-        if (normX > 0.4) return 'dir';
+        if (normX < -0.4) return 'dir';
+        if (normX > 0.4) return 'esq';
         return 'cen';
     },
 

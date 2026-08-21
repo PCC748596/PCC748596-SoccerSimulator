@@ -957,7 +957,7 @@ class FootballPlayer {
     */
     puntBall() {
         const gGrav = BallPhysics.gravidade;
-        const elev = THREE.MathUtils.degToRad(25 + Math.random() * 25);
+        const elev = THREE.MathUtils.degToRad((25 + Math.random() * 25) / 3);
         const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 20);
 
         // Alcance pretendido: chutão de meio-campo, com alguma variação. Aumentado em 20%.
@@ -1506,15 +1506,17 @@ class FootballPlayer {
             const isTransDef = bb.state === TeamState.TRANSITION_DEFENSIVE;
             const dz = target.z - this.model.position.z;
 
-            // Na transição ofensiva, se o alvo está atrás do jogador, move 1/3 para a frente
+            const trotVel = typeof GaitModel !== 'undefined' ? GaitModel.trote.vel : 4.5;
+            const trotScale = trotVel / maxSpeed;
+            // Na transição ofensiva, se o alvo está atrás do jogador, move a trote para a frente
             if (isTransOff && (dz * this.dirZ) < -0.5) {
-                desired.z = this.dirZ * (maxSpeed / 3.0);
-                desired.x *= 0.33; 
+                desired.z = this.dirZ * trotVel;
+                desired.x *= trotScale; 
             } 
-            // Na transição defensiva, se o alvo está à frente do jogador, move 1/3 para trás
+            // Na transição defensiva, se o alvo está à frente do jogador, move a trote para trás
             else if (isTransDef && (dz * this.dirZ) > 0.5) {
-                desired.z = -this.dirZ * (maxSpeed / 3.0);
-                desired.x *= 0.33;
+                desired.z = -this.dirZ * trotVel;
+                desired.x *= trotScale;
             }
         }
 
@@ -3164,7 +3166,7 @@ class FootballPlayer {
     */
     kickFromGround() {
         const gGrav = BallPhysics.gravidade;
-        const elev = THREE.MathUtils.degToRad(25 + Math.random() * 25);
+        const elev = THREE.MathUtils.degToRad((25 + Math.random() * 25) / 3);
         const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 20);
 
         const alcance = 38 + Math.random() * 16;

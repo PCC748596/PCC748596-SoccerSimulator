@@ -688,8 +688,17 @@ function computeBlock(bb) {
         */
         const z0Novo = recuoDaUltimaLinha(z0, maisRecuadoDir, distMarca, pisoDir, tectoDir);
         if (z0Novo !== z0) {
+            const recuo = z0 - z0Novo;
             z0 = z0Novo;
-            z1 = z0 + profundidade;
+            if (recuo > 0) {
+                // z0 foi forçado para trás (ex: tectoDir da Linha Defensiva ou marcação profunda).
+                // O bloco ESTICA em vez de puxar os atacantes 30 metros para trás e abandonar a bola.
+                // Movemos z1 apenas 20% do recuo para manter alguma compactação sem desconectar da bola.
+                z1 -= recuo * 0.2;
+            } else {
+                // z0 avançou (marcação alta). O bloco move-se inteiro para a frente.
+                z1 = z0 + profundidade;
+            }
         }
     }
 
@@ -738,7 +747,14 @@ function computeBlock(bb) {
 
     /* --- largura -------------------------------------------------------- */
 
-    const largura = CAMPO_LARG * B.amplitude[compac];
+    let largura = CAMPO_LARG * B.amplitude[compac];
+    
+    // Se a bola estiver no corredor central, reduz o width compactness em 10%
+    const setorBola = Tatics.sectorDeX(bb.bolaXSuave, bb.dir);
+    if (setorBola === 'cen') {
+        largura *= 0.90;
+    }
+    
     const meiaLarg = largura / 2;
 
     /*
@@ -1206,10 +1222,15 @@ function aplicarMarcacaoPosicional(p, bb, targetX, targetZ) {
     const distancia = M.distanciaPorPressao[Tatics.pressaoDefensiva]
         ?? M.distanciaPorPressao.balanced;
     let biasMax = M.biasMaxPara(targetZ * p.dirZ);
-    if (p.pos === 'CB') biasMax *= 0.3;
+    // Permite que os CBs fechem mais a passagem (antes era 0.3)
+    if (p.pos === 'CB') biasMax *= 0.7;
+
+    const refVel = p.marcRef.velocity;
+    const px = p.marcRef.model.position.x + (refVel ? refVel.x * 0.5 : 0);
+    const pz = p.marcRef.model.position.z + (refVel ? refVel.z * 0.5 : 0);
 
     return pontoDeMarcacao(targetX, targetZ,
-        p.marcRef.model.position.x, p.marcRef.model.position.z,
+        px, pz,
         p.ownGoalZ, distancia, biasMax);
 }
 

@@ -332,8 +332,8 @@ function velocidadeRasteiraPara(dist, vChegada) {
     const alvo = (k * vAlvo * vAlvo + atrito) * Math.exp(2 * k * dist) - atrito;
 
     // Tecto: acima disto o passe rasteiro vira disparo.
-    let initialSpeed = Math.sqrt(Math.max(0, alvo / k)) * 1.10;
-    return Math.min(20.35, initialSpeed);
+    let initialSpeed = Math.sqrt(Math.max(0, alvo / k)) * 1.30;
+    return Math.min(24.0, initialSpeed);
 }
 
 /*
