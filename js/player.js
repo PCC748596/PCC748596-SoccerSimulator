@@ -978,6 +978,7 @@ class FootballPlayer {
         this.hasBall = false;
         this.touchLock = BallControl.touchLock;
         Match.ballCarrier = null;
+        if (typeof EventBus !== 'undefined') EventBus.emit('GK_RELEASE_BALL', { team: this.team, gk: this });
         // Ninguém é destinatário nomeado de um chutão — a bola vai para o
         // espaço, quem lá chegar disputa (ver resolveBallContact).
         Match.intendedReceiver = null;
@@ -1500,25 +1501,7 @@ class FootballPlayer {
         if (brakingDist > 0 && d < brakingDist) desired.multiplyScalar(maxSpeed * (d / brakingDist));
         else desired.multiplyScalar(maxSpeed);
 
-        const bb = (typeof TeamAI !== 'undefined') ? TeamAI.get(this.team) : null;
-        if (bb && target === this.dynamicTarget && this.role !== 'gk' && typeof TeamState !== 'undefined') {
-            const isTransOff = bb.state === TeamState.TRANSITION_OFFENSIVE;
-            const isTransDef = bb.state === TeamState.TRANSITION_DEFENSIVE;
-            const dz = target.z - this.model.position.z;
 
-            const trotVel = typeof GaitModel !== 'undefined' ? GaitModel.trote.vel : 4.5;
-            const trotScale = trotVel / maxSpeed;
-            // Na transição ofensiva, se o alvo está atrás do jogador, move a trote para a frente
-            if (isTransOff && (dz * this.dirZ) < -0.5) {
-                desired.z = this.dirZ * trotVel;
-                desired.x *= trotScale; 
-            } 
-            // Na transição defensiva, se o alvo está à frente do jogador, move a trote para trás
-            else if (isTransDef && (dz * this.dirZ) > 0.5) {
-                desired.z = -this.dirZ * trotVel;
-                desired.x *= trotScale;
-            }
-        }
 
         // Corpo vira para a direcção do movimento (ou para a bola ao defender/apoiar)
         let lookTarget = target;
@@ -3154,6 +3137,8 @@ class FootballPlayer {
         } else {
             this.puntBall();
         }
+        
+        if (typeof EventBus !== 'undefined') EventBus.emit('GK_RELEASE_BALL', { team: this.team, gk: this });
     }
 
     /*

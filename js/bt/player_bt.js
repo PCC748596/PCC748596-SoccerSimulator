@@ -1312,12 +1312,27 @@ function actHoldPosition(ctx) {
     } else if (p.markingTarget) {
         p.apoioAtivo = false;
         p.fsm.changeState('MARKING');
+    } else if (ctx.bb && ctx.bb.blocker === p) {
+        p.apoioAtivo = false;
+        
+        // Calcular o alvo do blocker (projeção perpendicular na linha bola-gol)
+        const goalPos = new THREE.Vector3(0, 0, ctx.bb.ownGoalZ);
+        const ballPos = Match.ball.position;
+        const ballToGoal = new THREE.Vector3().subVectors(goalPos, ballPos);
+        ballToGoal.y = 0;
+        const dirBallToGoal = ballToGoal.normalize();
+        
+        const ballToPlayer = new THREE.Vector3().subVectors(p.model.position, ballPos);
+        ballToPlayer.y = 0;
+        
+        const projLen = ballToPlayer.dot(dirBallToGoal);
+        const projPos = new THREE.Vector3().copy(ballPos).add(dirBallToGoal.multiplyScalar(projLen));
+        
+        p.dynamicTarget.copy(projPos);
+        p.fsm.changeState('BLOCKING');
     } else if (p.isCovering) {
         p.apoioAtivo = false;
         p.fsm.changeState('BLOCKING');
-    } else if (ctx.bb && !ctx.bb.isAttacking) {
-        p.apoioAtivo = false;
-        p.fsm.changeState('BLOCKING'); // Movimenta-se de frente para a bola ao defender
     } else {
         p.apoioAtivo = false;
         p.fsm.changeState('MOVE_TO_POS');

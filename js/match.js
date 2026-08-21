@@ -176,6 +176,14 @@ const Match = {
         this.passLineVisual.visible = false;
         this.scene.add(this.passLineVisual);
 
+        this.goalLineVisual = new THREE.Line(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 1 })
+        );
+        this.goalLineVisual.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+        this.goalLineVisual.visible = false;
+        this.scene.add(this.goalLineVisual);
+
         this.showOffsideLines = false;
 
         this.createTeams();
@@ -1329,6 +1337,23 @@ const Match = {
 
         this.players.forEach(p => p.update(dt));
         this.opponents.forEach(p => p.update(dt));
+
+        if (window.showPlayerBT) {
+            let attackingTeam = this.possessionTeam || this.lastTouchedTeam || 'TeamA';
+            let dirZ = 1;
+            if (this.players.length > 0) {
+                dirZ = (attackingTeam === 'TeamA') ? this.players[0].dirZ : this.opponents[0].dirZ;
+            }
+            let targetGoalZ = dirZ * (CAMPO_COMP / 2);
+            
+            const posAttr = this.goalLineVisual.geometry.attributes.position;
+            posAttr.setXYZ(0, this.ball.position.x, 0.05, this.ball.position.z);
+            posAttr.setXYZ(1, 0, 0.05, targetGoalZ);
+            posAttr.needsUpdate = true;
+            this.goalLineVisual.visible = true;
+        } else {
+            if (this.goalLineVisual) this.goalLineVisual.visible = false;
+        }
 
         if (this.showOffsideLines) {
             let outfieldA = this.players.filter(p => p.role !== 'gk');

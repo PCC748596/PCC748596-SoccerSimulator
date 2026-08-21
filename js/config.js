@@ -1024,7 +1024,7 @@ const PassModel = {
         chanceArco: 0.5,
         bandas: [
             { max: 10.0, alturaMax: 1.0 },
-            { max: 20.0, alturaMax: 2.2 },
+            { max: 20.0, alturaMax: 1.5 },
             { max: 30.0, alturaMax: 4.2 }
         ],
         anguloLongoMin: 32 * Math.PI / 180,

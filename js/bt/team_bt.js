@@ -85,6 +85,7 @@ class TeamBlackboard {
         this.advanceFactor = 0.0;
 
         this.chaser = null;
+        this.blocker = null;
         this.intercetor = null;   // quem vai cortar a bola solta (pickIntercetor)
         this.carrier = null;      // portador da bola desta equipa
         this.oppCarrier = null;   // portador adversário
@@ -105,6 +106,8 @@ class TeamBlackboard {
         // updateMomentum e seguirBolaZ em utils.js).
         this.bolaZSuave = 0;
         this.bolaXSuave = 0;
+        this.maisRecuadoDirSuaveA = null;  // adversário mais recuado suavizado (TeamA)
+        this.maisRecuadoDirSuaveB = null;  // adversário mais recuado suavizado (TeamB)
         this.congestion = { esq: 0, centro: 0, dir: 0 };
         this.aggression = 0.5;                        // 0..1, ver computeAggression
 
@@ -261,6 +264,56 @@ salta para a bola, o outro para trás, o alvo de posicionamento de ambos
 salta com eles. Em vez disso, quem já é chaser só perde o papel se cair
 para fora das 3 melhores opções deste frame.
 */
+/*
+O blocker é o único jogador da equipe focado em interceptar a linha da bola 
+para o centro do gol defendido, movendo-se perpendicularmente a essa linha.
+*/
+function pickBlocker(bb) {
+    if (bb.isAttacking) { bb.blocker = null; return; }
+
+    const goalPos = new THREE.Vector3(0, 0, bb.ownGoalZ);
+    const ballPos = Match.ball.position;
+
+    const ballToGoal = new THREE.Vector3().subVectors(goalPos, ballPos);
+    ballToGoal.y = 0;
+    const distBallToGoal = ballToGoal.length();
+    if (distBallToGoal < 0.1) { bb.blocker = null; return; }
+
+    const dirBallToGoal = ballToGoal.clone().normalize();
+
+    let bestScore = Infinity;
+    let bestBlocker = null;
+
+    for (const p of bb.own) {
+        if (!p || p.role === 'gk' || p === bb.chaser) continue;
+
+        const ballToPlayer = new THREE.Vector3().subVectors(p.model.position, ballPos);
+        ballToPlayer.y = 0;
+
+        const projLen = ballToPlayer.dot(dirBallToGoal);
+
+        // Se o jogador estiver projetado entre a bola e o gol
+        if (projLen > 0 && projLen < distBallToGoal) {
+            // Distância perpendicular à linha do chute
+            const projPos = new THREE.Vector3().copy(ballPos).add(dirBallToGoal.clone().multiplyScalar(projLen));
+            const distToLine = p.model.position.distanceTo(projPos);
+            
+            // Distância ao centro do corredor central (x = 0)
+            const distToCenter = Math.abs(p.model.position.x);
+
+            // Score heurístico (quanto menor, melhor)
+            const score = distToLine + (distToCenter * 0.5);
+
+            if (score < bestScore) {
+                bestScore = score;
+                bestBlocker = p;
+            }
+        }
+    }
+
+    bb.blocker = bestBlocker;
+}
+
 function pickChaser(bb) {
     /*
     Só a equipa que NÃO tem a bola persegue. Sem isto, pickChaser corria
@@ -673,6 +726,22 @@ function computeBlock(bb) {
             if (maisRecuadoDir === null || oDir < maisRecuadoDir) maisRecuadoDir = oDir;
         }
 
+        // Suaviza o atacante mais recuado para evitar teletransporte do
+        // rectângulo quando um passe longo muda essa referência de golpe.
+        const dtMatch = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
+        const reposta = Match.state !== 'PLAY';
+        const key = 'maisRecuadoDirSuave' + bb.team;
+        if (maisRecuadoDir !== null) {
+            if (bb[key] === null || bb[key] === undefined) {
+                bb[key] = maisRecuadoDir;
+            } else {
+                bb[key] = seguirBola(bb[key], maisRecuadoDir, BlockShape.seguimentoBola, dtMatch, reposta);
+            }
+        } else {
+            bb[key] = null;
+        }
+        const maisRecuadoDirSuave = bb[key];
+
         const distMarca = (typeof MarkingModel !== 'undefined')
             ? (MarkingModel.distanciaPorPressao[Tatics.pressaoDefensiva]
                 ?? MarkingModel.distanciaPorPressao.balanced)
@@ -686,19 +755,11 @@ function computeBlock(bb) {
         inteiro: o bloco não encolhe. É um limite físico — atrás do
         guarda-redes não há campo — e por isso ganha ao seguimento da bola.
         */
-        const z0Novo = recuoDaUltimaLinha(z0, maisRecuadoDir, distMarca, pisoDir, tectoDir);
+        const z0Novo = recuoDaUltimaLinha(z0, maisRecuadoDirSuave, distMarca, pisoDir, tectoDir);
         if (z0Novo !== z0) {
-            const recuo = z0 - z0Novo;
             z0 = z0Novo;
-            if (recuo > 0) {
-                // z0 foi forçado para trás (ex: tectoDir da Linha Defensiva ou marcação profunda).
-                // O bloco ESTICA em vez de puxar os atacantes 30 metros para trás e abandonar a bola.
-                // Movemos z1 apenas 20% do recuo para manter alguma compactação sem desconectar da bola.
-                z1 -= recuo * 0.2;
-            } else {
-                // z0 avançou (marcação alta). O bloco move-se inteiro para a frente.
-                z1 = z0 + profundidade;
-            }
+            // O bloco desloca-se INTEIRO, mantendo o tamanho e formato rígido.
+            z1 = z0 + profundidade;
         }
     }
 
@@ -749,12 +810,7 @@ function computeBlock(bb) {
 
     let largura = CAMPO_LARG * B.amplitude[compac];
     
-    // Se a bola estiver no corredor central, reduz o width compactness em 10%
-    const setorBola = Tatics.sectorDeX(bb.bolaXSuave, bb.dir);
-    if (setorBola === 'cen') {
-        largura *= 0.90;
-    }
-    
+
     const meiaLarg = largura / 2;
 
     /*
@@ -1151,6 +1207,7 @@ const TeamAI = {
         bb.gather(match);
 
         pickChaser(bb);
+        pickBlocker(bb);
         // Depois do chaser, de propósito: o intercetor tem de bater o tempo
         // de quem já vai à bola, e o chaser deste frame é quem já vai lá.
         pickIntercetor(bb);
