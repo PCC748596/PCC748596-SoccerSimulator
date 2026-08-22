@@ -202,6 +202,22 @@ class FootballPlayer {
         this.model.add(this.labelSprite);
         this.lastLabelText = '';
         this.labelSprite.visible = false;
+
+        // Action Banner
+        this.actionCanvas = document.createElement('canvas');
+        this.actionCanvas.width = 512;
+        this.actionCanvas.height = 128;
+        this.actionCtx = this.actionCanvas.getContext('2d');
+        this.actionTex = new THREE.CanvasTexture(this.actionCanvas);
+        this.actionTex.generateMipmaps = false;
+        this.actionTex.minFilter = THREE.LinearFilter;
+        this.actionMat = new THREE.SpriteMaterial({ map: this.actionTex, transparent: true, depthWrite: false });
+        this.actionSprite = new THREE.Sprite(this.actionMat);
+        this.actionSprite.scale.set(12, 3, 1);
+        this.actionSprite.position.set(0, 11.5, 0); 
+        this.model.add(this.actionSprite);
+        this.actionSprite.visible = false;
+        this.actionBannerTimer = 0;
     }
 
     /*
@@ -642,8 +658,11 @@ class FootballPlayer {
             let maxDist = Math.max(10, skillVal * 0.6);
             if (dist > maxDist || dist < 2.0 || distReal < 3.0) continue;
 
-            // Evitar passes para fora do campo
-            if (Math.abs(optPos.x) > (CAMPO_LARG / 2) || Math.abs(optPos.z) > (CAMPO_COMP / 2)) continue;
+            // Evitar passes para fora do campo com margem de segurança de linhas
+            const margemLinha = (typeof PassModel !== 'undefined' && PassModel.margemSegurancaLinha) ? PassModel.margemSegurancaLinha : 2.5;
+            const distBordaX = (CAMPO_LARG / 2) - Math.abs(optPos.x);
+            const distBordaZ = (CAMPO_COMP / 2) - Math.abs(optPos.z);
+            if (distBordaX < 0.5 || distBordaZ < 0.5) continue; // Ponto fora ou praticamente em cima da linha
 
             _line1.set(this.model.position, optPos);
             let minOppDist = 999, oppMaisPerto = null;
@@ -708,7 +727,9 @@ class FootballPlayer {
                 score += 100;
             } else {
                 // Marcado de perto (distMarcador < 2.5). Penalização severa.
-                if (inDefensiveZone || isDefender) {
+                if (this.role === 'gk') {
+                    score -= 605; // Erro fatal do goleiro (aumentada em mais 10%)
+                } else if (inDefensiveZone || isDefender) {
                     score -= 550; // Erro fatal na defesa (aumentada em 10%)
                 } else {
                     score -= 165; // Aumentada em 10%
@@ -813,6 +834,19 @@ class FootballPlayer {
                 score *= estiloAtivoDe(opt).passe;
             }
 
+            // Percepção de Risco de Limites do Campo (Linhas Laterais / Fundo):
+            // Quanto mais próximo da borda estiver o ponto do passe, maior o risco de sair.
+            // Passadores experientes evitam bolas espirradas na linha, preferindo passes mais centrados ou no pé.
+            const margemIdeal = (typeof PassModel !== 'undefined' && PassModel.margemSegurancaLinha) ? PassModel.margemSegurancaLinha : 3.2;
+            const distBordaMin = Math.min(distBordaX, distBordaZ);
+            if (distBordaMin < margemIdeal) {
+                const fatorRisco = (margemIdeal - distBordaMin) / margemIdeal; // 0 (longe) a 1 (na linha)
+                const penalMax = (typeof PassModel !== 'undefined' && PassModel.penalidadeBordaMax) ? PassModel.penalidadeBordaMax : 120;
+                // Jogadores com alta TEC/PASS têm melhor critério para ponderar o perigo
+                const precisaoPassador = THREE.MathUtils.clamp(skillVal / 100, 0.4, 1.0);
+                score -= penalMax * fatorRisco * precisaoPassador;
+            }
+
             if (window.showPlayerPoints) { opt.debugPoints = opt.debugPoints || {}; opt.debugPoints['Pass'] = Math.round(score); }
             ratedCandidates.push({ player: opt, score: score });
         }
@@ -842,7 +876,14 @@ class FootballPlayer {
         return base * porFuncao * porEstilo * (ShootingModel.angleFloor + (1 - ShootingModel.angleFloor) * centralidade);
     }
 
-    initiatePass(targetPlayer) { 
+    initiatePass(targetPlayer) {
+        if (this.isCross) {
+            this.showActionBanner('CROSS');
+        } else if (targetPlayer && this.model.position.distanceTo(targetPlayer.model.position) > 20) {
+            this.showActionBanner('L.PASS');
+        } else {
+            this.showActionBanner('PASS');
+        }
         this.passTarget = targetPlayer;
         
         let _v1 = new THREE.Vector3();
@@ -992,11 +1033,57 @@ class FootballPlayer {
     }
 
     initiateShoot() {
+        this.showActionBanner('SHOT');
         if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
         this.fsm.changeState('SHOOT');
     }
 
+    showActionBanner(text) {
+        this.actionBannerTimer = 1.2; 
+        this.actionSprite.visible = true;
+        
+        this.actionCtx.clearRect(0, 0, 512, 128);
+        this.actionCtx.font = 'bold 38px "Segoe UI", Arial, sans-serif';
+        this.actionCtx.textAlign = 'center';
+        this.actionCtx.textBaseline = 'middle';
+        
+        let metrics = this.actionCtx.measureText(text);
+        let textWidth = metrics.width;
+        let fontHeight = 38; // Base fallback height
+        if (metrics.actualBoundingBoxAscent) {
+            fontHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+        }
+        
+        let paddingX = 30; 
+        let paddingY = 16;
+        
+        let bgWidth = textWidth + paddingX;
+        let bgHeight = fontHeight + paddingY;
+        let startX = 256 - (bgWidth / 2);
+        let startY = 64 - (bgHeight / 2);
+        
+        this.actionCtx.fillStyle = '#FFD700'; 
+        this.actionCtx.beginPath();
+        if (this.actionCtx.roundRect) {
+            this.actionCtx.roundRect(startX, startY, bgWidth, bgHeight, 10);
+        } else {
+            this.actionCtx.rect(startX, startY, bgWidth, bgHeight);
+        }
+        this.actionCtx.fill();
+        
+        this.actionCtx.lineWidth = 3;
+        this.actionCtx.strokeStyle = '#000000';
+        this.actionCtx.stroke();
+        
+        this.actionCtx.fillStyle = '#000000';
+        // Placed dead center + 1px for optical alignment with all-caps text
+        this.actionCtx.fillText(text, 256, 64 + 1); 
+        
+        this.actionTex.needsUpdate = true;
+    }
+
     executeHeader() {
+        this.showActionBanner('HEADER');
         // De frente para a bola, mesma correcção do controlarNoPeito — sem
         // isto o corpo ficava com a orientação da última corrida, muitas
         // vezes atravessado em relação à bola que chega para a cabeçada.
@@ -1162,28 +1249,51 @@ class FootballPlayer {
             }
         } else {
             /*
-            Fora da zona de remate a cabeçada é desvio/alívio, não passe
-            medido: a DIRECÇÃO é a do colega escolhido, o ALCANCE é o que uma
-            cabeçada dá (HeaderModel.alcanceMax). Antes pedia-se a força para
-            CHEGAR ao colega — com um colega a 35 m saía uma cabeçada de meio
-            campo, que é o que se via.
-
-            Sem colega nenhum, alivia para a frente. Antes ficava tudo como
-            estava e a bola continuava colada à testa dele.
+            Fora da zona de remate:
+            1. Incrementa contador de cabeceios aéreos sucessivos no Match.
+            2. Se houver colega próximo, faz escora/cabeceio para baixo (downward header)
+               para que a bola caia rápida no chão para domínio com os pés.
+            3. Se for alívio defensivo (sem companheiro próximo seguro ou sob pressão),
+               faz alívio longo para frente e para os lados, evitando subir na vertical.
             */
+            if (typeof Match !== 'undefined') {
+                Match.aerialHeaderCount = (Match.aerialHeaderCount || 0) + 1;
+                Match.aerialHeaderTimer = (typeof HeaderModel !== 'undefined' && HeaderModel.cooldownDisputa) ? HeaderModel.cooldownDisputa : 2.2;
+            }
+
             const target = this.findPassTarget('mid') || this.findPassTarget('atk') ||
                 this.findPassTarget('def');
 
             let uxP = 0, uzP = this.dirZ, distDesejada = HeaderModel.alcanceMax;
+            let eP = HeaderModel.elevacao;
+
             if (target) {
                 const dxP = target.model.position.x - Match.ball.position.x;
                 const dzP = target.model.position.z - Match.ball.position.z;
                 const d = Math.hypot(dxP, dzP);
                 if (d > 0.001) { uxP = dxP / d; uzP = dzP / d; }
-                distDesejada = Math.min(d, HeaderModel.alcanceMax);
+
+                if (d <= (HeaderModel.alcancePasse || 8.5)) {
+                    // Escora para baixo para colega próximo: trajetória descendente rápida
+                    distDesejada = d;
+                    eP = HeaderModel.elevacaoEscora || (8 * Math.PI / 180);
+                } else {
+                    // Alívio na direção do colega
+                    distDesejada = Math.min(d, HeaderModel.alcanceMax);
+                    eP = HeaderModel.elevacaoAlivio || (26 * Math.PI / 180);
+                }
+            } else {
+                // Alívio defensivo longo para a frente/diagonal
+                distDesejada = HeaderModel.alcanceMax;
+                eP = HeaderModel.elevacaoAlivio || (26 * Math.PI / 180);
+                // Leve dispersão diagonal para não ficar na mesma linha
+                uxP = (Math.random() - 0.5) * 0.4;
+                uzP = this.dirZ;
+                const len = Math.hypot(uxP, uzP);
+                uxP /= len;
+                uzP /= len;
             }
 
-            const eP = HeaderModel.elevacao;
             const vP = velocidadeParaAlcance(distDesejada, eP);
             Match.ballVel.set(uxP * vP * Math.cos(eP), vP * Math.sin(eP), uzP * vP * Math.cos(eP));
 
@@ -1249,7 +1359,7 @@ class FootballPlayer {
         } else {
             this.runBehaviorTree(dt);
             this.fsm.update(dt);
-            this.model.position.add(this.velocity.clone().multiplyScalar(dt));
+            this.model.position.addScaledVector(this.velocity, dt);
         }
 
         if (this.hasBall) {
@@ -1328,6 +1438,14 @@ class FootballPlayer {
             // animateBones, senão ele reescreve o tronco no mesmo frame.
             this.aplicarCamadaPeito();
             this.aplicarCamadaCabeceioDePe(dt);
+        }
+
+        // Update Action Banner
+        if (this.actionBannerTimer > 0) {
+            this.actionBannerTimer -= dt;
+            if (this.actionBannerTimer <= 0) {
+                this.actionSprite.visible = false;
+            }
         }
 
         // Atualização da UI flutuante (PlayerNumber, PlayerBT, PlayerPOS e PlayerPlayingStyle)
@@ -1691,43 +1809,48 @@ class FootballPlayer {
             this.fsm.currentState !== 'CHEST_CONTROL' &&
             (!this.jumpTimer || this.jumpTimer <= 0) &&
             (!this.jumpCooldown || this.jumpCooldown <= 0)) {
-            const S = SaltoCabeceio;
-            const prev = preverBolaEm(S.duracao * 0.5);
-            /*
-            Medido da TESTA, não do topo da cabeça: é a testa que bate na
-            bola. Com ALTURA_CABECA o salto levava o TOPO do crânio à bola e
-            ela passava por cima sem contacto.
-            */
-            const subida = prev.y - (ALTURA_BASE_Y + ALTURA_TESTA);
-            const dXZ = Math.hypot(this.model.position.x - prev.x, this.model.position.z - prev.z);
-            if (dXZ < S.alcanceXZ && subida > S.alturaSemPulo && subida < S.alturaMax) {
-                this.jumpTimer = S.duracao;
-                this.jumpApex = subida;
-                this.jumpCooldown = S.cooldown;
+            const maxHeaders = (typeof HeaderModel !== 'undefined' && HeaderModel.maxHeadersSeguidos) ? HeaderModel.maxHeadersSeguidos : 2;
+            const atingiuLimiteCabeca = (typeof Match !== 'undefined' && Match.aerialHeaderCount >= maxHeaders);
 
-                // Vira de frente para onde a bola vai estar no pico do salto
-                // ANTES de saltar — sem isto o corpo ficava com a orientação
-                // da corrida até esse instante (o pescoço só cobre +-80°, e
-                // o lookAtBola do contacto em executeHeader só corrige tarde
-                // de mais, já no ar/depois do salto visualmente feito).
-                //
-                // Só no plano horizontal (y do próprio jogador, não o da
-                // bola): perto do pico a bola pode estar quase 0.8 m em cima
-                // da cabeça a menos de 1.4 m de distância — ângulo de
-                // elevação quase vertical. lookAt a apontar quase para o eixo
-                // "up" é degenerado e distorcia o rig todo (cabeça sumia).
-                lookAtBola(this.model, _v1.set(prev.x, this.model.position.y, prev.z));
-            } else if (dXZ < S.alcanceXZ && subida > S.subidaMin && subida <= S.alturaSemPulo) {
+            if (!atingiuLimiteCabeca) {
+                const S = SaltoCabeceio;
+                const prev = preverBolaEm(S.duracao * 0.5);
                 /*
-                Bola mesmo em cima da cabeça — chega-se só inclinando o
-                tronco para trás e o pescoço para cima, sem saltar (ver
-                aplicarCamadaCabeceioDePe). É a opção preferida sempre que
-                dá: um salto inteiro para uma bola que já está ao alcance é
-                que ficava estranho.
+                Medido da TESTA, não do topo da cabeça: é a testa que bate na
+                bola. Com ALTURA_CABECA o salto levava o TOPO do crânio à bola e
+                ela passava por cima sem contacto.
                 */
-                this.headLeanTimer = 0.30;
-                this.jumpCooldown = 0.4;
-                lookAtBola(this.model, _v1.set(prev.x, this.model.position.y, prev.z));
+                const subida = prev.y - (ALTURA_BASE_Y + ALTURA_TESTA);
+                const dXZ = Math.hypot(this.model.position.x - prev.x, this.model.position.z - prev.z);
+                if (dXZ < S.alcanceXZ && subida > S.alturaSemPulo && subida < S.alturaMax) {
+                    this.jumpTimer = S.duracao;
+                    this.jumpApex = subida;
+                    this.jumpCooldown = S.cooldown;
+
+                    // Vira de frente para onde a bola vai estar no pico do salto
+                    // ANTES de saltar — sem isto o corpo ficava com a orientação
+                    // da corrida até esse instante (o pescoço só cobre +-80°, e
+                    // o lookAtBola do contacto em executeHeader só corrige tarde
+                    // de mais, já no ar/depois do salto visualmente feito).
+                    //
+                    // Só no plano horizontal (y do próprio jogador, não o da
+                    // bola): perto do pico a bola pode estar quase 0.8 m em cima
+                    // da cabeça a menos de 1.4 m de distância — ângulo de
+                    // elevação quase vertical. lookAt a apontar quase para o eixo
+                    // "up" é degenerado e distorcia o rig todo (cabeça sumia).
+                    lookAtBola(this.model, _v1.set(prev.x, this.model.position.y, prev.z));
+                } else if (dXZ < S.alcanceXZ && subida > S.subidaMin && subida <= S.alturaSemPulo) {
+                    /*
+                    Bola mesmo em cima da cabeça — chega-se só inclinando o
+                    tronco para trás e o pescoço para cima, sem saltar (ver
+                    aplicarCamadaCabeceioDePe). É a opção preferida sempre que
+                    dá: um salto inteiro para uma bola que já está ao alcance é
+                    que ficava estranho.
+                    */
+                    this.headLeanTimer = 0.30;
+                    this.jumpCooldown = 0.4;
+                    lookAtBola(this.model, _v1.set(prev.x, this.model.position.y, prev.z));
+                }
             }
         }
 

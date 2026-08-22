@@ -202,7 +202,8 @@ const PassCandidates = {
     // `teammates` saiu da assinatura com a regra do "mais próximo": nenhuma
     // das regras que restam olha para os colegas.
     pontoValido: function (px, pz, carrier, opponents) {
-        if (Math.abs(px) > CAMPO_LARG / 2 || Math.abs(pz) > CAMPO_COMP / 2) return false;
+        const margem = (typeof PassModel !== 'undefined' && PassModel.margemSegurancaLinha) ? PassModel.margemSegurancaLinha : 2.5;
+        if (Math.abs(px) > (CAMPO_LARG / 2) - margem || Math.abs(pz) > (CAMPO_COMP / 2) - margem) return false;
 
         const cx = carrier.model.position.x, cz = carrier.model.position.z;
         const distBola = Math.hypot(px - cx, pz - cz);

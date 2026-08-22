@@ -139,8 +139,11 @@ class PlayerContext {
     */
     get campoAberto() {
         if (this.underPressure) return false;
-        if (this.espacoAFrente < CarryModel.espacoLivre) return false;
-        return (this.p.carryDist || 0) < CarryModel.distanciaMax;
+        const naDefesa = (this.p.model.position.z * this.p.dirZ < 0) || this.p.role === 'def';
+        const espacoReq = naDefesa ? (CarryModel.espacoLivreDefesa || 24.0) : CarryModel.espacoLivre;
+        if (this.espacoAFrente < espacoReq) return false;
+        const maxDist = naDefesa ? (CarryModel.distanciaMaxDefesa || 6.0) : CarryModel.distanciaMax;
+        return (this.p.carryDist || 0) < maxDist;
     }
 
     get opponents() { return (this.p.team === 'TeamA') ? Match.opponents : Match.players; }
@@ -215,6 +218,12 @@ function findThroughBall(ctx) {
 
         let alvoZ = zFuturo * p.dirZ;
         let alvoX = mateAlvo.x * 0.85;
+
+        // Limita o lançamento estritamente à área útil de jogo (margem de segurança lateral e de fundo)
+        const margemLateral = (typeof PassModel !== 'undefined' && PassModel.margemSegurancaLinha) ? PassModel.margemSegurancaLinha : 3.0;
+        const limLateral = (CAMPO_LARG / 2) - margemLateral;
+        alvoX = THREE.MathUtils.clamp(alvoX, -limLateral, limLateral);
+
         const oppTeamKey = (p.team === 'TeamA') ? 'TeamB' : 'TeamA';
 
         if (typeof SpatialGrid !== 'undefined' && SpatialGrid.cells) {
@@ -349,6 +358,14 @@ function findCross(ctx) {
         chance += (crossVal / 100) * C.pesoGrid;
     }
 
+    const distAlvo = p.model.position.distanceTo(alvo.model.position);
+
+    // Penalidade por cruzar de muito longe (distância excessiva do alvo)
+    const distBase = (C.distBaseIdeal !== undefined) ? C.distBaseIdeal : 18.0;
+    const taxaPenal = (C.penalDistancia !== undefined) ? C.penalDistancia : 0.035;
+    const distExcesso = Math.max(0, distAlvo - distBase);
+    chance -= distExcesso * taxaPenal;
+
     if (window.showPlayerPoints && alvo) {
         alvo.debugPoints = alvo.debugPoints || {};
         alvo.debugPoints['Cross'] = Math.round(chance);
@@ -374,7 +391,6 @@ function findCross(ctx) {
         if (_v1.distanceTo(opp.model.position) < 1.6) bloqueadores++;
     }
 
-    const distAlvo = p.model.position.distanceTo(alvo.model.position);
     // Pontuação do ALTO: quem estiver no caminho pesa muito, distância e jogo
     // aéreo do alvo pesam menos.
     let notaAlto = bloqueadores * 0.45
@@ -520,6 +536,67 @@ na lateral, onde não havia jogada nenhuma:
 
 Sem PassTypes carregado, ou sem nada melhor a propor, fica o caminho antigo.
 */
+// Saída de bola: encontrar o melhor defesa (zagueiro ou lateral) para tocar após o primeiro passe do kickoff
+function encontrarDefesaParaSaida(p) {
+    if (typeof Match === 'undefined') return null;
+    const teammates = (p.team === 'TeamA') ? Match.players : Match.opponents;
+    const opponents = (p.team === 'TeamA') ? Match.opponents : Match.players;
+    const defs = (teammates || []).filter(m => m !== p && m.role === 'def');
+    if (!defs.length) return null;
+
+    const obstaculos = (opponents || []).filter(o => o.role !== 'gk').map(o => ({
+        x: o.model.position.x,
+        z: o.model.position.z
+    }));
+
+    let melhorDef = null;
+    let melhorScore = -Infinity;
+
+    for (const d of defs) {
+        const dPos = d.model.position;
+        const pPos = p.model.position;
+        const dist = Math.hypot(dPos.x - pPos.x, dPos.z - pPos.z);
+        
+        // Verifica se a linha de passe direta está livre
+        const livre = (typeof linhaLivre === 'function')
+            ? linhaLivre(pPos.x, pPos.z, dPos.x, dPos.z, obstaculos, 1.5)
+            : true;
+
+        let distAdvMaisPerto = 999;
+        for (const o of obstaculos) {
+            const da = Math.hypot(dPos.x - o.x, dPos.z - o.z);
+            if (da < distAdvMaisPerto) distAdvMaisPerto = da;
+        }
+
+        let score = (livre ? 25.0 : 0.0) + distAdvMaisPerto * 1.5;
+        if (dist >= 8 && dist <= 30) score += 10.0;
+        else score -= Math.abs(dist - 18) * 0.4;
+
+        if (score > melhorScore) {
+            melhorScore = score;
+            melhorDef = d;
+        }
+    }
+
+    return melhorDef || defs[0];
+}
+
+function executarPasseSaidaParaDefesas(p, defTarget) {
+    p.carryRecuo = false;
+    p.apoioAtivo = false;
+    if (typeof PassTypes !== 'undefined' && PassTypes.escolher) {
+        const escolha = PassTypes.escolher(p, defTarget);
+        if (escolha && escolha.mate) {
+            aplicarMiraDoPasse(p, escolha.tipo, escolha.ponto);
+            p.initiatePass(escolha.mate);
+            return;
+        }
+    }
+    p.passAimPoint = null;
+    p.passTipo = 'direct';
+    p.initiatePass(defTarget);
+}
+
 function actPass(ctx) {
     const p = ctx.p;
     if (p.aguardarPassada()) return true;
@@ -553,15 +630,27 @@ function actPass(ctx) {
     Quem conta dribles é o actDribble, que tem mesmo um adversário pela frente.
     */
     const tec = p.skillFor ? p.skillFor('TEC') : 50;
-    if (tec >= E.tecnicaDrible && ctx.campoAberto) {
+    const naDefesa = (p.model.position.z * p.dirZ < 0) || p.role === 'def';
+
+    // 1. Atrasar / circular a alguém perto, para reiniciar a jogada e circular o jogo
+    const recuo = PassTypes.melhorRecuo(p);
+    if (recuo && (naDefesa || !ctx.campoAberto || ctx.underPressure)) {
+        p.carryRecuo = false;
+        const r = PassTypes.paraMate(p, recuo);
+        aplicarMiraDoPasse(p, r.tipo, r.ponto);
+        p.initiatePass(recuo);
+        return;
+    }
+
+    // 2. Levar a bola, se a técnica der para isso e houver espaço à frente (fora da defesa)
+    if (!naDefesa && tec >= E.tecnicaDrible && ctx.campoAberto) {
         p.carryRecuo = false;
         p.apoioAtivo = false;
         p.fsm.changeState('CARRY');
         return;
     }
 
-    // 2. Atrasar a alguém perto, para reiniciar a jogada.
-    const recuo = PassTypes.melhorRecuo(p);
+    // 2b. Recuo como alternativa se não conduziu
     if (recuo) {
         p.carryRecuo = false;
         const r = PassTypes.paraMate(p, recuo);
@@ -570,12 +659,27 @@ function actPass(ctx) {
         return;
     }
 
-    // 3. Voltar com a bola e esperar.
+    // 3. Voltar com a bola e esperar (Giro de 180 graus).
+    // O utilizador pediu para não girar 180 graus com marcadores próximos (< 3.5m).
+    // Se houver qualquer adversário a menos de 3.5m (ou sob pressão), NUNCA gira 180 graus; passa a bola.
     if (escolha && escolha.mate) {
-        p.carryRecuo = true;
-        p.apoioAtivo = false;
-        p.fsm.changeState('CARRY');
-        return;
+        let adversarioProximo = false;
+        const allOpps = (p.team === 'TeamA') ? Match.opponents : Match.players;
+        for (const o of allOpps) {
+            if (o.role === 'gk') continue;
+            if (p.model.position.distanceToSq(o.model.position) < 12.25) { // 3.5m
+                adversarioProximo = true;
+                break;
+            }
+        }
+
+        // Só pode recuar com a bola se tiver espaço limpo em redor (sem marcadores a menos de 3.5m)
+        if (!adversarioProximo && !ctx.underPressure) {
+            p.carryRecuo = true;
+            p.apoioAtivo = false;
+            p.fsm.changeState('CARRY');
+            return;
+        }
     }
 
     // Sem candidato nenhum: o caminho antigo, para nunca ficar sem saída.
@@ -1491,8 +1595,11 @@ function adversariosAFrente(ctx) {
 }
 
 // Caminho fechado: vale mais sair pelo lado ou por trás do que insistir.
+// Na defesa, basta 1 adversário no corredor à frente para fechar o caminho e forçar a circulação.
 function caminhoFechadoAFrente(ctx) {
-    return adversariosAFrente(ctx) >= PassModel.bloqueioMin;
+    const naDefesa = (ctx.p.model.position.z * ctx.p.dirZ < 0) || ctx.p.role === 'def';
+    const minAdv = naDefesa ? 1 : PassModel.bloqueioMin;
+    return adversariosAFrente(ctx) >= minAdv;
 }
 
 const PlayerBT = sel('PlayerRoot',
@@ -1577,6 +1684,22 @@ const PlayerBT = sel('PlayerRoot',
                 act('sairAJogar', tratarGuardaRedes)
             ),
 
+            // 0. Saída de bola: após o primeiro passe do kickoff, o receptor toca para os zagueiros ou laterais
+            seq('PasseSaidaDeBola',
+                cond('precisaPassarAosDefesas', (ctx) => {
+                    if (typeof Match === 'undefined' || !Match.kickoffPendingPassToDef) return false;
+                    if (ctx.p.role === 'gk') return false;
+                    const defTarget = encontrarDefesaParaSaida(ctx.p);
+                    if (!defTarget) return false;
+                    ctx.kickoffDefTarget = defTarget;
+                    return true;
+                }),
+                act('passarAosDefesas', (ctx) => {
+                    Match.kickoffPendingPassToDef = false;
+                    executarPasseSaidaParaDefesas(ctx.p, ctx.kickoffDefTarget);
+                })
+            ),
+
             // 1. Verificar chute - chutar
             seq('Rematar',
                 cond('emZonaDeRemate', emZonaDeRemate),
@@ -1594,22 +1717,15 @@ const PlayerBT = sel('PlayerRoot',
                 act('cruzar', actCross)
             ),
 
-            // 3. Verificar se tem espaço livre à frente - carry (conduzir)
-            seq('ConduzirEmEspaco',
-                cond('campoAberto', (ctx) => ctx.p.role !== 'gk' && ctx.campoAberto),
-                act('atacarOEspaco', actCarry)
-            ),
-
             /*
-            3b. Caminho fechado: dois ou mais adversários no corredor à
-            frente. Sai pelo lado; não havendo lado, joga para trás. Vem
-            ANTES do drible e do passe para a frente de propósito — com dois
-            homens pela frente, insistir na frente é perder a bola.
+            3. Caminho fechado / Circulação: se há adversário à frente no corredor
+            (especialmente na defesa), joga para o lado ou para trás para circular o jogo.
+            Vem ANTES de conduzir para evitar que os jogadores de defesa insistam em sair jogando.
             */
             seq('CaminhoFechado',
                 cond('doisPelaFrente', (ctx) => {
                     if (!caminhoFechadoAFrente(ctx)) return false;
-                    const saida = findPassSide(ctx) || findPassBack(ctx);
+                    const saida = findPassSide(ctx) || findPassBack(ctx) || findBestPassAnywhere(ctx);
                     if (!saida) return false;
                     ctx.passTarget = saida.target;
                     return true;
@@ -1617,13 +1733,43 @@ const PlayerBT = sel('PlayerRoot',
                 act('passarLadoOuTras', actPass)
             ),
 
-            // 4. Adversário próximo, espaço atrás do adversário, técnica >= 75 - Driblar
+            /*
+            3b. Circulação na defesa: se o jogador está na sua metade defensiva ou é defesa,
+            procura sempre passar/circular a bola em vez de conduzir.
+            */
+            seq('CircularNaDefesa',
+                cond('circulacaoDefensiva', (ctx) => {
+                    const naDefesa = (ctx.p.model.position.z * ctx.p.dirZ < 0) || ctx.p.role === 'def';
+                    if (!naDefesa) return false;
+                    const passChoice = findBestPassAnywhere(ctx);
+                    if (!passChoice) return false;
+                    ctx.currentPassChoice = passChoice;
+                    return true;
+                }),
+                act('executarPasseDefesa', (ctx) => {
+                    if (ctx.currentPassChoice.type === 'through') {
+                        ctx.throughBall = ctx.currentPassChoice.data;
+                        actThroughBall(ctx);
+                    } else {
+                        ctx.passTarget = ctx.currentPassChoice.target;
+                        actPass(ctx);
+                    }
+                })
+            ),
+
+            // 4. Verificar se tem espaço livre à frente - carry (conduzir)
+            seq('ConduzirEmEspaco',
+                cond('campoAberto', (ctx) => ctx.p.role !== 'gk' && ctx.campoAberto),
+                act('atacarOEspaco', actCarry)
+            ),
+
+            // 5. Adversário próximo, espaço atrás do adversário, técnica >= 75 - Driblar
             seq('Driblar',
                 cond('podeDriblar', podeDriblar),
                 act('driblar', actDribble)
             ),
 
-            // 5. Escolha de passe baseada na avaliação geral
+            // 6. Escolha de passe baseada na avaliação geral
             seq('ProcurarPasse',
                 cond('haOpcaoDePasse', (ctx) => {
                     const passChoice = findBestPassAnywhere(ctx);
@@ -1642,7 +1788,7 @@ const PlayerBT = sel('PlayerRoot',
                 })
             ),
 
-            // 6. Não tem passe viável e está sob pressão - chute para a lateral
+            // 7. Não tem passe viável e está sob pressão - chute para a lateral
             seq('ChuteLateral',
                 cond('semOpcoesSeguras', (ctx) => {
                     return ctx.underPressure || ctx.p.decisionTimer > 1.2;

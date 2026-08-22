@@ -181,7 +181,8 @@ const PassTypes = {
 
         const f = this.frenteDe(mate);
         const mx = mate.model.position.x, mz = mate.model.position.z;
-        const meiaLarg = CAMPO_LARG / 2, meioComp = CAMPO_COMP / 2;
+        const margem = (typeof PassModel !== 'undefined' && PassModel.margemSegurancaLinha) ? PassModel.margemSegurancaLinha : 2.5;
+        const meiaLarg = (CAMPO_LARG / 2) - margem, meioComp = (CAMPO_COMP / 2) - margem;
         const lista = opponents || [];
 
         for (let d = M.liderancaCurta; d >= M.liderancaMin - 1e-9; d -= M.liderancaPasso) {

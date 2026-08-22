@@ -21,8 +21,9 @@ function executePassGameplay(p) {
         lancamentoAlto = !!p.throughBallAlto;
         p.throughBallAlto = false;
     }
+    const ehCruzamento = !!p.isCross;
     // Capturado antes de p.isCross ser limpo mais abaixo.
-    const tipoPasseStats = ehLancamento ? 'lancamento' : (p.isCross ? 'cruzamento' : 'passe');
+    const tipoPasseStats = ehLancamento ? 'lancamento' : (ehCruzamento ? 'cruzamento' : 'passe');
 
     _v1.copy(p.passTargetPos);
 
@@ -206,6 +207,51 @@ function executePassGameplay(p) {
         usouBalistica = true;
     }
 
+    // Redução de 15% da força pedida: lançamentos longos e lançamentos para as laterais
+    if (ehLancamento) {
+        let isLongo = distToTarget > 20.0;
+        let isLateral = Math.abs(dirX) > Math.abs(dirZ);
+        if (isLongo || isLateral) {
+            forcaPasse *= 0.85;
+            Match.ballVel.y *= 0.85;
+        }
+    }
+
+    // Redução de 20% da força nos cruzamentos
+    if (ehCruzamento) {
+        forcaPasse *= 0.80;
+        Match.ballVel.y *= 0.80;
+    }
+
+    // Percepção de limites do campo: se o vetor do passe estiver indo em direção à linha lateral
+    // ou de fundo, o passador pondera a força de modo a não chutar a bola para além do gramado.
+    if (typeof CAMPO_LARG !== 'undefined' && typeof CAMPO_COMP !== 'undefined') {
+        const margemFisica = 1.8;
+        const limFisicoX = (CAMPO_LARG / 2) - margemFisica;
+        const limFisicoZ = (CAMPO_COMP / 2) - margemFisica;
+        const posBola = Match.ball.position;
+
+        // Calcula a distância máxima que a bola pode percorrer nessa direção antes de sair
+        let distMaxLinha = Infinity;
+        if (dirX > 0.05) {
+            distMaxLinha = Math.min(distMaxLinha, (limFisicoX - posBola.x) / dirX);
+        } else if (dirX < -0.05) {
+            distMaxLinha = Math.min(distMaxLinha, (-limFisicoX - posBola.x) / dirX);
+        }
+        if (dirZ > 0.05) {
+            distMaxLinha = Math.min(distMaxLinha, (limFisicoZ - posBola.z) / dirZ);
+        } else if (dirZ < -0.05) {
+            distMaxLinha = Math.min(distMaxLinha, (-limFisicoZ - posBola.z) / dirZ);
+        }
+
+        if (distMaxLinha > 0 && distMaxLinha < distToTarget) {
+            // A trajetória apontaria para fora antes do alvo: dosar a força para morrer dentro do campo
+            const fatorAjuste = Math.max(0.65, distMaxLinha / distToTarget);
+            forcaPasse *= fatorAjuste;
+            Match.ballVel.y *= fatorAjuste;
+        }
+    }
+
     // O erro (Skill do passador) já foi aplicado na distToTarget lá em cima,
     // para não quebrar a escala não-linear da balística.
     if (!usouBalistica) {
@@ -245,6 +291,13 @@ class PlayerFSM {
             this.p.resetBonesToDefault();
         }
         this.currentState = newState; this.timer = 0;
+        if (newState === 'DRIBBLE') this.p.showActionBanner('DRIBBLE');
+        if (newState === 'TACKLE') this.p.showActionBanner('TACKLE');
+        if (newState === 'SLIDE_TACKLE') this.p.showActionBanner('S.TACKLE');
+        if (newState === 'INTERCEPT') this.p.showActionBanner('INTERCEPT');
+        if (newState === 'BLOCKING') this.p.showActionBanner('BLOCK');
+        if (newState === 'CHEST_CONTROL') this.p.showActionBanner('CHEST');
+        if (newState === 'RUN_INTO_SPACE') this.p.showActionBanner('RUN');
 
         // A bola de cada canto começa no chão: ver o case WATCH_CORNER.
         if (newState === 'WATCH_CORNER') this.cornerBolaSubiu = false;
@@ -589,6 +642,7 @@ class PlayerFSM {
                             for (const pl of todosJogadores) {
                                 if (pl === p || pl.role === 'gk') continue;
                                 const plx = pl.model.position.x, plz = pl.model.position.z;
+                                const isOpp = (pl.team !== p.team);
                                 
                                 let t = 0;
                                 if (len2 > 0) t = ((plx - px) * dx + (plz - pz) * dz) / len2;
@@ -599,8 +653,9 @@ class PlayerFSM {
                                     const projZ = pz + t * dz;
                                     const distToLine = Math.hypot(plx - projX, plz - projZ);
                                     
-                                    // Corredor de 1.2m de largura (passar entre os jogadores)
-                                    if (distToLine < 1.2) {
+                                    // Corredor de 2.4m para adversários (para não insistir em carregar de frente) e 1.2m para colegas
+                                    const corredorLimite = isOpp ? 2.4 : 1.2;
+                                    if (distToLine < corredorLimite) {
                                         const distObstacle = Math.hypot(plx - px, plz - pz);
                                         if (distObstacle < maisPerto) maisPerto = distObstacle;
                                     }
@@ -614,7 +669,11 @@ class PlayerFSM {
                             ganhava sempre ao espaço.
                             */
                             const espacoNorm = Math.min(maisPerto, CarryModel.spaceCap) / CarryModel.spaceCap;
-                            const progressoNorm = Math.max(0, Math.min(1, ((tz - pz) * sentido) / visDist));
+                            let progressoNorm = Math.max(0, Math.min(1, ((tz - pz) * sentido) / visDist));
+                            // Se estiver na defesa com adversários perto à frente, reduz drasticamente o valor do avanço frontal
+                            if ((pz * p.dirZ < 0 || p.role === 'def') && maisPerto < 16.0) {
+                                progressoNorm *= 0.2;
+                            }
                             const sectorPen = Tatics.penalidadeSector(tx, p.dirZ);
                             const nota = notaDireccaoCarry(espacoNorm, progressoNorm, sectorPen, tec);
 
@@ -1094,6 +1153,7 @@ class PlayerFSM {
                         let maxC = (LARGURA_BALIZA / 2) - 0.5;
                         let pow, alvoX, alvoY;
 
+                        let forcedGKDelay = null;
                         if (bloqueado) {
                             // Bola desviada, curta e fraca — não mira a baliza.
                             pow = 4.0 + Math.random() * 2.4;
@@ -1101,13 +1161,76 @@ class PlayerFSM {
                             alvoY = 0.3;
                         } else {
                             const gkDef = (p.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
-                            // Na baliza: Técnica (chutador) x GK — vencer põe a bola
-                            // perto do poste (ângulo difícil); perder deixa mais central.
-                            const venceuGK = gkDef ? venceuDuelo(p.skillFor('TEC'), gkDef.skillFor('GK'), 0.5) : true;
-                            const cantoC = venceuGK ? maxC * 0.9 : maxC * 0.5;
+                            let gkScore = 50; 
+                            if (gkDef) {
+                                gkScore = gkDef.skillFor('TEC') * 0.30 + gkDef.skillFor('GK') * 0.70;
+                            }
+                            
+                            const chutadorScore = p.skillFor('TEC');
+                            const attackRatio = chutadorScore / (chutadorScore + gkScore);
+                            
+                            const weights = [
+                                { outcome: 'GOL', weight: Math.pow(attackRatio, 2) * 100 },
+                                { outcome: 'TRAVE_CAMPO', weight: attackRatio * 15 },
+                                { outcome: 'TRAVE_FORA', weight: attackRatio * 15 },
+                                { outcome: 'TRAVESSAO_CAMPO', weight: attackRatio * 15 },
+                                { outcome: 'TRAVESSAO_FORA', weight: attackRatio * 15 },
+                                { outcome: 'GOLEIRO_DEFENDE_VOLTA', weight: Math.pow(1 - attackRatio, 2) * 50 },
+                                { outcome: 'GOLEIRO_DEFENDE_FORA', weight: Math.pow(1 - attackRatio, 2) * 50 }
+                            ];
+                            
+                            let totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
+                            let roll = Math.random() * totalWeight;
+                            let selectedOutcome = 'GOLEIRO_DEFENDE_VOLTA';
+                            for (let w of weights) {
+                                if (roll < w.weight) {
+                                    selectedOutcome = w.outcome;
+                                    break;
+                                }
+                                roll -= w.weight;
+                            }
+                            
+                            let sinal = Math.random() > 0.5 ? 1 : -1;
                             pow = (22.0 + ((p.skillFor('TEC') - 50) / 50) * 16.0) * 0.8;
-                            alvoX = (Math.random() > 0.5 ? 1 : -1) * cantoC;
-                            alvoY = Math.random() > 0.5 ? 2.0 : 0.4;
+                            
+                            switch (selectedOutcome) {
+                                case 'GOL':
+                                    alvoX = sinal * maxC * 0.9;
+                                    alvoY = Math.random() > 0.5 ? 2.0 : 0.4;
+                                    forcedGKDelay = 1.0; 
+                                    break;
+                                case 'TRAVE_CAMPO':
+                                    alvoX = sinal * (LARGURA_BALIZA / 2 - 0.08);
+                                    alvoY = 0.5;
+                                    forcedGKDelay = 1.0;
+                                    break;
+                                case 'TRAVE_FORA':
+                                    alvoX = sinal * (LARGURA_BALIZA / 2 + 0.08);
+                                    alvoY = 0.5;
+                                    forcedGKDelay = 1.0;
+                                    break;
+                                case 'TRAVESSAO_CAMPO':
+                                    alvoX = (Math.random() - 0.5) * maxC;
+                                    alvoY = ALTURA_BALIZA - 0.08;
+                                    forcedGKDelay = 1.0;
+                                    break;
+                                case 'TRAVESSAO_FORA':
+                                    alvoX = (Math.random() - 0.5) * maxC;
+                                    alvoY = ALTURA_BALIZA + 0.08;
+                                    forcedGKDelay = 1.0;
+                                    break;
+                                case 'GOLEIRO_DEFENDE_VOLTA':
+                                    alvoX = (Math.random() - 0.5) * 1.5; 
+                                    alvoY = 1.0;
+                                    pow *= 0.7; // Reduz um pouco a força pro goleiro ter chance de espalmar pra frente ou encaixar
+                                    forcedGKDelay = 0; 
+                                    break;
+                                case 'GOLEIRO_DEFENDE_FORA':
+                                    alvoX = sinal * maxC * 1.05; 
+                                    alvoY = 1.0;
+                                    forcedGKDelay = 0;
+                                    break;
+                            }
                         }
 
                         /*
@@ -1144,7 +1267,7 @@ class PlayerFSM {
                             // Notifica o GK adversário via propriedade de instância.
                             const gkDef = (p.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
                             if (gkDef) {
-                                gkDef.gkDelayReacao = 0.45 - ((TeamSkills[defendingTeam].gk - 50) / 50) * 0.35;
+                                gkDef.gkDelayReacao = (forcedGKDelay !== null) ? forcedGKDelay : (0.45 - ((TeamSkills[defendingTeam].gk - 50) / 50) * 0.35);
                                 gkDef.gkReagiu = false;
                             }
                             window.bolaChutada = true;

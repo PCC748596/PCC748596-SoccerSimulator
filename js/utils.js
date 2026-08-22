@@ -332,8 +332,7 @@ function velocidadeRasteiraPara(dist, vChegada) {
     const alvo = (k * vAlvo * vAlvo + atrito) * Math.exp(2 * k * dist) - atrito;
 
     // Tecto: acima disto o passe rasteiro vira disparo.
-    let initialSpeed = Math.sqrt(Math.max(0, alvo / k)) * 1.30;
-    return Math.min(24.0, initialSpeed);
+    return Math.min(18.5, Math.sqrt(Math.max(0, alvo / k)));
 }
 
 /*
@@ -711,6 +710,15 @@ function alvoDePasse(p) {
         
         pos.x += vx * t;
         pos.z += vz * t;
+    }
+    
+    // Percepção de limites do campo: mantém o ponto de lead dentro das margens úteis de jogo
+    if (typeof CAMPO_LARG !== 'undefined' && typeof CAMPO_COMP !== 'undefined') {
+        const margem = (typeof PassModel !== 'undefined' && PassModel.margemSegurancaLinha) ? PassModel.margemSegurancaLinha : 2.5;
+        const limX = (CAMPO_LARG / 2) - margem;
+        const limZ = (CAMPO_COMP / 2) - margem;
+        pos.x = Math.max(-limX, Math.min(limX, pos.x));
+        pos.z = Math.max(-limZ, Math.min(limZ, pos.z));
     }
     
     return pos;

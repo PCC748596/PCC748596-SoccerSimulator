@@ -140,7 +140,8 @@ const GoalFrame = {
 };
 
 window.Config = {
-    usePlayingStyles: true
+    usePlayingStyles: true,
+    enableCrowd: false
 };
 
 /*
@@ -212,7 +213,7 @@ const BallPhysics = {
     cd: 0.25,               // coeficiente de arrasto
     restituicao: 0.60,      // ressalto vertical em relva
     atritoRessalto: 0.75,   // perda horizontal em cada ressalto
-    atritoRolamento: 0.50,  // μ de rolamento em relva (aumentado para passes mais fortes na saída)
+    atritoRolamento: 0.38,  // μ de rolamento em relva
     vMinRessalto: 0.6,      // abaixo disto não ressalta, assenta
     vMinRolar: 0.25,        // abaixo disto pára de vez
 
@@ -944,7 +945,7 @@ const PassModel = {
     */
     bloqueioMin: 2,             // quantos adversários fecham o caminho
     bloqueioDist: 14.0,         // até que distância à frente conta
-    bloqueioLargura: 3.5,       // meia-largura do corredor
+    bloqueioLargura: 6.0,       // meia-largura do corredor
 
     throughBallGap: 14.0,       // quão atrás da linha o colega pode estar
     throughBallDepth: 9.0,      // metros além da linha onde se põe a bola
@@ -1041,9 +1042,9 @@ const PassModel = {
     Com o reforço do passe curto (ver velocidadeRasteiraPara) uma bola de
     3 m chega a 6.12 m/s e uma de 25 m a 3.00 m/s.
     */
-    vChegadaRasteira: 4.5,
-    vChegadaCruzamento: 7.0,   // cruzamento rasteiro vai mais forte, de propósito
-    vChegadaLancamento: 5.0,   // lançamento é para correr atrás, não para receber parado
+    vChegadaRasteira: 2.8,
+    vChegadaCruzamento: 2.8,
+    vChegadaLancamento: 2.8,
 
     /*
     Erro máximo no PESO da bola, para skill de passe 0. Escala com
@@ -1051,7 +1052,14 @@ const PassModel = {
     antigo `passBoost`, que aumentava a força em vez da precisão — e com a
     balística resolvida isso só voltava a pôr a bola longe do alvo.
     */
-    erroPesoMax: 0.18
+    erroPesoMax: 0.18,
+
+    /*
+    --- Percepção e margem de segurança de limites de campo (Linhas Laterais / Fundo) ---
+    */
+    margemSegurancaLinha: 3.2,     // Margem de segurança básica em metros
+    margemSegurancaLinhaMin: 1.5,  // Menor margem admissível para jogadores excepcionais
+    penalidadeBordaMax: 120        // Penalidade máxima na nota do passe por proximidade perigosa da linha
 };
 
 /*
@@ -1604,7 +1612,8 @@ const CarryModel = {
     */
     corredor: 4.0,
     abertura: 0.35,
-    espacoLivre: 12.0,
+    espacoLivre: 16.0,
+    espacoLivreDefesa: 24.0,
 
     /*
     Orçamento de condução: quantos metros o portador pode levar a bola antes de
@@ -1620,6 +1629,7 @@ const CarryModel = {
     a bola muda de pé.
     */
     distanciaMax: 16.0,
+    distanciaMaxDefesa: 6.0,
 
     // Toques de condução — distância do toque depende do espaço à frente
     touchLong: 2.8,       // toque longo (campo aberto, adversário > 15m)
@@ -1655,7 +1665,7 @@ jogador e pela proximidade do adversário.
 const DribbleModel = {
     triggerDist: 2.5,     // distância para activar drible 1v1 (adversário à frente)
     angleSide: 0.6,       // ângulo lateral do toque (~35°, entre 30 e 45)
-    touchPower: 11.0,     // força do toque lateral
+    touchPower: 8.25,     // força do toque lateral
     successBase: 0.60,    // chance base de sucesso
     successSideBonus: 0.20, // bónus por ir para o lado (vs reto)
     failLossBall: 0.70,   // prob. de perder a bola se falhar
@@ -1984,7 +1994,7 @@ function recuoDaUltimaLinha(z0Dir, maisRecuadoDir, distancia, pisoDir, tectoDir)
     if (maisRecuadoDir !== null && maisRecuadoDir !== undefined) {
         const atrasDoHomem = maisRecuadoDir - distancia;
         if (z < atrasDoHomem) z = atrasDoHomem;
-        if (tectoDir !== null && tectoDir !== undefined && z > tectoDir) z = tectoDir;
+        // if (tectoDir !== null && tectoDir !== undefined && z > tectoDir) z = tectoDir;
     }
 
     if (z < pisoDir) z = pisoDir;
@@ -2278,12 +2288,14 @@ Valores no referencial de ataque.
 */
 const CrossModel = {
     alaX: 15.0,           // a partir daqui conta como estar na ala
-    zonaZ: 14.0,          // e daqui para a frente vale a pena olhar para a área
+    zonaZ: 20.0,          // e daqui para a frente vale a pena olhar para a área (recuado para evitar cruzamento de muito longe)
 
     areaZ: 34.0,          // linha da grande área
     areaX: 20.5,          // meia-largura da grande área
     fundoZ: 50.0,         // linha de fundo
     distMin: 10.0,         // abaixo disto é passe curto, não cruzamento pelo ar
+    distBaseIdeal: 18.0,   // distância de referência ideal para cruzamento
+    penalDistancia: 0.035, // penalidade progressiva por metro de distância além do ideal
 
     // +20% pedido explicitamente: cruzamentos pouco frequentes.
     chanceBase: 0.54,     // com um alvo na área
@@ -2423,16 +2435,27 @@ cabeçada dá; se ele estiver mais longe, a bola fica pelo caminho, como na
 vida real.
 */
 const HeaderModel = {
-    alcanceMax: 10.0,
-    // Trajectória curta e alta, típica de quem desvia com a testa.
-    elevacao: 32 * Math.PI / 180,
+    alcanceMax: 16.0,          // alcance máximo de um alívio de cabeça
+    alcancePasse: 8.5,         // alcance de escora para colega
+    // Trajectória padrão e variantes
+    elevacao: 22 * Math.PI / 180,        // elevação mais baixa para a bola descer rápido ao chão
+    elevacaoAlivio: 28 * Math.PI / 180,  // elevação para alívio longo defensivo
+    elevacaoEscora: 8 * Math.PI / 180,   // cabeceio/escora para baixo em direção ao chão
 
     /*
     Meia-largura, em metros, da faixa à volta de ALTURA_TESTA onde o contacto
     conta como cabeceio. Abaixo dela é peito; acima, a bola passa por cima
     da cabeça e não há contacto nenhum.
     */
-    janelaContacto: 0.22
+    janelaContacto: 0.22,
+
+    /*
+    Anti Ping-Pong Aéreo:
+    - Limite estrito de no máximo 2 cabeceios seguidos na mesma disputa aérea
+    - Após o limite, obriga domínio de peito ou queda no pé para continuar jogando no chão
+    */
+    maxHeadersSeguidos: 2,
+    cooldownDisputa: 2.2
 };
 
 /*
@@ -2703,11 +2726,9 @@ const Tatics = {
     copiada à mão, dentro de findPassTarget (player.js). Agora é uma só.
     */
     sectorDeX: function (x, dirZ) {
-        // Normaliza de -1 a 1 baseado na largura do campo
-        // normX < 0 significa lado direito do jogador (RB tem fData.x negativo)
-        const normX = (x * dirZ) / (CAMPO_LARG / 2);
-        if (normX < -0.4) return 'dir';
-        if (normX > 0.4) return 'esq';
+        const xAtk = x * dirZ;
+        if (xAtk < -10) return 'esq';
+        if (xAtk > 10) return 'dir';
         return 'cen';
     },
 
@@ -2743,14 +2764,15 @@ const Tatics = {
         if (!activos || activos.length === 0) return 0;
         if (activos.indexOf(this.sectorDeX(x, dirZ)) >= 0) return 0;
 
-        const normX = (x * dirZ) / (CAMPO_LARG / 2);
+        const xAtk = x * dirZ;
+        const meiaLargura = CAMPO_LARG / 2;
         let melhor = Infinity;
         for (const s of activos) {
             // Distância à BORDA do sector activo em escala normalizada [0..1]
             let d;
-            if (s === 'esq') d = normX - (-0.4);
-            else if (s === 'dir') d = 0.4 - normX;
-            else d = Math.abs(normX) - 0.4;
+            if (s === 'esq') d = (xAtk - (-10)) / meiaLargura;
+            else if (s === 'dir') d = (10 - xAtk) / meiaLargura;
+            else d = (Math.abs(xAtk) - 10) / meiaLargura;
             if (d < melhor) melhor = d;
         }
 

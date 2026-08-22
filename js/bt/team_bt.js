@@ -270,38 +270,38 @@ para o centro do gol defendido, movendo-se perpendicularmente a essa linha.
 */
 function pickBlocker(bb) {
     if (bb.isAttacking) { bb.blocker = null; return; }
-
-    const goalPos = new THREE.Vector3(0, 0, bb.ownGoalZ);
     const ballPos = Match.ball.position;
-
-    const ballToGoal = new THREE.Vector3().subVectors(goalPos, ballPos);
-    ballToGoal.y = 0;
-    const distBallToGoal = ballToGoal.length();
+    // O blocker só é ativado se a bola estiver no campo de defesa
+    if (ballPos.z * bb.dir >= 0) { bb.blocker = null; return; }
+    if (!bb._goalPosCache) bb._goalPosCache = new THREE.Vector3();
+    bb._goalPosCache.set(0, 0, bb.ownGoalZ);
+    
+    if (!bb._vBallToGoal) bb._vBallToGoal = new THREE.Vector3();
+    bb._vBallToGoal.subVectors(bb._goalPosCache, ballPos);
+    bb._vBallToGoal.y = 0;
+    
+    const distBallToGoal = bb._vBallToGoal.length();
     if (distBallToGoal < 0.1) { bb.blocker = null; return; }
-
-    const dirBallToGoal = ballToGoal.clone().normalize();
-
+    
+    if (!bb._dirBallToGoal) bb._dirBallToGoal = new THREE.Vector3();
+    bb._dirBallToGoal.copy(bb._vBallToGoal).normalize();
+    
     let bestScore = Infinity;
     let bestBlocker = null;
-
+    
+    if (!bb._vBallToPlayer) bb._vBallToPlayer = new THREE.Vector3();
+    if (!bb._vProjPos) bb._vProjPos = new THREE.Vector3();
+    
     for (const p of bb.own) {
         if (!p || p.role === 'gk' || p === bb.chaser) continue;
-
-        const ballToPlayer = new THREE.Vector3().subVectors(p.model.position, ballPos);
-        ballToPlayer.y = 0;
-
-        const projLen = ballToPlayer.dot(dirBallToGoal);
-
-        // Se o jogador estiver projetado entre a bola e o gol
+        bb._vBallToPlayer.subVectors(p.model.position, ballPos);
+        bb._vBallToPlayer.y = 0;
+        
+        const projLen = bb._vBallToPlayer.dot(bb._dirBallToGoal);
         if (projLen > 0 && projLen < distBallToGoal) {
-            // Distância perpendicular à linha do chute
-            const projPos = new THREE.Vector3().copy(ballPos).add(dirBallToGoal.clone().multiplyScalar(projLen));
-            const distToLine = p.model.position.distanceTo(projPos);
-            
-            // Distância ao centro do corredor central (x = 0)
+            bb._vProjPos.copy(ballPos).addScaledVector(bb._dirBallToGoal, projLen);
+            const distToLine = p.model.position.distanceTo(bb._vProjPos);
             const distToCenter = Math.abs(p.model.position.x);
-
-            // Score heurístico (quanto menor, melhor)
             const score = distToLine + (distToCenter * 0.5);
 
             if (score < bestScore) {
@@ -627,15 +627,9 @@ function computeBlock(bb) {
     let centro;
     const ment = MentalidadeModel[Tatics.estilo] || MentalidadeModel.balanceado;
 
-    if (defendingGoalKick) {
-        // No tiro de meta adversário, o time que defende volta para o meio-campo
+    if (isGoalKick) {
+        // No tiro de meta, os dois blocos ficam com o centro no meio do campo.
         centro = 0;
-    } else if (isGoalKick && bb.isAttacking) {
-        /*
-        No próprio tiro de meta, o centro fica a 15 metros da linha da grande área.
-        */
-        const linhaArea = (-CAMPO_COMP / 2) + 16.5;
-        centro = linhaArea + 15;
     } else if (gkHoldingBall) {
         /*
         O nosso guarda-redes tem a bola nas mãos: o bloco sobe e dá-lhe espaço
@@ -658,7 +652,23 @@ function computeBlock(bb) {
         A Mentalidade é o único deslocamento: os metros que o painel manda
         avançar (ofensiva) ou recuar (defensiva) em relação à bola.
         */
-        centro = (bb.bolaZSuave * bb.dir) + ment.blocoZ;
+        const dtMatch = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
+        const reposta = (typeof Match !== 'undefined' && Match.state !== 'PLAY');
+        
+        let stateOffset = 0;
+        if (bb.state === TeamState.TRANSITION_DEFENSIVE || bb.state === TeamState.DEFENSIVE) {
+            stateOffset = -7.0;
+        }
+        
+        let targetZ = ment.blocoZ + stateOffset;
+
+        if (bb.blocoZSuave === undefined) {
+            bb.blocoZSuave = targetZ;
+        } else {
+            bb.blocoZSuave = seguirBola(bb.blocoZSuave, targetZ, BlockShape.seguimentoBola, dtMatch, reposta);
+        }
+
+        centro = (bb.bolaZSuave * bb.dir) + bb.blocoZSuave;
     }
 
     let z0 = centro - (profundidade / 2);
@@ -755,11 +765,26 @@ function computeBlock(bb) {
         inteiro: o bloco não encolhe. É um limite físico — atrás do
         guarda-redes não há campo — e por isso ganha ao seguimento da bola.
         */
-        const z0Novo = recuoDaUltimaLinha(z0, maisRecuadoDirSuave, distMarca, pisoDir, tectoDir);
-        if (z0Novo !== z0) {
-            z0 = z0Novo;
+        const z0Novo = recuoDaUltimaLinha(z0, null, distMarca, pisoDir, tectoDir); // Ignore opponent striker pull
+        const offsetAlvo = z0Novo - z0;
+        const keyOffset = 'z0ClampOffset' + bb.team;
+
+        if (bb[keyOffset] === undefined || bb.possessionTime === 0) {
+            if (bb.possessionTime === 0) {
+                bb[keyOffset] = 0;
+            } else {
+                bb[keyOffset] = offsetAlvo;
+            }
+        }
+
+        bb[keyOffset] = seguirBola(bb[keyOffset], offsetAlvo, BlockShape.seguimentoBola, dtMatch, reposta);
+
+        if (Math.abs(bb[keyOffset]) > 0.05) {
+            z0 += bb[keyOffset];
             // O bloco desloca-se INTEIRO, mantendo o tamanho e formato rígido.
             z1 = z0 + profundidade;
+        } else {
+            bb[keyOffset] = 0;
         }
     }
 
@@ -794,10 +819,11 @@ function computeBlock(bb) {
     */
 
     /*
-    LIMITES: as LINHAS DE FUNDO. O rectângulo desloca-se inteiro
+    LIMITES: MARCA DO PENALTY. O rectângulo desloca-se inteiro
     para dentro do campo e NUNCA muda de tamanho, evitando a deformação.
+    O utilizador pediu para restringir na marca do Penalty (11.0m).
     */
-    const maxZ = CAMPO_COMP / 2;
+    const maxZ = (CAMPO_COMP / 2) - 11.0;
     if (z0 < -maxZ) {
         z1 += (-maxZ - z0);
         z0 = -maxZ;

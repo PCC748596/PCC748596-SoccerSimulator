@@ -8,5 +8,9 @@
     "build": "node -e 'console.log(\"Static check passed\")'",
     "lint": "node -e 'console.log(\"Lint check passed\")'",
     "obj2js": "node tools/obj2js.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1",
+    "three": "^0.185.1"
   }
 }

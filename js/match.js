@@ -15,6 +15,7 @@ const Match = {
     crowdExcitement: 0, crowdTimer: 0,
     currentLookTarget: null, // Usado para interpolação da câmara
     kickoffActive: false, kickoffTimer: 0, kickoffTaker: null, kickoffApoio: null,
+    kickoffTeam: null, kickoffPendingPassToDef: false,
 
     // Migração por eventos (ver EventBus) — parte 1: GK. Substitui o polling
     // directo de gk.gkEstado === 'apanhar'/'segurando' espalhado por vários
@@ -26,44 +27,39 @@ const Match = {
         this.scene = scene;
         this.currentLookTarget = new THREE.Vector3(0, 0, 0);
 
-        if (typeof EventBus !== 'undefined') {
+        if (typeof EventBus !== 'undefined' && !this._eventBusBound) {
+            this._eventBusBound = true;
             EventBus.on('GK_CATCH_BALL', (d) => {
-                this.gkHoldingBall[d.team] = true;
-                // Reposicionamento instantâneo: os dois times reorganizam já
-                // pro PositionBT deles, não esperam o lerp de suavização
-                // normal (PositionSmoothing) convergir devagar ao longo de
-                // vários segundos.
-                for (const p of this.players) p.snapPosition = true;
-                for (const p of this.opponents) p.snapPosition = true;
+                if (this.gkHoldingBall) this.gkHoldingBall[d.team] = true;
             });
-            EventBus.on('GK_RELEASE_BALL', (d) => { this.gkHoldingBall[d.team] = false; });
-
-            /*
-            Migração por eventos — parte 2: CB. Quando um CB fica com a bola,
-            a equipa reorganiza a saída: CB oposto recua 3m, lateral do
-            mesmo lado avança 3m, lateral oposto avança 5m. Bias temporário
-            (5s), consumido em commit() (position_bt.js).
-            */
+            EventBus.on('GK_RELEASE_BALL', (d) => {
+                if (this.gkHoldingBall) this.gkHoldingBall[d.team] = false;
+            });
             EventBus.on('CB_HAS_BALL', (d) => {
                 const p = d.p;
                 const teammates = (p.team === 'TeamA') ? this.players : this.opponents;
                 const outroCB = teammates.find(t => t.pos === 'CB' && t !== p);
-                const lb = teammates.find(t => t.pos === 'LB');
+                const rm = teammates.find(t => t.pos === 'RM');
+                const lm = teammates.find(t => t.pos === 'LM');
                 const rb = teammates.find(t => t.pos === 'RB');
-
-                const ladoBase = (p.baseTarget) ? p.baseTarget.x : p.model.position.x;
-                const mesmoLado = (ladoBase < 0) ? lb : rb;
-                const ladoOposto = (ladoBase < 0) ? rb : lb;
-
-                const aplicar = (jog, metros) => {
+                const lb = teammates.find(t => t.pos === 'LB');
+                
+                const ladoJogada = Math.sign(p.model.position.x) || Math.sign(this.ball.position.x) || 1;
+                const mesmoLado = (ladoJogada > 0) ? rm || rb : lm || lb;
+                const ladoOposto = (ladoJogada > 0) ? lm || lb : rm || rb;
+                
+                const aplicar = (jog, ofs) => {
                     if (!jog) return;
-                    jog.buildOutBias = { x: 0, z: metros * jog.dirZ };
+                    if (!jog.buildOutOffset) jog.buildOutOffset = new THREE.Vector3();
+                    jog.buildOutOffset.setZ(ofs * jog.dirZ);
                     jog.buildOutTimer = 5.0;
                 };
+                
                 aplicar(outroCB, -3);
                 aplicar(mesmoLado, 3);
                 aplicar(ladoOposto, 5);
             });
+        }
 
             /*
             Migração por eventos — parte 3: CM. Quando um CM fica com a
@@ -71,7 +67,7 @@ const Match = {
             lado avança 10m, CM oposto recua (dá support atrás), médio-ala
             do lado oposto avança 3m. Mesmo bias temporário (5s) do CB.
             */
-            EventBus.on('CM_HAS_BALL', (d) => {
+            if (!this._eventBusBoundCM) { this._eventBusBoundCM = true; EventBus.on('CM_HAS_BALL', (d) => {
                 const p = d.p;
                 const teammates = (p.team === 'TeamA') ? this.players : this.opponents;
                 const outroCM = teammates.find(t => t.pos === 'CM' && t !== p);
@@ -94,8 +90,7 @@ const Match = {
                 aplicar(mesmoB, 10);
                 aplicar(outroCM, -4);
                 aplicar(opostoM, 3);
-            });
-        }
+            }); }
 
         this.createField();
 
@@ -183,6 +178,10 @@ const Match = {
         this.goalLineVisual.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
         this.goalLineVisual.visible = false;
         this.scene.add(this.goalLineVisual);
+
+        // Anti Ping-Pong Aéreo: rastreia cabeceios sucessivos sem a bola assentar no chão/pé
+        this.aerialHeaderCount = 0;
+        this.aerialHeaderTimer = 0;
 
         this.showOffsideLines = false;
 
@@ -756,7 +755,8 @@ const Match = {
             seatMesh.setColorAt(seatIndex, getSeatColor());
             seatIndex++;
 
-            if (Math.random() < 0.75 && spectatorIndex < maxSeats) {
+            const crowdAllowed = (typeof Config === 'undefined' || Config.enableCrowd !== false);
+            if (crowdAllowed && Math.random() < 0.75 && spectatorIndex < maxSeats) {
                 specDummy.position.set(x, y + 0.13, z);
                 specDummy.rotation.set(0, rotY, 0);
                 specDummy.updateMatrix();
@@ -1230,6 +1230,8 @@ const Match = {
         this.kickoffTimer = 0.0;
         this.kickoffTaker = taker;
         this.kickoffApoio = apoio;
+        this.kickoffTeam = startA ? 'TeamA' : 'TeamB';
+        this.kickoffPendingPassToDef = true;
     },
 
     update: function (dt) {
@@ -1315,6 +1317,13 @@ const Match = {
             }
         }
 
+        if (this.aerialHeaderTimer > 0) {
+            this.aerialHeaderTimer -= dt;
+            if (this.aerialHeaderTimer <= 0) {
+                this.aerialHeaderCount = 0;
+            }
+        }
+
         let isPassing = false;
         if (this.ballCarrier && this.ballCarrier.fsm && (this.ballCarrier.fsm.currentState === 'PASS' || this.ballCarrier.fsm.currentState === 'CROSS')) {
             isPassing = true;
@@ -1359,12 +1368,12 @@ const Match = {
             let outfieldA = this.players.filter(p => p.role !== 'gk');
             if (outfieldA.length > 0) {
                 outfieldA.sort((a, b) => a.model.position.z - b.model.position.z);
-                this.offsideLineA.position.z = outfieldA[0].model.position.z;
+                this.offsideLineA.position.z = Math.min(0, outfieldA[0].model.position.z, this.ball.position.z);
             }
             let outfieldB = this.opponents.filter(p => p.role !== 'gk');
             if (outfieldB.length > 0) {
                 outfieldB.sort((a, b) => b.model.position.z - a.model.position.z);
-                this.offsideLineB.position.z = outfieldB[0].model.position.z;
+                this.offsideLineB.position.z = Math.max(0, outfieldB[0].model.position.z, this.ball.position.z);
             }
         }
 
@@ -1450,6 +1459,7 @@ const Match = {
     },
 
     updateCrowd: function (dt) {
+        if (typeof Config !== 'undefined' && Config.enableCrowd === false) return;
         if (!this.specMesh || !this.specMesh.material.userData.time) return;
         
         this.crowdTimer += dt;
@@ -1709,23 +1719,22 @@ const Match = {
         if (!best || bestDist > BallControl.reach) return false;
 
         /*
-        Bola à altura do peito: não se domina com o pé.
-
-        Tem de ser testado ANTES da disputa normal — essa resolve tudo como
-        toque de pé e punha uma bola a 1.4 m de altura a colar-se ao pé dele.
-
-        Mata-se no peito com os pés no chão. `bestAltura` é medida a partir
-        da base do modelo, que SOBE no salto: uma bola a 1.9 m com o jogador
-        0.55 m no ar dava 1.35 m de "altura de peito" e ele matava-a no ar a
-        meio de um cabeceio. `jumpTimer <= 0` fecha isso — no ar a bola é
-        para cabecear, não para amortecer.
+        Anti Ping-Pong Aéreo / Domínio no Peito:
+        1. Se a bola estiver na faixa do peito (ou se atingiu o limite de cabeceios seguidos),
+           força o domínio no peito com os pés no chão.
+        2. Limita a no máximo 2 cabeceios aéreos seguidos sem a bola assentar.
         */
-        if (bestAltura >= BallControl.peitoYMin &&
-            bestAltura <= BallControl.peitoYMax &&
-            best.jumpTimer <= 0 &&
-            best.fsm.currentState !== 'CHEST_CONTROL') {
-            best.controlarNoPeito(bestAltura);
-            return true;
+        const maxHeaders = (typeof HeaderModel !== 'undefined' && HeaderModel.maxHeadersSeguidos) ? HeaderModel.maxHeadersSeguidos : 2;
+        const atingiuLimiteCabeca = this.aerialHeaderCount >= maxHeaders;
+
+        if ((bestAltura >= BallControl.peitoYMin && bestAltura <= BallControl.peitoYMax && best.jumpTimer <= 0) ||
+            (atingiuLimiteCabeca && bestAltura <= (ALTURA_TESTA + HeaderModel.janelaContacto) && best.jumpTimer <= 0)) {
+            if (best.fsm.currentState !== 'CHEST_CONTROL') {
+                this.aerialHeaderCount = 0;
+                this.aerialHeaderTimer = 0;
+                best.controlarNoPeito(bestAltura);
+                return true;
+            }
         }
 
         let dominou;
@@ -1772,6 +1781,10 @@ const Match = {
         this.passTargetPos = null;
         this.lastTouchedTeam = best.team;
         this.lastTouchedPlayer = best;
+
+        if (this.kickoffTeam && best.team !== this.kickoffTeam) {
+            this.kickoffPendingPassToDef = false;
+        }
 
 
         /*
@@ -2085,6 +2098,10 @@ const Match = {
         if (this.ball.position.y <= r) {
             this.ball.position.y = r;
 
+            // Bola tocou no chão: reseta a contagem de cabeceios aéreos sucessivos
+            this.aerialHeaderCount = 0;
+            this.aerialHeaderTimer = 0;
+
             // Ressalto: só ressalta se ainda vier com velocidade vertical
             // suficiente, senão assenta em vez de tremer no chão.
             if (this.ballVel.y < 0) {
@@ -2208,7 +2225,7 @@ const Match = {
                             p.isCross = false;
                             p.touchLock = 0;
                             if (p.role === 'gk') {
-                                p.dynamicTarget = new THREE.Vector3(0, ALTURA_BASE_Y, -48 * dir);
+                                p.dynamicTarget.set(0, ALTURA_BASE_Y, -48 * dir);
                             } else {
                                 let z = p.baseTarget.z;
                                 if (p.role === 'def') {
@@ -2216,7 +2233,7 @@ const Match = {
                                     z = cap * dir;
                                 }
                                 if (z * dir > -margem) z = -margem * dir;
-                                p.dynamicTarget = new THREE.Vector3(p.baseTarget.x, ALTURA_BASE_Y, z);
+                                p.dynamicTarget.set(p.baseTarget.x, ALTURA_BASE_Y, z);
                             }
                             p.fsm.changeState('MOVE_TO_POS');
                             p.speedMult = 6.0; // Corrida rápida de regresso à formação
@@ -2322,7 +2339,7 @@ const Match = {
                             if (z * dir > -margem) z = -margem * dir;
                             targetZ = z;
                         }
-                        const distSq = p.model.position.distanceToSquared(new THREE.Vector3(targetX, ALTURA_BASE_Y, targetZ));
+                        const distSq = p.model.position.distanceToSquared(_v1.set(targetX, ALTURA_BASE_Y, targetZ));
                         if (distSq > 9.0) { // Raio de tolerância (3m)
                             allInPosition = false;
                         }
@@ -2355,6 +2372,7 @@ const Match = {
     setupSetPiece: function (type, team) {
         this.state = type;
         this.setPieceTeam = team;
+        this.kickoffPendingPassToDef = false;
         
         // Ao marcar uma bola parada, a posse de bola já é da equipe que vai cobrar.
         if (this.possessionTeam !== team) {
@@ -2420,7 +2438,7 @@ const Match = {
 
             // O alvo na área fica guardado: o SET_PIECE_TAKER volta a virá-lo
             // para lá todos os frames, e é para lá que ele centra.
-            this.cornerAlvo = new THREE.Vector3(canto.alvo.x, ALTURA_BASE_Y, canto.alvo.z);
+            if (!this.cornerAlvo) this.cornerAlvo = new THREE.Vector3(); this.cornerAlvo.set(canto.alvo.x, ALTURA_BASE_Y, canto.alvo.z);
 
             taker.model.position.set(canto.batedor.x, ALTURA_BASE_Y, canto.batedor.z);
             lookAtBola(taker.model, this.cornerAlvo);

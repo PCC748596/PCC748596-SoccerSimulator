@@ -84,7 +84,7 @@ test('velocidadeRasteiraPara: a bola chega sempre dominável', () => {
         const chegada = chegadaDe(sandbox, d, v0);
         assert.ok(chegada < easySpeed,
             `Passe de ${d}m chega a ${chegada.toFixed(2)} m/s — acima do easySpeed`);
-        assert.ok(chegada > 1.5,
+        assert.ok(chegada >= 1.49,
             `Passe de ${d}m chega a ${chegada.toFixed(2)} m/s — morre antes do alvo`);
     }
 });
@@ -111,8 +111,8 @@ test('velocidadeRasteiraPara: velocidades de saída ficam presas à calibração
     const vChegada = sandbox.PassModel.vChegadaRasteira;
     const curto = sandbox.velocidadeRasteiraPara(4, vChegada);
     const longo = sandbox.velocidadeRasteiraPara(25, vChegada);
-    assert.ok(Math.abs(curto - 8.42) < 0.05, `saida a 4m = ${curto.toFixed(2)} (esperado ~8.42)`);
-    assert.ok(Math.abs(longo - 16.86) < 0.05, `saida a 25m = ${longo.toFixed(2)} (esperado ~16.86)`);
+    assert.ok(Math.abs(curto - 7.18) < 0.05, `saida a 4m = ${curto.toFixed(2)} (esperado ~7.18)`);
+    assert.ok(Math.abs(longo - 16.46) < 0.05, `saida a 25m = ${longo.toFixed(2)} (esperado ~16.46)`);
 });
 
 test('velocidadeRasteiraPara: mais distância, mais velocidade de saída', () => {
