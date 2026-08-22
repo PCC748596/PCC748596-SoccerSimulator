@@ -1825,7 +1825,8 @@ class FootballPlayer {
         _vFrenteCorpo.set(0, 0, 1).applyQuaternion(this.model.quaternion);
         const yawAtual = Math.atan2(_vFrenteCorpo.x, _vFrenteCorpo.z);
         const velMax = SteeringModel.giroMaxGrausPorSeg * Math.PI / 180;
-        const yawNovo = SteeringModel.inercia
+        const usaTecto = SteeringModel.inercia && SteeringModel.tectoDeGiro;
+        const yawNovo = usaTecto
             ? passoDeGuinada(yawAtual, yawAlvo, dtGiro, velMax)
             : yawAlvo;
         _q1.setFromAxisAngle(_vUp, yawNovo);
@@ -1836,12 +1837,18 @@ class FootballPlayer {
         nao repoe o jogador virado 90 graus do movimento.
         */
         /*
-        O quaterniao ja vem com o passo de guinada aplicado (tecto de
-        velocidade angular), por isso nao leva mais slerp por cima: um
-        amortecimento sobre um passo ja limitado sO voltava a por a viragem
-        a depender do erro.
+        Com TECTO, o `_q1` ja vem com o passo de guinada aplicado e nao leva
+        slerp por cima — amortecer um passo ja limitado punha outra vez a
+        viragem a depender do erro.
+
+        Sem tecto, `_q1` e o alvo final e a aproximacao e o slerp exponencial
+        de sempre, governado pelo `giro`.
         */
-        this.model.quaternion.copy(_q1);
+        if (usaTecto || !SteeringModel.inercia) {
+            this.model.quaternion.copy(_q1);
+        } else {
+            this.model.quaternion.slerp(_q1, Math.min(1.0, SteeringModel.giro * Match.delta));
+        }
         if (SteeringModel.inercia) {
             this.velocity.lerp(desired, Math.min(1.0, SteeringModel.aceleracao * Match.delta));
         } else {

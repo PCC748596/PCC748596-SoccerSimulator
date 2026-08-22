@@ -1250,6 +1250,17 @@ const SteeringModel = {
     giroMaxGrausPorSeg: 720,
 
     /*
+    LIGA/DESLIGA o tecto acima. Com `false` volta o comportamento antigo: um
+    slerp exponencial governado pelo `giro`, em que a velocidade angular e
+    proporcional ao erro e nao tem limite — mais nervoso nas inversoes, mas
+    e o "feel" que o dono do projecto preferiu depois de ver os dois.
+
+    O passoDeGuinada continua ligado e testado; muda-se este interruptor para
+    voltar a ele sem procurar codigo.
+    */
+    tectoDeGiro: false,
+
+    /*
     TECTO DO DESVIO entre o corpo e a direccao do movimento, a defender e a
     apoiar (estados que mandam olhar para a bola).
 
