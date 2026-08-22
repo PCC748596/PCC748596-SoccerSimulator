@@ -667,7 +667,7 @@ function actPass(ctx) {
         const allOpps = (p.team === 'TeamA') ? Match.opponents : Match.players;
         for (const o of allOpps) {
             if (o.role === 'gk') continue;
-            if (p.model.position.distanceToSq(o.model.position) < 12.25) { // 3.5m
+            if (p.model.position.distanceToSquared(o.model.position) < 12.25) { // 3.5m
                 adversarioProximo = true;
                 break;
             }
@@ -1308,6 +1308,16 @@ function escolherDestinoDeCorrida(p, bb) {
                 maxCorrida: R.maxCorrida
             });
             if (!cand) continue;
+
+            /*
+            O tecto do estilo (Box-to-Box: nao passa da entrada da area) vale
+            tambem para a corrida — senao o estilo trava o alvo posicional e a
+            corrida leva-o la na mesma. Ver limitarPontoAoEstilo.
+            */
+            const cortado = (typeof limitarPontoAoEstilo === 'function')
+                ? limitarPontoAoEstilo(p, cand) : cand;
+            cand.x = cortado.x;
+            cand.z = cortado.z;
 
             // Distancia de passe a partir de quem tem a bola.
             const distPasse = Math.hypot(cand.x - cp.x, cand.z - cp.z);

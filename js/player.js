@@ -1701,12 +1701,46 @@ class FootballPlayer {
 
 
 
-        // Corpo vira para a direcção do movimento (ou para a bola ao defender/apoiar)
+        /*
+        Corpo vira para a direcção do movimento — ou para a bola, a defender e
+        a apoiar, que é como se marca e se espera um passe: de lado, a ver a
+        bola e o homem.
+
+        SÓ QUE ISSO TEM UM LIMITE. Medido (tools/diag_bugs.js): 2% dos frames
+        com o corpo a mais de 90 graus da direcção do movimento, e as amostras
+        eram todas destes estados — um médio em SUPPORT_PASS a 7.9 m/s virado
+        a 100 graus do lado para onde corria. A correr, ninguém vai de lado:
+        abre-se o corpo até certo ponto e o resto é a cabeça que roda.
+
+        `DESVIO_MAX_CORPO` é esse ponto. Abaixo de `VEL_ANDAR` o jogador está
+        a colocar-se e pode ficar completamente virado para a bola; acima
+        disso o desvio é limitado, rodando a direcção de olhar de volta para
+        a do movimento o que for preciso.
+        */
         let lookTarget = target;
         if (this.fsm && Match.ball) {
             const s = this.fsm.currentState;
             if (s === 'MARKING' || s === 'BLOCKING' || s === 'AFT_SUPPORT' || s === 'SUPPORT_PASS') {
                 lookTarget = Match.ball.position;
+
+                const velAtual = Math.hypot(this.velocity.x, this.velocity.z);
+                if (velAtual > SteeringModel.velAndar) {
+                    const movAng = Math.atan2(this.velocity.x, this.velocity.z);
+                    const olharAng = Math.atan2(
+                        lookTarget.x - this.model.position.x,
+                        lookTarget.z - this.model.position.z);
+                    let delta = olharAng - movAng;
+                    while (delta > Math.PI) delta -= 2 * Math.PI;
+                    while (delta < -Math.PI) delta += 2 * Math.PI;
+                    const tecto = SteeringModel.desvioMaxCorpo;
+                    if (Math.abs(delta) > tecto) {
+                        const ang = movAng + Math.sign(delta) * tecto;
+                        lookTarget = _vOlharCorpo.set(
+                            this.model.position.x + Math.sin(ang) * 10,
+                            this.model.position.y,
+                            this.model.position.z + Math.cos(ang) * 10);
+                    }
+                }
             }
         }
         _v1.set(this.model.position.x * 2 - lookTarget.x, this.model.position.y, this.model.position.z * 2 - lookTarget.z);

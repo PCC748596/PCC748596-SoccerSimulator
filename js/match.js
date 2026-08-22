@@ -998,7 +998,7 @@ const Match = {
                 
                 const idxPos = contagemPos[fData[i].pos] || 0;
                 contagemPos[fData[i].pos] = idxPos + 1;
-                this.aplicarPlayingStyle(teamList[i], fData[i].pos, idxPos);
+                this.aplicarPlayingStyle(teamList[i], fData[i].pos, idxPos, teamList[i].team);
                 
                 if (fData[i].role === 'gk') {
                     teamList[i].gkStyleBase = isTeamA ? 'offensive' : 'defensive';
@@ -1028,13 +1028,27 @@ const Match = {
     ramos do GR e do lateral já lêem. Aqui só se garante que ficam coerentes
     com o estilo escolhido, em vez de serem uma segunda fonte de verdade.
     */
-    aplicarPlayingStyle: function (p, pos, idxPos) {
+    aplicarPlayingStyle: function (p, pos, idxPos, team) {
         if (typeof PlayingStyles === 'undefined') return;
 
         let chave = p.playingStyleFixo;
         if (!chave || !estiloValidoPara(chave, pos)) {
-            const omissao = EstiloPorOmissao[pos];
+            /*
+            A equipa fala primeiro (EstiloPorEquipa), e só depois a posição
+            (EstiloPorOmissao). É o que permite os dois onzes não serem
+            clones: lateral defensivo num lado, Cross Specialist só numa
+            equipa, etc.
+            */
+            const daEquipa = (typeof EstiloPorEquipa !== 'undefined' && team)
+                ? (EstiloPorEquipa[team] || {})[pos] : undefined;
+            const omissao = (daEquipa !== undefined) ? daEquipa : EstiloPorOmissao[pos];
             chave = Array.isArray(omissao) ? omissao[(idxPos || 0) % omissao.length] : omissao;
+            // Um estilo pedido para a equipa que não sirva à posição não pode
+            // deixar o jogador sem estilo nenhum: cai no omisso da posição.
+            if (chave && !estiloValidoPara(chave, pos)) {
+                const alt = EstiloPorOmissao[pos];
+                chave = Array.isArray(alt) ? alt[(idxPos || 0) % alt.length] : alt;
+            }
         }
         if (!chave || !PlayingStyles[chave]) chave = null;
         p.playingStyle = chave;
@@ -1234,11 +1248,31 @@ const Match = {
         this.kickoffPendingPassToDef = true;
     },
 
+    /*
+    PONTOS DE DEBUG (botão Player_Pass_Points) — quem os limpa, e porquê não
+    pode ser toda a gente.
+
+    Eram limpos aqui, no topo do frame, nas DUAS equipas. Só que quem os
+    escreve é o portador da bola, dentro do BT dele — a meio do frame — e o
+    label de cada jogador é desenhado no `update` do próprio jogador. Todo o
+    colega processado ANTES do portador desenhava o label com os pontos já
+    apagados, e no frame seguinte eram apagados outra vez: o botão parecia
+    não fazer nada.
+
+    A equipa COM posse mantém os pontos até o portador os reescrever (é o
+    último valor conhecido, que é o que se quer ver no ecrã); a equipa sem
+    posse é limpa, senão ficavam lá os valores da posse anterior.
+    */
+    limparPontosDeDebug: function () {
+        const comPosse = this.possessionTeam;
+        for (const p of this.players) if (comPosse !== 'TeamA') p.debugPoints = null;
+        for (const p of this.opponents) if (comPosse !== 'TeamB') p.debugPoints = null;
+    },
+
     update: function (dt) {
         if (!this._pf_stats) this._pf_stats = { count: 0, time: 0 };
         const t0 = performance.now();
-        for (let p of this.players) { p.debugPoints = null; }
-        for (let p of this.opponents) { p.debugPoints = null; }
+        this.limparPontosDeDebug();
         this.delta = dt;
 
         if (this.kickoffActive) {

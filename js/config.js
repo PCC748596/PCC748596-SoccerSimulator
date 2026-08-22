@@ -746,7 +746,18 @@ const EstiloBase = {
     pressao: 1.0, cadencia: 1.0,
     ombroDefesa: false, dentroArea: false, seguraBola: false,
     atraiDefesa: false, cortaParaDentro: false, colaNaLinha: false,
-    juntaSeAoAtaque: false
+    juntaSeAoAtaque: false,
+    /*
+    Largura MINIMA da ala, em metros do eixo, para quem tem `colaNaLinha`.
+    O tecto da ala era so a borda do bloco, e com o bloco deslocado para o
+    lado contrario o jogador de ala era arrastado para dentro — a queixa de
+    "o lateral ofensivo fecha pelo meio". Isto e o piso: nunca fica mais
+    fechado do que isto com a equipa a atacar (limitado pela linha lateral).
+    */
+    larguraMin: 0,
+    // Procura o lado contrario ao do parceiro de ataque (Dummy Runner), para
+    // os dois nao caírem no mesmo corredor.
+    ladoOpostoAoParceiro: false
 };
 
 const PlayingStyles = {
@@ -758,8 +769,15 @@ const PlayingStyles = {
     },
     dummy_runner: {
         nome: 'Dummy Runner', posicoes: ['CF', 'SS', 'AM'],
-        largura: 5, passe: 1.3, remate: 0.9,
-        atraiDefesa: true
+        /*
+        MEDIDO: estava 62-80% do tempo do MESMO lado do outro avançado, e com
+        a mediana de avanço ACIMA da do Fox in the Box (10.5 vs 8.4) — o
+        chamariz à frente do finalizador, e os dois no mesmo corredor. O
+        trabalho dele é o contrário: abrir espaço, o que só acontece se se
+        afastar do parceiro e não lhe passar à frente.
+        */
+        avanco: -2, largura: 3, passe: 1.3, remate: 0.9,
+        atraiDefesa: true, ladoOpostoAoParceiro: true
     },
     fox_in_the_box: {
         nome: 'Fox in the Box', posicoes: ['CF'],
@@ -792,26 +810,35 @@ const PlayingStyles = {
 
     /* --- Alas ------------------------------------------------------------ */
     prolific_winger: {
-        nome: 'Prolific Winger', posicoes: ['LW', 'RW'],
+        // LM/RM incluidos: num 4-4-2 nao existe LW/RW, e o extremo prolifico
+        // e exactamente o medio de ala que fica na ponta a espera da bola.
+        nome: 'Prolific Winger', posicoes: ['LW', 'RW', 'LM', 'RM'],
         driblar: 1.5,
         // "abre pelas pontas, e mesmo que o jogo vá para o meio ele fica
         // mais aberto na ponta esperando a bola para poder cruzar" — nunca
         // fecha, cola na linha (mesmo mecanismo do Cross Specialist).
         largura: 4, remate: 1.2, cruzar: 1.1,
-        colaNaLinha: true
+        larguraMin: 22, colaNaLinha: true
     },
     roaming_flank: {
         nome: 'Roaming Flank', posicoes: ['LW', 'RW', 'LM', 'RM'],
         driblar: 1.4,
         // "abre pelas pontas, mas se o jogo vai para o meio ele fecha mais
         // para dar opção de passe" — fecha com a bola CENTRAL, não fundo.
-        largura: -4, passe: 1.15, conduzir: 1.2,
+        //
+        // A `largura: -4` fechava 4 m para o eixo SEMPRE, com bola e sem ela.
+        // Era isso que o punha a infiltrar-se pelo meio a marcar (queixa
+        // explícita): a ponta é o posto dele, e fechar é a excepção. Passa a
+        // 0 — a infiltração vive toda em `fechaComBolaCentral`, que só corre
+        // com a equipa a atacar e só quando o corredor está tapado ou há
+        // linha interior aberta.
+        largura: 0, passe: 1.15, conduzir: 1.2,
         fechaComBolaCentral: true
     },
     cross_specialist: {
         nome: 'Cross Specialist', posicoes: ['LW', 'RW', 'LM', 'RM'],
         largura: 7, cruzar: 1.6, conduzir: 0.9, remate: 0.7,
-        colaNaLinha: true
+        larguraMin: 22, colaNaLinha: true
     },
 
     /* --- Meio-campo ------------------------------------------------------ */
@@ -852,7 +879,15 @@ const PlayingStyles = {
         // livre + equipa a atacar — sem isso ficava preso na linha, apesar
         // do estilo. `avanco` é base, sempre activo, contraparte do -2 do
         // defensive_fullback.
-        avanco: 4, cruzar: 1.25, colaNaLinha: true
+        //
+        // MEDIDO (tools/diag_posicoes.js, 4 sementes x 90 s): com a equipa a
+        // atacar, a mediana do avanço era -9 m — o lateral "ofensivo" não
+        // passava do meio-campo, quanto mais apoiar pela ala até à
+        // intermediária contrária. O `avancoComBola` é o que o leva lá; a
+        // `largura` e o `larguraMin` são o que o impedem de ser arrastado
+        // para o eixo quando o bloco bascula para o lado oposto.
+        avanco: 4, avancoComBola: 14, largura: 3, larguraMin: 20,
+        cruzar: 1.25, colaNaLinha: true
     },
     fullback_finisher: {
         nome: 'Full-back Finisher', posicoes: ['LB', 'RB'],
@@ -885,6 +920,35 @@ const EstiloPorOmissao = {
     LM: 'roaming_flank', RM: 'roaming_flank',
     LW: 'prolific_winger', RW: 'prolific_winger',
     CF: ['fox_in_the_box', 'dummy_runner'], SS: 'creative_playmaker'
+};
+
+/*
+Estilos por EQUIPA, quando as duas não devem jogar igual — pedido explícito:
+um lateral defensivo em cada equipa, e um Creative Playmaker, um Cross
+Specialist, um Prolific Winger, um CB Destroyer e um Clássico 10 espalhados,
+cada um numa só das equipas. Sem isto o `EstiloPorOmissao` é indexado só pela
+posição e os dois onzes saem clones um do outro.
+
+Lido ANTES do `EstiloPorOmissao` (ver aplicarPlayingStyle em match.js); o que
+não estiver aqui cai no omisso da posição. O formato é o mesmo: string, ou
+lista indexada pela ordem do jogador entre os da mesma posição.
+
+Os quatro estilos que estão a ser afinados — Offensive Full-back, Roaming
+Flank, Box-to-Box e Dummy Runner — ficam de propósito em campo nas duas
+equipas, para se poder ver o efeito das mudanças num jogo só.
+*/
+const EstiloPorEquipa = {
+    TeamA: {
+        RB: 'defensive_fullback',        // LB fica Offensive Full-back
+        CB: ['build_up', 'the_destroyer'],
+        CM: ['box_to_box', 'classic_no10'],
+        LM: 'creative_playmaker',
+        RM: 'prolific_winger'
+    },
+    TeamB: {
+        RB: 'defensive_fullback',        // LB fica Offensive Full-back
+        LM: 'cross_specialist'           // RM fica Roaming Flank
+    }
 };
 
 /*
@@ -1082,6 +1146,28 @@ vinham so de decisao ma ou de dominio falhado.
                      costasMult) passa dos 30°, muito acima do "~9.2 graus"
                      documentado para sigmaMax sozinho
 */
+/*
+Direccao do CORPO em relacao a do movimento.
+
+Ver steerArrive em player.js: a defender e a apoiar o jogador vira-se para a
+bola, e sem tecto isso punha-o a correr a 8 m/s virado 100 graus para o lado
+(medido em 2% dos frames, tools/diag_bugs.js).
+*/
+const SteeringModel = {
+    velAndar: 2.5,                        // abaixo disto esta a colocar-se: pode virar-se todo
+    desvioMaxCorpo: 65 * Math.PI / 180    // 65 graus de corpo aberto, no maximo
+};
+
+// Reutilizado em steerArrive (player.js) para o alvo de olhar ja limitado.
+const _vOlharCorpo = new THREE.Vector3();
+
+/*
+A partir de que minuto de JOGO (nao de tempo real) um central Extra Frontman
+sobe ao ataque por estar a perder. O jogo tem 2x45; 75 deixa o ultimo quarto
+de hora, que e quando uma equipa a perder mete um central na frente.
+*/
+const ExtraFrontmanModel = { minutoFinal: 75 };
+
 const PassErrorModel = {
     sigmaMax: 0.16,        // ~9.2 graus
     sigmaMin: 0.012,       // ~0.7 graus

@@ -428,6 +428,21 @@ function pickIntercetor(bb) {
     const janela = PerceptionModel.janelaIntercetar;
     const margem = PerceptionModel.margemMelhor;
 
+    /*
+    UM PASSE MEU NÃO SE INTERCEPTA.
+
+    O `pickIntercetor` só olhava para `Match.ballCarrier` — e durante um passe
+    não há portador, por isso a equipa que ACABOU DE PASSAR também escolhia
+    intercetor. Medido (tools/diag_bugs.js): a equipa COM posse tinha alguém
+    em INTERCEPT em 23% dos frames, contra 6% da equipa que defendia — e como
+    o destinatário vai ao ponto dele e o "intercetor" ao ponto de intercepção,
+    viam-se dois colegas a correr para sítios diferentes atrás da mesma bola.
+
+    Quem trata de um passe nosso é o destinatário (ramo `Receber`). Se o passe
+    se perder, o `intendedReceiver` é limpo e isto volta a correr.
+    */
+    if (Match.intendedReceiver && Match.intendedReceiver.team === bb.team) return;
+
     const candidatos = [];
     for (const p of bb.outfield) {
         if (!p || p.role === 'gk') continue;
@@ -451,6 +466,14 @@ function pickIntercetor(bb) {
     let tQuemJaVai = Infinity;
     for (const outro of [bb.chaser, Match.intendedReceiver]) {
         if (!outro) continue;
+        /*
+        SÓ COMPANHEIROS. O `intendedReceiver` de um passe ADVERSÁRIO estava a
+        contar como "alguém que já vai à bola", e como o destinatário chega
+        quase sempre primeiro ao passe que lhe é dirigido, a equipa que
+        defendia desistia de interceptar quase sempre. Era o outro lado da
+        moeda dos 23%/6% medidos: a interceptação estava ao contrário.
+        */
+        if (outro.team !== bb.team) continue;
         const bOutro = outro.blackboard && outro.blackboard.ball;
         const t = (bOutro && bOutro.interceptable) ? bOutro.timeToIntercept : 0;
         if (t < tQuemJaVai) tQuemJaVai = t;
@@ -1506,7 +1529,13 @@ function atribuirApoiosDaEquipa(lista, bb) {
 
     for (const e of escolhidos) {
         const p = lista.find(j => j.id === e.id);
-        if (p) p.apoioPonto = { x: e.x, z: e.z };
+        if (!p) continue;
+        // Mesmo tecto do estilo que trava o alvo posicional (Box-to-Box nao
+        // passa da entrada da area). Sem isto, o apoio de circulacao punha-o
+        // la dentro na mesma — medido em 16% das amostras dentro da area.
+        p.apoioPonto = (typeof limitarPontoAoEstilo === 'function')
+            ? limitarPontoAoEstilo(p, { x: e.x, z: e.z })
+            : { x: e.x, z: e.z };
     }
 }
 
