@@ -657,7 +657,7 @@ function computeBlock(bb) {
         
         let stateOffset = 0;
         if (bb.state === TeamState.TRANSITION_DEFENSIVE || bb.state === TeamState.DEFENSIVE) {
-            stateOffset = -7.0;
+            stateOffset = -5.0;
         }
         
         let targetZ = ment.blocoZ + stateOffset;

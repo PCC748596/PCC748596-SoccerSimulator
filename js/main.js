@@ -92,7 +92,7 @@ function togglePlayerNumber() {
 }
 function togglePlayerPoints() {
     window.showPlayerPoints = !window.showPlayerPoints;
-    document.getElementById('btn-playerpoints').innerText = 'PlayerPoints: ' + (window.showPlayerPoints ? 'ON' : 'OFF');
+    document.getElementById('btn-playerpoints').innerText = 'Player_Pass_Points: ' + (window.showPlayerPoints ? 'ON' : 'OFF');
     document.getElementById('btn-playerpoints').classList.toggle('active', window.showPlayerPoints);
 }
 

@@ -1727,13 +1727,41 @@ const Match = {
         const maxHeaders = (typeof HeaderModel !== 'undefined' && HeaderModel.maxHeadersSeguidos) ? HeaderModel.maxHeadersSeguidos : 2;
         const atingiuLimiteCabeca = this.aerialHeaderCount >= maxHeaders;
 
-        if ((bestAltura >= BallControl.peitoYMin && bestAltura <= BallControl.peitoYMax && best.jumpTimer <= 0) ||
-            (atingiuLimiteCabeca && bestAltura <= (ALTURA_TESTA + HeaderModel.janelaContacto) && best.jumpTimer <= 0)) {
+        if (bestAltura >= BallControl.peitoYMin && bestAltura <= BallControl.peitoYMax && best.jumpTimer <= 0) {
             if (best.fsm.currentState !== 'CHEST_CONTROL') {
                 this.aerialHeaderCount = 0;
                 this.aerialHeaderTimer = 0;
                 best.controlarNoPeito(bestAltura);
                 return true;
+            }
+        } else if (atingiuLimiteCabeca && bestAltura <= (ALTURA_TESTA + HeaderModel.janelaContacto)) {
+            if (best.jumpTimer <= 0) {
+                if (best.fsm.currentState !== 'CHEST_CONTROL') {
+                    this.aerialHeaderCount = 0;
+                    this.aerialHeaderTimer = 0;
+                    best.controlarNoPeito(bestAltura);
+                    return true;
+                }
+            } else {
+                // BUG FIX: Jogador está no ar (jumpTimer > 0) e o limite de cabeceios foi atingido!
+                // O código antigo ignorava a condição porque exigia jumpTimer <= 0, 
+                // permitindo que o executeHeader rodasse 3, 4, 5 vezes seguidas.
+                // Agora, forçamos a bola para o chão para encerrar a disputa aérea.
+                this.aerialHeaderCount = 0;
+                this.aerialHeaderTimer = 0;
+                
+                this.ballVel.multiplyScalar(0.3);
+                this.ballVel.x += (Math.random() - 0.5) * 4.0;
+                this.ballVel.z += (Math.random() - 0.5) * 4.0;
+                this.ballVel.y = -4.0; // Força para baixo rápido
+                
+                this.intendedReceiver = null;
+                this.passTargetPos = null;
+                this.lastTouchedTeam = best.team;
+                this.lastTouchedPlayer = best;
+                window.bolaChutada = false;
+                
+                return false;
             }
         }
 

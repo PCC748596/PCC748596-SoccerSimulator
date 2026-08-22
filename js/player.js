@@ -353,6 +353,38 @@ class FootballPlayer {
                 score += 20;
             }
 
+            // Penalização para giros > 120 graus com marcação por trás <= 2 metros
+            let fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.model.quaternion).normalize();
+            let toTarget = new THREE.Vector3(optPos.x - this.model.position.x, 0, optPos.z - this.model.position.z);
+            if (toTarget.lengthSq() > 0.01) {
+                toTarget.normalize();
+                let angle = fwd.angleTo(toTarget);
+                // Giro de mais de 120 graus
+                if (angle > (Math.PI * 2 / 3)) {
+                    let temMarcacaoCostas = false;
+                    for (let i = 0; i < opponents.length; i++) {
+                        let opp = opponents[i];
+                        if (opp.role === 'gk') continue;
+                        let distToOpp = this.model.position.distanceTo(opp.model.position);
+                        if (distToOpp <= 2.0) {
+                            let toOpp = new THREE.Vector3(opp.model.position.x - this.model.position.x, 0, opp.model.position.z - this.model.position.z);
+                            if (toOpp.lengthSq() > 0.01) {
+                                toOpp.normalize();
+                                // Considera "por trás" se o ângulo entre a frente do jogador e o adversário for > 90 graus
+                                if (fwd.angleTo(toOpp) > Math.PI / 2) {
+                                    temMarcacaoCostas = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (temMarcacaoCostas) {
+                        if (score > 0) score *= 0.80;
+                        else score *= 1.20;
+                    }
+                }
+            }
+
             ratedCandidates.push({ player: opt, score: score });
         }
 
@@ -816,6 +848,38 @@ class FootballPlayer {
                 score *= 1.20; // Trás
             }
 
+            // Penalização para giros > 120 graus com marcação por trás <= 2 metros
+            let fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.model.quaternion).normalize();
+            let toTarget = new THREE.Vector3(optPos.x - this.model.position.x, 0, optPos.z - this.model.position.z);
+            if (toTarget.lengthSq() > 0.01) {
+                toTarget.normalize();
+                let angle = fwd.angleTo(toTarget);
+                // Giro de mais de 120 graus
+                if (angle > (Math.PI * 2 / 3)) {
+                    let temMarcacaoCostas = false;
+                    for (let i = 0; i < opponents.length; i++) {
+                        let opp = opponents[i];
+                        if (opp.role === 'gk') continue;
+                        let distToOpp = this.model.position.distanceTo(opp.model.position);
+                        if (distToOpp <= 2.0) {
+                            let toOpp = new THREE.Vector3(opp.model.position.x - this.model.position.x, 0, opp.model.position.z - this.model.position.z);
+                            if (toOpp.lengthSq() > 0.01) {
+                                toOpp.normalize();
+                                // Considera "por trás" se o ângulo entre a frente do jogador e o adversário for > 90 graus
+                                if (fwd.angleTo(toOpp) > Math.PI / 2) {
+                                    temMarcacaoCostas = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (temMarcacaoCostas) {
+                        if (score > 0) score *= 0.80; // Reduz o bônus se positivo
+                        else score *= 1.20; // Aumenta a penalidade se negativo (20% mais grave)
+                    }
+                }
+            }
+
             // Virada
             if (isOrchestrator) {
                 if (Math.sign(optPos.x) !== Math.sign(ownX) && Math.abs(optPos.x - ownX) > 20) {
@@ -831,7 +895,23 @@ class FootballPlayer {
             // Multiplicador do Playing Style DO ALVO
             // Aplicado no final para agir sobre a nota total balanceada
             if (Config.usePlayingStyles && typeof estiloAtivoDe === 'function') {
-                score *= estiloAtivoDe(opt).passe;
+                let styleMult = estiloAtivoDe(opt).passe;
+                
+                // Ajuste de setor solicitado: bonus fixo baseado no lado do campo do recebedor
+                const optSec = getSectorOfX(optPos.x); // Retorna 'esq', 'cen' ou 'dir'
+                if (optSec === 'esq') {
+                    styleMult = 1.4;
+                } else if (optSec === 'cen') {
+                    styleMult = 1.3;
+                } else if (optSec === 'dir') {
+                    styleMult = 1.2;
+                }
+
+                if (score > 0) {
+                    score *= styleMult;
+                } else {
+                    score /= styleMult; // Divide a penalidade se score for negativo
+                }
             }
 
             // Percepção de Risco de Limites do Campo (Linhas Laterais / Fundo):
@@ -1457,7 +1537,7 @@ class FootballPlayer {
             if (window.showPlayerBT) parts.push(this.fsm.currentState);
             if (window.showPlayerPlayingStyle && this.playingStyle && !this.playingStyleDesligado) parts.push(this.playingStyle);
             if (window.showPlayerPoints && this.debugPoints) {
-                let pts = Object.entries(this.debugPoints).map(([k,v]) => `${k}:${v}`).join(" | ");
+                let pts = Object.entries(this.debugPoints).map(([k,v]) => `${k}: ${v}`).join(" | ");
                 if (pts) parts.push(pts);
             }
             if (window.speedMultiplier === "frame") {
