@@ -61,7 +61,7 @@ function run(rel) {
     vm.runInContext(fs.readFileSync(path.join(raiz, rel), 'utf8'), ctx, { filename: rel });
 }
 
-run('node_modules/three/build/three.min.js');
+w.THREE = require('three');
 
 // A lista de scripts vem do index.html, nao de uma copia a mao.
 fs.readFileSync(path.join(raiz, 'index.html'), 'utf8')

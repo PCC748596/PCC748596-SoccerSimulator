@@ -1605,6 +1605,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Como o portador escolhe por onde conduzir | `config.js` → `DribbleModel` |
 | Mudar como um remate é executado | `fsm.js` → `case 'SHOOT'` |
 | Física da bola, golo, linha lateral | `match.js` → `updateBall()` |
+| Contratos e intenções de jogada (pedir bola / lançamentos) | `intentions.js` + `bt/player_bt.js` |
 | Guarda-redes | `player.js` → `updateGK()` |
 | Câmaras de TV | `match.js` → `updateCamera()` |
 | Câmara de órbita livre | `controls.js` |

@@ -68,7 +68,7 @@ test('servir so aceita um contrato aberto, e uma vez so', () => {
     assert.strictEqual(r.primeiro, true);
     assert.strictEqual(r.segundo, false, 'dois passadores serviram o mesmo contrato');
     assert.strictEqual(r.estado, 'servido');
-    assert.deepStrictEqual(r.ponto, { x: 5, z: 5 });
+    assert.deepStrictEqual(r.ponto, { x: 5, y: 0, z: 5 });
 });
 
 test('perder a posse derruba todos os contratos da equipa', () => {

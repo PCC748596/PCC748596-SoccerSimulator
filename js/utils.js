@@ -321,11 +321,6 @@ function velocidadeRasteiraPara(dist, vChegada) {
     dist = Math.max(0, dist);
 
     let vAlvo = vChegada;
-    if (dist < 12.0) {
-        vAlvo += (12.0 - dist) * 0.18;
-    } else if (dist > 15.0) {
-        vAlvo = Math.max(1.5, vChegada - (dist - 15.0) * 0.15);
-    }
 
     const k = BallPhysics.kArrasto;
     const atrito = BallPhysics.atritoRolamento * BallPhysics.gravidade;
