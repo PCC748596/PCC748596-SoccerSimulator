@@ -1240,12 +1240,14 @@ const SteeringModel = {
     O `passoDeGuinada` (utils.js) existia para isto desde sempre, com tecto e
     cinco testes a passar, e nunca tinha sido chamado por ninguem.
 
-    Tempos de viragem a 360 graus/s: 180 em 0.5 s, 90 em 0.25 s, 45 em 0.12 s.
-    Uma volta completa por segundo — dentro do que um jogador faz (400-600 no
-    maximo) e da peso real as inversoes de marcha, que ate aqui eram de graca.
-    Esteve em 180, que se mostrou lento de mais a olho.
+    Tempos de viragem a 720 graus/s: 180 em 0.25 s, 90 em 0.12 s, 45 em 0.06 s.
+    Duas voltas por segundo. Esteve em 180 e depois 360, ambos lentos de mais
+    a olho. Continua a ser um TECTO — a diferenca para o slerp exponencial
+    antigo nao e o tempo total da viragem, e o facto de a velocidade angular
+    ser constante em vez de disparar com o erro (3240 graus/s no primeiro
+    frame de uma inversao, ou 52 graus de uma vez).
     */
-    giroMaxGrausPorSeg: 360,
+    giroMaxGrausPorSeg: 720,
 
     /*
     TECTO DO DESVIO entre o corpo e a direccao do movimento, a defender e a
