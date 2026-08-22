@@ -3,81 +3,206 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>TeamBT — Fluxograma ao vivo</title>
     <style>
-        body {
-            margin: 0;
-            padding: 16px;
-            background: #1b1e24;
-            color: #ddd;
-            font-family: Consolas, monospace;
-            font-size: 13px;
+        :root {
+            --fundo: #0d1117;
+            --painel: #12161d;
+            --painel-borda: #232a35;
+            --tela: #0a0e14;
+            --texto: #d7dde7;
+            --texto-fraco: #8b95a5;
+            --texto-tenue: #5d6673;
+
+            --root: #a855f7;
+            --selector: #22c55e;
+            --selector-alt: #f59e0b;
+            --sequence: #3b82f6;
+            --action: #7c8797;
+
+            --linha: #2b3440;
+            --sucesso: #22c55e;
+            --running: #f59e0b;
+            --falha: #3a424e;
         }
 
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--fundo);
+            color: var(--texto);
+            font-family: "Segoe UI", Inter, system-ui, sans-serif;
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ---------------------------------------------------------- topo */
         #topo {
             display: flex;
             align-items: center;
-            gap: 16px;
-            margin-bottom: 20px;
+            gap: 18px;
+            padding: 14px 22px;
+            background: var(--painel);
+            border-bottom: 1px solid var(--painel-borda);
+            flex: 0 0 auto;
         }
 
         #topo h1 {
             font-size: 15px;
+            font-weight: 600;
             margin: 0;
+            letter-spacing: 0.2px;
+        }
+
+        .campo {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            color: var(--texto-fraco);
+        }
+
+        select,
+        .btn {
+            background: #1b212b;
+            color: var(--texto);
+            border: 1px solid var(--painel-borda);
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-family: inherit;
+            cursor: pointer;
         }
 
         select {
-            background: #2a2e37;
-            color: #ddd;
-            border: 1px solid #444;
-            padding: 4px 8px;
+            border-color: #6d5bd0;
+            color: #c9b8ff;
         }
 
-        #postura {
-            font-weight: bold;
+        .btn:hover {
+            background: #232b37;
         }
 
-        #status-link {
-            color: #888;
+        .btn.on {
+            border-color: var(--root);
+            color: #c9b8ff;
         }
 
-        .tree {
+        #postura-valor {
+            color: var(--texto);
+            font-weight: 600;
+        }
+
+        #acoes {
+            margin-left: auto;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        #busca {
+            display: none;
+            background: #1b212b;
+            border: 1px solid var(--painel-borda);
+            border-radius: 6px;
+            color: var(--texto);
+            padding: 5px 10px;
+            font-size: 12px;
+            font-family: inherit;
+            width: 190px;
+        }
+
+        #busca.aberto {
+            display: block;
+        }
+
+        /* ------------------------------------------------------ opções */
+        #opcoes {
+            display: none;
+            position: absolute;
+            right: 22px;
+            top: 56px;
+            z-index: 10;
+            background: var(--painel);
+            border: 1px solid var(--painel-borda);
+            border-radius: 8px;
+            padding: 12px 14px;
+            min-width: 230px;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+        }
+
+        #opcoes.aberto {
+            display: block;
+        }
+
+        #opcoes label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 0;
+            color: var(--texto-fraco);
+            cursor: pointer;
+        }
+
+        /* -------------------------------------------------------- tela */
+        #tela {
+            flex: 1 1 auto;
+            overflow: auto;
+            background: var(--tela);
+            padding: 22px 20px 22px 14px;
+        }
+
+        #palco {
+            /* Encostado a ESQUERDA, e nao centrado: com o zoom a crescer, um
+               palco centrado empurra metade da arvore para fora da janela e
+               obriga a andar com a barra horizontal para trás. */
+            transform-origin: top left;
+            display: inline-block;
+            min-width: min-content;
+        }
+
+        /* ------------------------------------------------------- árvore */
+        ul {
+            list-style: none;
+            margin: 0;
+            padding-top: 26px;
+            position: relative;
             display: flex;
             justify-content: center;
         }
 
-        ul {
-            list-style: none;
-            margin: 0;
-            padding-top: 20px;
-            position: relative;
-            display: flex;
-        }
-
-        ul::before {
-            content: none;
+        /* Os nos crescem com o zoom, mas o texto nao pode ficar minusculo a
+           escala baixa: a caixa e legivel a 100% e e essa que se escala. */
+        #tree {
+            display: inline-block;
         }
 
         li {
             list-style: none;
-            margin: 0 6px;
-            padding-top: 20px;
+            margin: 0 8px;
+            padding-top: 26px;
             position: relative;
             text-align: center;
         }
 
-        /* linha vertical do nó até o pai */
+        /* traço vertical que sobe do nó até à barra dos irmãos */
         li::before {
             content: '';
             position: absolute;
             top: 0;
             left: 50%;
             width: 1px;
-            height: 20px;
-            background: #555;
+            height: 26px;
+            background: var(--linha);
         }
 
-        /* linha horizontal ligando irmãos, na "cintura" do grupo */
+        /* barra horizontal a ligar irmãos */
         li:not(:only-child)::after {
             content: '';
             position: absolute;
@@ -85,7 +210,7 @@
             left: -50%;
             width: 100%;
             height: 1px;
-            background: #555;
+            background: var(--linha);
         }
 
         li:first-child:not(:only-child)::after {
@@ -99,84 +224,354 @@
         }
 
         li:only-child {
-            padding-top: 0;
+            padding-top: 26px;
         }
 
-        li:only-child::before {
-            display: none;
-        }
-
+        /* ---------------------------------------------------------- nós */
         .box {
-            display: inline-block;
-            border: 1px solid #555;
-            border-radius: 4px;
-            padding: 6px 10px;
-            background: #2a2e37;
+            display: inline-flex;
+            align-items: center;
+            gap: 11px;
+            border: 1px solid var(--action);
+            border-radius: 9px;
+            padding: 11px 17px;
+            background: #161c25;
             white-space: nowrap;
-            font-size: 12px;
+            text-align: left;
+            transition: box-shadow .15s, border-color .15s, opacity .15s;
         }
 
-        .type-sel>.box {
-            border-color: #7f8ede;
+        .icone {
+            font-size: 16px;
+            line-height: 1;
+            opacity: .95;
         }
 
-        .type-seq>.box {
-            border-color: #d4a94a;
-        }
-
-        .type-cond>.box {
-            border-style: dashed;
-        }
-
-        .type-act>.box {
-            border-color: #6a6a6a;
-        }
-
-        .kind {
-            font-size: 9px;
-            color: #888;
+        .rotulo {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--texto);
             display: block;
         }
 
-        /* estados vindos do trace deste tick */
-        .st-SUCCESS>.box {
-            background: #234d2e;
-            border-color: #4caf50;
-            color: #b7f5c2;
+        .kind {
+            font-size: 10px;
+            letter-spacing: .8px;
+            color: var(--texto-tenue);
+            display: block;
+            margin-top: 2px;
         }
 
-        .st-FAILURE>.box {
-            background: #2a2a2a;
-            border-color: #555;
-            color: #777;
+        .type-root>.box {
+            border-color: var(--root);
+            background: #1e1630;
+        }
+
+        .type-root .kind {
+            color: var(--root);
+        }
+
+        .type-sel>.box {
+            border-color: var(--selector);
+        }
+
+        .type-sel .kind {
+            color: var(--selector);
+        }
+
+        /* Ramos sem bola e de bola parada em âmbar, como no desenho: ajuda a
+           separar de relance o que é plano ofensivo do que é reacção. */
+        .ramo-alt.type-sel>.box {
+            border-color: var(--selector-alt);
+        }
+
+        .ramo-alt.type-sel .kind {
+            color: var(--selector-alt);
+        }
+
+        .type-seq>.box {
+            border-color: var(--sequence);
+        }
+
+        .type-seq .kind {
+            color: var(--sequence);
+        }
+
+        .type-cond>.box,
+        .type-act>.box {
+            border-style: dashed;
+            border-color: #39424f;
+            background: #12171f;
+        }
+
+        .type-cond .rotulo,
+        .type-act .rotulo {
+            font-weight: 500;
+            font-style: italic;
+            color: var(--texto-fraco);
+        }
+
+        .type-act.postura>.box {
+            border-style: solid;
+        }
+
+        .type-act.postura .rotulo {
+            font-style: normal;
+        }
+
+        /* --------------------------------------------- estados do trace */
+        .st-SUCCESS>.box {
+            border-color: var(--sucesso);
+            box-shadow: 0 0 0 1px var(--sucesso), 0 0 16px rgba(34, 197, 94, .18);
+        }
+
+        .st-SUCCESS .icone {
+            filter: drop-shadow(0 0 4px var(--sucesso));
         }
 
         .st-RUNNING>.box {
-            background: #4d4423;
-            border-color: #d4a94a;
-            color: #f5e2b7;
+            border-color: var(--running);
+            box-shadow: 0 0 0 1px var(--running), 0 0 16px rgba(245, 158, 11, .18);
+        }
+
+        .st-FAILURE>.box {
+            opacity: .5;
         }
 
         .st-none>.box {
-            opacity: 0.35;
+            opacity: .34;
+        }
+
+        body.esconder-inativos .st-none {
+            display: none;
+        }
+
+        body.esconder-condicoes .type-cond {
+            display: none;
+        }
+
+        .achado>.box {
+            border-color: #e879f9 !important;
+            box-shadow: 0 0 0 2px #e879f9, 0 0 18px rgba(232, 121, 249, .35);
+        }
+
+        /* ------------------------------------------------------ rodapé */
+        #rodape {
+            flex: 0 0 auto;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 14px;
+            padding: 10px 18px 12px;
+            max-height: 33vh;
+            overflow-y: auto;
+            background: var(--fundo);
+            border-top: 1px solid var(--painel-borda);
+            overflow-x: auto;
+        }
+
+        .cartao {
+            background: var(--painel);
+            border: 1px solid var(--painel-borda);
+            border-radius: 10px;
+            padding: 13px 15px;
+            min-width: 210px;
+        }
+
+        .cartao h2 {
+            margin: 0 0 10px;
+            font-size: 10px;
+            letter-spacing: 1.4px;
+            color: var(--texto-fraco);
+            font-weight: 600;
+        }
+
+        .linha-legenda {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 3px 0;
+            color: var(--texto-fraco);
+            font-size: 11.5px;
+        }
+
+        .ponto {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex: 0 0 auto;
+        }
+
+        .traco {
+            width: 22px;
+            height: 0;
+            border-top: 1px solid var(--linha);
+            flex: 0 0 auto;
+        }
+
+        .traco.sec {
+            border-top-style: dashed;
+        }
+
+        .traco.ter {
+            border-top-style: dotted;
+        }
+
+        .tipo-desc {
+            padding: 4px 0;
+            font-size: 11.5px;
+        }
+
+        .tipo-desc b {
+            display: block;
+            font-size: 11px;
+            letter-spacing: .6px;
+        }
+
+        .tipo-desc span {
+            color: var(--texto-tenue);
+        }
+
+        .passo {
+            display: flex;
+            gap: 9px;
+            padding: 4px 0;
+            font-size: 11.5px;
+            color: var(--texto-fraco);
+        }
+
+        .num {
+            width: 17px;
+            height: 17px;
+            border-radius: 50%;
+            background: #1e252f;
+            color: var(--texto-fraco);
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+        }
+
+        .info-linha {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 6px 0;
+            border-bottom: 1px solid #1a2029;
+            font-size: 11.5px;
+            color: var(--texto-fraco);
+        }
+
+        .info-linha:last-child {
+            border-bottom: none;
+        }
+
+        .info-linha b {
+            color: var(--texto);
+            font-weight: 600;
+        }
+
+        #info-equipa {
+            color: #8ab4ff;
+        }
+
+        #aviso {
+            color: var(--running);
+            font-size: 11.5px;
         }
     </style>
 </head>
 
 <body>
     <div id="topo">
-        <h1>TeamBT — fluxograma ao vivo</h1>
-        <label>Equipa:
+        <h1>TeamBT — Fluxograma ao vivo</h1>
+
+        <div class="campo">Equipa:
             <select id="sel-team">
                 <option value="TeamA">TeamA</option>
                 <option value="TeamB">TeamB</option>
             </select>
-        </label>
-        <span>Postura activa: <span id="postura">—</span></span>
-        <span id="status-link">(precisa da aba do jogo aberta noutro separador)</span>
+        </div>
+
+        <div class="campo">Estado táctico: <span id="postura-valor">—</span></div>
+        <span id="aviso"></span>
+
+        <div id="acoes">
+            <input id="busca" type="text" placeholder="Nome do nó…" autocomplete="off">
+            <button class="btn" id="btn-busca">Buscar</button>
+            <button class="btn" id="btn-zoom-menos">Zoom −</button>
+            <button class="btn" id="btn-zoom-mais">Zoom +</button>
+            <button class="btn" id="btn-ajustar">Ajustar</button>
+            <button class="btn" id="btn-opcoes">⚙</button>
+        </div>
     </div>
 
-    <div class="tree" id="tree"></div>
+    <div id="opcoes">
+        <label><input type="checkbox" id="op-condicoes"> Esconder condições</label>
+        <label><input type="checkbox" id="op-inativos"> Esconder ramos não percorridos</label>
+        <label><input type="checkbox" id="op-congelar"> Congelar (parar de actualizar)</label>
+    </div>
+
+    <div id="tela">
+        <div id="palco">
+            <div class="tree" id="tree"></div>
+        </div>
+    </div>
+
+    <div id="rodape">
+        <div class="cartao">
+            <h2>LEGENDA</h2>
+            <div class="linha-legenda"><span class="ponto" style="background:var(--root)"></span> ROOT</div>
+            <div class="linha-legenda"><span class="ponto" style="background:var(--selector)"></span> SELECTOR</div>
+            <div class="linha-legenda"><span class="ponto" style="background:var(--sequence)"></span> SEQUENCE</div>
+            <div class="linha-legenda"><span class="ponto" style="background:var(--action)"></span> ACTION / CONDITION
+            </div>
+            <div class="linha-legenda"><span class="ponto" style="background:var(--sucesso)"></span> percorrido com
+                SUCCESS</div>
+            <div class="linha-legenda"><span class="ponto" style="background:var(--running)"></span> RUNNING</div>
+            <div class="linha-legenda"><span class="ponto" style="background:var(--falha)"></span> FAILURE / não
+                percorrido</div>
+        </div>
+
+        <div class="cartao">
+            <h2>TIPOS DE NÓS</h2>
+            <div class="tipo-desc"><b style="color:var(--root)">ROOT</b><span>Nó raiz da árvore</span></div>
+            <div class="tipo-desc"><b style="color:var(--selector)">SELECTOR</b><span>Corre o primeiro filho que tiver
+                    sucesso</span></div>
+            <div class="tipo-desc"><b style="color:var(--sequence)">SEQUENCE</b><span>Todos os filhos têm de ter
+                    sucesso</span></div>
+            <div class="tipo-desc"><b style="color:var(--action)">ACTION</b><span>Efeito; sem retorno vale
+                    SUCCESS</span></div>
+            <div class="tipo-desc"><b style="color:var(--action)">CONDITION</b><span>Teste puro, não altera nada</span>
+            </div>
+        </div>
+
+        <div class="cartao">
+            <h2>COMO LER O FLUXO</h2>
+            <div class="passo"><span class="num">1</span> A árvore começa no TeamRoot, uma vez por equipa e por frame
+            </div>
+            <div class="passo"><span class="num">2</span> Cada Selector tenta os filhos da esquerda para a direita</div>
+            <div class="passo"><span class="num">3</span> Numa Sequence, o primeiro filho a falhar trava o ramo</div>
+            <div class="passo"><span class="num">4</span> O ramo aceso é a situação em que a equipa está neste frame</div>
+        </div>
+
+        <div class="cartao">
+            <h2>CONTROLOS</h2>
+            <div class="passo"><span class="num">⌕</span> Buscar — realça os nós cujo nome contém o texto</div>
+            <div class="passo"><span class="num">±</span> Zoom — também com Ctrl + roda do rato</div>
+            <div class="passo"><span class="num">⛶</span> Ajustar — repõe a escala que cabe na janela</div>
+            <div class="passo"><span class="num">⚙</span> Opções — esconder condições, ramos mortos, congelar</div>
+        </div>
+
+        <div class="cartao">
+            <h2>INFORMAÇÕES</h2>
+            <div class="info-linha"><span>Estado táctico</span><b id="info-postura">—</b></div>
+            <div class="info-linha"><span>Equipa seleccionada</span><b id="info-equipa">TeamA</b></div>
+            <div class="info-linha"><span>Última actualização</span><b id="info-hora">--:--:--</b></div>
+            <div class="info-linha"><span>Nós no ecrã</span><b id="info-nos">0</b></div>
+            <div class="info-linha"><span>Nós percorridos</span><b id="info-ativos">0</b></div>
+        </div>
+    </div>
 
     <script>
         /*
@@ -184,67 +579,56 @@
         Se a árvore lá mudar, actualizar aqui — não há introspecção automática
         porque os nós BT (core.js) não guardam os filhos com nomes legíveis
         fora do closure de setPosture/act.
+
+        `ramo` só serve à cor: os ramos de bola parada e de fase defensiva
+        aparecem em âmbar, para se distinguirem de relance do plano ofensivo.
         */
         const TREE = {
-            name: 'TeamRoot', type: 'sel', children: [
+            name: 'TeamRoot', type: 'root', icone: '⌂', children: [
                 {
-                    name: 'BolaParada', type: 'seq', children: [
-                        { name: 'jogoParado', type: 'cond' },
-                        { name: 'posture:SET_PIECE', type: 'act' }
+                    name: 'BolaParada', type: 'seq', ramo: 'alt', icone: '⏸', children: [
+                        { name: 'jogoParado', type: 'cond' }
                     ]
                 },
                 {
-                    name: 'ComBola', type: 'seq', children: [
+                    name: 'ComBola', type: 'seq', icone: '⚽', children: [
                         { name: 'temPosse', type: 'cond' },
                         {
-                            name: 'FaseOfensiva', type: 'sel', children: [
+                            name: 'FaseOfensiva', type: 'sel', icone: '↗', children: [
                                 {
-                                    name: 'Transicao', type: 'seq', children: [
-                                        { name: 'emContraAtaque', type: 'cond' },
-                                        { name: 'posture:COUNTER', type: 'act' }
+                                    name: 'Transicao', type: 'seq', icone: '⚡', children: [
+                                        { name: 'emContraAtaque', type: 'cond' }
                                     ]
                                 },
                                 {
-                                    name: 'UltimoTerco', type: 'seq', children: [
-                                        { name: 'bolaNoUltimoTerco', type: 'cond' },
-                                        { name: 'posture:FINAL_THIRD', type: 'act' }
+                                    name: 'UltimoTerco', type: 'seq', icone: '◎', children: [
+                                        { name: 'bolaNoUltimoTerco', type: 'cond' }
                                     ]
-                                },
-                                {
-                                    name: 'PosseInstalada', type: 'seq', children: [
-                                        { name: 'posseProlongada', type: 'cond' },
-                                        { name: 'posture:ATTACK_SUSTAINED', type: 'act' }
-                                    ]
-                                },
-                                { name: 'posture:BUILD_UP', type: 'act' }
+                                }
                             ]
                         }
                     ]
                 },
                 {
-                    name: 'SemBola', type: 'seq', children: [
+                    name: 'SemBola', type: 'seq', ramo: 'alt', icone: '🛡', children: [
                         { name: 'lerAmeacaDeFlanco', type: 'act' },
                         {
-                            name: 'BlocoDefensivo', type: 'sel', children: [
+                            name: 'BlocoDefensivo', type: 'sel', icone: '▤', children: [
                                 {
-                                    name: 'Basculacao', type: 'seq', children: [
-                                        { name: 'flancoEmPerigo', type: 'cond' },
-                                        { name: 'posture:FLANK_SHIFT', type: 'act' }
+                                    name: 'Basculacao', type: 'seq', ramo: 'alt', icone: '↔', children: [
+                                        { name: 'flancoEmPerigo', type: 'cond' }
                                     ]
                                 },
                                 {
-                                    name: 'BlocoBaixo', type: 'seq', children: [
-                                        { name: 'bolaNoNossoTerco', type: 'cond' },
-                                        { name: 'posture:LOW_BLOCK', type: 'act' }
+                                    name: 'BlocoBaixo', type: 'seq', ramo: 'alt', icone: '▼', children: [
+                                        { name: 'bolaNoNossoTerco', type: 'cond' }
                                     ]
                                 },
                                 {
-                                    name: 'PressaoAlta', type: 'seq', children: [
-                                        { name: 'pressionamosAlto', type: 'cond' },
-                                        { name: 'posture:HIGH_PRESS', type: 'act' }
+                                    name: 'PressaoAlta', type: 'seq', ramo: 'alt', icone: '▲', children: [
+                                        { name: 'pressionamosAlto', type: 'cond' }
                                     ]
-                                },
-                                { name: 'posture:MID_BLOCK', type: 'act' }
+                                }
                             ]
                         }
                     ]
@@ -252,14 +636,33 @@
             ]
         };
 
+        const ETIQUETA = { root: 'ROOT', sel: 'SELECTOR', seq: 'SEQUENCE', cond: 'CONDITION', act: 'ACTION' };
+        const ICONE_OMISSAO = { cond: '⌂', act: '⌂' };
+
         function buildNode(node) {
             const li = document.createElement('li');
-            li.className = 'type-' + node.type + ' st-none';
+            li.className = 'type-' + node.type + ' st-none' + (node.ramo === 'alt' ? ' ramo-alt' : '');
             li.dataset.name = node.name;
 
             const box = document.createElement('div');
             box.className = 'box';
-            box.innerHTML = node.name + '<span class="kind">' + node.type + '</span>';
+
+            const ico = document.createElement('span');
+            ico.className = 'icone';
+            ico.textContent = node.icone || ICONE_OMISSAO[node.type] || '•';
+            box.appendChild(ico);
+
+            const txt = document.createElement('span');
+            const rot = document.createElement('span');
+            rot.className = 'rotulo';
+            rot.textContent = node.name;
+            const kind = document.createElement('span');
+            kind.className = 'kind';
+            kind.textContent = ETIQUETA[node.type] || node.type;
+            txt.appendChild(rot);
+            txt.appendChild(kind);
+            box.appendChild(txt);
+
             li.appendChild(box);
 
             if (node.children && node.children.length) {
@@ -276,10 +679,12 @@
             const holder = document.getElementById('tree');
             holder.innerHTML = '';
             holder.appendChild(root);
+            document.getElementById('info-nos').textContent =
+                document.querySelectorAll('#tree li').length;
         }
         buildTree();
 
-        // status por nome, recalculado a cada mensagem
+        // ------------------------------------------------ estado do trace
         function applyTrace(trace) {
             const statusByName = {};
             (trace || []).forEach(entry => {
@@ -289,32 +694,129 @@
                 statusByName[name] = status;
             });
 
+            let ativos = 0;
             document.querySelectorAll('#tree li').forEach(li => {
-                const name = li.dataset.name;
-                const status = statusByName[name];
-                li.className = li.className.replace(/\sst-\S+/, '');
+                const status = statusByName[li.dataset.name];
+                li.classList.remove('st-SUCCESS', 'st-FAILURE', 'st-RUNNING', 'st-none');
                 li.classList.add(status ? ('st-' + status) : 'st-none');
+                if (status) ativos++;
             });
+            document.getElementById('info-ativos').textContent = ativos;
         }
 
+        // ------------------------------------------------------ controlos
+        const palco = document.getElementById('palco');
+        const tela = document.getElementById('tela');
+        const ZOOM_MAX = 2.6;
+        let escala = 1;
+
+        function aplicarEscala() {
+            palco.style.transform = 'scale(' + escala.toFixed(3) + ')';
+        }
+
+        /*
+        `Ajustar` PREENCHE a janela: antes era `Math.min(1, ...)`, ou seja so
+        sabia encolher — numa janela larga o fluxograma ficava pequeno ao
+        centro com o ecra todo vazio a volta. Agora tambem amplia, ate ao
+        tecto do zoom, e usa a altura disponivel alem da largura.
+        */
+        function ajustar() {
+            palco.style.transform = 'scale(1)';
+            const largura = palco.scrollWidth || 1;
+            const altura = palco.scrollHeight || 1;
+            const cabeLargura = (tela.clientWidth - 28) / largura;
+            const cabeAltura = (tela.clientHeight - 28) / altura;
+            escala = Math.max(0.3, Math.min(ZOOM_MAX, Math.min(cabeLargura, cabeAltura)));
+            aplicarEscala();
+        }
+
+        document.getElementById('btn-zoom-mais').onclick = () => {
+            escala = Math.min(ZOOM_MAX, escala + 0.1); aplicarEscala();
+        };
+        document.getElementById('btn-zoom-menos').onclick = () => {
+            escala = Math.max(0.3, escala - 0.1); aplicarEscala();
+        };
+        document.getElementById('btn-ajustar').onclick = ajustar;
+
+        tela.addEventListener('wheel', (ev) => {
+            if (!ev.ctrlKey) return;
+            ev.preventDefault();
+            escala = Math.max(0.3, Math.min(ZOOM_MAX, escala - Math.sign(ev.deltaY) * 0.08));
+            aplicarEscala();
+        }, { passive: false });
+
+        // Busca: realça os nós cujo nome contém o texto.
+        const busca = document.getElementById('busca');
+        document.getElementById('btn-busca').onclick = () => {
+            busca.classList.toggle('aberto');
+            if (busca.classList.contains('aberto')) busca.focus();
+        };
+        busca.addEventListener('input', () => {
+            const alvo = busca.value.trim().toLowerCase();
+            document.querySelectorAll('#tree li').forEach(li => {
+                const casa = alvo && li.dataset.name.toLowerCase().includes(alvo);
+                li.classList.toggle('achado', !!casa);
+            });
+        });
+
+        const painelOpcoes = document.getElementById('opcoes');
+        document.getElementById('btn-opcoes').onclick = () => {
+            painelOpcoes.classList.toggle('aberto');
+        };
+        document.getElementById('op-condicoes').onchange = (e) => {
+            document.body.classList.toggle('esconder-condicoes', e.target.checked);
+        };
+        document.getElementById('op-inativos').onchange = (e) => {
+            document.body.classList.toggle('esconder-inativos', e.target.checked);
+        };
+
+        // ------------------------------------------------ ligação ao jogo
         const teamSel = document.getElementById('sel-team');
+        const congelar = document.getElementById('op-congelar');
         let lastPayload = null;
+        let ultimaMensagem = 0;
 
         function render() {
+            document.getElementById('info-equipa').textContent = teamSel.value;
             if (!lastPayload) return;
             const data = lastPayload[teamSel.value];
-            document.getElementById('postura').innerText = (data && data.posture) ? data.posture : '—';
+            /*
+            Era `data.posture`. As posturas foram removidas (ver a nota no topo
+            de js/bt/team_bt.js): nao tinham consumidor nenhum no jogo, so esta
+            pagina as mostrava. O que se mostra agora e o TeamState, que e o
+            estado que os Playing Styles e a marcacao realmente leem.
+            */
+            const estado = (data && data.state) ? data.state : '—';
+            document.getElementById('postura-valor').textContent = estado;
+            document.getElementById('info-postura').textContent = estado;
             applyTrace(data ? data.trace : []);
-            document.getElementById('status-link').innerText = '';
+            document.getElementById('info-hora').textContent =
+                new Date(ultimaMensagem).toLocaleTimeString();
         }
 
         teamSel.addEventListener('change', render);
 
         const channel = new BroadcastChannel('teamBtTrace');
         channel.onmessage = (ev) => {
+            if (congelar.checked) return;
             lastPayload = ev.data;
+            ultimaMensagem = Date.now();
             render();
         };
+
+        /*
+        Sem a aba do jogo aberta não chega mensagem nenhuma, e a página ficava
+        a dizer que estava tudo bem com a árvore toda apagada. O aviso aparece
+        ao fim de 3 s sem sinal e desaparece assim que ele volta.
+        */
+        setInterval(() => {
+            const parado = !ultimaMensagem || (Date.now() - ultimaMensagem) > 3000;
+            document.getElementById('aviso').textContent =
+                parado ? '⚠ sem sinal — abre a aba do jogo noutro separador' : '';
+        }, 1000);
+
+        window.addEventListener('resize', ajustar);
+        ajustar();
     </script>
 </body>
 

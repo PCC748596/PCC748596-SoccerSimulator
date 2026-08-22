@@ -7,7 +7,6 @@ Não mexe em nenhum jogador individualmente: produz o *plano colectivo* num
 blackboard (TeamBlackboard) que o nível 2 (PositionBT) consome.
 
 O que sai daqui:
-    posture            a intenção colectiva (ver TeamPosture)
     pushMultiplier     quanto a equipa sobe no campo quando ataca
     advanceFactor      0..1, quão avançada está a manobra ofensiva
     chaser             quem vai à bola
@@ -28,17 +27,25 @@ window.TeamState = TeamState;
 
 /* --- Vocabulário de posturas -------------------------------------------- */
 
-const TeamPosture = {
-    SET_PIECE: 'SET_PIECE',              // bola parada, o plano normal está suspenso
-    BUILD_UP: 'BUILD_UP',                // posse acabada de ganhar, a construir
-    ATTACK_SUSTAINED: 'ATTACK_SUSTAINED',// posse prolongada, equipa instalada
-    FINAL_THIRD: 'FINAL_THIRD',          // bola no último terço adversário
-    COUNTER: 'COUNTER',                  // transição rápida após recuperação
-    HIGH_PRESS: 'HIGH_PRESS',            // pressão no meio-campo adversário
-    MID_BLOCK: 'MID_BLOCK',              // bloco a meio campo
-    LOW_BLOCK: 'LOW_BLOCK',              // bloco baixo, defesa do último terço
-    FLANK_SHIFT: 'FLANK_SHIFT'           // basculação para um flanco em perigo
-};
+/*
+AS POSTURAS FORAM REMOVIDAS.
+
+Havia um `TeamPosture` com nove nomes (BUILD_UP, ATTACK_SUSTAINED,
+FINAL_THIRD, COUNTER, HIGH_PRESS, MID_BLOCK, LOW_BLOCK, FLANK_SHIFT,
+SET_PIECE) que a arvore deduzia e escrevia em `bb.posture`. O
+`TeamPostureTuning`, que era quem as lia para deslocar o bloco, ja tinha sido
+apagado (ver a nota abaixo) — e a partir daí o unico sitio no projecto que
+lia `bb.posture` era o fluxograma da aba separada, que as mostrava como se
+fossem o resultado da decisao. Nao eram: nao mexiam em nada.
+
+Quem manda hoje na forma da equipa e o `TeamState` (Offensive, T.Offensive,
+Defensive, T.Defensive), calculado em `gather()` a partir da posse e do tempo
+dela, e lido pelos Playing Styles, pela marcacao e pelo bloco.
+
+A arvore fica: as condicoes continuam a classificar a situacao de jogo e o
+trace continua a mostrar que ramo ganhou — que e para o que serve o
+fluxograma.
+*/
 
 /*
 A POSTURA JA NAO MEXE NO BLOCO.
@@ -76,7 +83,6 @@ class TeamBlackboard {
         this.ownGoalZ = ownGoalZCenter(team);
         this.atkGoalZ = -this.ownGoalZ;
 
-        this.posture = TeamPosture.MID_BLOCK;
         this.isAttacking = false;
         this.isCounter = false;
         this.phase = 1;
@@ -1183,7 +1189,6 @@ function updateGkStyle(bb) {
     }
 }
 
-const setPosture = (posture) => act('posture:' + posture, (bb) => { bb.posture = posture; });
 
 /* --- A árvore ----------------------------------------------------------- */
 
@@ -1191,51 +1196,47 @@ const TeamBT = sel('TeamRoot',
 
     // 1. Bola parada suspende o plano normal.
     seq('BolaParada',
-        cond('jogoParado', () => Match.state !== 'PLAY'),
-        setPosture(TeamPosture.SET_PIECE)
+        cond('jogoParado', () => Match.state !== 'PLAY')
     ),
 
-    // 2. Com bola: qual a fase da manobra ofensiva?
+    // 2. Com bola: em que fase esta a manobra ofensiva?
     seq('ComBola',
         cond('temPosse', (bb) => bb.isAttacking),
         sel('FaseOfensiva',
             seq('Transicao',
-                cond('emContraAtaque', (bb) => bb.isCounter),
-                setPosture(TeamPosture.COUNTER)
+                cond('emContraAtaque', (bb) => bb.isCounter)
             ),
             seq('UltimoTerco',
-                cond('bolaNoUltimoTerco', (bb) => bb.ballZ * bb.dir > 17.0),
-                setPosture(TeamPosture.FINAL_THIRD)
-            ),
-            seq('PosseInstalada',
-                cond('posseProlongada', (bb) => bb.phase >= 2),
-                setPosture(TeamPosture.ATTACK_SUSTAINED)
-            ),
-            setPosture(TeamPosture.BUILD_UP)
+                cond('bolaNoUltimoTerco', (bb) => bb.ballZ * bb.dir > 17.0)
+            )
+            /*
+            Havia aqui um ramo `PosseInstalada`, com a condicao
+            `posseProlongada: bb.phase >= 2`. O `phase` e escrito UMA vez
+            (`= 1`, no construtor do TeamBlackboard) e nunca mais, por isso a
+            condicao era sempre falsa e o ramo nunca corria — o mesmo campo
+            orfao que matava o gatilho do Classic No.10. "Posse instalada" ja
+            e o TeamState.OFFENSIVE (3 s de posse), que existe e e lido.
+            */
         )
     ),
 
-    // 3. Sem bola: que bloco defensivo?
+    // 3. Sem bola: que situacao defensiva?
     seq('SemBola',
         act('lerAmeacaDeFlanco', detectFlankThreat),
         sel('BlocoDefensivo',
             seq('Basculacao',
-                cond('flancoEmPerigo', (bb) => bb.flankAlert !== null),
-                setPosture(TeamPosture.FLANK_SHIFT)
+                cond('flancoEmPerigo', (bb) => bb.flankAlert !== null)
             ),
             seq('BlocoBaixo',
-                cond('bolaNoNossoTerco', (bb) => bb.ballZ * bb.dir < -17.0),
-                setPosture(TeamPosture.LOW_BLOCK)
+                cond('bolaNoNossoTerco', (bb) => bb.ballZ * bb.dir < -17.0)
             ),
             seq('PressaoAlta',
                 // Precisa do Estilo=Ataque E do Defensive Pressure em High — só
                 // um dos dois (ex: Ataque + Balanced) não basta pra pressionar
                 // no campo do adversário o jogo inteiro.
                 cond('pressionamosAlto', (bb) =>
-                    (Tatics.estilo === 'ataque' || Tatics.estilo === 'muito_ofensiva') && Tatics.pressaoDefensiva === 'high' && bb.ballZ * bb.dir > 0),
-                setPosture(TeamPosture.HIGH_PRESS)
-            ),
-            setPosture(TeamPosture.MID_BLOCK)
+                    (Tatics.estilo === 'ataque' || Tatics.estilo === 'muito_ofensiva') && Tatics.pressaoDefensiva === 'high' && bb.ballZ * bb.dir > 0)
+            )
         )
     )
 );

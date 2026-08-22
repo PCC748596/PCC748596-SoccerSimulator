@@ -264,8 +264,18 @@ function executePassGameplay(p) {
     p.touchLock = BallControl.touchLock;
     Match.ballCarrier = null;
     Match.intendedReceiver = p.passTarget;
-    if (Match.passTargetVisual) Match.passTargetVisual.visible = false;
-    if (Match.passLineVisual) Match.passLineVisual.visible = false;
+    /*
+    A linha NAO se apaga no contacto: fica ate a bola ser dominada ou parar
+    (ver Match.update). Apagada aqui, so aparecia durante os 0.08 s entre a
+    decisao e o contacto — tempo nenhum para se ver o que quer que fosse.
+    Redesenhada a partir de onde a bola esta a sair, para ser exactamente a
+    intencao do passe contra o que a bola faz.
+    */
+    if (typeof Match.desenharLinhaDePasse === 'function') {
+        Match.desenharLinhaDePasse(_v1.x, _v1.z);
+        Match.passVisualAtivo = true;
+        Match.atualizarVisuaisDePasse();
+    }
     Match.passTargetPos = { x: p.passTargetPos.x, z: p.passTargetPos.z };
     Match.lastTouchedTeam = p.team;
     Match.lastTouchedPlayer = p;
@@ -693,7 +703,13 @@ class PlayerFSM {
                             if (clearTarget) p.initiatePass(clearTarget);
                         }
                     }
-                    p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult * 0.95, 0);
+                    /*
+                    Sem o antigo `* 0.95`: o corte por conduzir esta agora na
+                    propria velocidade (CarryModel.velocidade, ~92% da corrida
+                    livre). Ali era um corte por cima de um valor herdado, e
+                    portanto cortava um numero que nao era de ninguem.
+                    */
+                    p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult, 0);
                 }
 
                 /*
@@ -958,8 +974,8 @@ class PlayerFSM {
                         p.actionState = null;
                         this.changeState('IDLE');
                         if (typeof Match !== 'undefined') {
-                            if (Match.passTargetVisual) Match.passTargetVisual.visible = false;
-                            if (Match.passLineVisual) Match.passLineVisual.visible = false;
+                            Match.passVisualAtivo = false;
+                            if (typeof Match.atualizarVisuaisDePasse === 'function') Match.atualizarVisuaisDePasse();
                         }
                     }
                 }

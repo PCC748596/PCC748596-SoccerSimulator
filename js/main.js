@@ -128,10 +128,13 @@ function toggleTeamBTPos() {
 
     document.getElementById('btn-teambtpos').innerText = 'Team BT POS: ' + uiLabel;
     document.getElementById('btn-teambtpos').classList.toggle('active', window.teamBTPosState !== 'OFF');
-    if (typeof Match !== 'undefined') {
-        if (Match.passTargetVisual) Match.passTargetVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
-        if (Match.passLineVisual) Match.passLineVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
-    }
+    /*
+    Antes isto punha `visible = true` sem redesenhar nada, e o que aparecia
+    era a linha do ULTIMO passe desenhado — ancorada num jogador e num alvo
+    ja velhos, enquanto os passes reais aconteciam noutro sitio. O toggle so
+    diz "quero ver"; quem decide se ha alguma coisa para ver e o Match.
+    */
+    if (typeof Match !== 'undefined' && Match.atualizarVisuaisDePasse) Match.atualizarVisuaisDePasse();
 }
 
 /*
@@ -169,10 +172,13 @@ function togglePlayingStyleBT() {
 
     document.getElementById('btn-playingstylebt').innerText = 'PlayingStyleBT: ' + uiLabel;
     document.getElementById('btn-playingstylebt').classList.toggle('active', window.playingStyleBTToggleState !== 'OFF');
-    if (typeof Match !== 'undefined') {
-        if (Match.passTargetVisual) Match.passTargetVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
-        if (Match.passLineVisual) Match.passLineVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
-    }
+    /*
+    Antes isto punha `visible = true` sem redesenhar nada, e o que aparecia
+    era a linha do ULTIMO passe desenhado — ancorada num jogador e num alvo
+    ja velhos, enquanto os passes reais aconteciam noutro sitio. O toggle so
+    diz "quero ver"; quem decide se ha alguma coisa para ver e o Match.
+    */
+    if (typeof Match !== 'undefined' && Match.atualizarVisuaisDePasse) Match.atualizarVisuaisDePasse();
 }
 
 function toggleSpatialGrid() {
@@ -496,8 +502,11 @@ function animate(time) {
         if (!window._lastBtPost || time - window._lastBtPost > 200) {
             window._lastBtPost = time;
             window._teamBtChannel.postMessage({
-                TeamA: bbA ? { trace: bbA.trace, posture: bbA.posture } : null,
-                TeamB: bbB ? { trace: bbB.trace, posture: bbB.posture } : null
+                // `posture` deixou de existir (ver a nota no topo de
+                // team_bt.js): o que a aba mostra agora e o TeamState, que e
+                // o estado que os estilos e a marcacao realmente leem.
+                TeamA: bbA ? { trace: bbA.trace, state: bbA.state } : null,
+                TeamB: bbB ? { trace: bbB.trace, state: bbB.state } : null
             });
         }
     }

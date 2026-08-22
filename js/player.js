@@ -686,15 +686,32 @@ class FootballPlayer {
             */
             const distReal = this.model.position.distanceTo(opt.model.position);
 
+            /*
+            PORQUE E QUE HA COLEGAS SEM PONTUACAO NO PAINEL.
+
+            Estes `continue` descartam o candidato ANTES de ele ser pontuado, e
+            por isso ele fica sem `Pass:` nenhum no ecra — o que parecia uma
+            falha do botao. Passam a escrever o MOTIVO do descarte, que e a
+            informacao que interessa a quem esta a afinar o passe.
+            */
+            const descartar = (motivo) => {
+                if (window.showPlayerPoints) {
+                    opt.debugPoints = opt.debugPoints || {};
+                    opt.debugPoints['Pass'] = motivo;
+                }
+            };
+
             // Distância máxima baseada no skill de passe (skill * 0.6)
             let maxDist = Math.max(10, skillVal * 0.6);
-            if (dist > maxDist || dist < 2.0 || distReal < 3.0) continue;
+            if (dist > maxDist) { descartar('longe'); continue; }
+            if (dist < 2.0 || distReal < 3.0) { descartar('perto'); continue; }
 
             // Evitar passes para fora do campo com margem de segurança de linhas
             const margemLinha = (typeof PassModel !== 'undefined' && PassModel.margemSegurancaLinha) ? PassModel.margemSegurancaLinha : 2.5;
             const distBordaX = (CAMPO_LARG / 2) - Math.abs(optPos.x);
             const distBordaZ = (CAMPO_COMP / 2) - Math.abs(optPos.z);
-            if (distBordaX < 0.5 || distBordaZ < 0.5) continue; // Ponto fora ou praticamente em cima da linha
+            // Ponto fora ou praticamente em cima da linha
+            if (distBordaX < 0.5 || distBordaZ < 0.5) { descartar('linha'); continue; }
 
             _line1.set(this.model.position, optPos);
             let minOppDist = 999, oppMaisPerto = null;
@@ -751,12 +768,37 @@ class FootballPlayer {
             let inDefensiveZone = (ownZ * dirZ < -10) || (optPos.z * dirZ < -10); 
             let isDefender = (this.role === 'def' || this.role === 'gk' || opt.role === 'def');
             
+            /*
+            Pedido explícito: "os jogadores quase não passam mais a bola,
+            aumenta o bónus de passe para jogadores sem marcação em uns 100
+            pontos". 300 -> 400 para quem está mesmo livre (4 m ou mais de
+            folga), 100 -> 200 para quem tem algum espaço. As penalizações de
+            quem está marcado ficam como estavam: o que se quis foi puxar o
+            passe para o homem livre, não abrandar o castigo do passe para o
+            homem marcado.
+            */
+            /*
+            O BONUS DE "SEM MARCACAO" TEM DE SABER PARA QUE LADO E O PASSE.
+
+            Era cego a direccao: um defesa livre atras valia os mesmos pontos
+            que um avancado livre a frente — e o defesa atras esta quase
+            sempre mais livre. Medido: 48% de todos os passes iam para tras,
+            e subir o bonus empurrava-os para 52%. E o "o atacante dispara
+            sozinho e toca para tras".
+
+            `PassBonus.atras` e a fraccao do bonus que sobra quando o colega
+            esta atras. Nao e zero: recuar para recomecar a jogada e legitimo,
+            so nao pode valer o mesmo que progredir.
+            */
+            const progAlvo = (optPos.z - ownZ) * dirZ;
+            const fatorDir = (progAlvo < -1.0)
+                ? PassBonus.atras
+                : (progAlvo > 1.0 ? 1.0 : PassBonus.lado);
+
             if (distMarcador >= 4.0) {
-                // Muito espaço, bónus esmagador para garantir que a bola vá para ele (ex: pontas)
-                score += 300;
+                score += PassBonus.livre * fatorDir;
             } else if (distMarcador >= 2.5) {
-                // Algum espaço
-                score += 100;
+                score += PassBonus.meioLivre * fatorDir;
             } else {
                 // Marcado de perto (distMarcador < 2.5). Penalização severa.
                 if (this.role === 'gk') {
@@ -1042,17 +1084,16 @@ class FootballPlayer {
         }
 
         if (typeof Match !== 'undefined') {
-            if (Match.passTargetVisual) {
-                Match.passTargetVisual.position.set(_v1.x, 0.05, _v1.z);
-                Match.passTargetVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
-            }
-            if (Match.passLineVisual) {
-                const posAttr = Match.passLineVisual.geometry.attributes.position;
-                posAttr.setXYZ(0, this.model.position.x, 0.05, this.model.position.z);
-                posAttr.setXYZ(1, _v1.x, 0.05, _v1.z);
-                posAttr.needsUpdate = true;
-                Match.passLineVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
-            }
+            /*
+            A linha parte de onde a BOLA esta, nao do jogador: a bola sai de
+            onde esta pousada (medido, 0.55 m a frente do pe), e num passe
+            curto isso dava ate 28 graus entre a linha desenhada e a
+            trajectoria real. O alvo e o mesmo dos dois lados.
+            */
+            Match.passVisualAlvo = { x: _v1.x, z: _v1.z };
+            Match.passVisualAtivo = true;
+            Match.desenharLinhaDePasse(_v1.x, _v1.z);
+            Match.atualizarVisuaisDePasse();
         }
 
         // Não executa o passe aqui — só prepara. O efeito real (bola sai do
@@ -1078,7 +1119,14 @@ class FootballPlayer {
     */
     puntBall() {
         const gGrav = BallPhysics.gravidade;
-        const elev = THREE.MathUtils.degToRad((25 + Math.random() * 25) / 3);
+        /*
+        Elevacao do chutao: 25 a 35 graus, pedido explicito. Era
+        `(25 + rand*25) / 3`, ou seja 8.3 a 16.7 graus — uma bola esticada,
+        quase a meia altura. Como a velocidade sai resolvida do alcance
+        (R = v² sin2θ / g, mais abaixo), subir o angulo nao alonga o chutao:
+        torna-o mais alto e mais lento, que e o que se quer num tiro de meta.
+        */
+        const elev = THREE.MathUtils.degToRad(25 + Math.random() * 10);
         const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 20);
 
         // Alcance pretendido: chutão de meio-campo, com alguma variação. Aumentado em 20%.
@@ -1390,6 +1438,20 @@ class FootballPlayer {
     }
 
     update(dt) {
+        /*
+        MEDIA da velocidade recente (EMA). O lead do passe usava a velocidade
+        INSTANTANEA do recetor para o extrapolar, e ele quase sempre abranda —
+        medido, em 67% dos passes ia mais devagar do que o assumido. Ver
+        LeadModel.tauVelMedia e alvoDePasse (utils.js).
+        */
+        {
+            const vAgora = Math.hypot(this.velocity.x, this.velocity.z);
+            if (this.velMedia === undefined) this.velMedia = vAgora;
+            else {
+                const k = 1 - Math.exp(-Math.max(0.0001, dt) / LeadModel.tauVelMedia);
+                this.velMedia += (vAgora - this.velMedia) * k;
+            }
+        }
         if (this.touchLock > 0) this.touchLock = Math.max(0, this.touchLock - dt);
         // Arrefecimento da corrida ao espaco (ver RunIntoSpaceModel). Corre
         // aqui e nao na FSM: a FSM so mexe no estado corrente, e o
@@ -1518,6 +1580,7 @@ class FootballPlayer {
             // animateBones, senão ele reescreve o tronco no mesmo frame.
             this.aplicarCamadaPeito();
             this.aplicarCamadaCabeceioDePe(dt);
+            this.aplicarCamadaPedirBola(dt);
         }
 
         // Update Action Banner
@@ -1725,6 +1788,12 @@ class FootballPlayer {
 
                 const velAtual = Math.hypot(this.velocity.x, this.velocity.z);
                 if (velAtual > SteeringModel.velAndar) {
+                    // Tecto interpolado entre andar e correr: ver SteeringModel.
+                    const t = THREE.MathUtils.clamp(
+                        (velAtual - SteeringModel.velAndar) /
+                        (SteeringModel.velCorrida - SteeringModel.velAndar), 0, 1);
+                    const tecto = SteeringModel.desvioMaxAndar +
+                        (SteeringModel.desvioMaxCorrida - SteeringModel.desvioMaxAndar) * t;
                     const movAng = Math.atan2(this.velocity.x, this.velocity.z);
                     const olharAng = Math.atan2(
                         lookTarget.x - this.model.position.x,
@@ -1732,7 +1801,6 @@ class FootballPlayer {
                     let delta = olharAng - movAng;
                     while (delta > Math.PI) delta -= 2 * Math.PI;
                     while (delta < -Math.PI) delta += 2 * Math.PI;
-                    const tecto = SteeringModel.desvioMaxCorpo;
                     if (Math.abs(delta) > tecto) {
                         const ang = movAng + Math.sign(delta) * tecto;
                         lookTarget = _vOlharCorpo.set(
@@ -1743,12 +1811,42 @@ class FootballPlayer {
                 }
             }
         }
-        _v1.set(this.model.position.x * 2 - lookTarget.x, this.model.position.y, this.model.position.z * 2 - lookTarget.z);
-        _m1.lookAt(this.model.position, _v1, this.model.up);
-        _q1.setFromRotationMatrix(_m1);
-        this.model.quaternion.slerp(_q1, Math.min(1.0, 5.5 * Match.delta));
-        // Inércia ajustada para fator 5.0 (curvas bastante responsivas e quase sem derrapagem)
-        this.velocity.lerp(desired, Math.min(1.0, 5.0 * Match.delta));
+        /*
+        Viragem com TECTO de velocidade angular, via passoDeGuinada (utils.js).
+        Era um slerp exponencial sem limite: a velocidade angular era
+        proporcional ao erro e chegava a 3240 graus/s numa inversao de 180.
+        Ver SteeringModel.giroMaxGrausPorSeg.
+
+        Yaw puro, que e o que um jogador faz: o lookAt anterior recebia um
+        alvo a mesma altura do modelo, por isso ja era yaw na pratica.
+        */
+        const dtGiro = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
+        const yawAlvo = guinadaPara(this.model.position, lookTarget.x, lookTarget.z);
+        _vFrenteCorpo.set(0, 0, 1).applyQuaternion(this.model.quaternion);
+        const yawAtual = Math.atan2(_vFrenteCorpo.x, _vFrenteCorpo.z);
+        const velMax = SteeringModel.giroMaxGrausPorSeg * Math.PI / 180;
+        const yawNovo = SteeringModel.inercia
+            ? passoDeGuinada(yawAtual, yawAlvo, dtGiro, velMax)
+            : yawAlvo;
+        _q1.setFromAxisAngle(_vUp, yawNovo);
+        /*
+        Sem inercia (SteeringModel.inercia = false): o corpo aponta para o
+        alvo de olhar no proprio frame e a velocidade salta para a desejada.
+        O `lookTarget` acima ja vem limitado, por isso apontar de imediato
+        nao repoe o jogador virado 90 graus do movimento.
+        */
+        /*
+        O quaterniao ja vem com o passo de guinada aplicado (tecto de
+        velocidade angular), por isso nao leva mais slerp por cima: um
+        amortecimento sobre um passo ja limitado sO voltava a por a viragem
+        a depender do erro.
+        */
+        this.model.quaternion.copy(_q1);
+        if (SteeringModel.inercia) {
+            this.velocity.lerp(desired, Math.min(1.0, SteeringModel.aceleracao * Match.delta));
+        } else {
+            this.velocity.copy(desired);
+        }
         return this.velocity;
     }
 
@@ -1803,6 +1901,49 @@ class FootballPlayer {
     joelhos (lKnee/rKnee) e pés (lFoot/rFoot) permanecem perfeitamente
     plantados e alinhados no chão, evitando qualquer sensação de tombo para trás.
     */
+    /*
+    BRACO LEVANTADO A PEDIR A BOLA.
+
+    Enquanto o contrato de intencao esta ABERTO o jogador levanta o braco do
+    lado de fora; cai assim que for servido ou cancelado. Camada procedural por
+    cima da pose de corrida, como a da matada no peito — e por isso tem de
+    correr DEPOIS do animateBones, senao ele reescreve o braco no mesmo frame.
+
+    Sem isto o sistema de intencoes so seria observavel pelo painel, e este
+    projecto ja tem historico de funcionalidades a correr sem ninguem conseguir
+    ver que funcionam.
+    */
+    aplicarCamadaPedirBola(dt) {
+        const rig = this.rig;
+        if (!rig || !rig.lArm || !rig.rArm) return;
+
+        const c = (typeof Intentions !== 'undefined') ? Intentions.doJogador(this) : null;
+        const aPedir = !!(c && c.estado === 'aberto');
+
+        // Suavizado: o braco sobe e desce, nao aparece levantado de um frame
+        // para o outro.
+        const alvo = aPedir ? 1 : 0;
+        if (this.pedirBolaIntens === undefined) this.pedirBolaIntens = 0;
+        const k = 1 - Math.exp(-Math.max(0.0001, dt) / 0.15);
+        this.pedirBolaIntens += (alvo - this.pedirBolaIntens) * k;
+        if (this.pedirBolaIntens < 0.01) return;
+
+        /*
+        Levanta o braco do lado por onde ele esta a correr (o lado de fora do
+        campo), para nao o cruzar a frente do corpo.
+        */
+        const i = this.pedirBolaIntens;
+        const paraDireita = (this.model.position.x >= 0);
+        const braco = paraDireita ? rig.rArm : rig.lArm;
+        const cotovelo = paraDireita ? rig.rElbow : rig.lElbow;
+
+        // Ombro quase a vertical: z e a abertura lateral no rig deste jogo.
+        const abertura = (paraDireita ? -1 : 1) * (Math.PI * 0.62) * i;
+        braco.rotation.z = lerpTo(braco.rotation.z, abertura, 0.5);
+        braco.rotation.x = lerpTo(braco.rotation.x, -0.35 * i, 0.5);
+        if (cotovelo) cotovelo.rotation.x = lerpTo(cotovelo.rotation.x, -0.25 * i, 0.5);
+    }
+
     aplicarCamadaPeito() {
         if (this.fsm.currentState !== 'CHEST_CONTROL') return;
         const rig = this.rig;
@@ -3388,7 +3529,14 @@ class FootballPlayer {
     */
     kickFromGround() {
         const gGrav = BallPhysics.gravidade;
-        const elev = THREE.MathUtils.degToRad((25 + Math.random() * 25) / 3);
+        /*
+        Elevacao do chutao: 25 a 35 graus, pedido explicito. Era
+        `(25 + rand*25) / 3`, ou seja 8.3 a 16.7 graus — uma bola esticada,
+        quase a meia altura. Como a velocidade sai resolvida do alcance
+        (R = v² sin2θ / g, mais abaixo), subir o angulo nao alonga o chutao:
+        torna-o mais alto e mais lento, que e o que se quer num tiro de meta.
+        */
+        const elev = THREE.MathUtils.degToRad(25 + Math.random() * 10);
         const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 20);
 
         const alcance = 38 + Math.random() * 16;

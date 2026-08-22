@@ -172,6 +172,7 @@ Aproveita o `defLineDir` que o nível 1 do adversário já calcula.
 function findThroughBall(ctx) {
     const p = ctx.p;
 
+
     // Um defesa a lançar é o jogo directo que se quer evitar: a bola tem de
     // passar pelo meio-campo. O lançamento é arma de médios e avançados.
     if (p.role === 'def' || p.role === 'gk') return null;
@@ -807,7 +808,15 @@ function actClearance(ctx) {
 }
 
 function actCarry(ctx) {
-    ctx.p.fsm.changeState('CARRY');
+    const p = ctx.p;
+    /*
+    Conduzir tem velocidade PROPRIA (CarryModel.velocidade). Antes esta funcao
+    so mudava de estado, e o portador corria com o speedMult que sobrasse do
+    ramo anterior — de 4.7 a 8.0 conforme o que tivesse corrido antes dele.
+    */
+    const v = CarryModel.velocidade;
+    p.speedMult = (v.base + ((ctx.skillSpeed - 50) / 50) * v.porSkill) * 1.25 * 0.9;
+    p.fsm.changeState('CARRY');
 }
 
 /* =========================================================================
@@ -839,7 +848,17 @@ function actChaseBall(ctx) {
     const p = ctx.p;
     p.speedMult = (5.8 + ((ctx.skillSpeed - 50) / 50) * 1.5) * 1.25 * 0.9;
     if (Match.counterAttackTeam === p.team) p.speedMult *= 1.25;
-    p.dynamicTarget.copy(Match.ball.position);
+    /*
+    Nao se corre para cima das costas de quem tem a bola: quem vem de tras
+    mira ao LADO, para emparelhar e ultrapassar. So vai a direito a bola se
+    vier de frente. Ver alvoDePerseguicao (utils.js).
+    */
+    if (typeof alvoDePerseguicao === 'function') {
+        const alvo = alvoDePerseguicao(p);
+        p.dynamicTarget.set(alvo.x, ALTURA_BASE_Y, alvo.z);
+    } else {
+        p.dynamicTarget.copy(Match.ball.position);
+    }
     p.fsm.changeState('MOVE_TO_POS');
 }
 
@@ -1344,6 +1363,117 @@ function escolherDestinoDeCorrida(p, bb) {
     return melhor;
 }
 
+/*
+Quem pode pedir a bola: um jogador de ataque ou medio, com a equipa em posse,
+sem contrato aberto, com espaco a frente e sem estar em fora-de-jogo. E o
+mesmo tipo de gatilho do CorrerNoEspaco — a diferenca e o compromisso.
+*/
+/*
+O MELHOR CONTRATO PARA SERVIR AGORA (Long_Ball_Inform).
+
+Vive a parte do findThroughBall de proposito: medido, o `findBestPassAnywhere`
+— o unico caminho que chamava o findThroughBall — corre 11 vezes em 48 s de
+jogo e SEMPRE sob pressao, ou seja nunca chega la. O ramo do lancamento estava
+praticamente morto, e pendurar os contratos nele seria escrever codigo que
+ninguem executa.
+
+Escolhe o contrato mais LONGE dos servíveis: o contrato existe para a bola
+longa; o passe curto tem o seu proprio caminho e nao se toca nele.
+*/
+function melhorContratoPara(ctx) {
+    if (typeof Intentions === 'undefined' || !IntentModel.ativo) return null;
+    const p = ctx.p;
+    if (p.role === 'gk') return null;
+
+    let melhorC = null, melhorProj = null;
+    for (const c of Intentions.abertos(p.team)) {
+        if (c.jogador === p) continue;
+        const proj = Intentions.projetarEncontro(c, Match.ball.position);
+        if (!proj) continue;
+        if (typeof linhaLivre === 'function' &&
+            !linhaLivre(Match.ball.position, proj.ponto, (ctx.bb && ctx.bb.opp) || [], 1.8)) continue;
+        if (!melhorProj || proj.dist > melhorProj.dist) { melhorC = c; melhorProj = proj; }
+    }
+    if (!melhorC) return null;
+    return { contrato: melhorC, ponto: melhorProj.ponto, tempoVoo: melhorProj.tempoVoo };
+}
+
+function podePedirBola(ctx) {
+    if (typeof Intentions === 'undefined' || !IntentModel.ativo) return false;
+    const p = ctx.p;
+    if (p.role === 'gk' || p.role === 'def') return false;
+    if (!ctx.bb || !ctx.bb.isAttacking) return false;
+    if (Match.ballCarrier === p) return false;
+    if (Intentions.doJogador(p)) return false;
+    if ((p.intentCooldown || 0) > 0) return false;
+    if (Intentions.abertos(p.team).length >= IntentModel.maxPorEquipa) return false;
+
+    // Espaco a frente, no referencial de ataque dele.
+    const avanco = p.model.position.z * p.dirZ;
+    const limite = (typeof ctx.bb.offsideLimitDir === 'number') ? ctx.bb.offsideLimitDir : null;
+    if (limite === null) return false;
+    if (limite - avanco < IntentModel.minEspacoFrente) return false;
+
+    return true;
+}
+
+/*
+Ball_Request. A rota e para a frente, com o desvio lateral que o afaste do
+adversario mais proximo, e dura o que couber antes da linha de fora-de-jogo.
+*/
+function actPedirBola(ctx) {
+    const p = ctx.p;
+    const avanco = p.model.position.z * p.dirZ;
+    const limite = ctx.bb.offsideLimitDir;
+
+    // Espaco util a frente, ate a linha; a duracao sai dele e da velocidade.
+    const espaco = Math.max(0, limite - avanco - 1.0);
+    const vel = IntentModel.velocidadeCorrida;
+    const duracao = THREE.MathUtils.clamp(
+        espaco / vel, IntentModel.duracaoMin, IntentModel.duracaoMax);
+
+    // Direccao: em frente, inclinada para longe do marcador mais proximo.
+    let lateral = 0;
+    let distMarc = Infinity;
+    for (const o of (ctx.bb.opp || [])) {
+        if (!o || o.role === 'gk') continue;
+        const d = o.model.position.distanceTo(p.model.position);
+        if (d < distMarc) {
+            distMarc = d;
+            lateral = Math.sign(p.model.position.x - o.model.position.x) || 1;
+        }
+    }
+    const inclinacao = (distMarc < 6.0) ? 0.5 : 0.15;
+    const dir = { x: lateral * inclinacao, z: p.dirZ };
+
+    const c = Intentions.pedir(p, dir, vel, duracao);
+    if (c) {
+        if (typeof MatchStats !== 'undefined') MatchStats.registarContrato('pedidos', p.team);
+        p.showActionBanner('BALL REQ');
+    }
+    actCumprirContrato(ctx);
+}
+
+/*
+Correr pela rota prometida. O destino e o ponto do contrato daqui a um segundo
+— ou o ponto de encontro combinado, se ja tiver sido servido, que e o que ele
+"sabe" depois do Long_Ball_Inform.
+*/
+function actCumprirContrato(ctx) {
+    const p = ctx.p;
+    const c = Intentions.doJogador(p);
+    if (!c) { actHoldPosition(ctx); return; }
+
+    const alvo = (c.estado === 'servido' && c.pontoEncontro)
+        ? c.pontoEncontro
+        : Intentions.posicaoEm(c, Math.min(Intentions.relogio + 1.0, c.tExpira));
+
+    p.dynamicTarget.set(alvo.x, ALTURA_BASE_Y, alvo.z);
+    p.speedMult = (IntentModel.velocidadeCorrida + ((ctx.skillSpeed - 50) / 50) * 1.5) * 1.25 * 0.9;
+    p.apoioAtivo = false;
+    p.fsm.changeState('RUN_INTO_SPACE');
+}
+
 function actRunIntoSpace(ctx) {
     const p = ctx.p;
     const R = RunIntoSpaceModel;
@@ -1635,8 +1765,28 @@ const PlayerBT = sel('PlayerRoot',
         cond('tenhoABola', temBola),
 
         sel('DecisaoComBola',
+            /*
+            A BOLA SO "FUGIU" SE ESTIVER MESMO LONGE.
+
+            Era `!ctx.p.hasBall`, e isso e verdade em METADE dos frames com
+            bola: o toque de conducao adianta-a e o `hasBall` cai enquanto ela
+            corre a frente. Medido, nesses frames a bola esta a 0.93 m do
+            jogador (p90 1.32) — ao pe dele, nao fugida.
+
+            O efeito era este ramo ganhar quase sempre e a arvore NUNCA descer
+            as decisoes: o ramo seguinte so era avaliado em 2.7% dos frames com
+            bola. Passar, rematar, cruzar e servir um contrato so aconteciam
+            nos poucos instantes em que o pe estava colado a bola.
+
+            `CarryModel.raioDecisao` e a distancia a partir da qual ele larga
+            tudo e vai atras dela.
+            */
             seq('RecuperarControlo',
-                cond('bolaFugiu', (ctx) => !ctx.p.hasBall),
+                cond('bolaFugiu', (ctx) => {
+                    if (ctx.p.hasBall) return false;
+                    return ctx.p.model.position.distanceTo(Match.ball.position)
+                        > CarryModel.raioDecisao;
+                }),
                 act('correrParaBola', actCarry)
             ),
             cond('CalculaDebug', (ctx) => {
@@ -1764,6 +1914,33 @@ const PlayerBT = sel('PlayerRoot',
                         ctx.passTarget = ctx.currentPassChoice.target;
                         actPass(ctx);
                     }
+                })
+            ),
+
+            /*
+            SERVIR UM CONTRATO (Long_Ball_Inform). Um colega anunciou a rota e
+            esta a cumpri-la: o encontro e projectado sobre uma promessa, e o
+            filtro da janela garante que ele ainda la esta quando a bola
+            chegar. Antes de conduzir, porque uma bola longa para quem ja
+            arrancou vale mais do que mais um toque a frente.
+            */
+            seq('ServirContrato',
+                cond('haContratoServivel', (ctx) => {
+                    const r = melhorContratoPara(ctx);
+                    if (!r) return false;
+                    ctx.contratoServivel = r;
+                    return true;
+                }),
+                act('lancarNoContrato', (ctx) => {
+                    const r = ctx.contratoServivel;
+                    Intentions.servir(r.contrato, ctx.p, r.ponto, r.tempoVoo);
+                    ctx.p.showActionBanner('LONG BALL');
+                    ctx.throughBall = {
+                        mate: r.contrato.jogador,
+                        alvoX: r.ponto.x, alvoZ: r.ponto.z,
+                        alto: false
+                    };
+                    actThroughBall(ctx);
                 })
             ),
 
@@ -1914,6 +2091,29 @@ const PlayerBT = sel('PlayerRoot',
             seq('ApoioDeCirculacao',
                 cond('fuiChamadoAApoiar', podeApoiarCirculacao),
                 act('apoiarCirculacao', actApoioCirculacao)
+            ),
+
+            /*
+            PEDIR A BOLA (Ball_Request). Anuncia a rota — direccao, velocidade
+            e duracao — e arranca. Vem ANTES do CorrerNoEspaco porque e a
+            versao comprometida da mesma coisa: quem tem contrato corre pela
+            rota que prometeu, nao por uma que reescolhe a cada frame.
+            Ver js/intentions.js.
+            */
+            seq('PedirBola',
+                cond('querPedirBola', podePedirBola),
+                act('pedirBola', actPedirBola)
+            ),
+
+            /*
+            CUMPRIR o contrato: quem ja pediu (ou ja foi servido) corre pela
+            rota prometida ate ela acabar. Sem isto o contrato era uma promessa
+            que ninguem cumpria — os ramos seguintes reescreviam-lhe o destino.
+            */
+            seq('CumprirContrato',
+                cond('temContrato', (ctx) =>
+                    typeof Intentions !== 'undefined' && !!Intentions.doJogador(ctx.p)),
+                act('correrPelaRota', actCumprirContrato)
             ),
 
             seq('CorrerNoEspaco',

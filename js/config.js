@@ -1153,9 +1153,115 @@ Ver steerArrive em player.js: a defender e a apoiar o jogador vira-se para a
 bola, e sem tecto isso punha-o a correr a 8 m/s virado 100 graus para o lado
 (medido em 2% dos frames, tools/diag_bugs.js).
 */
+/*
+PROTECCAO DA BOLA — nao se rouba por tras.
+
+O resolveBallContact escolhia o jogador mais PROXIMO da bola e mais nada: um
+adversario que chegasse por tras e ficasse mais perto levava-a, e com a bola
+lenta (`speed < BallControl.easySpeed`) nem sequer havia disputa, o dominio e
+automatico. Pedido explicito do dono do projecto: so ha disputa com os dois
+lado a lado, ou de frente um para o outro.
+
+`recuoMax` e o quanto um desafiante pode estar ATRAS do dono, medido ao longo
+da direccao em que o dono se move, e ainda assim disputar. Acima disso esta
+atras das costas dele e nao chega a bola.
+
+`offsetLateral` e a contraparte: quem persegue por tras nao mira o mesmo ponto
+que o portador — mira ao lado, para emparelhar e depois ultrapassar. Sem isto
+o perseguidor cola-se as costas do portador e fica la, que e a posicao de onde
+so se rouba de forma irreal.
+*/
+const ProtecaoDeBola = {
+    // Interruptor para medir A/B no mesmo binario (ver tools/diag_passes.js).
+    ativa: true,
+    /*
+    So ha "dono" se a bola estiver a esta distancia dele. Mais longe do que
+    isto ela nao e de ninguem — e o toque de conducao pode adianta-la ate
+    3.5 m (CarryModel.touchLong), por isso o raio tem de a cobrir.
+    */
+    raioPosse: 3.6,
+    recuoMax: 0.35,        // m atras do dono a partir dos quais nao pode disputar
+    frenteMin: 0.8,        // a partir daqui esta "de frente" e vai a direito a bola
+    velMinDono: 0.8,       // abaixo disto o dono esta parado: usa-se a orientacao do corpo
+    offsetLateral: 1.2     // desvio lateral do alvo de perseguicao, para emparelhar
+};
+
 const SteeringModel = {
-    velAndar: 2.5,                        // abaixo disto esta a colocar-se: pode virar-se todo
-    desvioMaxCorpo: 65 * Math.PI / 180    // 65 graus de corpo aberto, no maximo
+    /*
+    INERCIA LIGADA/DESLIGADA.
+
+    Com `inercia: false` o steerArrive deixa de amortecer: a velocidade salta
+    para a desejada e o corpo aponta para o alvo no proprio frame. Movimento
+    "digital" — sem curvas nem derrapagem — e foi pedido para se ver o jogo
+    sem o atraso que a suavizacao introduz.
+
+    Com `true` volta o comportamento antigo, governado pelo `giro` (rotacao)
+    e pela `aceleracao` (velocidade) logo abaixo. Os dois valores ficam aqui
+    por isso: para se poder voltar atras sem procurar numeros no meio do
+    player.js, que e onde estavam escondidos.
+    */
+    inercia: true,
+
+    /*
+    Suavizacao da VELOCIDADE (lerp por segundo). Estava hardcoded a 5.0 no
+    steerArrive. So e lido com `inercia: true`.
+
+    MEDIDO (8 sementes x 180 s, taxa de passe completo):
+
+        aceleracao/giro   certo    corte
+            5 / 10        61.0%    32.6%     valores antigos
+            8 / 14        60.6%    35.2%
+           12 / 18        60.5%    33.5%     <- escolhido
+           18 / 24        56.8%    38.4%     a curva parte aqui
+        sem inercia       53.0%    ~43%
+
+    Ate 12/18 a responsividade sobe sem custo nenhum no jogo; dai para cima os
+    defesas passam a mudar de direccao depressa de mais e interceptam tudo.
+    Desligar a inercia por completo custa 13 pontos de taxa de passe.
+    */
+    aceleracao: 12.0,
+
+    /*
+    VELOCIDADE DE GIRO do corpo (slerp por segundo, em steerArrive). Esteve em
+    7.0, foi baixada para 3.5 e depois para 5.5 a procura de um "feeling"
+    pesado; o resultado era o jogador a demorar a apontar para onde ia, e
+    portanto a deslocar-se de lado enquanto rodava.
+    */
+    giro: 18.0,
+
+    /*
+    TECTO DA VELOCIDADE ANGULAR, em graus por segundo.
+
+    O `giro` acima e um slerp exponencial: fecha uma fraccao do angulo que
+    falta por frame, e por isso a velocidade angular e proporcional ao erro —
+    com giro 18 e um erro de 180 graus dava 3240 graus/s no primeiro instante
+    (52 graus num frame). E o que se ve como o boneco a rodopiar.
+
+    O `passoDeGuinada` (utils.js) existia para isto desde sempre, com tecto e
+    cinco testes a passar, e nunca tinha sido chamado por ninguem.
+
+    Tempos de viragem a 360 graus/s: 180 em 0.5 s, 90 em 0.25 s, 45 em 0.12 s.
+    Uma volta completa por segundo — dentro do que um jogador faz (400-600 no
+    maximo) e da peso real as inversoes de marcha, que ate aqui eram de graca.
+    Esteve em 180, que se mostrou lento de mais a olho.
+    */
+    giroMaxGrausPorSeg: 360,
+
+    /*
+    TECTO DO DESVIO entre o corpo e a direccao do movimento, a defender e a
+    apoiar (estados que mandam olhar para a bola).
+
+    Um tecto fixo de 65 graus nao chegou: medido (tools/diag_bugs.js), o
+    SUPPORT_PASS ficou com 44.7 graus de media e 32% das amostras acima de 60,
+    e o BLOCKING com 57.3 e 61% — ou seja, dentro do tecto, mas a correr de
+    lado na mesma. O tecto passa a DEPENDER DA VELOCIDADE: parado ou a andar
+    o jogador pode virar-se todo para a bola, e quanto mais depressa corre
+    mais tem de ir alinhado com o proprio movimento.
+    */
+    velAndar: 2.5,                          // ate aqui vira-se todo
+    velCorrida: 5.5,                        // daqui para cima e o tecto minimo
+    desvioMaxAndar: 90 * Math.PI / 180,
+    desvioMaxCorrida: 22 * Math.PI / 180
 };
 
 // Reutilizado em steerArrive (player.js) para o alvo de olhar ja limitado.
@@ -1167,6 +1273,94 @@ sobe ao ataque por estar a perder. O jogo tem 2x45; 75 deixa o ultimo quarto
 de hora, que e quando uma equipa a perder mete um central na frente.
 */
 const ExtraFrontmanModel = { minutoFinal: 75 };
+
+/*
+Bonus de "sem marcacao" no findPassTarget. Postos aqui para se poderem medir
+A/B; estavam a mao no meio do player.js.
+*/
+/*
+Bonus de "sem marcacao" no findPassTarget, e o quanto ele vale conforme a
+DIRECCAO do passe. Ver a nota no proprio findPassTarget (player.js).
+*/
+const PassBonus = { livre: 300, meioLivre: 100, lado: 0.75, atras: 0.35 };
+
+/*
+LEAD DO PASSE — onde mirar para a bola e o colega se encontrarem.
+
+Medido (tools/diag_lead.js) com o alvoDePasse antigo, tres erros a somar:
+
+  velocidade   usava a INSTANTANEA do recetor, e ele quase sempre abranda:
+               assumida 7.11 m/s contra 6.40 reais, e em 67% dos passes ele
+               foi mais devagar do que o assumido
+  curvas       extrapolava em LINHA RECTA e ele curva: deslocamento recto
+               4.9 m contra 6.4 m de caminho andado (p10 = 0.39)
+  tempo        `vBall = 14.0` constante, quando a media real ronda 7.6 m/s
+
+Os dois primeiros esticavam o lead ~35% para a frente; o terceiro encurtava-o.
+Dois erros a anularem-se em parte, e por isso o mesmo passe saia umas vezes
+curto e outras longo — e afinar por tentativa nunca convergia.
+*/
+/*
+INTENCOES DE JOGADA — ver js/intentions.js e o spec em
+docs/superpowers/specs/2026-08-22-intencoes-de-jogada-design.md.
+
+O recetor anuncia a rota e cumpre-a; o passador projecta o encontro sobre essa
+promessa em vez de sobre um palpite. Medido: extrapolar o futuro de quem NAO
+se comprometeu e pior do que nao extrapolar (63.2% de acerto sem lead contra
+59.3% com o lead geometricamente correcto). O contrato e a diferenca entre
+prever e combinar.
+*/
+const IntentModel = {
+    ativo: true,
+    duracaoMin: 2.0,
+    duracaoMax: 6.0,
+    maxPorEquipa: 2,
+    cooldown: 4.0,            // por jogador, depois de um contrato fechar
+    /*
+    MEDIDO: os pontos de encontro dos contratos caem a 7-14 m da bola, nao aos
+    18+ que o spec assumia — quem pede a bola esta perto do portador, nao no
+    outro terco. Com distMin em 14 nenhum contrato passava o filtro (14 de 15
+    projeccoes recusadas). 10 m e o limiar onde o passe deixa de ser toque
+    curto; abaixo disso decide o caminho normal do passe, que nao se toca.
+    */
+    distMin: 10.0,
+    distMax: 45.0,
+    raioChegada: 3.0,         // a que distancia do ponto se considera cumprido
+    velocidadeInicial: 11.0,  // chute inicial da iteracao (a media usada no initiatePass)
+    /*
+    Fechar a rota exige duas coisas: o adversario estar a menos de `raioRota`
+    do ponto de destino, e chegar la com `margemRota` segundos de vantagem
+    sobre o dono. Sem o raio, qualquer defesa da linha fechava tudo — medido,
+    14 de 19 contratos morriam assim e nenhum era servido.
+    */
+    /*
+    Graca no arranque: nos primeiros instantes o jogador ainda esta a acelerar
+    e qualquer defesa parece chegar primeiro ao ponto. Sem isto os contratos
+    morriam por rotaFechada antes de alguem ter hipotese de os servir —
+    medido, 108 pedidos por 3 servidos, com 41 mortos assim.
+    */
+    graca: 0.9,
+    raioRota: 6.0,
+    margemRota: 1.0,
+    // Gatilho do PedirBola (ver player_bt.js).
+    minEspacoFrente: 8.0,
+    velocidadeCorrida: 7.6
+};
+
+const LeadModel = {
+    tauVelMedia: 0.7,       // constante de tempo da media da velocidade do recetor
+    /*
+    MEDIDO (8 sementes x 180 s, taxa de passe): 0.00 -> 63.2%, 0.35 -> 62.7%,
+    0.55 -> 61.8%, 0.82 -> 59.3%. Quanto MAIS lead, pior o passe: o ponto a
+    frente esta mais perto dos adversarios, o passe fica mais longo, e o
+    colega muda de ideias a qualquer frame. Adivinhar o futuro de quem nao se
+    comprometeu e pior do que nao adivinhar — que e o argumento do sistema de
+    intencoes (docs/superpowers/specs/2026-08-22-intencoes-de-jogada-design.md).
+    0.35 mantem a nocao de passar a frente por um custo dentro do ruido.
+    */
+    fatorCurvatura: 0.35,
+    tMax: 2.5               // tecto do tempo de voo considerado, em segundos
+};
 
 const PassErrorModel = {
     sigmaMax: 0.16,        // ~9.2 graus
@@ -1666,6 +1860,36 @@ function alcanceVisao(tec, minimo) {
 }
 
 const CarryModel = {
+    /*
+    VELOCIDADE DE CONDUCAO.
+
+    Nao existia. O `actCarry` so fazia changeState('CARRY') e a FSM corria com
+    `p.speedMult * 0.95` — ou seja, com o que sobrasse do ramo anterior. Medido
+    em jogo (mediana da velocidade por estado, 4 sementes x 150 s):
+
+        RUN_INTO_SPACE  8.61        SUPPORT_PASS  7.62
+        INTERCEPT       6.85        COM bola      6.59
+
+    Quem corria ao espaco ia 31% mais depressa do que quem tinha a bola, e ate
+    quem interceptava andava mais — e a dispersao do portador (p90 de 8.09)
+    nao vinha do jogo, vinha de que ramo tinha passado por ele antes.
+
+    Mesma forma dos outros ramos: base + termo de skill, vezes o ajuste global
+    de 1.25 * 0.9. A base esta calibrada em ~92% da corrida ao espaco (7.0),
+    que e a proporcao habitual entre conduzir e correr livre.
+    */
+    velocidade: { base: 6.45, porSkill: 1.4 },
+
+    /*
+    Ate esta distancia da bola o portador ainda DECIDE (passar, rematar,
+    cruzar, servir um contrato) em vez de simplesmente correr atras dela.
+
+    Sem isto, o ramo `RecuperarControlo` (player_bt.js) ganhava sempre que o
+    `hasBall` caisse — metade dos frames com bola, com ela a 0.93 m de
+    distancia — e a arvore so descia as decisoes em 2.7% dos frames.
+    */
+    raioDecisao: 2.2,
+
     leque: [-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2],
     lookAhead: 10.0,      // base de distância (sobrescrita por player.tec * 0.5)
     spaceCap: 16.0,       // espaço acima disto já não conta mais

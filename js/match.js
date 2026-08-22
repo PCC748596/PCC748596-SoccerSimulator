@@ -170,6 +170,15 @@ const Match = {
         this.passLineVisual.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
         this.passLineVisual.visible = false;
         this.scene.add(this.passLineVisual);
+        /*
+        A linha e o alvo do passe so podem estar visiveis enquanto EXISTE um
+        passe. Os botoes do painel (Team BT POS / PlayingStyleBT) punham
+        `visible = true` directamente, sem redesenhar nada: o que aparecia era
+        a linha do ULTIMO passe desenhado, ancorada num jogador e num alvo
+        antigos, enquanto os passes a serio aconteciam noutro sitio. Era o
+        "a linha aparece e o passe sai noutra direccao".
+        */
+        this.passVisualAtivo = false;
 
         this.goalLineVisual = new THREE.Line(
             new THREE.BufferGeometry(),
@@ -1067,6 +1076,40 @@ const Match = {
         }
     },
 
+    /*
+    Visibilidade dos visuais do passe: so com um passe em curso E com um dos
+    botoes do painel ligado. Um sitio so, chamado tanto por quem inicia o
+    passe como pelos toggles da UI.
+    */
+    atualizarVisuaisDePasse: function () {
+        /*
+        `!== 'OFF'` sozinho dava LIGADO para `undefined` — e os dois estados
+        so sao inicializados em main.js, que nem sempre esta carregado (o
+        harness headless e a simulacao em lote nao o carregam). Tem de ser
+        um valor conhecido e diferente de OFF.
+        */
+        const ligado = (v) => !!v && v !== 'OFF';
+        const painelLigado = (typeof window !== 'undefined') &&
+            (ligado(window.teamBTPosState) || ligado(window.playingStyleBTToggleState));
+        const mostrar = !!this.passVisualAtivo && !!painelLigado;
+        if (this.passTargetVisual) this.passTargetVisual.visible = mostrar;
+        if (this.passLineVisual) this.passLineVisual.visible = mostrar;
+    },
+
+    /*
+    Redesenha a linha a partir de onde a bola esta AGORA ate ao alvo pedido.
+    A linha partia da posicao do JOGADOR, e a bola sai de onde esta (medido:
+    0.55 m a frente do pe, e ate 28 graus de diferenca num passe curto).
+    */
+    desenharLinhaDePasse: function (alvoX, alvoZ) {
+        if (!this.passLineVisual) return;
+        const posAttr = this.passLineVisual.geometry.attributes.position;
+        posAttr.setXYZ(0, this.ball.position.x, 0.05, this.ball.position.z);
+        posAttr.setXYZ(1, alvoX, 0.05, alvoZ);
+        posAttr.needsUpdate = true;
+        if (this.passTargetVisual) this.passTargetVisual.position.set(alvoX, 0.05, alvoZ);
+    },
+
     // TeamB = RED, TeamA = BLUE. Ver #placar em index.html.
     updatePlacar: function () {
         const elA = document.getElementById('placar-a');
@@ -1246,6 +1289,8 @@ const Match = {
         this.kickoffApoio = apoio;
         this.kickoffTeam = startA ? 'TeamA' : 'TeamB';
         this.kickoffPendingPassToDef = true;
+        // Recomeco de jogo: nada do que estava combinado sobrevive.
+        if (typeof Intentions !== 'undefined') Intentions.limpar();
     },
 
     /*
@@ -1299,6 +1344,25 @@ const Match = {
         // Relógio em segundos simulados, para a telemetria do passe (o
         // tempoDeJogo acima vem multiplicado pelo timeScale).
         if (typeof MatchStats !== 'undefined') MatchStats.tick(dt);
+        /*
+        Intencoes de jogada: expira, revalida as quebras e fecha o que acabou.
+        Depois do nivel 1 (TeamAI.tick, ja corrido em runTeamAI) porque precisa
+        da posse apurada. Ver js/intentions.js.
+        */
+        if (typeof Intentions !== 'undefined') Intentions.tick(dt);
+
+        /*
+        O passe acabou: alguem dominou a bola, ou ela parou sozinha. A partir
+        daqui a linha deixa de representar o que quer que seja, e se ficasse
+        no ecra era ela que se via da proxima vez que se ligasse o painel.
+        */
+        if (this.passVisualAtivo) {
+            const parada = this.ballVel.lengthSq() < 0.36;   // 0.6 m/s
+            if (this.ballCarrier || parada || this.state !== 'PLAY') {
+                this.passVisualAtivo = false;
+                this.atualizarVisuaisDePasse();
+            }
+        }
         this.updatePlacar();
 
         if (this.state === 'CORNER_KICK') {
@@ -1363,8 +1427,8 @@ const Match = {
             isPassing = true;
         }
         if (!this.intendedReceiver && !isPassing) {
-            if (this.passTargetVisual) this.passTargetVisual.visible = false;
-            if (this.passLineVisual) this.passLineVisual.visible = false;
+            this.passVisualAtivo = false;
+            this.atualizarVisuaisDePasse();
         }
 
         this.updateBall();
@@ -1555,8 +1619,7 @@ const Match = {
 
         /*
         Nível 1 (TeamAI.tick, forma do bloco) corre SEMPRE, jogo parado ou
-        não — a própria árvore já tem o ramo 'BolaParada' que põe a postura
-        TeamPosture.SET_PIECE (bloco mais compacto/central) quando
+        não — a própria árvore já tem o ramo 'BolaParada', que apanha
         `Match.state !== 'PLAY'` (ver team_bt.js). Antes esta função inteira
         saía logo no `if (this.state !== 'PLAY') return`, e esse ramo nunca
         chegava a correr — o bloco ficava CONGELADO na forma esticada do
@@ -1742,6 +1805,12 @@ const Match = {
             // O guarda-redes nunca controla a bola com o pé por aqui — só
             // apanha com as mãos, sempre via updateGK() (gkEstado 'apanhar').
             if (p.role === 'gk') return;
+            /*
+            Nao se rouba pelas costas: com a bola dominada, so disputa quem
+            estiver lado a lado ou de frente. Ver podeDisputarBola (utils.js)
+            e ProtecaoDeBola (config.js).
+            */
+            if (typeof podeDisputarBola === 'function' && !podeDisputarBola(p)) return;
             // Distância ao CORPO (pés..testa), não à origem do modelo — ver
             // distanciaAoCorpo em utils.js.
             const r = distanciaAoCorpo(p, this.ball.position);

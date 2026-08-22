@@ -47,7 +47,7 @@ function correr(semente) {
 
         globalThis.__r = {
             intercept: { comPosse: {}, semPosse: {}, presos: 0, framesComIntercetor: 0 },
-            angulo: { n: 0, soma: 0, mau60: 0, mau90: 0, amostras: [] },
+            angulo: { n: 0, soma: 0, mau60: 0, mau90: 0, amostras: [], porEstado: {} },
             cb: { n: 0, trocado: 0 },
             pontos: { jogadoresComPontos: 0, chaves: {} },
             frontman: { n: 0, noAtaque: 0, estiloOn: 0 }
@@ -82,6 +82,10 @@ function correr(semente) {
                             const cos = (f.x * v.x + f.z * v.z) / (vel * (Math.hypot(f.x, f.z) || 1));
                             const ang = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
                             R.angulo.n++; R.angulo.soma += ang;
+                            const est = p.fsm.currentState;
+                            const pe = R.angulo.porEstado[est] ||
+                                (R.angulo.porEstado[est] = { n: 0, soma: 0, mau60: 0 });
+                            pe.n++; pe.soma += ang; if (ang > 60) pe.mau60++;
                             if (ang > 60) R.angulo.mau60++;
                             if (ang > 90) {
                                 R.angulo.mau90++;
@@ -137,7 +141,7 @@ function correr(semente) {
 
 const T = {
     intercept: { comPosse: {}, semPosse: {}, presos: 0, framesComIntercetor: 0 },
-    angulo: { n: 0, soma: 0, mau60: 0, mau90: 0, amostras: [] },
+    angulo: { n: 0, soma: 0, mau60: 0, mau90: 0, amostras: [], porEstado: {} },
     cb: { n: 0, trocado: 0 },
     pontos: { jogadoresComPontos: 0, chaves: {} },
     frontman: { n: 0, noAtaque: 0, estiloOn: 0 }
@@ -154,6 +158,12 @@ for (let s = 1; s <= SEMENTES; s++) {
     T.angulo.n += r.angulo.n; T.angulo.soma += r.angulo.soma;
     T.angulo.mau60 += r.angulo.mau60; T.angulo.mau90 += r.angulo.mau90;
     if (T.angulo.amostras.length < 12) T.angulo.amostras.push(...r.angulo.amostras);
+    for (const k of Object.keys(r.angulo.porEstado)) {
+        const a = T.angulo.porEstado[k] || (T.angulo.porEstado[k] = { n: 0, soma: 0, mau60: 0 });
+        a.n += r.angulo.porEstado[k].n;
+        a.soma += r.angulo.porEstado[k].soma;
+        a.mau60 += r.angulo.porEstado[k].mau60;
+    }
     T.cb.n += r.cb.n; T.cb.trocado += r.cb.trocado;
     T.pontos.jogadoresComPontos += r.pontos.jogadoresComPontos;
     for (const k of Object.keys(r.pontos.chaves)) {
@@ -179,6 +189,11 @@ console.log(`  jogadores em INTERCEPT que NAO sao o intercetor do frame: ${T.int
 console.log('\n2. Corpo vs direccao do movimento (so acima de 1.5 m/s)');
 console.log(`  angulo medio ${(T.angulo.soma / T.angulo.n).toFixed(1)} graus   ` +
     `>60 graus ${pc(T.angulo.mau60, T.angulo.n)}   >90 graus ${pc(T.angulo.mau90, T.angulo.n)}`);
+console.log('  por estado da FSM (media / % acima de 60 graus / n):');
+for (const [k, a] of Object.entries(T.angulo.porEstado).sort((x, y) => y[1].n - x[1].n)) {
+    if (a.n < 50) continue;
+    console.log(`    ${k.padEnd(15)} ${(a.soma / a.n).toFixed(1).padStart(5)}   ${pc(a.mau60, a.n).padStart(6)}   ${a.n}`);
+}
 for (const a of T.angulo.amostras.slice(0, 8)) {
     console.log(`    ${a.pos.padEnd(3)} ${a.estado.padEnd(14)} ${a.ang} graus a ${a.vel} m/s`);
 }
