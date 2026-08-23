@@ -321,6 +321,11 @@ function velocidadeRasteiraPara(dist, vChegada) {
     dist = Math.max(0, dist);
 
     let vAlvo = vChegada;
+    if (dist < 12.0) {
+        vAlvo += (12.0 - dist) * 0.18;
+    } else if (dist > 15.0) {
+        vAlvo = Math.max(1.5, vChegada - (dist - 15.0) * 0.15);
+    }
 
     const k = BallPhysics.kArrasto;
     const atrito = BallPhysics.atritoRolamento * BallPhysics.gravidade;
@@ -675,38 +680,61 @@ function alvoDePasse(p) {
     const pos = p.model.position.clone();
     
     if (p.velocity && typeof Match !== 'undefined' && Match.ball) {
-        /*
-        ONDE A BOLA E O COLEGA SE ENCONTRAM.
-
-        Era uma interceccao quadratica com `vBall = 14.0` constante e a
-        velocidade INSTANTANEA do recetor amortecida a 0.85. Tres coisas
-        erradas de uma vez (ver LeadModel, config.js): a bola nao anda a 14
-        (sai a 12.5 e chega a 2.8 num passe de 20 m), o recetor quase sempre
-        abranda, e ele nao corre a direito.
-
-        Agora: velocidade MEDIA recente dele, encolhida pelo factor de
-        curvatura, e o tempo de voo resolvido pela fisica real (tempoDeVoo).
-        A iteracao converge em duas passagens — o ponto muda a distancia, a
-        distancia muda o tempo, o tempo muda o ponto.
-        */
-        const dirVel = Math.hypot(p.velocity.x, p.velocity.z);
-        const vMedia = (typeof p.velMedia === 'number') ? p.velMedia : dirVel;
-        const vUtil = vMedia * LeadModel.fatorCurvatura;
-
-        // Direccao: a instantanea, que e a melhor pista de para onde ele vai.
-        const ux = dirVel > 0.05 ? p.velocity.x / dirVel : 0;
-        const uz = dirVel > 0.05 ? p.velocity.z / dirVel : 0;
-
-        let t = 0;
-        for (let i = 0; i < 2; i++) {
-            const px = pos.x + ux * vUtil * t;
-            const pz = pos.z + uz * vUtil * t;
-            const d = Math.hypot(px - Match.ball.position.x, pz - Match.ball.position.z);
-            t = Math.min(LeadModel.tMax, tempoDeVoo(d));
+        const dx = pos.x - Match.ball.position.x;
+        const dz = pos.z - Match.ball.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        
+        // Até 4m: Passe direto (muito perto para leading significativo)
+        if (dist <= 4.0) {
+            return pos;
         }
 
-        pos.x += ux * vUtil * t;
-        pos.z += uz * vUtil * t;
+        // A velocidade de passe foi aumentada em 20% (14.0 * 1.2 = 16.8)
+        const vBall = 16.8;
+        
+        let currentSpeed = p.velocity.length();
+        let vx = 0;
+        let vz = 0;
+
+        if (currentSpeed > 0.1) {
+            // Em vez de usar 85% da velocidade atual de forma fixa, 
+            // baseamos na velocidade MÁXIMA individual do jogador (p.speedMult).
+            // Assumimos que ele corre a ~90% do seu máximo para chegar à bola em movimento.
+            let futureSpeed = p.speedMult ? (p.speedMult * 0.9) : currentSpeed;
+            
+            // Para passes muito curtos, limitamos a aceleração para não haver "teletransporte" matemático
+            if (dist < 15.0) {
+                futureSpeed = Math.min(futureSpeed, currentSpeed + 1.5);
+            }
+
+            vx = (p.velocity.x / currentSpeed) * futureSpeed;
+            vz = (p.velocity.z / currentSpeed) * futureSpeed;
+        }
+
+        const a = (vx * vx + vz * vz) - (vBall * vBall);
+        const b = 2 * (dx * vx + dz * vz);
+        const c = dist * dist;
+        
+        let t = 0;
+        if (Math.abs(a) < 0.001) {
+            if (Math.abs(b) > 0.001) t = -c / b;
+        } else {
+            const delta = b * b - 4 * a * c;
+            if (delta >= 0) {
+                const t1 = (-b + Math.sqrt(delta)) / (2 * a);
+                const t2 = (-b - Math.sqrt(delta)) / (2 * a);
+                if (t1 > 0 && t2 > 0) t = Math.min(t1, t2);
+                else if (t1 > 0) t = t1;
+                else if (t2 > 0) t = t2;
+            }
+        }
+        
+        if (t <= 0 || t > 3.0) {
+            t = Math.min(dist / vBall, 3.0);
+        }
+        
+        pos.x += vx * t;
+        pos.z += vz * t;
     }
     
     // Percepção de limites do campo: mantém o ponto de lead dentro das margens úteis de jogo
@@ -1138,167 +1166,4 @@ function seguirBola(actual, alvo, k, dt, reposta) {
     if (reposta || dt >= 1) return alvo;
     const passo = 1 - Math.exp(-k * dt);
     return actual + (alvo - actual) * passo;
-}
-
-
-/*
-=============================================================================
-PROTECCAO DA BOLA — quem pode disputar, e para onde corre quem persegue
-=============================================================================
-Ver ProtecaoDeBola em config.js para o porque e para os numeros.
-*/
-
-/*
-O dono da JOGADA, que nao e sempre o `Match.ballCarrier`: durante um toque de
-conducao a bola esta solta a frente dele e o ballCarrier fica a null, e era
-exactamente ai que a bola era roubada. Quem esta em conducao tem
-`carryTouchGrace > 0` (ver graceDeConducao).
-*/
-function donoDaBola() {
-    if (typeof Match === 'undefined') return null;
-
-    /*
-    UM PASSE EM CURSO NAO TEM DONO.
-
-    Sem esta guarda, o passador continuava a contar como dono depois de a bola
-    sair (o `carryTouchGrace` dele so morre uns decimos depois), e a proteccao
-    passava a impedir o DESTINATARIO de tocar na bola — ele esta longe, logo
-    "atras" do passador no eixo do movimento dele. Medido: a taxa de passe
-    caiu de 65% para 53.6%, com os cortes a subir para 41%.
-    */
-    if (Match.intendedReceiver) return null;
-
-    const perto = (p) => {
-        if (!p || !p.model) return false;
-        const dx = p.model.position.x - Match.ball.position.x;
-        const dz = p.model.position.z - Match.ball.position.z;
-        return (dx * dx + dz * dz) <= ProtecaoDeBola.raioPosse * ProtecaoDeBola.raioPosse;
-    };
-
-    /*
-    E so ha dono se a bola estiver JUNTO A ELE. Proteger o corpo e proteger
-    uma bola que se tem; uma bola que ja vai a dez metros nao e de ninguem,
-    mesmo que o ultimo a toca-la ainda esteja em conducao.
-    */
-    if (Match.ballCarrier) return perto(Match.ballCarrier) ? Match.ballCarrier : null;
-    for (const lista of [Match.players, Match.opponents]) {
-        if (!lista) continue;
-        for (const p of lista) {
-            if (p && p.carryTouchGrace > 0 && perto(p)) return p;
-        }
-    }
-    return null;
-}
-
-/*
-Direccao "para a frente" do dono: a do movimento dele. Parado, nao ha
-movimento que sirva de eixo e usa-se a orientacao do corpo.
-*/
-function frenteDoDono(dono) {
-    const v = dono.velocity;
-    const vel = v ? Math.hypot(v.x, v.z) : 0;
-    if (vel > ProtecaoDeBola.velMinDono) return { x: v.x / vel, z: v.z / vel };
-
-    /*
-    Frente local (+Z) rodada pelo quaterniao, resolvida a mao em vez de
-    `new THREE.Vector3().applyQuaternion(...)`: este ficheiro e avaliado por
-    varios testes num sandbox sem THREE, e um `new THREE.Vector3()` ao nivel
-    do ficheiro rebenta-os a todos. Sem alocacao por chamada, ainda por cima.
-    */
-    const q = dono.model.quaternion;
-    const fx = 2 * (q.x * q.z + q.w * q.y);
-    const fz = 1 - 2 * (q.x * q.x + q.y * q.y);
-    const n = Math.hypot(fx, fz) || 1;
-    return { x: fx / n, z: fz / n };
-}
-
-/*
-Avanco de `p` em relacao ao dono, ao longo do eixo em que o dono se move.
-Negativo = esta atras dele.
-*/
-function avancoSobreDono(p, dono) {
-    const f = frenteDoDono(dono);
-    const dx = p.model.position.x - dono.model.position.x;
-    const dz = p.model.position.z - dono.model.position.z;
-    return dx * f.x + dz * f.z;
-}
-
-/*
-Pode `p` disputar a bola neste instante? Com a bola solta, qualquer um pode. Com
-dono, so quem estiver lado a lado ou a frente — nunca pelas costas.
-
-Vale para os dois lados: um companheiro que venha por tras tambem nao tira a
-bola ao portador (era esse o defeito dos dois jogadores da mesma equipa em
-CARRY).
-*/
-function podeDisputarBola(p) {
-    if (!ProtecaoDeBola.ativa) return true;
-    const dono = donoDaBola();
-    if (!dono || dono === p) return true;
-    return avancoSobreDono(p, dono) > -ProtecaoDeBola.recuoMax;
-}
-
-/*
-Para onde corre quem persegue. Se vem de FRENTE, vai a direito a bola — e o
-choque de frente, e ai a disputa e legitima. Se vem de tras ou de lado, mira ao
-LADO do portador (do lado por onde ja vem) para emparelhar e ultrapassar, em
-vez de se colar as costas dele.
-*/
-function alvoDePerseguicao(p) {
-    const bola = Match.ball.position;
-    if (!ProtecaoDeBola.ativa) return { x: bola.x, z: bola.z };
-    const dono = donoDaBola();
-    if (!dono || dono === p) return { x: bola.x, z: bola.z };
-
-    const avanco = avancoSobreDono(p, dono);
-    if (avanco > ProtecaoDeBola.frenteMin) return { x: bola.x, z: bola.z };
-
-    const f = frenteDoDono(dono);
-    const lat = { x: -f.z, z: f.x };
-    const dx = p.model.position.x - dono.model.position.x;
-    const dz = p.model.position.z - dono.model.position.z;
-    const lado = (dx * lat.x + dz * lat.z) >= 0 ? 1 : -1;
-    return {
-        x: bola.x + lat.x * lado * ProtecaoDeBola.offsetLateral,
-        z: bola.z + lat.z * lado * ProtecaoDeBola.offsetLateral
-    };
-}
-
-
-/*
-=============================================================================
-TEMPO DE VOO DE UM PASSE
-=============================================================================
-Quanto tempo a bola demora a percorrer `dist`, com a fisica que o passe vai
-mesmo usar. Nao e uma estimativa nova: e o tempo que `velocidadeRasteiraPara`
-e `velocidadeParaAlcance` ja determinam, exposto em vez de implicito.
-
-Existia no lugar disto um `vBall = 14.0` constante dentro do alvoDePasse. A
-bola sai a 12.5 m/s num passe de 20 m e chega a 2.8 — media real ~7.6 — por
-isso os 14 subestimavam o tempo de voo para quase metade, e o lead saia curto.
-
-`alto` escolhe o ramo. Por omissao usa-se o rasteiro, que e a esmagadora
-maioria dos passes (o `resolverElevacaoPasse` sorteia o arco e nao serve para
-prever nada: chamado duas vezes com a mesma distancia da respostas diferentes).
-*/
-function tempoDeVoo(dist, alto) {
-    if (!(dist > 0)) return 0;
-
-    if (alto) {
-        const elev = PassModel.elevacaoLancamento;
-        const v = velocidadeParaAlcance(dist, elev);
-        if (v && isFinite(v)) return (2 * v * Math.sin(elev)) / BallPhysics.gravidade;
-    }
-
-    /*
-    Rasteiro, com travagem constante a = mu*g:
-        d = v0*t - a*t^2/2  =>  t = (v0 - sqrt(v0^2 - 2*a*d)) / a
-    Se a bola nem chega la (raiz negativa), devolve-se o tempo ate parar.
-    */
-    const a = BallPhysics.atritoRolamento * BallPhysics.gravidade;
-    const v0 = velocidadeRasteiraPara(dist, PassModel.vChegadaRasteira);
-    if (!(v0 > 0)) return dist / 8.0;
-    const disc = v0 * v0 - 2 * a * dist;
-    if (disc <= 0) return v0 / a;
-    return (v0 - Math.sqrt(disc)) / a;
 }

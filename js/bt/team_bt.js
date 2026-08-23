@@ -7,6 +7,7 @@ Não mexe em nenhum jogador individualmente: produz o *plano colectivo* num
 blackboard (TeamBlackboard) que o nível 2 (PositionBT) consome.
 
 O que sai daqui:
+    posture            a intenção colectiva (ver TeamPosture)
     pushMultiplier     quanto a equipa sobe no campo quando ataca
     advanceFactor      0..1, quão avançada está a manobra ofensiva
     chaser             quem vai à bola
@@ -27,25 +28,17 @@ window.TeamState = TeamState;
 
 /* --- Vocabulário de posturas -------------------------------------------- */
 
-/*
-AS POSTURAS FORAM REMOVIDAS.
-
-Havia um `TeamPosture` com nove nomes (BUILD_UP, ATTACK_SUSTAINED,
-FINAL_THIRD, COUNTER, HIGH_PRESS, MID_BLOCK, LOW_BLOCK, FLANK_SHIFT,
-SET_PIECE) que a arvore deduzia e escrevia em `bb.posture`. O
-`TeamPostureTuning`, que era quem as lia para deslocar o bloco, ja tinha sido
-apagado (ver a nota abaixo) — e a partir daí o unico sitio no projecto que
-lia `bb.posture` era o fluxograma da aba separada, que as mostrava como se
-fossem o resultado da decisao. Nao eram: nao mexiam em nada.
-
-Quem manda hoje na forma da equipa e o `TeamState` (Offensive, T.Offensive,
-Defensive, T.Defensive), calculado em `gather()` a partir da posse e do tempo
-dela, e lido pelos Playing Styles, pela marcacao e pelo bloco.
-
-A arvore fica: as condicoes continuam a classificar a situacao de jogo e o
-trace continua a mostrar que ramo ganhou — que e para o que serve o
-fluxograma.
-*/
+const TeamPosture = {
+    SET_PIECE: 'SET_PIECE',              // bola parada, o plano normal está suspenso
+    BUILD_UP: 'BUILD_UP',                // posse acabada de ganhar, a construir
+    ATTACK_SUSTAINED: 'ATTACK_SUSTAINED',// posse prolongada, equipa instalada
+    FINAL_THIRD: 'FINAL_THIRD',          // bola no último terço adversário
+    COUNTER: 'COUNTER',                  // transição rápida após recuperação
+    HIGH_PRESS: 'HIGH_PRESS',            // pressão no meio-campo adversário
+    MID_BLOCK: 'MID_BLOCK',              // bloco a meio campo
+    LOW_BLOCK: 'LOW_BLOCK',              // bloco baixo, defesa do último terço
+    FLANK_SHIFT: 'FLANK_SHIFT'           // basculação para um flanco em perigo
+};
 
 /*
 A POSTURA JA NAO MEXE NO BLOCO.
@@ -83,6 +76,7 @@ class TeamBlackboard {
         this.ownGoalZ = ownGoalZCenter(team);
         this.atkGoalZ = -this.ownGoalZ;
 
+        this.posture = TeamPosture.MID_BLOCK;
         this.isAttacking = false;
         this.isCounter = false;
         this.phase = 1;
@@ -276,44 +270,39 @@ para o centro do gol defendido, movendo-se perpendicularmente a essa linha.
 */
 function pickBlocker(bb) {
     if (bb.isAttacking) { bb.blocker = null; return; }
+    
+    // Tem que haver um portador da bola adversário
+    const carrier = bb.oppCarrier;
+    if (!carrier) { bb.blocker = null; return; }
+    
     const ballPos = Match.ball.position;
     // O blocker só é ativado se a bola estiver no campo de defesa
     if (ballPos.z * bb.dir >= 0) { bb.blocker = null; return; }
-    if (!bb._goalPosCache) bb._goalPosCache = new THREE.Vector3();
-    bb._goalPosCache.set(0, 0, bb.ownGoalZ);
-    
-    if (!bb._vBallToGoal) bb._vBallToGoal = new THREE.Vector3();
-    bb._vBallToGoal.subVectors(bb._goalPosCache, ballPos);
-    bb._vBallToGoal.y = 0;
-    
-    const distBallToGoal = bb._vBallToGoal.length();
-    if (distBallToGoal < 0.1) { bb.blocker = null; return; }
-    
-    if (!bb._dirBallToGoal) bb._dirBallToGoal = new THREE.Vector3();
-    bb._dirBallToGoal.copy(bb._vBallToGoal).normalize();
     
     let bestScore = Infinity;
     let bestBlocker = null;
     
-    if (!bb._vBallToPlayer) bb._vBallToPlayer = new THREE.Vector3();
-    if (!bb._vProjPos) bb._vProjPos = new THREE.Vector3();
-    
     for (const p of bb.own) {
         if (!p || p.role === 'gk' || p === bb.chaser) continue;
-        bb._vBallToPlayer.subVectors(p.model.position, ballPos);
-        bb._vBallToPlayer.y = 0;
         
-        const projLen = bb._vBallToPlayer.dot(bb._dirBallToGoal);
-        if (projLen > 0 && projLen < distBallToGoal) {
-            bb._vProjPos.copy(ballPos).addScaledVector(bb._dirBallToGoal, projLen);
-            const distToLine = p.model.position.distanceTo(bb._vProjPos);
-            const distToCenter = Math.abs(p.model.position.x);
-            const score = distToLine + (distToCenter * 0.5);
-
-            if (score < bestScore) {
-                bestScore = score;
-                bestBlocker = p;
-            }
+        // A distância do jogador para o carrier
+        const distPlayerToCarrier = p.model.position.distanceTo(carrier.model.position);
+        
+        // Se o carry estiver muito longe do posto do jogador, penaliza
+        let distPostToCarrier = 0;
+        if (p.baseTarget) {
+            distPostToCarrier = p.baseTarget.distanceTo(carrier.model.position);
+        } else {
+            distPostToCarrier = distPlayerToCarrier; // Fallback
+        }
+        
+        // O jogador cujo POSTO está mais próximo da bola ganha (não abandona o posto totalmente).
+        // Se o carry sair da zona (posto), o distPostToCarrier aumenta e outro jogador assume.
+        const score = distPlayerToCarrier + (distPostToCarrier * 1.5);
+        
+        if (score < bestScore) {
+            bestScore = score;
+            bestBlocker = p;
         }
     }
 
@@ -434,21 +423,6 @@ function pickIntercetor(bb) {
     const janela = PerceptionModel.janelaIntercetar;
     const margem = PerceptionModel.margemMelhor;
 
-    /*
-    UM PASSE MEU NÃO SE INTERCEPTA.
-
-    O `pickIntercetor` só olhava para `Match.ballCarrier` — e durante um passe
-    não há portador, por isso a equipa que ACABOU DE PASSAR também escolhia
-    intercetor. Medido (tools/diag_bugs.js): a equipa COM posse tinha alguém
-    em INTERCEPT em 23% dos frames, contra 6% da equipa que defendia — e como
-    o destinatário vai ao ponto dele e o "intercetor" ao ponto de intercepção,
-    viam-se dois colegas a correr para sítios diferentes atrás da mesma bola.
-
-    Quem trata de um passe nosso é o destinatário (ramo `Receber`). Se o passe
-    se perder, o `intendedReceiver` é limpo e isto volta a correr.
-    */
-    if (Match.intendedReceiver && Match.intendedReceiver.team === bb.team) return;
-
     const candidatos = [];
     for (const p of bb.outfield) {
         if (!p || p.role === 'gk') continue;
@@ -472,14 +446,6 @@ function pickIntercetor(bb) {
     let tQuemJaVai = Infinity;
     for (const outro of [bb.chaser, Match.intendedReceiver]) {
         if (!outro) continue;
-        /*
-        SÓ COMPANHEIROS. O `intendedReceiver` de um passe ADVERSÁRIO estava a
-        contar como "alguém que já vai à bola", e como o destinatário chega
-        quase sempre primeiro ao passe que lhe é dirigido, a equipa que
-        defendia desistia de interceptar quase sempre. Era o outro lado da
-        moeda dos 23%/6% medidos: a interceptação estava ao contrário.
-        */
-        if (outro.team !== bb.team) continue;
         const bOutro = outro.blackboard && outro.blackboard.ball;
         const t = (bOutro && bOutro.interceptable) ? bOutro.timeToIntercept : 0;
         if (t < tQuemJaVai) tQuemJaVai = t;
@@ -686,7 +652,7 @@ function computeBlock(bb) {
         
         let stateOffset = 0;
         if (bb.state === TeamState.TRANSITION_DEFENSIVE || bb.state === TeamState.DEFENSIVE) {
-            stateOffset = -5.0;
+            stateOffset = -7.0;
         }
         
         let targetZ = ment.blocoZ + stateOffset;
@@ -787,7 +753,7 @@ function computeBlock(bb) {
             : 3.0;
 
         const tectoBase = TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium;
-        const tectoDir = tectoBase + ment.blocoZ;
+        const tectoDir = tectoBase;
 
         /*
         Este é o ÚNICO sítio que ainda desloca o rectângulo, e desloca-o
@@ -810,8 +776,18 @@ function computeBlock(bb) {
 
         if (Math.abs(bb[keyOffset]) > 0.05) {
             z0 += bb[keyOffset];
-            // O bloco desloca-se INTEIRO, mantendo o tamanho e formato rígido.
-            z1 = z0 + profundidade;
+            
+            // Tolerância: o bloco pode comprimir até 20% (0.8 * profundidade) ao bater num limite,
+            // mas não pode esticar além da sua profundidade original.
+            const profMin = profundidade * 0.80;
+            const profMax = profundidade;
+            const profAtual = z1 - z0;
+
+            if (profAtual < profMin) {
+                z1 = z0 + profMin;
+            } else if (profAtual > profMax) {
+                z1 = z0 + profMax;
+            }
         } else {
             bb[keyOffset] = 0;
         }
@@ -848,23 +824,40 @@ function computeBlock(bb) {
     */
 
     /*
-    LIMITES: MARCA DO PENALTY. O rectângulo desloca-se inteiro
-    para dentro do campo e NUNCA muda de tamanho, evitando a deformação.
-    O utilizador pediu para restringir na marca do Penalty (11.0m).
+    LIMITES: MARCA DO PENALTY. 
+    Quando o bloco bate na marca do Penalty (11.0m), a frente/trás pode comprimir
+    até 20% para não arrastar rigidamente a outra linha.
     */
     const maxZ = (CAMPO_COMP / 2) - 11.0;
+    const profMinG = profundidade * 0.80;
+    const profMaxG = profundidade;
+
     if (z0 < -maxZ) {
-        z1 += (-maxZ - z0);
         z0 = -maxZ;
+        if (z1 - z0 < profMinG) z1 = z0 + profMinG;
+        if (z1 - z0 > profMaxG) z1 = z0 + profMaxG;
     } else if (z1 > maxZ) {
-        z0 -= (z1 - maxZ);
         z1 = maxZ;
+        if (z1 - z0 < profMinG) z0 = z1 - profMinG;
+        if (z1 - z0 > profMaxG) z0 = z1 - profMaxG;
+    }
+    
+    // Hard cap: a traseira do bloco nunca ultrapassa a Linha Defensiva configurada
+    const tectoAbsoluto = TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium;
+    if (z0 > tectoAbsoluto) {
+        z0 = tectoAbsoluto;
+        if (z1 - z0 < profMinG) z1 = z0 + profMinG;
     }
 
     /* --- largura -------------------------------------------------------- */
 
     let largura = CAMPO_LARG * B.amplitude[compac];
     
+    // Fechar o meio (global): reduz ligeiramente a largura de todos
+    if (!bb.isAttacking) {
+        const fatorCentral = Math.max(0, 1.0 - Math.abs(bb.bolaXSuave) / 18.0);
+        largura *= (1.0 - 0.05 * fatorCentral);
+    }
 
     const meiaLarg = largura / 2;
 
@@ -1050,10 +1043,16 @@ function slotNoBloco(p, bb) {
     const fechoSec = (typeof fechoDoSector === 'function' && typeof Tatics !== 'undefined')
         ? fechoDoSector(Tatics.setores)
         : 1.0;
+        
+    let fechoAdicional = 1.0;
+    if (!bb.isAttacking && (p.pos === 'CB' || p.pos === 'DM' || p.pos === 'CM')) {
+        const fatorCentral = Math.max(0, 1.0 - Math.abs(bb.bolaXSuave) / 18.0);
+        fechoAdicional = 1.0 - (0.40 * fatorCentral); // aperta até mais 40% para fechar o meio
+    }
 
     // Clamp: com o multiplicador acima de 1 o u pode sair do rectangulo, e a
     // borda do bloco ja encosta a linha lateral.
-    const u = THREE.MathUtils.clamp(0.5 + (p.slot.u - 0.5) * fecho * fechoSec, 0.02, 0.98);
+    const u = THREE.MathUtils.clamp(0.5 + (p.slot.u - 0.5) * fecho * fechoSec * fechoAdicional, 0.02, 0.98);
 
     /*
     O rectângulo segue a bola e nunca encolhe, por isso com a bola na ala fica
@@ -1189,6 +1188,7 @@ function updateGkStyle(bb) {
     }
 }
 
+const setPosture = (posture) => act('posture:' + posture, (bb) => { bb.posture = posture; });
 
 /* --- A árvore ----------------------------------------------------------- */
 
@@ -1196,47 +1196,51 @@ const TeamBT = sel('TeamRoot',
 
     // 1. Bola parada suspende o plano normal.
     seq('BolaParada',
-        cond('jogoParado', () => Match.state !== 'PLAY')
+        cond('jogoParado', () => Match.state !== 'PLAY'),
+        setPosture(TeamPosture.SET_PIECE)
     ),
 
-    // 2. Com bola: em que fase esta a manobra ofensiva?
+    // 2. Com bola: qual a fase da manobra ofensiva?
     seq('ComBola',
         cond('temPosse', (bb) => bb.isAttacking),
         sel('FaseOfensiva',
             seq('Transicao',
-                cond('emContraAtaque', (bb) => bb.isCounter)
+                cond('emContraAtaque', (bb) => bb.isCounter),
+                setPosture(TeamPosture.COUNTER)
             ),
             seq('UltimoTerco',
-                cond('bolaNoUltimoTerco', (bb) => bb.ballZ * bb.dir > 17.0)
-            )
-            /*
-            Havia aqui um ramo `PosseInstalada`, com a condicao
-            `posseProlongada: bb.phase >= 2`. O `phase` e escrito UMA vez
-            (`= 1`, no construtor do TeamBlackboard) e nunca mais, por isso a
-            condicao era sempre falsa e o ramo nunca corria — o mesmo campo
-            orfao que matava o gatilho do Classic No.10. "Posse instalada" ja
-            e o TeamState.OFFENSIVE (3 s de posse), que existe e e lido.
-            */
+                cond('bolaNoUltimoTerco', (bb) => bb.ballZ * bb.dir > 17.0),
+                setPosture(TeamPosture.FINAL_THIRD)
+            ),
+            seq('PosseInstalada',
+                cond('posseProlongada', (bb) => bb.phase >= 2),
+                setPosture(TeamPosture.ATTACK_SUSTAINED)
+            ),
+            setPosture(TeamPosture.BUILD_UP)
         )
     ),
 
-    // 3. Sem bola: que situacao defensiva?
+    // 3. Sem bola: que bloco defensivo?
     seq('SemBola',
         act('lerAmeacaDeFlanco', detectFlankThreat),
         sel('BlocoDefensivo',
             seq('Basculacao',
-                cond('flancoEmPerigo', (bb) => bb.flankAlert !== null)
+                cond('flancoEmPerigo', (bb) => bb.flankAlert !== null),
+                setPosture(TeamPosture.FLANK_SHIFT)
             ),
             seq('BlocoBaixo',
-                cond('bolaNoNossoTerco', (bb) => bb.ballZ * bb.dir < -17.0)
+                cond('bolaNoNossoTerco', (bb) => bb.ballZ * bb.dir < -17.0),
+                setPosture(TeamPosture.LOW_BLOCK)
             ),
             seq('PressaoAlta',
                 // Precisa do Estilo=Ataque E do Defensive Pressure em High — só
                 // um dos dois (ex: Ataque + Balanced) não basta pra pressionar
                 // no campo do adversário o jogo inteiro.
                 cond('pressionamosAlto', (bb) =>
-                    (Tatics.estilo === 'ataque' || Tatics.estilo === 'muito_ofensiva') && Tatics.pressaoDefensiva === 'high' && bb.ballZ * bb.dir > 0)
-            )
+                    (Tatics.estilo === 'ataque' || Tatics.estilo === 'muito_ofensiva') && Tatics.pressaoDefensiva === 'high' && bb.ballZ * bb.dir > 0),
+                setPosture(TeamPosture.HIGH_PRESS)
+            ),
+            setPosture(TeamPosture.MID_BLOCK)
         )
     )
 );
@@ -1530,13 +1534,7 @@ function atribuirApoiosDaEquipa(lista, bb) {
 
     for (const e of escolhidos) {
         const p = lista.find(j => j.id === e.id);
-        if (!p) continue;
-        // Mesmo tecto do estilo que trava o alvo posicional (Box-to-Box nao
-        // passa da entrada da area). Sem isto, o apoio de circulacao punha-o
-        // la dentro na mesma — medido em 16% das amostras dentro da area.
-        p.apoioPonto = (typeof limitarPontoAoEstilo === 'function')
-            ? limitarPontoAoEstilo(p, { x: e.x, z: e.z })
-            : { x: e.x, z: e.z };
+        if (p) p.apoioPonto = { x: e.x, z: e.z };
     }
 }
 

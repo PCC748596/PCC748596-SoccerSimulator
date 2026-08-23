@@ -224,22 +224,6 @@ const MatchStats = {
         }
     },
 
-    /*
-    CONTRATOS DE INTENCAO (ver js/intentions.js). Sem isto nao se sabe se o
-    sistema funcionou ou se apenas correu — que e o risco declarado no spec.
-    */
-    contratos: { pedidos: 0, servidos: 0, cumpridos: 0, cancelados: 0, motivos: {} },
-
-    registarContrato: function (tipo, equipa, motivo) {
-        const c = this.contratos;
-        if (tipo === 'cancelados') {
-            c.cancelados++;
-            if (motivo) c.motivos[motivo] = (c.motivos[motivo] || 0) + 1;
-        } else if (c[tipo] !== undefined) {
-            c[tipo]++;
-        }
-    },
-
     // Resumo simples para consola/JSON — usado pela simulação em lote.
     resumo: function () {
         const pct = (a, b) => b > 0 ? Math.round((a / b) * 1000) / 10 : 0;

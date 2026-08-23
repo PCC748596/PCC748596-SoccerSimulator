@@ -108,6 +108,16 @@ const Match = {
         this.offsideLineB = new THREE.Mesh(new THREE.PlaneGeometry(CAMPO_LARG, 0.25), new THREE.MeshBasicMaterial({ color: 0xe74c3c, transparent: true, opacity: 0.65, side: THREE.DoubleSide }));
         this.offsideLineB.rotation.x = -Math.PI / 2; this.offsideLineB.position.y = 0.04; this.offsideLineB.visible = false;
         this.scene.add(this.offsideLineB);
+        const lineGeomA = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-CAMPO_LARG/2, 0.05, 0), new THREE.Vector3(CAMPO_LARG/2, 0.05, 0)]);
+        this.defLineA = new THREE.LineSegments(lineGeomA, new THREE.LineDashedMaterial({ color: 0x3498db, dashSize: 1, gapSize: 1 }));
+        this.defLineA.computeLineDistances();
+        this.defLineA.visible = false;
+        this.scene.add(this.defLineA);
+        const lineGeomB = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-CAMPO_LARG/2, 0.05, 0), new THREE.Vector3(CAMPO_LARG/2, 0.05, 0)]);
+        this.defLineB = new THREE.LineSegments(lineGeomB, new THREE.LineDashedMaterial({ color: 0xe74c3c, dashSize: 1, gapSize: 1 }));
+        this.defLineB.computeLineDistances();
+        this.defLineB.visible = false;
+        this.scene.add(this.defLineB);
 
         this.btPosRectA = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x3498db, linewidth: 2 }));
         this.btPosRectA.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(4 * 3), 3));
@@ -170,15 +180,6 @@ const Match = {
         this.passLineVisual.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
         this.passLineVisual.visible = false;
         this.scene.add(this.passLineVisual);
-        /*
-        A linha e o alvo do passe so podem estar visiveis enquanto EXISTE um
-        passe. Os botoes do painel (Team BT POS / PlayingStyleBT) punham
-        `visible = true` directamente, sem redesenhar nada: o que aparecia era
-        a linha do ULTIMO passe desenhado, ancorada num jogador e num alvo
-        antigos, enquanto os passes a serio aconteciam noutro sitio. Era o
-        "a linha aparece e o passe sai noutra direccao".
-        */
-        this.passVisualAtivo = false;
 
         this.goalLineVisual = new THREE.Line(
             new THREE.BufferGeometry(),
@@ -309,6 +310,8 @@ const Match = {
                 this.showOffsideLines = !this.showOffsideLines;
                 this.offsideLineA.visible = this.showOffsideLines;
                 this.offsideLineB.visible = this.showOffsideLines;
+                if(this.defLineA) this.defLineA.visible = this.showOffsideLines;
+                if(this.defLineB) this.defLineB.visible = this.showOffsideLines;
             }
             if (e.key === 'f' || e.key === 'F') this.setSpeed('frame');
             if (e.key === '1') this.setSpeed(0.7);
@@ -524,8 +527,8 @@ const Match = {
 
         if (!this.ball) return;
         const zoom = window.cameraZoom || 1.0;
-        let targetPos = new THREE.Vector3();
-        let lookTarget = new THREE.Vector3();
+        if (!this._cTPos) { this._cTPos = new THREE.Vector3(); this._cLTar = new THREE.Vector3(); this._cFwd = new THREE.Vector3(); } let targetPos = this._cTPos;
+        let lookTarget = this._cLTar;
 
         if (window.cameraMode === 'center') {
             // Câmara de TV mais próxima da ação, na altura do último degrau
@@ -542,6 +545,25 @@ const Match = {
             let bz = THREE.MathUtils.clamp(this.ball.position.z, -26.5, 26.5);
             targetPos.set(48 * zoom, 23 * zoom, bz);
             lookTarget.copy(this.ball.position);
+
+            if (typeof TeamAI !== 'undefined') {
+                const teamA = TeamAI.get('TeamA');
+                const teamB = TeamAI.get('TeamB');
+                if (teamA && teamB) {
+                    const defTeam = teamA.isAttacking ? teamB : teamA;
+                    if (defTeam.bloco && defTeam.bloco.x1 !== undefined) {
+                        // edgeX é a linha de baixo do bloco da defesa (lado +X)
+                        const edgeX = defTeam.bloco.x1;
+                        // O máximo normal seria o limite do campo (34)
+                        const recuo = 34 - edgeX;
+                        if (recuo > 0) {
+                            // Aproxima a câmera na direção do seu próprio look target (frente/trás local)
+                            let fwd = this._cFwd.subVectors(lookTarget, targetPos).normalize();
+                            targetPos.addScaledVector(fwd, recuo * 0.5);
+                        }
+                    }
+                }
+            }
         } else if (window.cameraMode === 'topdown') {
             const aspect = window.innerWidth / window.innerHeight;
             // Campo deitado: precisamos caber (CAMPO_COMP + margem) na horizontal e (CAMPO_LARG + margem) na vertical
@@ -1007,7 +1029,7 @@ const Match = {
                 
                 const idxPos = contagemPos[fData[i].pos] || 0;
                 contagemPos[fData[i].pos] = idxPos + 1;
-                this.aplicarPlayingStyle(teamList[i], fData[i].pos, idxPos, teamList[i].team);
+                this.aplicarPlayingStyle(teamList[i], fData[i].pos, idxPos);
                 
                 if (fData[i].role === 'gk') {
                     teamList[i].gkStyleBase = isTeamA ? 'offensive' : 'defensive';
@@ -1037,27 +1059,13 @@ const Match = {
     ramos do GR e do lateral já lêem. Aqui só se garante que ficam coerentes
     com o estilo escolhido, em vez de serem uma segunda fonte de verdade.
     */
-    aplicarPlayingStyle: function (p, pos, idxPos, team) {
+    aplicarPlayingStyle: function (p, pos, idxPos) {
         if (typeof PlayingStyles === 'undefined') return;
 
         let chave = p.playingStyleFixo;
         if (!chave || !estiloValidoPara(chave, pos)) {
-            /*
-            A equipa fala primeiro (EstiloPorEquipa), e só depois a posição
-            (EstiloPorOmissao). É o que permite os dois onzes não serem
-            clones: lateral defensivo num lado, Cross Specialist só numa
-            equipa, etc.
-            */
-            const daEquipa = (typeof EstiloPorEquipa !== 'undefined' && team)
-                ? (EstiloPorEquipa[team] || {})[pos] : undefined;
-            const omissao = (daEquipa !== undefined) ? daEquipa : EstiloPorOmissao[pos];
+            const omissao = EstiloPorOmissao[pos];
             chave = Array.isArray(omissao) ? omissao[(idxPos || 0) % omissao.length] : omissao;
-            // Um estilo pedido para a equipa que não sirva à posição não pode
-            // deixar o jogador sem estilo nenhum: cai no omisso da posição.
-            if (chave && !estiloValidoPara(chave, pos)) {
-                const alt = EstiloPorOmissao[pos];
-                chave = Array.isArray(alt) ? alt[(idxPos || 0) % alt.length] : alt;
-            }
         }
         if (!chave || !PlayingStyles[chave]) chave = null;
         p.playingStyle = chave;
@@ -1074,40 +1082,6 @@ const Match = {
         if (pos === 'GK') {
             p.gkStyleBase = (chave === 'offensive_gk') ? 'offensive' : 'defensive';
         }
-    },
-
-    /*
-    Visibilidade dos visuais do passe: so com um passe em curso E com um dos
-    botoes do painel ligado. Um sitio so, chamado tanto por quem inicia o
-    passe como pelos toggles da UI.
-    */
-    atualizarVisuaisDePasse: function () {
-        /*
-        `!== 'OFF'` sozinho dava LIGADO para `undefined` — e os dois estados
-        so sao inicializados em main.js, que nem sempre esta carregado (o
-        harness headless e a simulacao em lote nao o carregam). Tem de ser
-        um valor conhecido e diferente de OFF.
-        */
-        const ligado = (v) => !!v && v !== 'OFF';
-        const painelLigado = (typeof window !== 'undefined') &&
-            (ligado(window.teamBTPosState) || ligado(window.playingStyleBTToggleState));
-        const mostrar = !!this.passVisualAtivo && !!painelLigado;
-        if (this.passTargetVisual) this.passTargetVisual.visible = mostrar;
-        if (this.passLineVisual) this.passLineVisual.visible = mostrar;
-    },
-
-    /*
-    Redesenha a linha a partir de onde a bola esta AGORA ate ao alvo pedido.
-    A linha partia da posicao do JOGADOR, e a bola sai de onde esta (medido:
-    0.55 m a frente do pe, e ate 28 graus de diferenca num passe curto).
-    */
-    desenharLinhaDePasse: function (alvoX, alvoZ) {
-        if (!this.passLineVisual) return;
-        const posAttr = this.passLineVisual.geometry.attributes.position;
-        posAttr.setXYZ(0, this.ball.position.x, 0.05, this.ball.position.z);
-        posAttr.setXYZ(1, alvoX, 0.05, alvoZ);
-        posAttr.needsUpdate = true;
-        if (this.passTargetVisual) this.passTargetVisual.position.set(alvoX, 0.05, alvoZ);
     },
 
     // TeamB = RED, TeamA = BLUE. Ver #placar em index.html.
@@ -1289,35 +1263,13 @@ const Match = {
         this.kickoffApoio = apoio;
         this.kickoffTeam = startA ? 'TeamA' : 'TeamB';
         this.kickoffPendingPassToDef = true;
-        // Recomeco de jogo: nada do que estava combinado sobrevive.
-        if (typeof Intentions !== 'undefined') Intentions.limpar();
-    },
-
-    /*
-    PONTOS DE DEBUG (botão Player_Pass_Points) — quem os limpa, e porquê não
-    pode ser toda a gente.
-
-    Eram limpos aqui, no topo do frame, nas DUAS equipas. Só que quem os
-    escreve é o portador da bola, dentro do BT dele — a meio do frame — e o
-    label de cada jogador é desenhado no `update` do próprio jogador. Todo o
-    colega processado ANTES do portador desenhava o label com os pontos já
-    apagados, e no frame seguinte eram apagados outra vez: o botão parecia
-    não fazer nada.
-
-    A equipa COM posse mantém os pontos até o portador os reescrever (é o
-    último valor conhecido, que é o que se quer ver no ecrã); a equipa sem
-    posse é limpa, senão ficavam lá os valores da posse anterior.
-    */
-    limparPontosDeDebug: function () {
-        const comPosse = this.possessionTeam;
-        for (const p of this.players) if (comPosse !== 'TeamA') p.debugPoints = null;
-        for (const p of this.opponents) if (comPosse !== 'TeamB') p.debugPoints = null;
     },
 
     update: function (dt) {
         if (!this._pf_stats) this._pf_stats = { count: 0, time: 0 };
         const t0 = performance.now();
-        this.limparPontosDeDebug();
+        for (let p of this.players) { p.debugPoints = null; }
+        for (let p of this.opponents) { p.debugPoints = null; }
         this.delta = dt;
 
         if (this.kickoffActive) {
@@ -1344,25 +1296,6 @@ const Match = {
         // Relógio em segundos simulados, para a telemetria do passe (o
         // tempoDeJogo acima vem multiplicado pelo timeScale).
         if (typeof MatchStats !== 'undefined') MatchStats.tick(dt);
-        /*
-        Intencoes de jogada: expira, revalida as quebras e fecha o que acabou.
-        Depois do nivel 1 (TeamAI.tick, ja corrido em runTeamAI) porque precisa
-        da posse apurada. Ver js/intentions.js.
-        */
-        if (typeof Intentions !== 'undefined') Intentions.tick(dt);
-
-        /*
-        O passe acabou: alguem dominou a bola, ou ela parou sozinha. A partir
-        daqui a linha deixa de representar o que quer que seja, e se ficasse
-        no ecra era ela que se via da proxima vez que se ligasse o painel.
-        */
-        if (this.passVisualAtivo) {
-            const parada = this.ballVel.lengthSq() < 0.36;   // 0.6 m/s
-            if (this.ballCarrier || parada || this.state !== 'PLAY') {
-                this.passVisualAtivo = false;
-                this.atualizarVisuaisDePasse();
-            }
-        }
         this.updatePlacar();
 
         if (this.state === 'CORNER_KICK') {
@@ -1427,8 +1360,8 @@ const Match = {
             isPassing = true;
         }
         if (!this.intendedReceiver && !isPassing) {
-            this.passVisualAtivo = false;
-            this.atualizarVisuaisDePasse();
+            if (this.passTargetVisual) this.passTargetVisual.visible = false;
+            if (this.passLineVisual) this.passLineVisual.visible = false;
         }
 
         this.updateBall();
@@ -1472,6 +1405,11 @@ const Match = {
             if (outfieldB.length > 0) {
                 outfieldB.sort((a, b) => b.model.position.z - a.model.position.z);
                 this.offsideLineB.position.z = Math.max(0, outfieldB[0].model.position.z, this.ball.position.z);
+            }
+            if (typeof TeamShape !== 'undefined' && typeof Tatics !== 'undefined') {
+                const cap = TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium;
+                this.defLineA.position.z = cap * 1;
+                this.defLineB.position.z = cap * -1;
             }
         }
 
@@ -1523,7 +1461,12 @@ const Match = {
             updateRect('TeamB', this.btPosRectB, this.btPosDiagB, this.btPosCentroB);
         }
 
-        const allPlayers = this.players.concat(this.opponents);
+        if (!this._allPlayersCache || this._allPlayersCache.length !== this.players.length + this.opponents.length) {
+            this._allPlayersCache = [];
+            for (let i = 0; i < this.players.length; i++) this._allPlayersCache.push(this.players[i]);
+            for (let i = 0; i < this.opponents.length; i++) this._allPlayersCache.push(this.opponents[i]);
+        }
+        const allPlayers = this._allPlayersCache;
         const colRadius = 0.45;
         const colDiameter = colRadius * 2;
         for (let i = 0; i < allPlayers.length; i++) {
@@ -1619,7 +1562,8 @@ const Match = {
 
         /*
         Nível 1 (TeamAI.tick, forma do bloco) corre SEMPRE, jogo parado ou
-        não — a própria árvore já tem o ramo 'BolaParada', que apanha
+        não — a própria árvore já tem o ramo 'BolaParada' que põe a postura
+        TeamPosture.SET_PIECE (bloco mais compacto/central) quando
         `Match.state !== 'PLAY'` (ver team_bt.js). Antes esta função inteira
         saía logo no `if (this.state !== 'PLAY') return`, e esse ramo nunca
         chegava a correr — o bloco ficava CONGELADO na forma esticada do
@@ -1805,12 +1749,6 @@ const Match = {
             // O guarda-redes nunca controla a bola com o pé por aqui — só
             // apanha com as mãos, sempre via updateGK() (gkEstado 'apanhar').
             if (p.role === 'gk') return;
-            /*
-            Nao se rouba pelas costas: com a bola dominada, so disputa quem
-            estiver lado a lado ou de frente. Ver podeDisputarBola (utils.js)
-            e ProtecaoDeBola (config.js).
-            */
-            if (typeof podeDisputarBola === 'function' && !podeDisputarBola(p)) return;
             // Distância ao CORPO (pés..testa), não à origem do modelo — ver
             // distanciaAoCorpo em utils.js.
             const r = distanciaAoCorpo(p, this.ball.position);
@@ -1830,41 +1768,13 @@ const Match = {
         const maxHeaders = (typeof HeaderModel !== 'undefined' && HeaderModel.maxHeadersSeguidos) ? HeaderModel.maxHeadersSeguidos : 2;
         const atingiuLimiteCabeca = this.aerialHeaderCount >= maxHeaders;
 
-        if (bestAltura >= BallControl.peitoYMin && bestAltura <= BallControl.peitoYMax && best.jumpTimer <= 0) {
+        if ((bestAltura >= BallControl.peitoYMin && bestAltura <= BallControl.peitoYMax && best.jumpTimer <= 0) ||
+            (atingiuLimiteCabeca && bestAltura <= (ALTURA_TESTA + HeaderModel.janelaContacto) && best.jumpTimer <= 0)) {
             if (best.fsm.currentState !== 'CHEST_CONTROL') {
                 this.aerialHeaderCount = 0;
                 this.aerialHeaderTimer = 0;
                 best.controlarNoPeito(bestAltura);
                 return true;
-            }
-        } else if (atingiuLimiteCabeca && bestAltura <= (ALTURA_TESTA + HeaderModel.janelaContacto)) {
-            if (best.jumpTimer <= 0) {
-                if (best.fsm.currentState !== 'CHEST_CONTROL') {
-                    this.aerialHeaderCount = 0;
-                    this.aerialHeaderTimer = 0;
-                    best.controlarNoPeito(bestAltura);
-                    return true;
-                }
-            } else {
-                // BUG FIX: Jogador está no ar (jumpTimer > 0) e o limite de cabeceios foi atingido!
-                // O código antigo ignorava a condição porque exigia jumpTimer <= 0, 
-                // permitindo que o executeHeader rodasse 3, 4, 5 vezes seguidas.
-                // Agora, forçamos a bola para o chão para encerrar a disputa aérea.
-                this.aerialHeaderCount = 0;
-                this.aerialHeaderTimer = 0;
-                
-                this.ballVel.multiplyScalar(0.3);
-                this.ballVel.x += (Math.random() - 0.5) * 4.0;
-                this.ballVel.z += (Math.random() - 0.5) * 4.0;
-                this.ballVel.y = -4.0; // Força para baixo rápido
-                
-                this.intendedReceiver = null;
-                this.passTargetPos = null;
-                this.lastTouchedTeam = best.team;
-                this.lastTouchedPlayer = best;
-                window.bolaChutada = false;
-                
-                return false;
             }
         }
 
@@ -2087,6 +1997,18 @@ const Match = {
         }
 
         // --- pano de trás, inclinado ----------------------------------
+        let res = N.restituicao;
+        let atr = N.atrito;
+        
+        // Efeito Visual de Golo: A rede ampara a bola
+        // Se a bola está dentro da baliza, a cair, e já perto da rede, 
+        // "puxamos" a bola contra a rede e anulamos o ressalto para que escorregue.
+        if (d > 0.3 && v.y < 0 && Math.abs(b.x) <= meiaLarg && dist > -rB - 0.5 && dist <= 0) {
+            vd += 12.0 * (this.delta || 0.016); // empurra contra o pano
+            res = 0.0;  // anula ressalto
+            atr = 0.98; // retém energia para escorregar depressa
+        }
+
        if (Math.abs(b.x) <= meiaLarg) {
             if (Math.abs(dist) < 0.8) {
                 const nd = a / norma, ny = 1 / norma;
@@ -2099,9 +2021,9 @@ const Match = {
                     if (correccao > 0) {
                         d += nd * correccao; b.y += ny * correccao;
                     }
-                    vd -= vn * nd * (1 + N.restituicao);
-                    v.y -= vn * ny * (1 + N.restituicao);
-                    vd *= N.atrito; v.y *= N.atrito; v.x *= N.atrito;
+                    vd -= vn * nd * (1 + res);
+                    v.y -= vn * ny * (1 + res);
+                    vd *= atr; v.y *= atr; v.x *= atr;
                 } else if (dist <= 0 && vn > 0) { // Bola vem de dentro para fora
                     // Bateu pelo lado de dentro (Golo)
                     if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
@@ -2109,17 +2031,17 @@ const Match = {
                     if (correccao > 0) {
                         d -= nd * correccao; b.y -= ny * correccao;
                     }
-                    vd -= vn * nd * (1 + N.restituicao);
-                    v.y -= vn * ny * (1 + N.restituicao);
-                    vd *= N.atrito; v.y *= N.atrito; v.x *= N.atrito;
+                    vd -= vn * nd * (1 + res);
+                    v.y -= vn * ny * (1 + res);
+                    vd *= atr; v.y *= atr; v.x *= atr;
                 } else if (dist > 0 && vn > 0) { 
                     // Bola passou o pano, ou teste que a lanca ja la
                     if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
                     const correccao = dist + rB;
                     d -= nd * correccao; b.y -= ny * correccao;
-                    vd -= vn * nd * (1 + N.restituicao);
-                    v.y -= vn * ny * (1 + N.restituicao);
-                    vd *= N.atrito; v.y *= N.atrito; v.x *= N.atrito;
+                    vd -= vn * nd * (1 + res);
+                    v.y -= vn * ny * (1 + res);
+                    vd *= atr; v.y *= atr; v.x *= atr;
                 }
             }
         }
@@ -2649,7 +2571,7 @@ const Match = {
             this.ballCarrier = null;
             this.golKickProntos = false;
             this.golKickEspera = 0;
-            this.golKickAlvoEspera = 3.0 + Math.random() * 3.0;
+            this.golKickAlvoEspera = 0; // Removida a espera (sem parada)
 
             const gk = attackingPlayers.find(p => p.role === 'gk');
             this.setPieceTaker = gk || null;
@@ -2661,13 +2583,13 @@ const Match = {
                 gk.gkTempoMergulho = 0;
                 gk.gkKickAction = null;
                 /*
-                Ponto de onde arranca: na linha de fundo, atrás da bola. É o
-                que o utilizador descreveu — caminha até à linha, depois corre
-                e chuta.
+                Distância exata para correr e chutar "no frame 20" (0.33s).
+                A 5.5 m/s, são ~1.83 metros atrás da bola. Sem parada.
                 */
+                const atkDir = gk.team === 'TeamA' ? -1 : 1;
                 gk.gkTiroAlvo = {
-                    x: bolaX + ladoX * 1.0,
-                    z: linhaZ
+                    x: bolaX + ladoX * 0.5,
+                    z: bolaZ - atkDir * 1.83
                 };
             }
 

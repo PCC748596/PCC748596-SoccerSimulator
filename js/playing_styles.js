@@ -118,21 +118,9 @@ const PlayingStyleTriggers = {
     // Procura o espaço entre linhas: meio-campo em diante.
     creative_playmaker: (p, bb, s) => s.atacando && s.bolaAvanco > -10,
 
-    /*
-    Playmaker estático: posse instalada, não em transição — o estilo é
-    exactamente o contrário de um contra-ataque.
-
-    `bb.phase >= 2` era a condição, e o `phase` é escrito UMA vez (`= 1`, no
-    construtor do TeamBlackboard) e nunca mais: o gatilho era sempre falso e
-    o estilo nunca ligava — medido a 0% do tempo. Mesmo padrão dos campos
-    orfãos que ficaram do `position_bt.js` apagado (ver tools/campos_orfaos.js).
-
-    "Posse instalada" passa a ser lida onde ela existe mesmo: o TeamState só
-    chega a OFFENSIVE depois de 3 s de posse (ver TeamBlackboard.gather), e a
-    regra de estados táticos, mais abaixo nesta função, já exige isso a todos
-    os estilos de movimentação. Aqui basta não ser contra-ataque.
-    */
-    classic_no10: (p, bb, s) => s.atacando && !bb.isCounter,
+    // Playmaker estático: posse instalada, não em transição — o estilo é
+    // exactamente o contrário de um contra-ataque.
+    classic_no10: (p, bb, s) => s.atacando && !bb.isCounter && bb.phase >= 2,
 
     // Rompe para a área: último terço.
     hole_player: (p, bb, s) => s.atacando && s.ultimoTerco,
@@ -165,39 +153,16 @@ const PlayingStyleTriggers = {
 
     // Central que sobe: último terço, e não quando já se ganha por 2+ (não
     // vale a pena expor a defesa nesse caso).
-    /*
-    Central que sobe ao ataque. Pedido explícito: NÃO é em todo o ataque — é
-    na bola parada (canto, falta) da equipa dele, e no fim do jogo a perder.
-
-    A condição anterior era `atacando && ultimoTerco && diferença < 2`, que
-    com o jogo empatado é quase sempre verdadeira no último terço: medido,
-    subia em 13% de todo o tempo de jogo, e via-se um central no ataque de
-    forma corriqueira.
-    */
     extra_frontman: (p, bb, s) => {
+        if (!s.atacando || !s.ultimoTerco) return false;
         const meus = (p.team === 'TeamA') ? Match.placarA : Match.placarB;
         const deles = (p.team === 'TeamA') ? Match.placarB : Match.placarA;
-
-        // Bola parada da equipa dele: sobe sempre, mesmo fora do último terço
-        // (o canto e a falta lateral são batidos de sítios diferentes).
-        if (Match.setPieceTaker && Match.setPieceTeam === p.team) return true;
-
-        // Fim do jogo a perder: o central vira mais um avançado.
-        const faltaPouco = Match.tempoDeJogo >= ExtraFrontmanModel.minutoFinal * 60;
-        if (faltaPouco && meus < deles && s.atacando) return true;
-
-        return false;
+        return (meus - deles) < 2;
     },
 
     // Laterais ofensivos: a partir do momento em que a equipa passa o meio.
     // Só ativam se a bola estiver no meio ou do seu lado (s.meuLado). No oposto, Position BT.
-    /*
-    `bolaAvanco > -5` obrigava a bola a estar ja no meio-campo para o lateral
-    sequer ligar o estilo — com a construcao a sair de tras, ele nunca
-    arrancava, e por isso a mediana do avanco dele ficava em -9 m. -18 e a
-    saida de bola: sobe com a jogada, em vez de esperar que ela chegue.
-    */
-    offensive_fullback: (p, bb, s) => s.atacando && s.meuLado && s.bolaAvanco > -18,
+    offensive_fullback: (p, bb, s) => s.atacando && s.meuLado && s.bolaAvanco > -5,
     fullback_finisher: (p, bb, s) => s.atacando && s.ultimoTerco,
 
     // Restrição defensiva: está sempre em vigor.
@@ -421,23 +386,6 @@ function melhorVaoX(p, bb, zAlvo, candidatosX) {
    Recebe e devolve o alvo em coordenadas do mundo. So jogadores de campo —
    o guarda-redes tem o seu proprio ciclo (updateGK).
    ========================================================================= */
-/*
-Companheiro de ataque mais relevante para quem abre espaco: o colega de
-`role: 'atk'` mais avancado dos que nao sao o proprio. Se a equipa jogar so
-com um ponta, nao ha parceiro e o estilo nao tem lado que evitar.
-*/
-function parceiroDeAtaque(p, bb) {
-    const lista = (bb && (bb.mates || bb.own)) || [];
-    let melhor = null;
-    let melhorAvanco = -Infinity;
-    for (const m of lista) {
-        if (!m || m === p || m.role !== 'atk') continue;
-        const avanco = m.model.position.z * p.dirZ;
-        if (avanco > melhorAvanco) { melhorAvanco = avanco; melhor = m; }
-    }
-    return melhor;
-}
-
 function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
     if (!Config.usePlayingStyles || p.role === 'gk' || typeof estiloAtivoDe !== 'function') {
         return { x: targetX, z: targetZ };
@@ -489,34 +437,9 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
         outro — o oposto do que qualquer outra folha faz.
         */
         if (est.atraiDefesa && bb && bb.isAttacking && bb.carrier && bb.carrier !== p) {
-            /*
-            Eram 6 m, e somavam-se a uma `largura` de 5: o chamariz acabava
-            dois corredores ao lado, muitas vezes em cima do outro avancado.
-            3 m chegam para arrastar o marcador sem o tirar do jogo.
-            */
             const fx = targetX - bb.carrier.model.position.x;
             const fd = Math.abs(fx) || 1;
-            targetX += (fx / fd) * 3.0;
-        }
-
-        /*
-        `ladoOpostoAoParceiro` (Dummy Runner): o trabalho dele e ABRIR espaco
-        para o outro avancado, e isso so acontece se ocuparem corredores
-        diferentes. Medido antes: 62-80% do tempo do mesmo lado do parceiro.
-
-        O parceiro e o companheiro de ataque mais proximo em profundidade —
-        nao o portador, que pode ser um medio a subir. Se o alvo caiu do lado
-        dele, espelha-se para o lado contrario; se ja estava do lado oposto,
-        nao se mexe (nao ha nada a corrigir).
-        */
-        if (est.ladoOpostoAoParceiro && bb && bb.isAttacking) {
-            const parceiro = parceiroDeAtaque(p, bb);
-            if (parceiro) {
-                const ladoParceiro = Math.sign(parceiro.model.position.x) || 1;
-                if (Math.sign(targetX) === ladoParceiro || targetX === 0) {
-                    targetX = -ladoParceiro * Math.max(Math.abs(targetX), 6.0);
-                }
-            }
+            targetX += (fx / fd) * 6.0;
         }
 
         // `colaNaLinha` (Cross Specialist) vs `cortaParaDentro`.
@@ -534,18 +457,6 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
             if (bb.bloco) {
                 const bordaBloco = ladoEst > 0 ? bb.bloco.x1 : -bb.bloco.x0;
                 tectoAla = Math.min(tectoAla, Math.max(bordaBloco, 0));
-            }
-            /*
-            PISO (`larguraMin`): limitar so pelo bloco resolvia o lateral
-            esticado para fora do rectangulo, mas criou o defeito oposto —
-            com o bloco basculado para a ala contraria, a borda do lado dele
-            fica perto do eixo e o "cola na linha" passava a colar ao MEIO.
-            Era a queixa do lateral ofensivo a fechar por dentro. O piso e
-            uma largura absoluta do campo, so travada pela linha lateral.
-            */
-            if (est.larguraMin > 0) {
-                const limiteCampo = CAMPO_LARG / 2 - 1.5;
-                tectoAla = Math.max(tectoAla, Math.min(est.larguraMin, limiteCampo));
             }
             targetX = ladoEst * Math.max(Math.abs(targetX), tectoAla);
         }
@@ -569,19 +480,7 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
                     (opp.model.position.z * p.dirZ < p.model.position.z * p.dirZ + 12.0);
                 if (noFlanco && aFrente) { tapado = true; break; }
             }
-            /*
-            Segundo motivo para entrar no meio, pedido explicito: ha um
-            CORREDOR ABERTO para o passe por dentro. Sem isto ele so vinha
-            buscar o jogo quando estava tapado pela ala — nunca por decisao
-            propria de aparecer no vao.
-            */
-            let vaoInterior = false;
-            if (!tapado && bb.carrier && bb.carrier !== p && typeof linhaLivre === 'function') {
-                const pontoInterior = { x: targetX * 0.45, z: p.model.position.z };
-                vaoInterior = linhaLivre(
-                    bb.carrier.model.position, pontoInterior, bb.opp || [], 1.6);
-            }
-            if (tapado || vaoInterior) targetX *= 0.5;
+            if (tapado) targetX *= 0.5;
         }
 
         // `amplitudeZ`: estica ou encolhe o afastamento ao meio do bloco.
@@ -610,28 +509,13 @@ function aplicarTectoDoEstilo(p, targetZ) {
     const est = estiloAtivoDe(p);
     if (!est || !est.travaNaEntradaArea) return targetZ;
 
-    if (targetZ * p.dirZ > CrossModel.areaZ) return CrossModel.areaZ * p.dirZ;
+    // Linha da grande área: CAMPO_COMP / 2 (53) - 16.5 = 36.5.
+    // 10 metros antes disso: 26.5.
+    const lim = 26.5; 
+    const zAtaque = targetZ * p.dirZ;
+    
+    if (zAtaque > lim) return lim * p.dirZ;
+    if (zAtaque < -lim) return -lim * p.dirZ;
+
     return targetZ;
-}
-
-/*
-O MESMO TECTO, PARA OS ALVOS QUE NAO PASSAM PELO PosicionamentoAI.
-
-`aplicarTectoDoEstilo` so ve o alvo posicional. Medido (tools/diag_posicoes.js):
-das amostras do Box-to-Box dentro da grande area, 19% eram RUN_INTO_SPACE e
-16% do Dummy Runner eram SUPPORT_PASS — dois destinos escritos noutros sitios
-(`p.apoioPonto`, destino da corrida ao espaco) e que por isso furavam o tecto
-que o estilo declara.
-
-Recebe e devolve um ponto {x, z} em coordenadas do mundo. Corta so o excesso
-em profundidade; nunca puxa para tras quem ja estava aquem do tecto.
-*/
-function limitarPontoAoEstilo(p, ponto) {
-    if (!ponto || typeof estiloAtivoDe !== 'function') return ponto;
-    const est = estiloAtivoDe(p);
-    if (!est || !est.travaNaEntradaArea) return ponto;
-    if (ponto.z * p.dirZ > CrossModel.areaZ) {
-        return { x: ponto.x, z: CrossModel.areaZ * p.dirZ };
-    }
-    return ponto;
 }

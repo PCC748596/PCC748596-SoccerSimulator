@@ -1,31 +1,18 @@
 const fs = require('fs');
 let code = fs.readFileSync('js/bt/team_bt.js', 'utf8');
 
-const target = `    let centroX = THREE.MathUtils.clamp(
-        bb.momentumX * (CAMPO_LARG / 2), -maxCentroX, maxCentroX);
-
-    // O centro não pode ficar para trás da linha da bola (lateralmente)
-    let bolaX = bb.ballX;
-    if (bolaX > 0 && centroX < bolaX) centroX = bolaX;
-    if (bolaX < 0 && centroX > bolaX) centroX = bolaX;`;
-
-const replacement = `    // O utilizador pediu para atenuar o magnetismo (basculação) para 60, 70 e 80% 
-    // com base na configuração de Width Compactness (short, median, large).
-    const basculacao = (BlockShape.basculacao && BlockShape.basculacao[compac]) ? BlockShape.basculacao[compac] : 0.7;
+// Insert after profMaxG logic
+code = code.replace(
+/if \(z1 - z0 > profMaxG\) z0 = z1 - profMaxG;\n    \}/g,
+`if (z1 - z0 > profMaxG) z0 = z1 - profMaxG;
+    }
     
-    let centroX = THREE.MathUtils.clamp(
-        bb.momentumX * (CAMPO_LARG / 2) * basculacao, -maxCentroX, maxCentroX);
+    // Hard cap: a traseira do bloco nunca ultrapassa a Linha Defensiva configurada
+    const tectoAbsoluto = TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium;
+    if (z0 > tectoAbsoluto) {
+        z0 = tectoAbsoluto;
+        if (z1 - z0 < profMinG) z1 = z0 + profMinG;
+    }`
+);
 
-    // Garante apenas que a BORDA do time cubra a bola, não que o CENTRO cubra a bola
-    // (Isso evitava que o time inteiro fosse atirado para a lateral)
-    let bolaX = bb.ballX;
-    if (bolaX > 0 && (centroX + meiaLarg) < bolaX) centroX = bolaX - meiaLarg;
-    if (bolaX < 0 && (centroX - meiaLarg) > bolaX) centroX = bolaX + meiaLarg;`;
-
-if(code.includes(target)) {
-    code = code.replace(target, replacement);
-    fs.writeFileSync('js/bt/team_bt.js', code);
-    console.log("Patched team_bt.js successfully!");
-} else {
-    console.log("Target not found in team_bt.js!");
-}
+fs.writeFileSync('js/bt/team_bt.js', code);

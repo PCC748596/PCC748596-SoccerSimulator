@@ -72,6 +72,8 @@ function toggleOffside() {
     Match.showOffsideLines = !Match.showOffsideLines;
     Match.offsideLineA.visible = Match.showOffsideLines;
     Match.offsideLineB.visible = Match.showOffsideLines;
+    if (Match.defLineA) Match.defLineA.visible = Match.showOffsideLines;
+    if (Match.defLineB) Match.defLineB.visible = Match.showOffsideLines;
     document.getElementById('btn-offside').innerText = 'OffSide: ' + (Match.showOffsideLines ? 'ON' : 'OFF');
     document.getElementById('btn-offside').classList.toggle('active', Match.showOffsideLines);
 }
@@ -92,7 +94,7 @@ function togglePlayerNumber() {
 }
 function togglePlayerPoints() {
     window.showPlayerPoints = !window.showPlayerPoints;
-    document.getElementById('btn-playerpoints').innerText = 'Player_Pass_Points: ' + (window.showPlayerPoints ? 'ON' : 'OFF');
+    document.getElementById('btn-playerpoints').innerText = 'PlayerPoints: ' + (window.showPlayerPoints ? 'ON' : 'OFF');
     document.getElementById('btn-playerpoints').classList.toggle('active', window.showPlayerPoints);
 }
 
@@ -128,13 +130,10 @@ function toggleTeamBTPos() {
 
     document.getElementById('btn-teambtpos').innerText = 'Team BT POS: ' + uiLabel;
     document.getElementById('btn-teambtpos').classList.toggle('active', window.teamBTPosState !== 'OFF');
-    /*
-    Antes isto punha `visible = true` sem redesenhar nada, e o que aparecia
-    era a linha do ULTIMO passe desenhado — ancorada num jogador e num alvo
-    ja velhos, enquanto os passes reais aconteciam noutro sitio. O toggle so
-    diz "quero ver"; quem decide se ha alguma coisa para ver e o Match.
-    */
-    if (typeof Match !== 'undefined' && Match.atualizarVisuaisDePasse) Match.atualizarVisuaisDePasse();
+    if (typeof Match !== 'undefined') {
+        if (Match.passTargetVisual) Match.passTargetVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
+        if (Match.passLineVisual) Match.passLineVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
+    }
 }
 
 /*
@@ -172,13 +171,10 @@ function togglePlayingStyleBT() {
 
     document.getElementById('btn-playingstylebt').innerText = 'PlayingStyleBT: ' + uiLabel;
     document.getElementById('btn-playingstylebt').classList.toggle('active', window.playingStyleBTToggleState !== 'OFF');
-    /*
-    Antes isto punha `visible = true` sem redesenhar nada, e o que aparecia
-    era a linha do ULTIMO passe desenhado — ancorada num jogador e num alvo
-    ja velhos, enquanto os passes reais aconteciam noutro sitio. O toggle so
-    diz "quero ver"; quem decide se ha alguma coisa para ver e o Match.
-    */
-    if (typeof Match !== 'undefined' && Match.atualizarVisuaisDePasse) Match.atualizarVisuaisDePasse();
+    if (typeof Match !== 'undefined') {
+        if (Match.passTargetVisual) Match.passTargetVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
+        if (Match.passLineVisual) Match.passLineVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
+    }
 }
 
 function toggleSpatialGrid() {
@@ -502,11 +498,8 @@ function animate(time) {
         if (!window._lastBtPost || time - window._lastBtPost > 200) {
             window._lastBtPost = time;
             window._teamBtChannel.postMessage({
-                // `posture` deixou de existir (ver a nota no topo de
-                // team_bt.js): o que a aba mostra agora e o TeamState, que e
-                // o estado que os estilos e a marcacao realmente leem.
-                TeamA: bbA ? { trace: bbA.trace, state: bbA.state } : null,
-                TeamB: bbB ? { trace: bbB.trace, state: bbB.state } : null
+                TeamA: bbA ? { trace: bbA.trace, posture: bbA.posture } : null,
+                TeamB: bbB ? { trace: bbB.trace, posture: bbB.posture } : null
             });
         }
     }

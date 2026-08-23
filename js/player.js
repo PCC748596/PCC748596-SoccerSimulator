@@ -96,6 +96,7 @@ class FootballPlayer {
         // Ponto do leque que este passe mira (ver PassTypes). null = aos pés.
         this.passAimPoint = null;
         this.passTipo = 'direct';
+        this.overlapTimer = 0;
         // Saída de bola sorteada para esta posse (ver decidirSaidaGK).
         this.gkSaida = null;
         // Está a fazer FWR/AFT_SUPPORT neste momento (ver temVagaDeApoio).
@@ -312,11 +313,18 @@ class FootballPlayer {
             if (dist < 3.0 || dist > 50.0) continue;
 
             _line1.set(this.model.position, optPos);
+            _v2.subVectors(optPos, this.model.position).normalize(); // Pass direction
+
             let minOppDist = 999;
             let distMarcador = 999;
             for (let i = 0; i < opponents.length; i++) {
                 let opp = opponents[i];
                 if (opp.role === 'gk') continue;
+                
+                // Ignora se o adversário estiver na direção oposta ao passe (ex: bloqueando as costas)
+                _v3.subVectors(opp.model.position, this.model.position);
+                if (_v3.dot(_v2) < -0.1) continue;
+
                 _line1.closestPointToPoint(opp.model.position, true, _v1);
                 let d = _v1.distanceTo(opp.model.position);
                 if (d < minOppDist) {
@@ -336,9 +344,9 @@ class FootballPlayer {
             let inDefensiveZone = (ownZ * dirZ < -10) || (optPos.z * dirZ < -10); 
             let isDefender = (this.role === 'def' || this.role === 'gk' || opt.role === 'def');
             
-            if (distMarcador >= 4.0) {
+            if (distMarcador >= 5.0) {
                 score += 300;
-            } else if (distMarcador >= 2.5) {
+            } else if (distMarcador >= 3.5) {
                 score += 100;
             } else {
                 if (inDefensiveZone || isDefender) {
@@ -351,38 +359,6 @@ class FootballPlayer {
             let progression = (optPos.z - ownZ) * dirZ;
             if (progression > 0) {
                 score += 20;
-            }
-
-            // Penalização para giros > 120 graus com marcação por trás <= 2 metros
-            let fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.model.quaternion).normalize();
-            let toTarget = new THREE.Vector3(optPos.x - this.model.position.x, 0, optPos.z - this.model.position.z);
-            if (toTarget.lengthSq() > 0.01) {
-                toTarget.normalize();
-                let angle = fwd.angleTo(toTarget);
-                // Giro de mais de 120 graus
-                if (angle > (Math.PI * 2 / 3)) {
-                    let temMarcacaoCostas = false;
-                    for (let i = 0; i < opponents.length; i++) {
-                        let opp = opponents[i];
-                        if (opp.role === 'gk') continue;
-                        let distToOpp = this.model.position.distanceTo(opp.model.position);
-                        if (distToOpp <= 2.0) {
-                            let toOpp = new THREE.Vector3(opp.model.position.x - this.model.position.x, 0, opp.model.position.z - this.model.position.z);
-                            if (toOpp.lengthSq() > 0.01) {
-                                toOpp.normalize();
-                                // Considera "por trás" se o ângulo entre a frente do jogador e o adversário for > 90 graus
-                                if (fwd.angleTo(toOpp) > Math.PI / 2) {
-                                    temMarcacaoCostas = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (temMarcacaoCostas) {
-                        if (score > 0) score *= 0.80;
-                        else score *= 1.20;
-                    }
-                }
             }
 
             ratedCandidates.push({ player: opt, score: score });
@@ -429,7 +405,31 @@ class FootballPlayer {
                 const d = optPos.distanceTo(opp.model.position);
                 if (d < distMarcador) distMarcador = d;
             }
-            if (distMarcador < 2.5) continue; // colega também marcado de perto: não vale a pena
+            if (distMarcador < 3.5) continue; // colega também marcado de perto: não vale a pena
+
+            _line1.set(this.model.position, optPos);
+            let bloqueadoDeSaida = false;
+            _v2.subVectors(optPos, this.model.position).normalize(); // Direção do passe
+            for (const opp of opponents) {
+                if (opp.role === 'gk') continue;
+                
+                // Vetor do portador para o adversário
+                _v1.subVectors(opp.model.position, this.model.position);
+                
+                // Se o adversário estiver na direção oposta ao passe, ignorar
+                if (_v1.dot(_v2) < -0.1) continue;
+
+                _line1.closestPointToPoint(opp.model.position, true, _v1);
+                let distLinha = _v1.distanceTo(opp.model.position);
+                let distPortador = this.model.position.distanceTo(opp.model.position);
+                
+                // Se um adversário estiver bloqueando a linha e muito perto do portador
+                if (distLinha < 0.9 && distPortador < 4.5) {
+                    bloqueadoDeSaida = true;
+                    break;
+                }
+            }
+            if (bloqueadoDeSaida) continue;
 
             // O `- dist * 0.5` que aqui estava premiava o passe mais curto de
             // todos. A forma da curva e a mesma do findPassTarget, com peso
@@ -479,6 +479,10 @@ class FootballPlayer {
             for (let i = 0; i < opponents.length; i++) {
                 let opp = opponents[i];
                 if (opp.role === 'gk') continue;
+                
+                _v3.subVectors(opp.model.position, this.model.position);
+                if (_v3.dot(toTarget) < -0.1) continue;
+
                 _line1.closestPointToPoint(opp.model.position, true, _v1);
                 let d = _v1.distanceTo(opp.model.position);
                 if (d < minOppDist) {
@@ -686,39 +690,27 @@ class FootballPlayer {
             */
             const distReal = this.model.position.distanceTo(opt.model.position);
 
-            /*
-            PORQUE E QUE HA COLEGAS SEM PONTUACAO NO PAINEL.
-
-            Estes `continue` descartam o candidato ANTES de ele ser pontuado, e
-            por isso ele fica sem `Pass:` nenhum no ecra — o que parecia uma
-            falha do botao. Passam a escrever o MOTIVO do descarte, que e a
-            informacao que interessa a quem esta a afinar o passe.
-            */
-            const descartar = (motivo) => {
-                if (window.showPlayerPoints) {
-                    opt.debugPoints = opt.debugPoints || {};
-                    opt.debugPoints['Pass'] = motivo;
-                }
-            };
-
             // Distância máxima baseada no skill de passe (skill * 0.6)
             let maxDist = Math.max(10, skillVal * 0.6);
-            if (dist > maxDist) { descartar('longe'); continue; }
-            if (dist < 2.0 || distReal < 3.0) { descartar('perto'); continue; }
+            if (dist > maxDist || dist < 2.0 || distReal < 3.0) continue;
 
             // Evitar passes para fora do campo com margem de segurança de linhas
             const margemLinha = (typeof PassModel !== 'undefined' && PassModel.margemSegurancaLinha) ? PassModel.margemSegurancaLinha : 2.5;
             const distBordaX = (CAMPO_LARG / 2) - Math.abs(optPos.x);
             const distBordaZ = (CAMPO_COMP / 2) - Math.abs(optPos.z);
-            // Ponto fora ou praticamente em cima da linha
-            if (distBordaX < 0.5 || distBordaZ < 0.5) { descartar('linha'); continue; }
+            if (distBordaX < 0.5 || distBordaZ < 0.5) continue; // Ponto fora ou praticamente em cima da linha
 
             _line1.set(this.model.position, optPos);
+            _v2.subVectors(optPos, this.model.position).normalize();
             let minOppDist = 999, oppMaisPerto = null;
             let distMarcador = 999;
             for (let i = 0; i < opponents.length; i++) {
                 let opp = opponents[i];
                 if (opp.role === 'gk') continue;
+                
+                _v3.subVectors(opp.model.position, this.model.position);
+                if (_v3.dot(_v2) < -0.1) continue;
+
                 _line1.closestPointToPoint(opp.model.position, true, _v1);
                 let d = _v1.distanceTo(opp.model.position);
                 if (d < minOppDist) {
@@ -768,39 +760,14 @@ class FootballPlayer {
             let inDefensiveZone = (ownZ * dirZ < -10) || (optPos.z * dirZ < -10); 
             let isDefender = (this.role === 'def' || this.role === 'gk' || opt.role === 'def');
             
-            /*
-            Pedido explícito: "os jogadores quase não passam mais a bola,
-            aumenta o bónus de passe para jogadores sem marcação em uns 100
-            pontos". 300 -> 400 para quem está mesmo livre (4 m ou mais de
-            folga), 100 -> 200 para quem tem algum espaço. As penalizações de
-            quem está marcado ficam como estavam: o que se quis foi puxar o
-            passe para o homem livre, não abrandar o castigo do passe para o
-            homem marcado.
-            */
-            /*
-            O BONUS DE "SEM MARCACAO" TEM DE SABER PARA QUE LADO E O PASSE.
-
-            Era cego a direccao: um defesa livre atras valia os mesmos pontos
-            que um avancado livre a frente — e o defesa atras esta quase
-            sempre mais livre. Medido: 48% de todos os passes iam para tras,
-            e subir o bonus empurrava-os para 52%. E o "o atacante dispara
-            sozinho e toca para tras".
-
-            `PassBonus.atras` e a fraccao do bonus que sobra quando o colega
-            esta atras. Nao e zero: recuar para recomecar a jogada e legitimo,
-            so nao pode valer o mesmo que progredir.
-            */
-            const progAlvo = (optPos.z - ownZ) * dirZ;
-            const fatorDir = (progAlvo < -1.0)
-                ? PassBonus.atras
-                : (progAlvo > 1.0 ? 1.0 : PassBonus.lado);
-
-            if (distMarcador >= 4.0) {
-                score += PassBonus.livre * fatorDir;
-            } else if (distMarcador >= 2.5) {
-                score += PassBonus.meioLivre * fatorDir;
+            if (distMarcador >= 5.0) {
+                // Muito espaço, bónus esmagador para garantir que a bola vá para ele (ex: pontas)
+                score += 300;
+            } else if (distMarcador >= 3.5) {
+                // Algum espaço
+                score += 100;
             } else {
-                // Marcado de perto (distMarcador < 2.5). Penalização severa.
+                // Marcado de perto (distMarcador < 3.5). Penalização severa.
                 if (this.role === 'gk') {
                     score -= 605; // Erro fatal do goleiro (aumentada em mais 10%)
                 } else if (inDefensiveZone || isDefender) {
@@ -890,38 +857,6 @@ class FootballPlayer {
                 score *= 1.20; // Trás
             }
 
-            // Penalização para giros > 120 graus com marcação por trás <= 2 metros
-            let fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.model.quaternion).normalize();
-            let toTarget = new THREE.Vector3(optPos.x - this.model.position.x, 0, optPos.z - this.model.position.z);
-            if (toTarget.lengthSq() > 0.01) {
-                toTarget.normalize();
-                let angle = fwd.angleTo(toTarget);
-                // Giro de mais de 120 graus
-                if (angle > (Math.PI * 2 / 3)) {
-                    let temMarcacaoCostas = false;
-                    for (let i = 0; i < opponents.length; i++) {
-                        let opp = opponents[i];
-                        if (opp.role === 'gk') continue;
-                        let distToOpp = this.model.position.distanceTo(opp.model.position);
-                        if (distToOpp <= 2.0) {
-                            let toOpp = new THREE.Vector3(opp.model.position.x - this.model.position.x, 0, opp.model.position.z - this.model.position.z);
-                            if (toOpp.lengthSq() > 0.01) {
-                                toOpp.normalize();
-                                // Considera "por trás" se o ângulo entre a frente do jogador e o adversário for > 90 graus
-                                if (fwd.angleTo(toOpp) > Math.PI / 2) {
-                                    temMarcacaoCostas = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (temMarcacaoCostas) {
-                        if (score > 0) score *= 0.80; // Reduz o bônus se positivo
-                        else score *= 1.20; // Aumenta a penalidade se negativo (20% mais grave)
-                    }
-                }
-            }
-
             // Virada
             if (isOrchestrator) {
                 if (Math.sign(optPos.x) !== Math.sign(ownX) && Math.abs(optPos.x - ownX) > 20) {
@@ -932,28 +867,16 @@ class FootballPlayer {
                 if (congestaoAlvo < congestaoMeuLado - 20) {
                     score += 50 * teamStyle.viradas * (1 - teamBB.aggression);
                 }
+                // Penaliza insistir pelo sector congestionado (>= 3 adversários)
+                if (congestaoAlvo >= 75) {
+                    score -= 100;
+                }
             }
 
             // Multiplicador do Playing Style DO ALVO
             // Aplicado no final para agir sobre a nota total balanceada
             if (Config.usePlayingStyles && typeof estiloAtivoDe === 'function') {
-                let styleMult = estiloAtivoDe(opt).passe;
-                
-                // Ajuste de setor solicitado: bonus fixo baseado no lado do campo do recebedor
-                const optSec = getSectorOfX(optPos.x); // Retorna 'esq', 'cen' ou 'dir'
-                if (optSec === 'esq') {
-                    styleMult = 1.4;
-                } else if (optSec === 'cen') {
-                    styleMult = 1.3;
-                } else if (optSec === 'dir') {
-                    styleMult = 1.2;
-                }
-
-                if (score > 0) {
-                    score *= styleMult;
-                } else {
-                    score /= styleMult; // Divide a penalidade se score for negativo
-                }
+                score *= estiloAtivoDe(opt).passe;
             }
 
             // Percepção de Risco de Limites do Campo (Linhas Laterais / Fundo):
@@ -1001,7 +924,9 @@ class FootballPlayer {
     initiatePass(targetPlayer) {
         if (this.isCross) {
             this.showActionBanner('CROSS');
-        } else if (targetPlayer && this.model.position.distanceTo(targetPlayer.model.position) > 20) {
+        } else if (this.isThroughBall) {
+            this.showActionBanner('THROUGH');
+        } else if (targetPlayer && this.model.position.distanceTo(targetPlayer.model.position) > 30) {
             this.showActionBanner('L.PASS');
         } else {
             this.showActionBanner('PASS');
@@ -1081,19 +1006,31 @@ class FootballPlayer {
             // (config.js) para a frente do jogador.
             _vFrenteCorpo.set(0, 0, 1).applyQuaternion(this.model.quaternion);
             this.cosCorpoNoPasse = (_vFrenteCorpo.x * dx + _vFrenteCorpo.z * dz) / normDir;
+            
+            // Determinar se o passe excede 90 graus da direcção de corrida
+            const speed = this.velocity.length();
+            if (speed > 0.1) {
+                const dotCorrida = (this.velocity.x * dx + this.velocity.z * dz) / (speed * normDir);
+                // dot < 0 significa mais de 90 graus
+                this.turnForPass = (dotCorrida < 0);
+            } else {
+                // Se estiver quase parado, usa a frente do corpo
+                this.turnForPass = (this.cosCorpoNoPasse < 0);
+            }
         }
 
         if (typeof Match !== 'undefined') {
-            /*
-            A linha parte de onde a BOLA esta, nao do jogador: a bola sai de
-            onde esta pousada (medido, 0.55 m a frente do pe), e num passe
-            curto isso dava ate 28 graus entre a linha desenhada e a
-            trajectoria real. O alvo e o mesmo dos dois lados.
-            */
-            Match.passVisualAlvo = { x: _v1.x, z: _v1.z };
-            Match.passVisualAtivo = true;
-            Match.desenharLinhaDePasse(_v1.x, _v1.z);
-            Match.atualizarVisuaisDePasse();
+            if (Match.passTargetVisual) {
+                Match.passTargetVisual.position.set(_v1.x, 0.05, _v1.z);
+                Match.passTargetVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
+            }
+            if (Match.passLineVisual) {
+                const posAttr = Match.passLineVisual.geometry.attributes.position;
+                posAttr.setXYZ(0, this.model.position.x, 0.05, this.model.position.z);
+                posAttr.setXYZ(1, _v1.x, 0.05, _v1.z);
+                posAttr.needsUpdate = true;
+                Match.passLineVisual.visible = (window.teamBTPosState !== 'OFF' || window.playingStyleBTToggleState !== 'OFF');
+            }
         }
 
         // Não executa o passe aqui — só prepara. O efeito real (bola sai do
@@ -1104,6 +1041,21 @@ class FootballPlayer {
         });
         // Consumido: o próximo passe volta a decidir o seu próprio ponto.
         this.passAimPoint = null;
+
+        // Ativar Overlap / Tabelinha para jogadores de campo (não guarda-redes nem centrais puros)
+        if (this.role !== 'gk' && this.pos !== 'CB' && !this.isThroughBall && !this.isCross) {
+            let shouldOverlap = true;
+            if (this.role === 'def') {
+                // Laterais só fazem overlap se estiverem no meio-campo ofensivo, para não quebrarem a linha de defesa na saída de bola
+                const isOffensiveHalf = (this.model.position.z * this.dirZ) > 0;
+                if (!isOffensiveHalf) shouldOverlap = false;
+            }
+            if (shouldOverlap) {
+                // 3.5 segundos de sprint para a frente para dar opção de passe logo após tocar a bola
+                this.overlapTimer = 3.5;
+            }
+        }
+
         this.fsm.changeState('PASS');
     }
     /*
@@ -1119,14 +1071,7 @@ class FootballPlayer {
     */
     puntBall() {
         const gGrav = BallPhysics.gravidade;
-        /*
-        Elevacao do chutao: 25 a 35 graus, pedido explicito. Era
-        `(25 + rand*25) / 3`, ou seja 8.3 a 16.7 graus — uma bola esticada,
-        quase a meia altura. Como a velocidade sai resolvida do alcance
-        (R = v² sin2θ / g, mais abaixo), subir o angulo nao alonga o chutao:
-        torna-o mais alto e mais lento, que e o que se quer num tiro de meta.
-        */
-        const elev = THREE.MathUtils.degToRad(25 + Math.random() * 10);
+        const elev = THREE.MathUtils.degToRad((25 + Math.random() * 25) / 3);
         const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 20);
 
         // Alcance pretendido: chutão de meio-campo, com alguma variação. Aumentado em 20%.
@@ -1438,21 +1383,8 @@ class FootballPlayer {
     }
 
     update(dt) {
-        /*
-        MEDIA da velocidade recente (EMA). O lead do passe usava a velocidade
-        INSTANTANEA do recetor para o extrapolar, e ele quase sempre abranda —
-        medido, em 67% dos passes ia mais devagar do que o assumido. Ver
-        LeadModel.tauVelMedia e alvoDePasse (utils.js).
-        */
-        {
-            const vAgora = Math.hypot(this.velocity.x, this.velocity.z);
-            if (this.velMedia === undefined) this.velMedia = vAgora;
-            else {
-                const k = 1 - Math.exp(-Math.max(0.0001, dt) / LeadModel.tauVelMedia);
-                this.velMedia += (vAgora - this.velMedia) * k;
-            }
-        }
         if (this.touchLock > 0) this.touchLock = Math.max(0, this.touchLock - dt);
+        if (this.overlapTimer > 0) this.overlapTimer = Math.max(0, this.overlapTimer - dt);
         // Arrefecimento da corrida ao espaco (ver RunIntoSpaceModel). Corre
         // aqui e nao na FSM: a FSM so mexe no estado corrente, e o
         // arrefecimento tem de correr JUSTAMENTE quando ele ja nao esta a
@@ -1580,7 +1512,6 @@ class FootballPlayer {
             // animateBones, senão ele reescreve o tronco no mesmo frame.
             this.aplicarCamadaPeito();
             this.aplicarCamadaCabeceioDePe(dt);
-            this.aplicarCamadaPedirBola(dt);
         }
 
         // Update Action Banner
@@ -1600,7 +1531,7 @@ class FootballPlayer {
             if (window.showPlayerBT) parts.push(this.fsm.currentState);
             if (window.showPlayerPlayingStyle && this.playingStyle && !this.playingStyleDesligado) parts.push(this.playingStyle);
             if (window.showPlayerPoints && this.debugPoints) {
-                let pts = Object.entries(this.debugPoints).map(([k,v]) => `${k}: ${v}`).join(" | ");
+                let pts = Object.entries(this.debugPoints).map(([k,v]) => `${k}:${v}`).join(" | ");
                 if (pts) parts.push(pts);
             }
             if (window.speedMultiplier === "frame") {
@@ -1764,96 +1695,20 @@ class FootballPlayer {
 
 
 
-        /*
-        Corpo vira para a direcção do movimento — ou para a bola, a defender e
-        a apoiar, que é como se marca e se espera um passe: de lado, a ver a
-        bola e o homem.
-
-        SÓ QUE ISSO TEM UM LIMITE. Medido (tools/diag_bugs.js): 2% dos frames
-        com o corpo a mais de 90 graus da direcção do movimento, e as amostras
-        eram todas destes estados — um médio em SUPPORT_PASS a 7.9 m/s virado
-        a 100 graus do lado para onde corria. A correr, ninguém vai de lado:
-        abre-se o corpo até certo ponto e o resto é a cabeça que roda.
-
-        `DESVIO_MAX_CORPO` é esse ponto. Abaixo de `VEL_ANDAR` o jogador está
-        a colocar-se e pode ficar completamente virado para a bola; acima
-        disso o desvio é limitado, rodando a direcção de olhar de volta para
-        a do movimento o que for preciso.
-        */
+        // Corpo vira para a direcção do movimento (ou para a bola ao defender/apoiar)
         let lookTarget = target;
         if (this.fsm && Match.ball) {
             const s = this.fsm.currentState;
             if (s === 'MARKING' || s === 'BLOCKING' || s === 'AFT_SUPPORT' || s === 'SUPPORT_PASS') {
                 lookTarget = Match.ball.position;
-
-                const velAtual = Math.hypot(this.velocity.x, this.velocity.z);
-                if (velAtual > SteeringModel.velAndar) {
-                    // Tecto interpolado entre andar e correr: ver SteeringModel.
-                    const t = THREE.MathUtils.clamp(
-                        (velAtual - SteeringModel.velAndar) /
-                        (SteeringModel.velCorrida - SteeringModel.velAndar), 0, 1);
-                    const tecto = SteeringModel.desvioMaxAndar +
-                        (SteeringModel.desvioMaxCorrida - SteeringModel.desvioMaxAndar) * t;
-                    const movAng = Math.atan2(this.velocity.x, this.velocity.z);
-                    const olharAng = Math.atan2(
-                        lookTarget.x - this.model.position.x,
-                        lookTarget.z - this.model.position.z);
-                    let delta = olharAng - movAng;
-                    while (delta > Math.PI) delta -= 2 * Math.PI;
-                    while (delta < -Math.PI) delta += 2 * Math.PI;
-                    if (Math.abs(delta) > tecto) {
-                        const ang = movAng + Math.sign(delta) * tecto;
-                        lookTarget = _vOlharCorpo.set(
-                            this.model.position.x + Math.sin(ang) * 10,
-                            this.model.position.y,
-                            this.model.position.z + Math.cos(ang) * 10);
-                    }
-                }
             }
         }
-        /*
-        Viragem com TECTO de velocidade angular, via passoDeGuinada (utils.js).
-        Era um slerp exponencial sem limite: a velocidade angular era
-        proporcional ao erro e chegava a 3240 graus/s numa inversao de 180.
-        Ver SteeringModel.giroMaxGrausPorSeg.
-
-        Yaw puro, que e o que um jogador faz: o lookAt anterior recebia um
-        alvo a mesma altura do modelo, por isso ja era yaw na pratica.
-        */
-        const dtGiro = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
-        const yawAlvo = guinadaPara(this.model.position, lookTarget.x, lookTarget.z);
-        _vFrenteCorpo.set(0, 0, 1).applyQuaternion(this.model.quaternion);
-        const yawAtual = Math.atan2(_vFrenteCorpo.x, _vFrenteCorpo.z);
-        const velMax = SteeringModel.giroMaxGrausPorSeg * Math.PI / 180;
-        const usaTecto = SteeringModel.inercia && SteeringModel.tectoDeGiro;
-        const yawNovo = usaTecto
-            ? passoDeGuinada(yawAtual, yawAlvo, dtGiro, velMax)
-            : yawAlvo;
-        _q1.setFromAxisAngle(_vUp, yawNovo);
-        /*
-        Sem inercia (SteeringModel.inercia = false): o corpo aponta para o
-        alvo de olhar no proprio frame e a velocidade salta para a desejada.
-        O `lookTarget` acima ja vem limitado, por isso apontar de imediato
-        nao repoe o jogador virado 90 graus do movimento.
-        */
-        /*
-        Com TECTO, o `_q1` ja vem com o passo de guinada aplicado e nao leva
-        slerp por cima — amortecer um passo ja limitado punha outra vez a
-        viragem a depender do erro.
-
-        Sem tecto, `_q1` e o alvo final e a aproximacao e o slerp exponencial
-        de sempre, governado pelo `giro`.
-        */
-        if (usaTecto || !SteeringModel.inercia) {
-            this.model.quaternion.copy(_q1);
-        } else {
-            this.model.quaternion.slerp(_q1, Math.min(1.0, SteeringModel.giro * Match.delta));
-        }
-        if (SteeringModel.inercia) {
-            this.velocity.lerp(desired, Math.min(1.0, SteeringModel.aceleracao * Match.delta));
-        } else {
-            this.velocity.copy(desired);
-        }
+        _v1.set(this.model.position.x * 2 - lookTarget.x, this.model.position.y, this.model.position.z * 2 - lookTarget.z);
+        _m1.lookAt(this.model.position, _v1, this.model.up);
+        _q1.setFromRotationMatrix(_m1);
+        this.model.quaternion.slerp(_q1, Math.min(1.0, 5.5 * Match.delta));
+        // Inércia ajustada para fator 5.0 (curvas bastante responsivas e quase sem derrapagem)
+        this.velocity.lerp(desired, Math.min(1.0, 5.0 * Match.delta));
         return this.velocity;
     }
 
@@ -1908,49 +1763,6 @@ class FootballPlayer {
     joelhos (lKnee/rKnee) e pés (lFoot/rFoot) permanecem perfeitamente
     plantados e alinhados no chão, evitando qualquer sensação de tombo para trás.
     */
-    /*
-    BRACO LEVANTADO A PEDIR A BOLA.
-
-    Enquanto o contrato de intencao esta ABERTO o jogador levanta o braco do
-    lado de fora; cai assim que for servido ou cancelado. Camada procedural por
-    cima da pose de corrida, como a da matada no peito — e por isso tem de
-    correr DEPOIS do animateBones, senao ele reescreve o braco no mesmo frame.
-
-    Sem isto o sistema de intencoes so seria observavel pelo painel, e este
-    projecto ja tem historico de funcionalidades a correr sem ninguem conseguir
-    ver que funcionam.
-    */
-    aplicarCamadaPedirBola(dt) {
-        const rig = this.rig;
-        if (!rig || !rig.lArm || !rig.rArm) return;
-
-        const c = (typeof Intentions !== 'undefined') ? Intentions.doJogador(this) : null;
-        const aPedir = !!(c && c.estado === 'aberto');
-
-        // Suavizado: o braco sobe e desce, nao aparece levantado de um frame
-        // para o outro.
-        const alvo = aPedir ? 1 : 0;
-        if (this.pedirBolaIntens === undefined) this.pedirBolaIntens = 0;
-        const k = 1 - Math.exp(-Math.max(0.0001, dt) / 0.15);
-        this.pedirBolaIntens += (alvo - this.pedirBolaIntens) * k;
-        if (this.pedirBolaIntens < 0.01) return;
-
-        /*
-        Levanta o braco do lado por onde ele esta a correr (o lado de fora do
-        campo), para nao o cruzar a frente do corpo.
-        */
-        const i = this.pedirBolaIntens;
-        const paraDireita = (this.model.position.x >= 0);
-        const braco = paraDireita ? rig.rArm : rig.lArm;
-        const cotovelo = paraDireita ? rig.rElbow : rig.lElbow;
-
-        // Ombro quase a vertical: z e a abertura lateral no rig deste jogo.
-        const abertura = (paraDireita ? -1 : 1) * (Math.PI * 0.62) * i;
-        braco.rotation.z = lerpTo(braco.rotation.z, abertura, 0.5);
-        braco.rotation.x = lerpTo(braco.rotation.x, -0.35 * i, 0.5);
-        if (cotovelo) cotovelo.rotation.x = lerpTo(cotovelo.rotation.x, -0.25 * i, 0.5);
-    }
-
     aplicarCamadaPeito() {
         if (this.fsm.currentState !== 'CHEST_CONTROL') return;
         const rig = this.rig;
@@ -2987,7 +2799,8 @@ class FootballPlayer {
             para a bola. `tiroMetaTimeout` continua como rede de segurança
             absoluta, para nunca travar o jogo indefinidamente.
             */
-            const podeCobrar = Match.golKickProntos && Match.golKickEspera >= Match.golKickAlvoEspera;
+            // Sem parada: ignora o Match.golKickProntos, arranca assim que estiver na marcação
+            const podeCobrar = true;
             if (this.gkTiroFase === 0) {
                 if ((distTM < 0.4 && podeCobrar) || tTM > G.tiroMetaTimeout) {
                     this.gkTiroFase = 1;
@@ -3536,14 +3349,7 @@ class FootballPlayer {
     */
     kickFromGround() {
         const gGrav = BallPhysics.gravidade;
-        /*
-        Elevacao do chutao: 25 a 35 graus, pedido explicito. Era
-        `(25 + rand*25) / 3`, ou seja 8.3 a 16.7 graus — uma bola esticada,
-        quase a meia altura. Como a velocidade sai resolvida do alcance
-        (R = v² sin2θ / g, mais abaixo), subir o angulo nao alonga o chutao:
-        torna-o mais alto e mais lento, que e o que se quer num tiro de meta.
-        */
-        const elev = THREE.MathUtils.degToRad(25 + Math.random() * 10);
+        const elev = THREE.MathUtils.degToRad((25 + Math.random() * 25) / 3);
         const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 20);
 
         const alcance = 38 + Math.random() * 16;

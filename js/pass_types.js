@@ -349,6 +349,33 @@ const PassTypes = {
 
             const d = Math.hypot(m.model.position.x - cx, m.model.position.z - cz);
             if (d > raio) continue;
+
+            let bloqueado = false;
+            const opponents = (carrier.team === 'TeamA') ? Match.opponents : Match.players;
+            for (const opp of opponents) {
+                if (opp.role === 'gk') continue;
+                const dx = m.model.position.x - cx;
+                const dz = m.model.position.z - cz;
+                const l2 = dx * dx + dz * dz;
+                if (l2 === 0) continue;
+                
+                let t = ((opp.model.position.x - cx) * dx + (opp.model.position.z - cz) * dz) / l2;
+                
+                // Só considera adversários que estão efetivamente entre o portador e o alvo
+                if (t >= -0.1 && t <= 1.1) {
+                    const px = cx + t * dx;
+                    const pz = cz + t * dz;
+                    const distOppToLine = Math.hypot(opp.model.position.x - px, opp.model.position.z - pz);
+                    
+                    // Impede o passe se o adversário estiver bloqueando a linha de passe
+                    if (distOppToLine < 1.2) {
+                        bloqueado = true;
+                        break;
+                    }
+                }
+            }
+            if (bloqueado) continue;
+
             if (d < melhorD) { melhorD = d; melhor = m; }
         }
         return melhor;

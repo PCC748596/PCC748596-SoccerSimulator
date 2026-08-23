@@ -40,6 +40,11 @@ class PlayerContext {
         this.skillTec = p.skillFor('TEC');
         this.distToBall = p.model.position.distanceTo(Match.ball.position);
         this.trace.length = 0;
+        this._bestPass = undefined;
+        this._sidePass = undefined;
+        this._backPass = undefined;
+        this._cross = undefined;
+        this._throughBall = undefined;
 
         // Sob pressão: um adversário a menos de 3.5 m.
         // Espaço à frente: adversário mais próximo dentro de um corredor que
@@ -170,24 +175,30 @@ esteja em condições de lá chegar primeiro.
 Aproveita o `defLineDir` que o nível 1 do adversário já calcula.
 */
 function findThroughBall(ctx) {
+    if (ctx._throughBall !== undefined) return ctx._throughBall;
     const p = ctx.p;
-
 
     // Um defesa a lançar é o jogo directo que se quer evitar: a bola tem de
     // passar pelo meio-campo. O lançamento é arma de médios e avançados.
-    if (p.role === 'def' || p.role === 'gk') return null;
-    if (Math.random() > PassModel.throughBallChance) return null;
+    if (p.role === 'def' || p.role === 'gk') {
+        ctx._throughBall = null;
+        return null;
+    }
+    if (Math.random() > PassModel.throughBallChance) {
+        ctx._throughBall = null;
+        return null;
+    }
 
     const linhaAdv = ctx.oppBB.defLineDir;      // no referencial de ataque DELES
-    if (linhaAdv === undefined || linhaAdv === null) return null;
+    if (linhaAdv === undefined || linhaAdv === null) { ctx._throughBall = null; return null; }
 
     // A mesma linha, no nosso referencial de ataque.
     const linhaNoNosso = -linhaAdv;
     const meuZ = p.model.position.z * p.dirZ;
 
     // Só faz sentido lançar de trás da linha e com campo para correr.
-    if (meuZ > linhaNoNosso - 4) return null;
-    if (linhaNoNosso > 44) return null;
+    if (meuZ > linhaNoNosso - 4) { ctx._throughBall = null; return null; }
+    if (linhaNoNosso > 44) { ctx._throughBall = null; return null; }
 
     let melhor = null;
     let melhorNota = -Infinity;
@@ -269,7 +280,7 @@ function findThroughBall(ctx) {
         }
         melhor.alto = naLinha > 0;
     }
-
+    ctx._throughBall = melhor;
     return melhor;
 }
 
@@ -316,11 +327,12 @@ meio-campo. Entre vários candidatos escolhe o mais central: quem ataca o
 primeiro poste tem melhor ângulo do que quem está encostado à linha de fundo.
 */
 function findCross(ctx) {
+    if (ctx._cross !== undefined) return ctx._cross;
     const p = ctx.p;
     const C = CrossModel;
 
     const meuX = Math.abs(p.model.position.x);
-    if (meuX < C.alaX || ctx.zoneAhead < C.zonaZ) return null;
+    if (meuX < C.alaX || ctx.zoneAhead < C.zonaZ) { ctx._cross = null; return null; }
 
     let alvo = null;
     let alvos = 0;
@@ -337,7 +349,7 @@ function findCross(ctx) {
         alvos++;
         if (mx < melhorX) { melhorX = mx; alvo = m; }
     }
-    if (!alvo) return null;
+    if (!alvo) { ctx._cross = null; return null; }
 
     const largura = THREE.MathUtils.clamp((meuX - C.alaX) / (28.0 - C.alaX), 0, 1);
     const fundo = THREE.MathUtils.clamp((ctx.zoneAhead - C.zonaZ) / (C.fundoZ - C.zonaZ), 0, 1);
@@ -398,12 +410,13 @@ function findCross(ctx) {
         + THREE.MathUtils.clamp((distAlvo - 14) / 20, 0, 1) * 0.35
         + ((alvo.skillFor('STRENGTH') - 50) / 100) * 0.30;
 
-    return {
+    ctx._cross = {
         alvo: alvo,
         chance: THREE.MathUtils.clamp(chance, 0, C.chanceMax),
         alto: notaAlto >= 0.5,
         bloqueadores: bloqueadores
     };
+    return ctx._cross;
 }
 
 function actCross(ctx) {
@@ -748,35 +761,57 @@ function actDribble(ctx) {
 }
 
 function findBestPassAnywhere(ctx) {
+    if (ctx._bestPass !== undefined) return ctx._bestPass;
     const p = ctx.p;
     if (!ctx.underPressure) {
         const tb = findThroughBall(ctx);
-        if (tb) return { type: 'through', data: tb };
+        if (tb) {
+            ctx._bestPass = { type: 'through', data: tb };
+            return ctx._bestPass;
+        }
     }
     
     let target = p.findPassTarget(); // Avalia todos e escolhe o melhor
-    if (!target && ctx.underPressure) target = p.findPassTargetRelaxed();
-    if (!target && ctx.underPressure && p.decisionTimer > 0.8) target = p.findPassTargetDesperate();
     
-    if (target) return { type: 'pass', target: target };
-    return null;
+    // Na defesa, se não houver passe perfeitamente seguro, procura alternativas para forçar a circulação
+    const naDefesa = (p.model.position.z * p.dirZ < 0) || p.role === 'def';
+    
+    if (!target && (ctx.underPressure || naDefesa)) target = p.findPassTargetRelaxed();
+    if (!target && (ctx.underPressure || naDefesa) && p.decisionTimer > 0.8) target = p.findPassTargetDesperate();
+    
+    if (target) {
+        ctx._bestPass = { type: 'pass', target: target };
+    } else {
+        ctx._bestPass = null;
+    }
+    return ctx._bestPass;
 }
 
 function findPassSide(ctx) {
+    if (ctx._sidePass !== undefined) return ctx._sidePass;
     const p = ctx.p;
     let target = p.findPassTarget('lado');
     if (!target && ctx.underPressure) target = p.findPassTargetRelaxed('lado');
-    if (target) return { type: 'pass', target: target };
-    return null;
+    if (target) {
+        ctx._sidePass = { type: 'pass', target: target };
+    } else {
+        ctx._sidePass = null;
+    }
+    return ctx._sidePass;
 }
 
 function findPassBack(ctx) {
+    if (ctx._backPass !== undefined) return ctx._backPass;
     const p = ctx.p;
     let target = p.findPassTarget('tras');
     if (!target && ctx.underPressure) target = p.findPassTargetRelaxed('tras');
     if (!target && ctx.underPressure && p.decisionTimer > 0.8) target = p.findPassTargetDesperate();
-    if (target) return { type: 'pass', target: target };
-    return null;
+    if (target) {
+        ctx._backPass = { type: 'pass', target: target };
+    } else {
+        ctx._backPass = null;
+    }
+    return ctx._backPass;
 }
 
 function actClearance(ctx) {
@@ -808,15 +843,7 @@ function actClearance(ctx) {
 }
 
 function actCarry(ctx) {
-    const p = ctx.p;
-    /*
-    Conduzir tem velocidade PROPRIA (CarryModel.velocidade). Antes esta funcao
-    so mudava de estado, e o portador corria com o speedMult que sobrasse do
-    ramo anterior — de 4.7 a 8.0 conforme o que tivesse corrido antes dele.
-    */
-    const v = CarryModel.velocidade;
-    p.speedMult = (v.base + ((ctx.skillSpeed - 50) / 50) * v.porSkill) * 1.25 * 0.9;
-    p.fsm.changeState('CARRY');
+    ctx.p.fsm.changeState('CARRY');
 }
 
 /* =========================================================================
@@ -848,17 +875,7 @@ function actChaseBall(ctx) {
     const p = ctx.p;
     p.speedMult = (5.8 + ((ctx.skillSpeed - 50) / 50) * 1.5) * 1.25 * 0.9;
     if (Match.counterAttackTeam === p.team) p.speedMult *= 1.25;
-    /*
-    Nao se corre para cima das costas de quem tem a bola: quem vem de tras
-    mira ao LADO, para emparelhar e ultrapassar. So vai a direito a bola se
-    vier de frente. Ver alvoDePerseguicao (utils.js).
-    */
-    if (typeof alvoDePerseguicao === 'function') {
-        const alvo = alvoDePerseguicao(p);
-        p.dynamicTarget.set(alvo.x, ALTURA_BASE_Y, alvo.z);
-    } else {
-        p.dynamicTarget.copy(Match.ball.position);
-    }
+    p.dynamicTarget.copy(Match.ball.position);
     p.fsm.changeState('MOVE_TO_POS');
 }
 
@@ -1328,16 +1345,6 @@ function escolherDestinoDeCorrida(p, bb) {
             });
             if (!cand) continue;
 
-            /*
-            O tecto do estilo (Box-to-Box: nao passa da entrada da area) vale
-            tambem para a corrida — senao o estilo trava o alvo posicional e a
-            corrida leva-o la na mesma. Ver limitarPontoAoEstilo.
-            */
-            const cortado = (typeof limitarPontoAoEstilo === 'function')
-                ? limitarPontoAoEstilo(p, cand) : cand;
-            cand.x = cortado.x;
-            cand.z = cortado.z;
-
             // Distancia de passe a partir de quem tem a bola.
             const distPasse = Math.hypot(cand.x - cp.x, cand.z - cp.z);
             if (distPasse < R.passeMin || distPasse > R.passeMax) continue;
@@ -1361,117 +1368,6 @@ function escolherDestinoDeCorrida(p, bb) {
     }
 
     return melhor;
-}
-
-/*
-Quem pode pedir a bola: um jogador de ataque ou medio, com a equipa em posse,
-sem contrato aberto, com espaco a frente e sem estar em fora-de-jogo. E o
-mesmo tipo de gatilho do CorrerNoEspaco — a diferenca e o compromisso.
-*/
-/*
-O MELHOR CONTRATO PARA SERVIR AGORA (Long_Ball_Inform).
-
-Vive a parte do findThroughBall de proposito: medido, o `findBestPassAnywhere`
-— o unico caminho que chamava o findThroughBall — corre 11 vezes em 48 s de
-jogo e SEMPRE sob pressao, ou seja nunca chega la. O ramo do lancamento estava
-praticamente morto, e pendurar os contratos nele seria escrever codigo que
-ninguem executa.
-
-Escolhe o contrato mais LONGE dos servíveis: o contrato existe para a bola
-longa; o passe curto tem o seu proprio caminho e nao se toca nele.
-*/
-function melhorContratoPara(ctx) {
-    if (typeof Intentions === 'undefined' || !IntentModel.ativo) return null;
-    const p = ctx.p;
-    if (p.role === 'gk') return null;
-
-    let melhorC = null, melhorProj = null;
-    for (const c of Intentions.abertos(p.team)) {
-        if (c.jogador === p) continue;
-        const proj = Intentions.projetarEncontro(c, Match.ball.position);
-        if (!proj) continue;
-        if (typeof linhaLivre === 'function' &&
-            !linhaLivre(Match.ball.position, proj.ponto, (ctx.bb && ctx.bb.opp) || [], 1.8)) continue;
-        if (!melhorProj || proj.dist > melhorProj.dist) { melhorC = c; melhorProj = proj; }
-    }
-    if (!melhorC) return null;
-    return { contrato: melhorC, ponto: melhorProj.ponto, tempoVoo: melhorProj.tempoVoo };
-}
-
-function podePedirBola(ctx) {
-    if (typeof Intentions === 'undefined' || !IntentModel.ativo) return false;
-    const p = ctx.p;
-    if (p.role === 'gk' || p.role === 'def') return false;
-    if (!ctx.bb || !ctx.bb.isAttacking) return false;
-    if (Match.ballCarrier === p) return false;
-    if (Intentions.doJogador(p)) return false;
-    if ((p.intentCooldown || 0) > 0) return false;
-    if (Intentions.abertos(p.team).length >= IntentModel.maxPorEquipa) return false;
-
-    // Espaco a frente, no referencial de ataque dele.
-    const avanco = p.model.position.z * p.dirZ;
-    const limite = (typeof ctx.bb.offsideLimitDir === 'number') ? ctx.bb.offsideLimitDir : null;
-    if (limite === null) return false;
-    if (limite - avanco < IntentModel.minEspacoFrente) return false;
-
-    return true;
-}
-
-/*
-Ball_Request. A rota e para a frente, com o desvio lateral que o afaste do
-adversario mais proximo, e dura o que couber antes da linha de fora-de-jogo.
-*/
-function actPedirBola(ctx) {
-    const p = ctx.p;
-    const avanco = p.model.position.z * p.dirZ;
-    const limite = ctx.bb.offsideLimitDir;
-
-    // Espaco util a frente, ate a linha; a duracao sai dele e da velocidade.
-    const espaco = Math.max(0, limite - avanco - 1.0);
-    const vel = IntentModel.velocidadeCorrida;
-    const duracao = THREE.MathUtils.clamp(
-        espaco / vel, IntentModel.duracaoMin, IntentModel.duracaoMax);
-
-    // Direccao: em frente, inclinada para longe do marcador mais proximo.
-    let lateral = 0;
-    let distMarc = Infinity;
-    for (const o of (ctx.bb.opp || [])) {
-        if (!o || o.role === 'gk') continue;
-        const d = o.model.position.distanceTo(p.model.position);
-        if (d < distMarc) {
-            distMarc = d;
-            lateral = Math.sign(p.model.position.x - o.model.position.x) || 1;
-        }
-    }
-    const inclinacao = (distMarc < 6.0) ? 0.5 : 0.15;
-    const dir = { x: lateral * inclinacao, z: p.dirZ };
-
-    const c = Intentions.pedir(p, dir, vel, duracao);
-    if (c) {
-        if (typeof MatchStats !== 'undefined') MatchStats.registarContrato('pedidos', p.team);
-        p.showActionBanner('BALL REQ');
-    }
-    actCumprirContrato(ctx);
-}
-
-/*
-Correr pela rota prometida. O destino e o ponto do contrato daqui a um segundo
-— ou o ponto de encontro combinado, se ja tiver sido servido, que e o que ele
-"sabe" depois do Long_Ball_Inform.
-*/
-function actCumprirContrato(ctx) {
-    const p = ctx.p;
-    const c = Intentions.doJogador(p);
-    if (!c) { actHoldPosition(ctx); return; }
-
-    const alvo = (c.estado === 'servido' && c.pontoEncontro)
-        ? c.pontoEncontro
-        : Intentions.posicaoEm(c, Math.min(Intentions.relogio + 1.0, c.tExpira));
-
-    p.dynamicTarget.set(alvo.x, ALTURA_BASE_Y, alvo.z);
-    p.speedMult = (IntentModel.velocidadeCorrida + ((ctx.skillSpeed - 50) / 50) * 1.5) * 1.25 * 0.9;
-    p.apoioAtivo = false;
-    p.fsm.changeState('RUN_INTO_SPACE');
 }
 
 function actRunIntoSpace(ctx) {
@@ -1559,18 +1455,21 @@ function actHoldPosition(ctx) {
     } else if (ctx.bb && ctx.bb.blocker === p) {
         p.apoioAtivo = false;
         
-        // Calcular o alvo do blocker (projeção perpendicular na linha bola-gol)
+        // O blocker quer ficar entre o carrier e o gol, cercando o carrier para atrasá-lo
         const goalPos = new THREE.Vector3(0, 0, ctx.bb.ownGoalZ);
         const ballPos = Match.ball.position;
         const ballToGoal = new THREE.Vector3().subVectors(goalPos, ballPos);
         ballToGoal.y = 0;
-        const dirBallToGoal = ballToGoal.normalize();
         
-        const ballToPlayer = new THREE.Vector3().subVectors(p.model.position, ballPos);
-        ballToPlayer.y = 0;
+        if (ballToGoal.lengthSq() > 0.001) {
+            ballToGoal.normalize();
+        } else {
+            ballToGoal.set(0, 0, ctx.bb.dir);
+        }
         
-        const projLen = ballToPlayer.dot(dirBallToGoal);
-        const projPos = new THREE.Vector3().copy(ballPos).add(dirBallToGoal.multiplyScalar(projLen));
+        // Fica a uma distância de "cercar" (jockey) da bola na direção do gol
+        const jockeyDist = 5.0; // metros
+        const projPos = new THREE.Vector3().copy(ballPos).add(ballToGoal.multiplyScalar(jockeyDist));
         
         p.dynamicTarget.copy(projPos);
         p.fsm.changeState('BLOCKING');
@@ -1739,7 +1638,21 @@ function adversariosAFrente(ctx) {
 function caminhoFechadoAFrente(ctx) {
     const naDefesa = (ctx.p.model.position.z * ctx.p.dirZ < 0) || ctx.p.role === 'def';
     const minAdv = naDefesa ? 1 : PassModel.bloqueioMin;
-    return adversariosAFrente(ctx) >= minAdv;
+    
+    // Bloqueio directo no corredor de progressão
+    if (adversariosAFrente(ctx) >= minAdv) return true;
+    
+    // Bloqueio por congestionamento geral do sector (ex: 3 adversários na frente, mas espalhados)
+    if (ctx.bb && ctx.bb.congestion) {
+        const x = ctx.p.model.position.x;
+        const banda = x < -10 ? 'esq' : (x > 10 ? 'dir' : 'centro');
+        // Se há 3+ adversários neste terço longitudinal, o sector está congestionado (75 = 3 adv)
+        if (ctx.bb.congestion[banda] >= 75) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 const PlayerBT = sel('PlayerRoot',
@@ -1765,28 +1678,8 @@ const PlayerBT = sel('PlayerRoot',
         cond('tenhoABola', temBola),
 
         sel('DecisaoComBola',
-            /*
-            A BOLA SO "FUGIU" SE ESTIVER MESMO LONGE.
-
-            Era `!ctx.p.hasBall`, e isso e verdade em METADE dos frames com
-            bola: o toque de conducao adianta-a e o `hasBall` cai enquanto ela
-            corre a frente. Medido, nesses frames a bola esta a 0.93 m do
-            jogador (p90 1.32) — ao pe dele, nao fugida.
-
-            O efeito era este ramo ganhar quase sempre e a arvore NUNCA descer
-            as decisoes: o ramo seguinte so era avaliado em 2.7% dos frames com
-            bola. Passar, rematar, cruzar e servir um contrato so aconteciam
-            nos poucos instantes em que o pe estava colado a bola.
-
-            `CarryModel.raioDecisao` e a distancia a partir da qual ele larga
-            tudo e vai atras dela.
-            */
             seq('RecuperarControlo',
-                cond('bolaFugiu', (ctx) => {
-                    if (ctx.p.hasBall) return false;
-                    return ctx.p.model.position.distanceTo(Match.ball.position)
-                        > CarryModel.raioDecisao;
-                }),
+                cond('bolaFugiu', (ctx) => !ctx.p.hasBall),
                 act('correrParaBola', actCarry)
             ),
             cond('CalculaDebug', (ctx) => {
@@ -1879,18 +1772,25 @@ const PlayerBT = sel('PlayerRoot',
 
             /*
             3. Caminho fechado / Circulação: se há adversário à frente no corredor
-            (especialmente na defesa), joga para o lado ou para trás para circular o jogo.
-            Vem ANTES de conduzir para evitar que os jogadores de defesa insistam em sair jogando.
+            (especialmente na defesa), prioriza o passe antes sequer de tentar driblar.
             */
             seq('CaminhoFechado',
                 cond('doisPelaFrente', (ctx) => {
                     if (!caminhoFechadoAFrente(ctx)) return false;
-                    const saida = findPassSide(ctx) || findPassBack(ctx) || findBestPassAnywhere(ctx);
+                    const saida = findBestPassAnywhere(ctx) || findPassSide(ctx) || findPassBack(ctx);
                     if (!saida) return false;
+                    ctx.passType = saida.type;
                     ctx.passTarget = saida.target;
+                    ctx.throughBall = saida.data;
                     return true;
                 }),
-                act('passarLadoOuTras', actPass)
+                act('passarLadoOuTras', (ctx) => {
+                    if (ctx.passType === 'through') {
+                        actThroughBall(ctx);
+                    } else {
+                        actPass(ctx);
+                    }
+                })
             ),
 
             /*
@@ -1914,33 +1814,6 @@ const PlayerBT = sel('PlayerRoot',
                         ctx.passTarget = ctx.currentPassChoice.target;
                         actPass(ctx);
                     }
-                })
-            ),
-
-            /*
-            SERVIR UM CONTRATO (Long_Ball_Inform). Um colega anunciou a rota e
-            esta a cumpri-la: o encontro e projectado sobre uma promessa, e o
-            filtro da janela garante que ele ainda la esta quando a bola
-            chegar. Antes de conduzir, porque uma bola longa para quem ja
-            arrancou vale mais do que mais um toque a frente.
-            */
-            seq('ServirContrato',
-                cond('haContratoServivel', (ctx) => {
-                    const r = melhorContratoPara(ctx);
-                    if (!r) return false;
-                    ctx.contratoServivel = r;
-                    return true;
-                }),
-                act('lancarNoContrato', (ctx) => {
-                    const r = ctx.contratoServivel;
-                    Intentions.servir(r.contrato, ctx.p, r.ponto, r.tempoVoo);
-                    ctx.p.showActionBanner('LONG BALL');
-                    ctx.throughBall = {
-                        mate: r.contrato.jogador,
-                        alvoX: r.ponto.x, alvoZ: r.ponto.z,
-                        alto: false
-                    };
-                    actThroughBall(ctx);
                 })
             ),
 
@@ -1991,17 +1864,51 @@ const PlayerBT = sel('PlayerRoot',
     seq('SemBola',
         sel('DecisaoSemBola',
             /*
-            O DESARME E O CARRINHO SAIRAM DAQUI.
-
-            Tirar a bola ao adversario e defesa, e a defesa passou toda para o
-            nivel 2 (ver TacklingAI em position_bt.js), junto com a marcacao.
-            O nivel 3 fica com o que faz com a bola.
-
-            De momento o tackling esta DESLIGADO por inteiro
-            (TacklingModel.ativo = false): queremos ver a marcacao a funcionar
-            sozinha primeiro. As accoes actTackle/actSlideTackle continuam aqui
-            porque sao execucao, nao decisao - e o nivel 2 que as dispara.
+            O DESARME E O CARRINHO ESTÃO DE VOLTA (pedido do utilizador).
+            Adicionamos de novo o bloco de decisão de desarme e carrinho que estava desligado,
+            agora com verificações de ângulo e probabilidade para não fazerem demasiadas faltas.
             */
+            seq('Desarme',
+                cond('podeDesarmar', (ctx) => {
+                    const carrier = Match.ballCarrier;
+                    if (!carrier || carrier.team === ctx.p.team || carrier.role === 'gk') return false;
+                    
+                    const dist = ctx.distToBall;
+                    if (dist > 3.0) return false; // Longe demais para carrinho
+                    
+                    // Bloqueio por ângulo: se o defensor estiver bem atrás do portador (ângulo < -0.3), 
+                    // não vale a pena fazer carrinho/desarme porque vai falhar e a animação não rouba a bola.
+                    let carrierFwd;
+                    if (carrier.velocity && carrier.velocity.lengthSq() > 0.1) {
+                        carrierFwd = carrier.velocity.clone().normalize();
+                    } else {
+                        carrierFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(carrier.model.quaternion);
+                    }
+                    const toDefender = new THREE.Vector3().subVectors(ctx.p.model.position, carrier.model.position);
+                    toDefender.y = 0;
+                    if (toDefender.lengthSq() > 0) toDefender.normalize();
+                    const dotAngle = carrierFwd.x * toDefender.x + carrierFwd.z * toDefender.z;
+                    
+                    if (dotAngle < -0.3) return false;
+                    
+                    // Se muito perto e de frente, faz desarme em pé imediatamente.
+                    if (dist < 1.4 && dotAngle > 0.5) return true;
+                    
+                    // Se estiver no alcance do carrinho (1.4 a 3.0m), tem uma chance por frame.
+                    // A probabilidade escala com o atributo DEF e com a distância (quanto mais perto, mais provável).
+                    const agressividade = ctx.p.skillFor('DEF') / 50.0;
+                    if (Math.random() < (0.015 * agressividade)) return true;
+                    
+                    return false;
+                }),
+                act('tentarDesarme', (ctx) => {
+                    if (ctx.distToBall > 1.4) {
+                        actSlideTackle(ctx);
+                    } else {
+                        actTackle(ctx);
+                    }
+                })
+            ),
 
             /*
             Intercetar: a bola vem na minha direcção e eu chego-lhe primeiro.
@@ -2083,6 +1990,47 @@ const PlayerBT = sel('PlayerRoot',
             ),
 
             /*
+            Overlap / Tabelinha (Triangulação):
+            Jogador acabou de soltar a bola num passe e arranca para a frente para
+            oferecer uma linha de passe imediata ou fazer sobreposição (overlap).
+            */
+            seq('OverlapPass',
+                cond('fezPasseRecente', (ctx) => {
+                    const p = ctx.p;
+                    // Só ataca o espaço se a equipa ainda tem a bola
+                    const bbEquipa = (typeof TeamAI !== 'undefined') ? TeamAI.get(p.team) : null;
+                    const emAtaque = !!(bbEquipa && bbEquipa.isAttacking);
+                    return emAtaque && p.overlapTimer > 0;
+                }),
+                act('sprintarParaFrente', (ctx) => {
+                    const p = ctx.p;
+                    const bbEquipa = (typeof TeamAI !== 'undefined') ? TeamAI.get(p.team) : null;
+                    // Corre diretamente para a frente (direção do ataque)
+                    let targetX = p.model.position.x;
+                    // Alvo bem lá na frente para manter o sprint ativo
+                    let targetZ = p.model.position.z + (20.0 * p.dirZ);
+                    
+                    if (bbEquipa && bbEquipa.offsideLimitDir !== undefined && bbEquipa.offsideLimitDir !== null) {
+                        const limitZ = bbEquipa.offsideLimitDir - (1.0 * p.dirZ); // margem de 1 metro
+                        if (p.dirZ > 0 && targetZ > limitZ) targetZ = limitZ;
+                        if (p.dirZ < 0 && targetZ < limitZ) targetZ = limitZ;
+                    }
+                    
+                    // Clamps simples para não sair do campo
+                    const maxX = (CAMPO_LARG / 2) - 1.0;
+                    const maxZ = (CAMPO_COMP / 2) - 1.0;
+                    targetX = Math.max(-maxX, Math.min(maxX, targetX));
+                    targetZ = Math.max(-maxZ, Math.min(maxZ, targetZ));
+                    
+                    p.dynamicTarget.set(targetX, ALTURA_BASE_Y, targetZ);
+                    
+                    // Sprint máximo para passar nas costas/frente rapidamente
+                    p.speedMult = (5.5 + ((ctx.skillSpeed - 50) / 50) * 1.2) * 1.25; 
+                    p.fsm.changeState('MOVE_TO_POS');
+                })
+            ),
+
+            /*
             Apoio de circulacao antes da corrida ao espaco: oferecer-se a
             distancia de passe serve a jogada seguinte; atacar o espaco serve
             a jogada depois dessa. Sem opcao de passe agora, nao ha jogada
@@ -2091,29 +2039,6 @@ const PlayerBT = sel('PlayerRoot',
             seq('ApoioDeCirculacao',
                 cond('fuiChamadoAApoiar', podeApoiarCirculacao),
                 act('apoiarCirculacao', actApoioCirculacao)
-            ),
-
-            /*
-            PEDIR A BOLA (Ball_Request). Anuncia a rota — direccao, velocidade
-            e duracao — e arranca. Vem ANTES do CorrerNoEspaco porque e a
-            versao comprometida da mesma coisa: quem tem contrato corre pela
-            rota que prometeu, nao por uma que reescolhe a cada frame.
-            Ver js/intentions.js.
-            */
-            seq('PedirBola',
-                cond('querPedirBola', podePedirBola),
-                act('pedirBola', actPedirBola)
-            ),
-
-            /*
-            CUMPRIR o contrato: quem ja pediu (ou ja foi servido) corre pela
-            rota prometida ate ela acabar. Sem isto o contrato era uma promessa
-            que ninguem cumpria — os ramos seguintes reescreviam-lhe o destino.
-            */
-            seq('CumprirContrato',
-                cond('temContrato', (ctx) =>
-                    typeof Intentions !== 'undefined' && !!Intentions.doJogador(ctx.p)),
-                act('correrPelaRota', actCumprirContrato)
             ),
 
             seq('CorrerNoEspaco',

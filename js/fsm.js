@@ -207,6 +207,13 @@ function executePassGameplay(p) {
         usouBalistica = true;
     }
 
+    // Aumento de 20% na velocidade dos passes (pedido do utilizador):
+    // Multiplicamos a força horizontal por 1.2 e dividimos a vertical por 1.2.
+    // Numa parábola, isto aumenta a velocidade horizontal em 20% mas reduz o tempo de voo,
+    // mantendo o alcance (distância do passe) praticamente inalterado.
+    forcaPasse *= 1.20;
+    Match.ballVel.y /= 1.20;
+
     // Redução de 15% da força pedida: lançamentos longos e lançamentos para as laterais
     if (ehLancamento) {
         let isLongo = distToTarget > 20.0;
@@ -264,18 +271,8 @@ function executePassGameplay(p) {
     p.touchLock = BallControl.touchLock;
     Match.ballCarrier = null;
     Match.intendedReceiver = p.passTarget;
-    /*
-    A linha NAO se apaga no contacto: fica ate a bola ser dominada ou parar
-    (ver Match.update). Apagada aqui, so aparecia durante os 0.08 s entre a
-    decisao e o contacto — tempo nenhum para se ver o que quer que fosse.
-    Redesenhada a partir de onde a bola esta a sair, para ser exactamente a
-    intencao do passe contra o que a bola faz.
-    */
-    if (typeof Match.desenharLinhaDePasse === 'function') {
-        Match.desenharLinhaDePasse(_v1.x, _v1.z);
-        Match.passVisualAtivo = true;
-        Match.atualizarVisuaisDePasse();
-    }
+    if (Match.passTargetVisual) Match.passTargetVisual.visible = false;
+    if (Match.passLineVisual) Match.passLineVisual.visible = false;
     Match.passTargetPos = { x: p.passTargetPos.x, z: p.passTargetPos.z };
     Match.lastTouchedTeam = p.team;
     Match.lastTouchedPlayer = p;
@@ -301,10 +298,18 @@ class PlayerFSM {
             this.p.resetBonesToDefault();
         }
         this.currentState = newState; this.timer = 0;
+        if (newState === 'CARRY') this.p.showActionBanner('CARRY');
         if (newState === 'DRIBBLE') this.p.showActionBanner('DRIBBLE');
         if (newState === 'TACKLE') this.p.showActionBanner('TACKLE');
         if (newState === 'SLIDE_TACKLE') this.p.showActionBanner('S.TACKLE');
-        if (newState === 'INTERCEPT') this.p.showActionBanner('INTERCEPT');
+        if (newState === 'INTERCEPT') {
+            const bb = (typeof TeamAI !== 'undefined') ? TeamAI.get(this.p.team) : null;
+            if (bb && bb.isAttacking) {
+                this.p.showActionBanner('RECOVER');
+            } else {
+                this.p.showActionBanner('INTERCEPT');
+            }
+        }
         if (newState === 'BLOCKING') this.p.showActionBanner('BLOCK');
         if (newState === 'CHEST_CONTROL') this.p.showActionBanner('CHEST');
         if (newState === 'RUN_INTO_SPACE') this.p.showActionBanner('RUN');
@@ -703,13 +708,7 @@ class PlayerFSM {
                             if (clearTarget) p.initiatePass(clearTarget);
                         }
                     }
-                    /*
-                    Sem o antigo `* 0.95`: o corte por conduzir esta agora na
-                    propria velocidade (CarryModel.velocidade, ~92% da corrida
-                    livre). Ali era um corte por cima de um valor herdado, e
-                    portanto cortava um numero que nao era de ninguem.
-                    */
-                    p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult, 0);
+                    p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult * 0.95, 0);
                 }
 
                 /*
@@ -955,8 +954,8 @@ class PlayerFSM {
 
             case 'PASS':
                 p.velocity.multiplyScalar(0.95);
-                if (p.passTarget) {
-                    let targetPos = p.passTarget.model.position;
+                if (p.passTarget && p.turnForPass) {
+                    let targetPos = p.passTargetPos || p.passTarget.model.position;
                     _v1.set(p.model.position.x * 2 - targetPos.x, p.model.position.y, p.model.position.z * 2 - targetPos.z);
                     _m1.lookAt(p.model.position, _v1, p.model.up);
                     _q1.setFromRotationMatrix(_m1);
@@ -974,8 +973,8 @@ class PlayerFSM {
                         p.actionState = null;
                         this.changeState('IDLE');
                         if (typeof Match !== 'undefined') {
-                            Match.passVisualAtivo = false;
-                            if (typeof Match.atualizarVisuaisDePasse === 'function') Match.atualizarVisuaisDePasse();
+                            if (Match.passTargetVisual) Match.passTargetVisual.visible = false;
+                            if (Match.passLineVisual) Match.passLineVisual.visible = false;
                         }
                     }
                 }
@@ -984,11 +983,51 @@ class PlayerFSM {
             case 'TACKLE':
                 p.velocity.multiplyScalar(0.95);
                 let tTackle = this.timer / 0.8;
+                
+                // --- NOVA ANIMAÇÃO PERPENDICULAR ---
+                // Se estamos na fase inicial, calculamos a orientação perpendicular à trajetória do portador
+                if (Match.ballCarrier && tTackle < 0.3) {
+                    let carrierFwd;
+                    if (Match.ballCarrier.velocity && Match.ballCarrier.velocity.lengthSq() > 0.1) {
+                        carrierFwd = Match.ballCarrier.velocity.clone().normalize();
+                    } else {
+                        carrierFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(Match.ballCarrier.model.quaternion);
+                    }
+                    
+                    const toDef = new THREE.Vector3().subVectors(p.model.position, Match.ballCarrier.model.position);
+                    toDef.y = 0;
+                    
+                    const lateral = new THREE.Vector3(-carrierFwd.z, 0, carrierFwd.x); // direção perpendicular 90 graus
+                    const isRightSide = toDef.dot(lateral) > 0;
+                    const lookDir = isRightSide ? lateral.clone().negate() : lateral.clone(); // vira para o portador
+                    
+                    const lookPos = p.model.position.clone().add(lookDir);
+                    lookPos.y = p.model.position.y;
+                    lookAtBola(p.model, lookPos); // encara o cruzamento da trajetória
+                }
+                
                 if (tTackle < 0.2) {
+                    /*
+                    // --- ANIMAÇÃO ANTIGA (desativada) ---
                     rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, 0.8, 0.3);
                     p.model.position.y = lerpTo(p.model.position.y, ALTURA_BASE_Y - 0.4, 0.3);
                     rig.rLeg.rotation.x = lerpTo(rig.rLeg.rotation.x, -Math.PI / 2.5, 0.3);
                     rig.lLeg.rotation.x = lerpTo(rig.lLeg.rotation.x, Math.PI / 4, 0.3);
+                    */
+                    
+                    // --- NOVA POSE DE CORTE ---
+                    rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, 0.05, 0.3); // tronco erguido
+                    p.model.position.y = lerpTo(p.model.position.y, ALTURA_BASE_Y - 0.5, 0.3); // baixa o centro de gravidade
+                    
+                    // Perna esquerda esticada para cortar a bola
+                    rig.lLeg.rotation.x = lerpTo(rig.lLeg.rotation.x, -Math.PI / 2.2, 0.3);
+                    rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, Math.PI / 8, 0.3); 
+                    rig.lKnee.rotation.x = lerpTo(rig.lKnee.rotation.x, 0.0, 0.3);
+                    
+                    // Perna direita fletida com joelho no chão a amparar
+                    rig.rLeg.rotation.x = lerpTo(rig.rLeg.rotation.x, Math.PI / 5, 0.3);
+                    rig.rKnee.rotation.x = lerpTo(rig.rKnee.rotation.x, -Math.PI / 1.6, 0.3);
+
                 } else if (tTackle < 0.8) {
                     if (p.hasBall === false && Match.ballCarrier && Match.ballCarrier.team !== p.team && Match.ballCarrier.role !== 'gk') {
                         let distToBall = Match.ball.position.distanceTo(p.model.position);
@@ -1182,7 +1221,16 @@ class PlayerFSM {
                                 gkScore = gkDef.skillFor('TEC') * 0.30 + gkDef.skillFor('GK') * 0.70;
                             }
                             
-                            const chutadorScore = p.skillFor('TEC');
+                            // Penalização por distância: a eficácia do rematador cai à medida que a distância aumenta
+                            _v1.set(0, 0, p.targetGoalZ);
+                            const distBaliza = p.model.position.distanceTo(_v1);
+                            let distPenalty = 1.0;
+                            if (distBaliza > 10.0) {
+                                // Reduz gradualmente o score do chutador; ex: aos 20m cai para ~50%
+                                distPenalty = Math.max(0.2, 1.0 - ((distBaliza - 10.0) / 20.0));
+                            }
+                            
+                            const chutadorScore = p.skillFor('TEC') * distPenalty;
                             const attackRatio = chutadorScore / (chutadorScore + gkScore);
                             
                             const weights = [
