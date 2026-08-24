@@ -2783,6 +2783,16 @@ class FootballPlayer {
             (bola entra na área rápido), isso cobre 6-7m em poucos frames,
             um "deslize" a dezenas de m/s. Isto trava a velocidade real.
             */
+            /*
+            Agilidade a sair da baliza: um multiplicador só, aplicado aqui, em
+            cima do speedLerp que cada situação escolheu. Escala com o atributo
+            GK — ver GoalkeeperPose.agilidade/agilidadeSkill.
+            */
+            const G_AG = GoalkeeperPose.agilidade || 1.0;
+            const G_AGS = (typeof GoalkeeperPose.agilidadeSkill === 'number')
+                ? GoalkeeperPose.agilidadeSkill : 0;
+            speedLerp *= G_AG * (1 + ((gkSkill - 50) / 50) * G_AGS);
+
             const dxGk = alvoGkX - gkCorpo.position.x;
             const dzGk = alvoGkZ - gkCorpo.position.z;
             const distGk = Math.hypot(dxGk, dzGk);

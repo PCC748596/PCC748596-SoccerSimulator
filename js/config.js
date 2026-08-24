@@ -1397,6 +1397,23 @@ const GoalkeeperPose = {
     alertaDist: 25.0,
 
     /*
+    AGILIDADE A SAIR DA BALIZA. Multiplica o `speedLerp` do reposicionamento do
+    GR (player.js, ramo 'idle'), que é a velocidade em m/s a que ele se desloca
+    para o alvo — cortar a bola, fechar o ângulo, ir buscar uma bola solta.
+
+    Os valores por situação continuam onde estavam (2.0 a reposicionar-se, 4.0
+    num cruzamento, 5.5-6.0 numa bola solta na área, até 9.0 a reagir a um
+    remate): isto escala-os todos de uma vez, para se afinar a agilidade num
+    número só em vez de em oito sítios.
+
+    `agilidadeSkill` faz o atributo GK contar: a 100 o guarda-redes sai
+    `1 + agilidadeSkill` vezes mais depressa do que a 50, a 0 sai
+    `1 - agilidadeSkill` vezes.
+    */
+    agilidade: 1.5,
+    agilidadeSkill: 0.25,
+
+    /*
     Só se atira ao chão se a bola passar a MAIS de tantos metros ao lado dele.
     Abaixo disto não há mergulho nenhum: fica de pé e leva as mãos à bola
     (estado 'maos'), dentro dos limites das juntas. Antes o limiar era 1.2 m e
