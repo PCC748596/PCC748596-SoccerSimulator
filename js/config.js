@@ -495,13 +495,44 @@ const LateralPose = {
     bracoX: -2.75,       // os dois braços por cima, ligeiramente atrás
     /*
     `bracoZ` é ABDUÇÃO — abre o braço para FORA do corpo, e é aplicado antes da
-    subida (ordem de Euler XYZ: o z roda primeiro, o x levanta depois). Estava
-    em 0.22 e era isso que dava o V aberto: os braços subiam já afastados.
-    Perto de zero eles sobem colados ao eixo do corpo, que é a pose real do
-    lateral — as duas mãos encontram-se na bola.
+    subida (ordem de Euler XYZ: o z roda primeiro, o x levanta depois). Esteve
+    em 0.22 (V aberto) e depois em 0.05, e mesmo a 0.05 as mãos ficavam à
+    largura dos ombros, com a bola a flutuar no meio delas sem lhes tocar.
+
+    NEGATIVO é ADUÇÃO: fecha os braços para dentro. É só o ponto de partida —
+    quem manda no valor final é o `fecharMaosNaBola` (player.js), que mede a
+    distância entre as mãos e ajusta até elas encostarem mesmo na bola.
     */
-    bracoZ: 0.05,
+    bracoZ: -0.16,
     cotovelo: -0.72,     // mais flectido: traz as mãos para trás da cabeça, não para cima dela
+
+    /*
+    FECHO DAS MÃOS NA BOLA. O `bracoZ` dos keyframes é um palpite: a distância
+    entre as mãos depende da largura dos ombros, do comprimento do braço e do
+    ângulo do cotovelo, tudo junto. Em vez de a adivinhar, mede-se e corrige-se
+    (ver fecharMaosNaBola em player.js) — bissecção sobre o `bracoZ` até a
+    distância entre os punhos bater no diâmetro da bola.
+
+    `fechoIteracoes` é quantos passos de bissecção; 4 chegam para ficar abaixo
+    de um centímetro. `fechoLimite` é o quanto o `bracoZ` pode andar do valor do
+    keyframe, para a correcção nunca cruzar os braços.
+    */
+    fechoIteracoes: 4,
+    fechoLimite: 0.55,
+    fechoTolerancia: 0.01,   // metros
+
+    /*
+    GIRO DA CINTURA para o lado do arremesso, em radianos.
+
+    Aplicado no `chest` e não na pélvis: rodar a bacia levava as pernas atrás
+    dela e o jogador ficava de pés torcidos. A cintura é o que roda num lateral
+    — o tronco, os ombros e os braços acompanham, os pés ficam plantados.
+
+    `giroMax` é o tecto: mesmo com o alvo a 90° do corpo, a cintura não passa
+    disto. O sinal e a fracção por keyframe vêm do `giro` do ThrowInClip —
+    negativo na armação (roda ao contrário, a carregar) e positivo no chicote.
+    */
+    giroMax: 0.55,
 
     coxaFrente: -0.18,   // pé da frente adiantado
     joelhoFrente: 0.20,
@@ -509,13 +540,19 @@ const LateralPose = {
     joelhoTras: 0.35,
 
     /*
-    Onde a bola fica, em relação ao jogador: logo acima da testa e um pouco
-    atrás. Esteve em +0.42 (2.04 m), o que a punha um palmo acima do crânio e
-    fora das mãos — parecia equilibrada no ar. +0.16 encosta-a à cabeça, que é
-    onde ela está quando se arma um lateral.
+    Quanto a bola fica ACIMA do ponto médio das mãos, em metros.
+
+    As mãos seguram-na por baixo e pelos lados, portanto o centro dela não está
+    à altura dos punhos — está acima deles. Sem este offset a bola ficava
+    encaixada entre os punhos, meia enterrada nas mãos.
+
+    A posição em si já não vem de constantes: a bola é colada ao ponto médio dos
+    punhos lidos da matriz do mundo (ver colarBolaAsMaos em player.js), tanto na
+    espera como em cada frame do gesto. As antigas `bolaAltura`/`bolaRecuo`, que
+    fixavam a bola numa altura absoluta, foram removidas — era o que a punha a
+    flutuar fora das mãos na pose de espera.
     */
-    bolaAltura: ALTURA_TESTA + 0.16,
-    bolaRecuo: 0.18,
+    bolaAcimaDasMaos: 0.10,
 
     // Qual o pé que vai à frente ('r' ou 'l').
     peFrente: 'r'
@@ -544,25 +581,25 @@ const ThrowInClip = {
     contactFrame: 6,   // índice 5, t = 5/9
     frames: [
         // 1: pose de espera
-        { chest: -0.22, pelvisX: -0.06, bracoX: -2.75, bracoZ: 0.05, cotovelo: -0.72, coxaFrente: -0.18, joelhoFrente: 0.20, coxaTras: 0.22, joelhoTras: 0.35, altura: 0.00 },
+        { chest: -0.22, pelvisX: -0.06, bracoX: -2.75, bracoZ: -0.16, cotovelo: -0.72, giro: 0.00, coxaFrente: -0.18, joelhoFrente: 0.20, coxaTras: 0.22, joelhoTras: 0.35, altura: 0.00 },
         // 2: carrega o peso na perna de trás
-        { chest: -0.30, pelvisX: -0.09, bracoX: -2.85, bracoZ: 0.05, cotovelo: -0.78, coxaFrente: -0.22, joelhoFrente: 0.24, coxaTras: 0.30, joelhoTras: 0.42, altura: -0.02 },
+        { chest: -0.30, pelvisX: -0.09, bracoX: -2.85, bracoZ: -0.17, cotovelo: -0.78, giro: -0.20, coxaFrente: -0.22, joelhoFrente: 0.24, coxaTras: 0.30, joelhoTras: 0.42, altura: -0.02 },
         // 3: arco para trás
-        { chest: -0.42, pelvisX: -0.14, bracoX: -3.00, bracoZ: 0.05, cotovelo: -0.92, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.38, joelhoTras: 0.50, altura: -0.03 },
+        { chest: -0.42, pelvisX: -0.14, bracoX: -3.00, bracoZ: -0.18, cotovelo: -0.92, giro: -0.45, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.38, joelhoTras: 0.50, altura: -0.03 },
         // 4: quase no limite do arco
-        { chest: -0.50, pelvisX: -0.17, bracoX: -3.12, bracoZ: 0.04, cotovelo: -1.00, coxaFrente: -0.28, joelhoFrente: 0.28, coxaTras: 0.42, joelhoTras: 0.55, altura: -0.04 },
+        { chest: -0.50, pelvisX: -0.17, bracoX: -3.12, bracoZ: -0.19, cotovelo: -1.00, giro: -0.60, coxaFrente: -0.28, joelhoFrente: 0.28, coxaTras: 0.42, joelhoTras: 0.55, altura: -0.04 },
         // 5: armação máxima, tudo carregado para trás
-        { chest: -0.52, pelvisX: -0.18, bracoX: -3.18, bracoZ: 0.04, cotovelo: -1.02, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.40, joelhoTras: 0.52, altura: -0.04 },
+        { chest: -0.52, pelvisX: -0.18, bracoX: -3.18, bracoZ: -0.19, cotovelo: -1.02, giro: -0.65, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.40, joelhoTras: 0.52, altura: -0.04 },
         // 6: LARGA A BOLA — braços a passar a vertical, tronco já a fechar
-        { chest: -0.05, pelvisX: -0.02, bracoX: -2.80, bracoZ: 0.05, cotovelo: -0.45, coxaFrente: -0.20, joelhoFrente: 0.20, coxaTras: 0.26, joelhoTras: 0.34, altura: 0.02 },
+        { chest: -0.05, pelvisX: -0.02, bracoX: -2.80, bracoZ: -0.16, cotovelo: -0.45, giro: 0.25, coxaFrente: -0.20, joelhoFrente: 0.20, coxaTras: 0.26, joelhoTras: 0.34, altura: 0.02 },
         // 7: chicote para a frente
-        { chest: 0.26, pelvisX: 0.06, bracoX: -2.10, bracoZ: 0.07, cotovelo: -0.24, coxaFrente: -0.12, joelhoFrente: 0.16, coxaTras: 0.16, joelhoTras: 0.24, altura: 0.05 },
+        { chest: 0.26, pelvisX: 0.06, bracoX: -2.10, bracoZ: -0.10, cotovelo: -0.24, giro: 0.75, coxaFrente: -0.12, joelhoFrente: 0.16, coxaTras: 0.16, joelhoTras: 0.24, altura: 0.05 },
         // 8: braços à frente, corpo projectado
-        { chest: 0.34, pelvisX: 0.08, bracoX: -1.30, bracoZ: 0.10, cotovelo: -0.12, coxaFrente: -0.06, joelhoFrente: 0.12, coxaTras: 0.08, joelhoTras: 0.18, altura: 0.06 },
+        { chest: 0.34, pelvisX: 0.08, bracoX: -1.30, bracoZ: 0.02, cotovelo: -0.12, giro: 1.00, coxaFrente: -0.06, joelhoFrente: 0.12, coxaTras: 0.08, joelhoTras: 0.18, altura: 0.06 },
         // 9: braços a cair, peso a passar para a frente
-        { chest: 0.18, pelvisX: 0.04, bracoX: -0.60, bracoZ: 0.10, cotovelo: -0.10, coxaFrente: -0.02, joelhoFrente: 0.10, coxaTras: 0.04, joelhoTras: 0.14, altura: 0.02 },
+        { chest: 0.18, pelvisX: 0.04, bracoX: -0.60, bracoZ: 0.08, cotovelo: -0.10, giro: 0.70, coxaFrente: -0.02, joelhoFrente: 0.10, coxaTras: 0.04, joelhoTras: 0.14, altura: 0.02 },
         // 10: postura de jogo
-        { chest: 0.00, pelvisX: 0.00, bracoX: 0.00, bracoZ: Math.PI / 16, cotovelo: 0.00, coxaFrente: 0.00, joelhoFrente: 0.00, coxaTras: 0.00, joelhoTras: 0.00, altura: 0.00 }
+        { chest: 0.00, pelvisX: 0.00, bracoX: 0.00, bracoZ: Math.PI / 16, cotovelo: 0.00, giro: 0.00, coxaFrente: 0.00, joelhoFrente: 0.00, coxaTras: 0.00, joelhoTras: 0.00, altura: 0.00 }
     ]
 };
 
@@ -2843,6 +2880,28 @@ bate, ele remata; senão, joga em passe.
 =============================================================================
 */
 const FreeKickModel = {
+    /*
+    DECISÃO DA COBRANÇA — ver decisaoDeFalta em utils.js. Três casos:
+
+    1. TRAPÉZIO DE REMATE DIRECTO. Até `remateDistMax` do centro da baliza e
+       dentro das rectas que saem dos POSTES a `remateAnguloTrave` da
+       PERPENDICULAR à linha de fundo. A base menor é a própria baliza e o
+       trapézio abre com a distância — a 23 m tem 7.32 + 2 × 13.28 = 33.9 m.
+       Antes o critério era o `emZonaDeFinalizacao` do jogo corrido, que é um
+       rectângulo e não sabe nada de ângulo com a trave: remata-se de posições
+       sem baliza nenhuma à vista, e não se rematava de frente a 25 m.
+
+    2. MINI-CANTO. Ao lado da grande área (`miniCornerXMin`, a meia-largura da
+       área) e a menos de `miniCornerProfundidade` da linha de fundo: dali não
+       há remate, cruza-se para a área como num canto curto.
+
+    3. O RESTO: passe para o melhor colega posicionado.
+    */
+    remateDistMax: 23.0,                    // ao centro da baliza
+    remateAnguloTrave: 30 * Math.PI / 180,  // da perpendicular à linha de fundo
+    miniCornerXMin: 20.16,                  // meia-largura da grande área
+    miniCornerProfundidade: 22.0,           // até esta distância da linha de fundo
+
     distanciaBarreira: 9.15,   // os 9.15 m do regulamento
     barreiraMin: 2,            // quantos formam barreira, longe da baliza
     barreiraMax: 4,            // e perto dela
@@ -2873,7 +2932,25 @@ const PenaltyModel = {
     areaX: 20.16,              // meia-largura da grande área
     folgaArco: 0.6,            // quanto ficam PARA LÁ da meia-lua
     folgaArea: 0.8,            // e para lá da linha da área
-    espacamentoFila: 3.2,      // entre jogadores na fila da entrada da área
+    /*
+    Espaçamento entre jogadores na fila da entrada da área. São DEZANOVE (dois
+    planteis menos os dois guarda-redes e o batedor), e a 3.2 m isso dava uma
+    fila de 58 m — mais larga do que a grande área, com metade da gente
+    encostada ao clamp de `areaX + 4`. A 2.2 m ocupa ~40 m e ainda cabe.
+    */
+    espacamentoFila: 2.2,      // entre jogadores na fila da entrada da área
+
+    /*
+    Escalonamento em profundidade da fila, em metros PARA TRÁS (afastando-se da
+    baliza). Os atacantes ficam à frente, a atacar o ressalto; os defesas mais
+    atrás, prontos para o contra-ataque. Sem isto ficavam todos na mesma linha,
+    o que lê como uma parede e não como um aglomerado à espera da recarga.
+
+    Mesma ideia da ordenação `def → mid → ata` do canto (ver defenseSetup em
+    match.js). A fila é ainda MESCLADA entre as duas equipas — quem disputa o
+    ressalto está ombro a ombro com o adversário, não em blocos separados.
+    */
+    recuoPorRole: { ata: 0.0, mid: 1.6, def: 3.2 },
     potencia: 26.0,            // m/s à saída
     alturaMax: 1.9,            // não se coloca acima disto (trave a 2.44)
     margemPoste: 0.45,         // quanto se afasta do poste ao colocar

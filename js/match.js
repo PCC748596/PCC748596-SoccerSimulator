@@ -1399,6 +1399,13 @@ const Match = {
                     this.lateralPendente = false;
                     const t = this.setPieceTaker;
                     if (t && t.fsm.currentState === 'LATERAL') {
+                        /*
+                        O alvo é escolhido AQUI, antes do primeiro keyframe, e
+                        não no instante do contacto: a cintura tem de começar a
+                        carregar para o lado contrário desde o início do gesto,
+                        e para isso é preciso saber para onde se vai atirar.
+                        */
+                        t.escolherAlvoDoLateral();
                         t.lateralAction = new ActionState('throwIn', {
                             onContact: () => {
                                 t.lateralLargou = true;
@@ -2675,6 +2682,18 @@ const Match = {
         this.setupSetPiece('PENALTY', team);
     },
 
+    /*
+    LATERAL a favor de quem NÃO tocou por último, como na regra — a bola volta
+    ao ponto da linha mais próximo de onde está agora (ver o ramo THROW_IN do
+    setupSetPiece, que trava o x na linha e mantém o z).
+    */
+    triggerThrowIn: function (forceTeam = null) {
+        const ultimo = this.lastTouchedTeam ||
+            (this.ballCarrier ? this.ballCarrier.team : null) || 'TeamA';
+        const team = forceTeam || (ultimo === 'TeamA' ? 'TeamB' : 'TeamA');
+        this.setupSetPiece('THROW_IN', team);
+    },
+
     triggerCornerKick: function (forceTeam = null) {
         let team = forceTeam;
         if (!team) {
@@ -3102,9 +3121,11 @@ const Match = {
             }
 
             /*
-            Todos os outros formam a fila da ENTRADA DA ÁREA, como nas imagens
-            de referência: alinhados na linha da grande área, alternando para os
-            dois lados a partir do centro, e sempre por FORA da meia-lua.
+            Os outros DEZANOVE (dois planteis menos os dois guarda-redes e o
+            batedor) formam a fila da ENTRADA DA ÁREA, como nas imagens de
+            referência: um aglomerado à entrada da área, com as duas equipas
+            MESCLADAS, escalonado em profundidade por função, e sempre por FORA
+            da meia-lua.
 
             A meia-lua é um círculo de 9.15 m centrado na MARCA, não uma faixa
             em z — a primeira versão testava `|x| < raio` e `|z - marca| < raio`,
@@ -3115,15 +3136,97 @@ const Match = {
             const limiteZ = linhaGolPen - attDir * PM.margemArea;
             const filaZ = limiteZ - attDir * PM.folgaArea;   // um passo fora da área
 
-            const naFila = this.players.concat(this.opponents)
-                .filter(p => p !== takerPen && p.role !== 'gk');
+            /*
+            A fila é MESCLADA: as duas equipas intercaladas, como nas imagens de
+            referência. Era `players.concat(opponents)`, ou seja o plantel todo
+            de uma equipa e depois o da outra — e com a alternância a partir do
+            eixo isso punha uma equipa ao centro e a outra nas pontas, cada uma
+            no seu bloco. Ninguém disputa um ressalto assim.
+
+            Dentro de cada equipa a ordem é a mesma do canto (`def → mid → ata`),
+            e é ela que decide quem fica MAIS ATRÁS: os atacantes ficam à frente,
+            a atacar o ressalto, e os defesas escalonados para trás, prontos para
+            o contra-ataque. Ver defenseSetup no CORNER_KICK, que ordena assim
+            pela mesma razão.
+            */
+            /*
+            Dentro de cada equipa, as FUNÇÕES são intercaladas — ata, mid, def,
+            ata, mid, def…
+
+            Ao contrário do canto, onde a ordem `def → mid → ata` importa porque
+            cada índice cai num SLOT diferente (poste, marcação, saída). Aqui os
+            lugares são só posições ao longo do x, e o que a função decide é a
+            PROFUNDIDADE. Ordenar por função — ou usar a ordem do plantel, que
+            vem ordenada na mesma — punha os defesas todos num lado da fila e os
+            atacantes no outro: segregava por posição depois de se ter resolvido
+            a segregação por equipa.
+            */
+            const naEntrada = lista => {
+                const restantes = lista.filter(p => p !== takerPen && p.role !== 'gk');
+                const filas = {
+                    ata: restantes.filter(p => p.role === 'ata'),
+                    mid: restantes.filter(p => p.role === 'mid'),
+                    def: restantes.filter(p => p.role === 'def')
+                };
+                // Quem não tem uma das três funções vai para o meio.
+                filas.mid = filas.mid.concat(
+                    restantes.filter(p => !['ata', 'mid', 'def'].includes(p.role)));
+
+                const ordem = ['ata', 'mid', 'def'];
+                const saida = [];
+                while (saida.length < restantes.length) {
+                    let mexeu = false;
+                    for (const r of ordem) {
+                        if (filas[r].length) { saida.push(filas[r].shift()); mexeu = true; }
+                    }
+                    if (!mexeu) break;   // rede de segurança contra ciclo infinito
+                }
+                return saida;
+            };
+
+            /*
+            A mescla é na ORDEM ESPACIAL, não na ordem da lista.
+
+            Intercalar as listas (A, B, A, B…) e distribuir depois com a
+            alternância a partir do eixo — `0, +1, -1, +2, -2…` — dá o resultado
+            OPOSTO ao pretendido: os índices pares levam sempre passo positivo e
+            os ímpares sempre negativo, portanto uma equipa fica toda à direita e
+            a outra toda à esquerda. Perfeitamente segregadas, que é pior do que
+            o bloco de origem.
+
+            Por isso a fila é construída como posições ORDENADAS da esquerda para
+            a direita, e as equipas alternam ao longo dessas posições.
+            */
+            const ladoA = naEntrada(this.players);
+            const ladoB = naEntrada(this.opponents);
+            const totalFila = ladoA.length + ladoB.length;
+
+            const naFila = [];
+            let iA = 0, iB = 0;
+            for (let j = 0; j < totalFila; j++) {
+                // Alterna; quando uma das equipas esgota, vai a outra.
+                const querA = (j % 2 === 0);
+                const p = (querA && iA < ladoA.length) ? ladoA[iA++]
+                    : (iB < ladoB.length) ? ladoB[iB++]
+                        : ladoA[iA++];
+                naFila.push(p);
+            }
 
             naFila.forEach((p, i) => {
-                // Alterna esquerda/direita a partir do eixo: 0, +1, -1, +2, -2...
-                const passo = Math.ceil((i + 1) / 2) * ((i % 2 === 0) ? 1 : -1);
-                let x = passo * PM.espacamentoFila;
+                // Fila centrada no eixo, da esquerda para a direita.
+                const centrado = i - (totalFila - 1) / 2;
+                let x = centrado * PM.espacamentoFila;
                 x = THREE.MathUtils.clamp(x, -(PM.areaX + 4.0), PM.areaX + 4.0);
-                let z = filaZ;
+
+                /*
+                Escalonamento em profundidade por função: o defesa fica
+                `recuoPorRole.def` metros mais atrás do que o atacante. Sem isto
+                estavam todos na mesma linha, o que lê como uma parede e não como
+                um aglomerado à espera do ressalto.
+                */
+                const recuo = (PM.recuoPorRole && PM.recuoPorRole[p.role] !== undefined)
+                    ? PM.recuoPorRole[p.role] : 0.0;
+                let z = filaZ - attDir * recuo;
 
                 // Fora da meia-lua: círculo de raio 9.15 centrado na marca.
                 const dx = x - 0, dz = z - marcaZ;

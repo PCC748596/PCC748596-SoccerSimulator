@@ -335,6 +335,75 @@ function velocidadeDeLancamento(distancia, alturaSaida, alturaAlvo, elev, gravid
 }
 
 /*
+O QUE SE FAZ COM UMA FALTA, a partir de onde a bola está.
+
+Três casos, e a ordem entre eles importa — o trapézio de remate ganha sempre:
+
+  'remate'      dentro do TRAPÉZIO de remate directo: até `remateDistMax` do
+                centro da baliza E dentro das rectas que saem dos POSTES a
+                `remateAnguloTrave` da PERPENDICULAR à linha de fundo. A base
+                menor do trapézio é a própria baliza, e ele abre com a
+                distância: a 23 m tem 7.32 + 2 × 23·tan(30°) = 34 m.
+
+  'cruzamento'  ao lado da grande área e perto da linha de fundo — o
+                "mini-canto". Cruza-se para a área como num canto curto.
+
+  'passe'       tudo o resto: joga-se para o melhor colega posicionado.
+
+Trabalha em profundidade `dFundo` (metros da linha de fundo atacada, sempre
+positiva) para não depender do sinal do ataque.
+
+Pura: sem Match, sem THREE.
+*/
+function decisaoDeFalta(bolaX, bolaZ, attDir) {
+    const F = FreeKickModel;
+    const linhaFundo = attDir * (CAMPO_COMP / 2);
+    const dFundo = Math.abs(linhaFundo - bolaZ);
+    const ax = Math.abs(bolaX);
+
+    // 1 — trapézio de remate directo.
+    const meiaBaliza = LARGURA_BALIZA / 2;
+    const distCentro = Math.hypot(bolaX, dFundo);
+    const meiaLarguraNoZ = meiaBaliza + dFundo * Math.tan(F.remateAnguloTrave);
+    if (distCentro <= F.remateDistMax && ax <= meiaLarguraNoZ) return 'remate';
+
+    // 2 — mini-canto: ao lado da área e perto da linha de fundo.
+    if (ax >= F.miniCornerXMin && dFundo <= F.miniCornerProfundidade) return 'cruzamento';
+
+    // 3 — o resto.
+    return 'passe';
+}
+
+/*
+Velocidade de um CRUZAMENTO PARA A ÁREA — o do canto, e o do mini-canto de uma
+falta ao lado da área.
+
+Mira o primeiro pau e a entrada da pequena área, que é onde as jogadas
+ensaiadas convergem: `zDepth` 6 a 10 m da linha de fundo, `targetX` 1 a 4.5 m
+do lado de onde vem a bola.
+
+Estava escrito à mão dentro do `case 'SET_PIECE_TAKER'` da fsm.js. Saiu para
+aqui quando a falta passou a precisar do mesmo cruzamento — dois sítios com a
+mesma balística escrita duas vezes divergem à primeira afinação. Os números
+são os mesmos que lá estavam.
+
+`rnd` é injectado para a função ser pura e testável.
+*/
+function cruzamentoParaArea(bolaPos, ownGoalZ, dirZ, lado, rnd) {
+    const r = rnd || Math.random;
+    const zDepth = 6.0 + r() * 4.0;
+    const targetZ = ownGoalZ * -1.0 - dirZ * zDepth;
+    const targetX = lado * (1.0 + r() * 3.5);
+
+    let dx = targetX - bolaPos.x;
+    let dz = targetZ - bolaPos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 0.0001) { dx /= d; dz /= d; }
+
+    return { x: dx * 24.0, y: 9.6, z: dz * 24.0 };
+}
+
+/*
 Dispersão angular de quem repõe um LATERAL, em radianos, a partir da TEC.
 
 Porque não o `sigmaDePasse`: ele mistura PASS com TEC e aplica pressão e ângulo

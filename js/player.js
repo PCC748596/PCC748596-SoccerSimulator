@@ -94,6 +94,9 @@ function amostrarClipLateral(norm) {
         bracoX: mix('bracoX'),
         bracoZ: mix('bracoZ'),
         cotovelo: mix('cotovelo'),
+        // Fracção do giro da cintura neste ponto do gesto (ver
+        // prepararGiroLateral): negativa na armação, positiva no chicote.
+        giro: mix('giro'),
         coxaFrente: mix('coxaFrente'),
         joelhoFrente: mix('joelhoFrente'),
         coxaTras: mix('coxaTras'),
@@ -183,6 +186,8 @@ class FootballPlayer {
         // Está a fazer FWR/AFT_SUPPORT neste momento (ver temVagaDeApoio).
         this.apoioAtivo = false;
         this.peitoTimer = 0;   // gesto de domínio no peito (ver CHEST_CONTROL)
+        this.lateralGiroAlvo = 0;  // giro da cintura no lateral (ver prepararGiroLateral)
+        this.lateralAlvo = null;   // colega escolhido no arranque do gesto do lateral
         this.peitoCola = 0;    // segundos que faltam com a bola colada ao peito
         this.peitoIntens = 0;  // intensidade da pose (ver aplicarCamadaPeito)
         this.peitoBom = false; // ganhou o sorteio do amortecimento?
@@ -393,44 +398,111 @@ class FootballPlayer {
     lhe dar a bola (por exemplo, para afinar a pose no ecrã).
     */
     aplicarPoseLateral(segurarBola = true) {
+        const L = (typeof LateralPose !== 'undefined') ? LateralPose : null;
+        if (!this.rig || !L) return;
+        // A pose de espera é o frame 0 do clip; passa pelo mesmo caminho, para
+        // não haver duas versões da mesma pose a divergir.
+        this.aplicarFrameLateral({
+            chest: L.chest, pelvisX: L.pelvisX, bracoX: L.bracoX, bracoZ: L.bracoZ,
+            cotovelo: L.cotovelo, giro: 0,
+            coxaFrente: L.coxaFrente, joelhoFrente: L.joelhoFrente,
+            coxaTras: L.coxaTras, joelhoTras: L.joelhoTras, altura: 0
+        }, segurarBola);
+    }
+
+    /*
+    Distância no MUNDO entre os dois punhos, com as matrizes actualizadas.
+    */
+    distanciaEntreMaos() {
         const rig = this.rig;
-        if (!rig || typeof LateralPose === 'undefined') return;
+        if (!rig || !rig.lHand || !rig.rHand) return null;
+        rig.lHand.updateWorldMatrix(true, false);
+        rig.rHand.updateWorldMatrix(true, false);
+        _v1.setFromMatrixPosition(rig.lHand.matrixWorld);
+        _v2.setFromMatrixPosition(rig.rHand.matrixWorld);
+        return _v1.distanceTo(_v2);
+    }
+
+    /*
+    Fecha os braços até as MÃOS ENCOSTAREM NA BOLA.
+
+    O `bracoZ` do keyframe é um palpite: a distância entre as mãos sai da
+    largura dos ombros, do comprimento do braço e do ângulo do cotovelo, tudo
+    junto — não há número que se acerte à mão. Mediu-se e viu-se que mesmo com
+    `bracoZ` a 0.05 as mãos ficavam à largura dos ombros, com a bola a flutuar
+    entre elas sem lhes tocar.
+
+    Aqui mede-se e corrige-se: bissecção sobre o `bracoZ` até a distância entre
+    os punhos ser o DIÂMETRO da bola. `fechoLimite` impede que a correcção
+    cruze os braços, e `fechoIteracoes` mantém isto barato (corre para um
+    jogador, num estado só).
+
+    Devolve o `bracoZ` final, para o chamador o poder reaplicar.
+    */
+    fecharMaosNaBola(bracoZBase) {
+        const rig = this.rig;
         const L = LateralPose;
+        if (!rig || !rig.lHand || !rig.rHand || !L) return bracoZBase;
 
-        rig.pelvis.position.set(0, 2.6, 0);
-        rig.pelvis.rotation.set(L.pelvisX, 0, 0);
-        rig.chest.rotation.set(L.chest, 0, 0);
+        const alvo = 2 * BallPhysics.raio;
+        const aplicar = (z) => {
+            rig.lArm.rotation.z = z;
+            rig.rArm.rotation.z = -z;
+        };
 
-        rig.lArm.rotation.set(L.bracoX, 0, L.bracoZ);
-        rig.rArm.rotation.set(L.bracoX, 0, -L.bracoZ);
-        rig.lElbow.rotation.set(L.cotovelo, 0, 0);
-        rig.rElbow.rotation.set(L.cotovelo, 0, 0);
+        // Aduzir (z mais negativo) aproxima as mãos; abduzir afasta-as.
+        let lo = bracoZBase - L.fechoLimite;   // mais fechado
+        let hi = bracoZBase + L.fechoLimite;   // mais aberto
 
-        const frenteR = (L.peFrente === 'r');
-        const pernaF = frenteR ? rig.rLeg : rig.lLeg;
-        const joelhoF = frenteR ? rig.rKnee : rig.lKnee;
-        const pernaT = frenteR ? rig.lLeg : rig.rLeg;
-        const joelhoT = frenteR ? rig.lKnee : rig.rKnee;
+        aplicar(lo);
+        const dLo = this.distanciaEntreMaos();
+        aplicar(hi);
+        const dHi = this.distanciaEntreMaos();
+        if (dLo === null || dHi === null) { aplicar(bracoZBase); return bracoZBase; }
 
-        pernaF.rotation.set(L.coxaFrente, 0, 0);
-        joelhoF.rotation.set(L.joelhoFrente, 0, 0);
-        pernaT.rotation.set(L.coxaTras, 0, 0);
-        joelhoT.rotation.set(L.joelhoTras, 0, 0);
+        // Se o alvo está fora do intervalo, fica-se pelo extremo mais próximo.
+        if (alvo <= Math.min(dLo, dHi)) { aplicar(dLo <= dHi ? lo : hi); return dLo <= dHi ? lo : hi; }
+        if (alvo >= Math.max(dLo, dHi)) { aplicar(dLo >= dHi ? lo : hi); return dLo >= dHi ? lo : hi; }
 
-        rig.lFoot.rotation.set(0, Math.PI / 16, 0);
-        rig.rFoot.rotation.set(0, -Math.PI / 16, 0);
-
-        this.model.position.y = ALTURA_BASE_Y;
-
-        if (segurarBola && typeof Match !== 'undefined' && Match.ball) {
-            // Atrás da cabeça = contra a frente do corpo, por isso -Z local.
-            _v1.set(0, 0, -L.bolaRecuo).applyQuaternion(this.model.quaternion);
-            Match.ball.position.set(
-                this.model.position.x + _v1.x,
-                this.model.position.y + L.bolaAltura,
-                this.model.position.z + _v1.z);
-            Match.ballVel.set(0, 0, 0);
+        // A distância é monótona em z dentro deste intervalo.
+        const crescente = dHi > dLo;
+        let z = bracoZBase;
+        for (let i = 0; i < L.fechoIteracoes; i++) {
+            z = (lo + hi) / 2;
+            aplicar(z);
+            const d = this.distanciaEntreMaos();
+            if (d === null || Math.abs(d - alvo) < L.fechoTolerancia) break;
+            if ((d < alvo) === crescente) lo = z; else hi = z;
         }
+        aplicar(z);
+        return z;
+    }
+
+    /*
+    Encosta a bola ao ponto MÉDIO das duas mãos. Chamado pela pose de espera e
+    por cada frame do gesto: as mãos seguem o clip, e a bola segue as mãos.
+    */
+    colarBolaAsMaos() {
+        const rig = this.rig;
+        if (typeof Match === 'undefined' || !Match.ball) return;
+        if (!rig || !rig.lHand || !rig.rHand) return;
+
+        rig.lHand.updateWorldMatrix(true, false);
+        rig.rHand.updateWorldMatrix(true, false);
+        _v1.setFromMatrixPosition(rig.lHand.matrixWorld);
+        _v2.setFromMatrixPosition(rig.rHand.matrixWorld);
+        _v1.lerp(_v2, 0.5);
+
+        /*
+        Acima do ponto médio dos punhos: as mãos seguram a bola por baixo e
+        pelos lados, portanto o centro dela não está à altura deles. Sem isto
+        ficava encaixada entre os punhos, meia enterrada nas mãos.
+        */
+        _v1.y += (typeof LateralPose !== 'undefined' && LateralPose.bolaAcimaDasMaos)
+            ? LateralPose.bolaAcimaDasMaos : 0;
+
+        Match.ball.position.copy(_v1);
+        Match.ballVel.set(0, 0, 0);
     }
 
     /*
@@ -448,7 +520,20 @@ class FootballPlayer {
 
         rig.pelvis.position.set(0, 2.6, 0);
         rig.pelvis.rotation.set(K.pelvisX, 0, 0);
-        rig.chest.rotation.set(K.chest, 0, 0);
+
+        /*
+        GIRO DA CINTURA para o lado do arremesso. Vai no `chest` e não na
+        pélvis: rodar a bacia levava as pernas atrás dela e os pés ficavam
+        torcidos. A cintura é o que roda num lateral — tronco, ombros e braços
+        acompanham, os pés ficam plantados.
+
+        `this.lateralGiroAlvo` é o ângulo com sinal entre a frente do corpo e a
+        direcção do lançamento, já limitado a `giroMax` (ver prepararGiroLateral).
+        O `K.giro` é a fracção desse ângulo neste keyframe: negativa na armação,
+        que é a cintura a carregar para o lado contrário, e positiva no chicote.
+        */
+        const giroY = (K.giro || 0) * (this.lateralGiroAlvo || 0);
+        rig.chest.rotation.set(K.chest, giroY, 0);
 
         rig.lArm.rotation.set(K.bracoX, 0, K.bracoZ);
         rig.rArm.rotation.set(K.bracoX, 0, -K.bracoZ);
@@ -471,26 +556,65 @@ class FootballPlayer {
 
         this.model.position.y = ALTURA_BASE_Y + (K.altura || 0);
 
-        if (segurarBola && typeof Match !== 'undefined' && Match.ball) {
-            /*
-            A bola segue as MÃOS, e as mãos seguem o clip: em vez de a colar a
-            uma altura fixa, lê-se a posição do punho no mundo. Sem isto ela
-            ficava suspensa atrás da cabeça enquanto os braços já iam à frente.
-            */
-            const mao = rig.lHand || rig.rHand;
-            if (mao) {
-                mao.updateWorldMatrix(true, false);
-                _v1.setFromMatrixPosition(mao.matrixWorld);
-                // Entre as duas mãos, e um pouco à frente delas.
-                if (rig.lHand && rig.rHand) {
-                    rig.rHand.updateWorldMatrix(true, false);
-                    _v2.setFromMatrixPosition(rig.rHand.matrixWorld);
-                    _v1.lerp(_v2, 0.5);
-                }
-                Match.ball.position.copy(_v1);
-            }
-            Match.ballVel.set(0, 0, 0);
+        /*
+        Enquanto a bola está nas mãos, as mãos fecham-se NELA: mede-se a
+        distância entre os punhos e corrige-se o `bracoZ` até dar o diâmetro da
+        bola. Depois de a largar não há nada para segurar e os braços seguem o
+        clip como está escrito.
+        */
+        if (segurarBola) this.fecharMaosNaBola(K.bracoZ);
+
+        /*
+        A bola segue as MÃOS, e as mãos seguem o clip: em vez de a colar a uma
+        altura fixa, lê-se a posição dos punhos no mundo. Sem isto ela ficava
+        suspensa atrás da cabeça enquanto os braços já iam à frente — e na pose
+        de espera ficava a flutuar acima do crânio, fora das mãos.
+        */
+        if (segurarBola) this.colarBolaAsMaos();
+    }
+
+    /*
+    Escolhe o colega a quem se vai atirar o lateral e prepara o giro da cintura
+    para ele. Corre no ARRANQUE do gesto; o `lancarLateral` reutiliza a escolha.
+
+    Sem alguém a quem atirar, o lateral vai campo adentro e a cintura fica
+    quieta.
+    */
+    escolherAlvoDoLateral() {
+        this.lateralAlvo = this.findPassTarget() || this.findPassTargetRelaxed('frente') || null;
+        if (this.lateralAlvo && this.lateralAlvo.model) {
+            this.prepararGiroLateral(
+                this.lateralAlvo.model.position.x, this.lateralAlvo.model.position.z);
+        } else {
+            this.lateralGiroAlvo = 0;
         }
+        return this.lateralAlvo;
+    }
+
+    /*
+    Prepara o giro da cintura: guarda o ângulo com sinal entre a frente do
+    corpo e a direcção do lançamento, limitado a `LateralPose.giroMax`.
+
+    Corre no ARRANQUE do gesto e não no instante do contacto: a cintura tem de
+    começar a carregar para o lado contrário desde o primeiro keyframe, e para
+    isso é preciso saber para onde se vai atirar antes de atirar.
+    */
+    prepararGiroLateral(alvoX, alvoZ) {
+        const L = (typeof LateralPose !== 'undefined') ? LateralPose : null;
+        if (!L) { this.lateralGiroAlvo = 0; return 0; }
+
+        const dx = alvoX - this.model.position.x;
+        const dz = alvoZ - this.model.position.z;
+        if (Math.hypot(dx, dz) < 0.001) { this.lateralGiroAlvo = 0; return 0; }
+
+        // Frente do corpo no plano, e o ângulo com sinal até à direcção do alvo.
+        _vFrenteCorpo.set(0, 0, 1).applyQuaternion(this.model.quaternion);
+        const ang = Math.atan2(
+            _vFrenteCorpo.z * dx - _vFrenteCorpo.x * dz,
+            _vFrenteCorpo.x * dx + _vFrenteCorpo.z * dz);
+
+        this.lateralGiroAlvo = THREE.MathUtils.clamp(ang, -L.giroMax, L.giroMax);
+        return this.lateralGiroAlvo;
     }
 
     /*
@@ -501,7 +625,15 @@ class FootballPlayer {
         const T = ThrowInModel;
         const gGrav = BallPhysics.gravidade;
 
-        const alvo = this.findPassTarget() || this.findPassTargetRelaxed('frente');
+        /*
+        O alvo é o que foi escolhido no ARRANQUE do gesto (ver
+        escolherAlvoDoLateral): a cintura começa a girar para ele desde o
+        primeiro keyframe, e escolher outro agora punha a bola a sair para um
+        lado com o corpo virado para o outro.
+        */
+        const alvo = this.lateralAlvo ||
+            this.findPassTarget() || this.findPassTargetRelaxed('frente');
+        this.lateralAlvo = null;
         const paraDentro = -Math.sign(this.model.position.x) || 1;
 
         let dx, dz;
@@ -646,10 +778,46 @@ class FootballPlayer {
     baterFalta() {
         Match.state = 'PLAY';
 
-        if (typeof emZonaDeFinalizacao === 'function' && emZonaDeFinalizacao(this)) {
+        /*
+        A decisão sai de `decisaoDeFalta` (utils.js), que é geometria pura:
+        trapézio de remate directo, mini-canto ao lado da área, ou passe.
+
+        Era o `emZonaDeFinalizacao` do jogo corrido a decidir o remate — um
+        rectângulo, que não sabe nada de ângulo com a trave. Dali remata-se de
+        posições sem baliza à vista e não se remata de frente a 25 m.
+        */
+        const decisao = (typeof decisaoDeFalta === 'function')
+            ? decisaoDeFalta(Match.ball.position.x, Match.ball.position.z, this.dirZ)
+            : 'passe';
+
+        if (decisao === 'remate') {
             this.hasBall = true;          // o remate exige posse (ver executeShotGameplay)
             Match.ballCarrier = this;
             this.initiateShoot();
+            return;
+        }
+
+        if (decisao === 'cruzamento') {
+            /*
+            MINI-CANTO: cruzamento para a área, com a mesma balística do canto
+            (ver cruzamentoParaArea em utils.js, partilhada com o
+            SET_PIECE_TAKER da fsm). Daqui não há remate e um passe curto para
+            trás desperdiça a posição.
+            */
+            const lado = Math.sign(Match.ball.position.x) || 1;
+            const cruz = cruzamentoParaArea(
+                Match.ball.position, this.ownGoalZ, this.dirZ, lado, Math.random);
+            Match.ballVel.set(cruz.x, cruz.y, cruz.z);
+            this.hasBall = false;
+            this.touchLock = BallControl.touchLock;
+            Match.ballCarrier = null;
+            Match.possessionTeam = this.team;
+            Match.possessionTimer = 0;
+            Match.lastTouchedTeam = this.team;
+            Match.lastTouchedPlayer = this;
+            if (typeof MatchStats !== 'undefined') {
+                MatchStats.registarPasseIniciado(this.team, 'cruzamento');
+            }
             return;
         }
 

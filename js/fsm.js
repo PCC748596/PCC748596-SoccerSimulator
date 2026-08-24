@@ -660,14 +660,16 @@ class PlayerFSM {
                 if (Match.setPieceTimer > ESPERA_APOS_REPOSICAO && !Match.cantoBolaAlvo) {
                     if (Match.state === 'CORNER_KICK') {
                         const lado = Math.sign(Match.ball.position.x) || 1;
-                        // Cruzamento visando o 1º pau e a entrada da pequena área onde convergem as jogadas ensaiadas
-                        let zDepth = 6.0 + Math.random() * 4.0; 
-                        let targetZ = p.ownGoalZ * -1.0 - p.dirZ * zDepth;
-                        let targetX = lado * (1.0 + Math.random() * 3.5);
-                        _v1.set(targetX, 0, targetZ);
-                        _v2.subVectors(_v1, Match.ball.position).normalize();
-                        Match.ballVel.copy(_v2).multiplyScalar(24.0);
-                        Match.ballVel.y = 9.6;
+                        /*
+                        Cruzamento visando o 1º pau e a entrada da pequena área,
+                        onde convergem as jogadas ensaiadas. A balística saiu
+                        para `cruzamentoParaArea` (utils.js) quando a falta ao
+                        lado da área — o mini-canto — passou a precisar do mesmo
+                        cruzamento. Os números não mudaram.
+                        */
+                        const cruz = cruzamentoParaArea(
+                            Match.ball.position, p.ownGoalZ, p.dirZ, lado, Math.random);
+                        Match.ballVel.set(cruz.x, cruz.y, cruz.z);
                         Match.state = 'PLAY';
                         Match.ballCarrier = null;
                         Match.possessionTeam = p.team;
