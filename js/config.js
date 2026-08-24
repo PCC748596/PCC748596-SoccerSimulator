@@ -911,7 +911,21 @@ const PlayingStyles = {
     },
     extra_frontman: {
         nome: 'Extra Frontman', posicoes: ['CB'],
-        amplitudeZ: 1.4, remate: 1.2,
+        /*
+        SEM `amplitudeZ`. Tinha 1.4, e amplitudeZ é o afastamento ao CENTRO do
+        bloco: num central, que está na aresta de trás, > 1 empurra-o para LONGE
+        da baliza adversária — o contrário do nome do estilo — e para fora do
+        rectângulo, porque nada volta a limitá-lo ao bloco depois
+        (ver aplicarEstiloPosicional em playing_styles.js e o clamp de ±50 m
+        em tickFinal). Era isso que se via como uma linha comprida do slot do
+        CB até um canto do campo.
+
+        Este central sobe ao ataque só na BOLA PARADA, para compor a área e
+        disputar o cabeceio — não em jogo corrido. Quem o põe lá é a ordenação
+        do canto em setupSetPiece (match.js), via `juntaSeAoAtaque`; em jogo
+        corrido ele posiciona-se como um central normal.
+        */
+        remate: 1.2,
         juntaSeAoAtaque: true
     },
     offensive_fullback: {

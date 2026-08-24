@@ -2586,10 +2586,22 @@ const Match = {
             ];
 
             let attackersInBox = attackingPlayers.filter(p => p !== taker && p.role !== 'gk');
-            // Ordena atacantes de modo que atacantes/médios ofensivos/zagueiros altos fiquem na área e laterais/volantes na sobra/segurança
+            /*
+            Ordena atacantes de modo que atacantes/médios ofensivos/zagueiros altos
+            fiquem na área e laterais/volantes na sobra/segurança.
+
+            `juntaSeAoAtaque` (Extra Frontman) conta como avançado SÓ AQUI: é
+            este o momento em que o central sobe — compor a área e disputar o
+            cabeceio na bola parada. Em jogo corrido o estilo não o desloca
+            (ver extra_frontman em config.js). Sem isto ele caía no bloco
+            'def' e ia parar à sobra ou ao último homem, a 34 m da baliza.
+            */
+            const subiuAoAtaque = (p) => (typeof estiloAtivoDe === 'function') &&
+                !!estiloAtivoDe(p).juntaSeAoAtaque;
             attackersInBox.sort((a, b) => {
                 const roleOrder = { 'ata': 1, 'mid': 2, 'def': 3 };
-                return (roleOrder[a.role] || 2) - (roleOrder[b.role] || 2);
+                const nota = (p) => subiuAoAtaque(p) ? 1 : (roleOrder[p.role] || 2);
+                return nota(a) - nota(b);
             });
 
             attackersInBox.forEach((p, idx) => {

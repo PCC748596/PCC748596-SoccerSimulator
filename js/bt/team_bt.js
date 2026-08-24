@@ -386,6 +386,27 @@ function pickIntercetor(bb) {
     if (typeof Match === 'undefined') return;
     if (Match.ballCarrier) return;                // bola já tem dono
     if (Match.state !== 'PLAY') return;
+
+    /*
+    BOLA SOLTA MAS JÁ COM ALGUÉM A CAMINHO: mais ninguém vai atrás dela.
+
+    `Match.ballCarrier` não chega como guarda. O toque da condução larga a bola
+    de propósito — `hasBall = false`, `ballCarrier = null` por ~0.3 s (ver o
+    case CARRY em fsm.js) — e nessa janela a eleição corria na mesma. O próprio
+    condutor está fora da lista de candidatos (`intendedReceiver === p`), mas os
+    COLEGAS não: o que estivesse mais perto do ponto de interceção batia o tempo
+    dele por `margemMelhor`, entrava em INTERCEPT e ia disputar a bola com quem
+    a estava a conduzir. Dois do mesmo lado a tirar a bola um ao outro.
+
+    Mesma coisa num passe: o destinatário já vai lá, não é preciso um segundo.
+    O `intendedReceiver` é limpo quando o passe morre (a bola passou-lhe ao lado
+    e afasta-se — ver updateBall em match.js), por isso isto não tranca a equipa
+    numa bola realmente perdida.
+    */
+    if (Match.intendedReceiver && Match.intendedReceiver.team === bb.team) return;
+    for (const p of bb.outfield) {
+        if (p && p.carryTouchGrace > 0) return;
+    }
     if (typeof PerceptionModel === 'undefined') return;
 
     const janela = PerceptionModel.janelaIntercetar;
