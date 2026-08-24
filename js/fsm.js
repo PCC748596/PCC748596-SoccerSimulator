@@ -292,6 +292,163 @@ function executePassGameplay(p) {
     }
 }
 
+/*
+GAMEPLAY DO REMATE — o que acontece quando o pé bate na bola.
+
+Vivia inline no case 'SHOOT', disparado no primeiro frame depois de
+`timer >= 0.08`. Saiu para aqui pela mesma razão que o passe saiu (ver
+executePassGameplay): o efeito tem de cair no CONTACTO do gesto, e quem o
+dispara é o ActionState do ShotClip, não a passagem de um timer.
+
+Nada aqui mudou de conteudo — os pesos de resultado, o duelo com o bloqueador
+e o aviso ao guarda-redes sao os mesmos.
+*/
+function executeShotGameplay(p) {
+    const opponentsShoot = (p.team === 'TeamA') ? Match.opponents : Match.players;
+    let bloqueador = null, distBloqueio = 999;
+    for (const opp of opponentsShoot) {
+        if (opp.role === 'gk') continue;
+        const d = opp.model.position.distanceTo(p.model.position);
+        if (d < 2.2 && d < distBloqueio) { distBloqueio = d; bloqueador = opp; }
+    }
+    // Bloqueado: Técnica (chutador) x Marcação (quem está em cima
+    // dele) — base 0.6, favorece o chutador (defensor tem de
+    // acertar o corte no timing certo).
+    const bloqueado = bloqueador && !venceuDuelo(p.skillFor('TEC'), bloqueador.skillFor('MARKING'), 0.6);
+
+    let maxC = (LARGURA_BALIZA / 2) - 0.5;
+    let pow, alvoX, alvoY;
+
+    let forcedGKDelay = null;
+    if (bloqueado) {
+        // Bola desviada, curta e fraca — não mira a baliza.
+        pow = 4.0 + Math.random() * 2.4;
+        alvoX = p.model.position.x + (Math.random() - 0.5) * 4.0;
+        alvoY = 0.3;
+    } else {
+        const gkDef = (p.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
+        let gkScore = 50; 
+        if (gkDef) {
+            gkScore = gkDef.skillFor('TEC') * 0.30 + gkDef.skillFor('GK') * 0.70;
+        }
+        
+        // Penalização por distância: a eficácia do rematador cai à medida que a distância aumenta
+        _v1.set(0, 0, p.targetGoalZ);
+        const distBaliza = p.model.position.distanceTo(_v1);
+        let distPenalty = 1.0;
+        if (distBaliza > 10.0) {
+            // Reduz gradualmente o score do chutador; ex: aos 20m cai para ~50%
+            distPenalty = Math.max(0.2, 1.0 - ((distBaliza - 10.0) / 20.0));
+        }
+        
+        const chutadorScore = p.skillFor('TEC') * distPenalty;
+        const attackRatio = chutadorScore / (chutadorScore + gkScore);
+        
+        const weights = [
+            { outcome: 'GOL', weight: Math.pow(attackRatio, 2) * 100 },
+            { outcome: 'TRAVE_CAMPO', weight: attackRatio * 15 },
+            { outcome: 'TRAVE_FORA', weight: attackRatio * 15 },
+            { outcome: 'TRAVESSAO_CAMPO', weight: attackRatio * 15 },
+            { outcome: 'TRAVESSAO_FORA', weight: attackRatio * 15 },
+            { outcome: 'GOLEIRO_DEFENDE_VOLTA', weight: Math.pow(1 - attackRatio, 2) * 50 },
+            { outcome: 'GOLEIRO_DEFENDE_FORA', weight: Math.pow(1 - attackRatio, 2) * 50 }
+        ];
+        
+        let totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
+        let roll = Math.random() * totalWeight;
+        let selectedOutcome = 'GOLEIRO_DEFENDE_VOLTA';
+        for (let w of weights) {
+            if (roll < w.weight) {
+                selectedOutcome = w.outcome;
+                break;
+            }
+            roll -= w.weight;
+        }
+        
+        let sinal = Math.random() > 0.5 ? 1 : -1;
+        pow = (22.0 + ((p.skillFor('TEC') - 50) / 50) * 16.0) * 0.8;
+        
+        switch (selectedOutcome) {
+            case 'GOL':
+                alvoX = sinal * maxC * 0.9;
+                alvoY = Math.random() > 0.5 ? 2.0 : 0.4;
+                forcedGKDelay = 1.0; 
+                break;
+            case 'TRAVE_CAMPO':
+                alvoX = sinal * (LARGURA_BALIZA / 2 - 0.08);
+                alvoY = 0.5;
+                forcedGKDelay = 1.0;
+                break;
+            case 'TRAVE_FORA':
+                alvoX = sinal * (LARGURA_BALIZA / 2 + 0.08);
+                alvoY = 0.5;
+                forcedGKDelay = 1.0;
+                break;
+            case 'TRAVESSAO_CAMPO':
+                alvoX = (Math.random() - 0.5) * maxC;
+                alvoY = ALTURA_BALIZA - 0.08;
+                forcedGKDelay = 1.0;
+                break;
+            case 'TRAVESSAO_FORA':
+                alvoX = (Math.random() - 0.5) * maxC;
+                alvoY = ALTURA_BALIZA + 0.08;
+                forcedGKDelay = 1.0;
+                break;
+            case 'GOLEIRO_DEFENDE_VOLTA':
+                alvoX = (Math.random() - 0.5) * 1.5; 
+                alvoY = 1.0;
+                pow *= 0.7; // Reduz um pouco a força pro goleiro ter chance de espalmar pra frente ou encaixar
+                forcedGKDelay = 0; 
+                break;
+            case 'GOLEIRO_DEFENDE_FORA':
+                alvoX = sinal * maxC * 1.05; 
+                alvoY = 1.0;
+                forcedGKDelay = 0;
+                break;
+        }
+    }
+
+    /*
+    Mira: resolve a ELEVAÇÃO que põe a bola no ponto
+    visado à velocidade `pow` (ver elevacaoParaAlvo).
+
+    A conta antiga compensava a gravidade com
+    `t = dZ / pow; cY = ½·g·t²` — usava a velocidade 3D
+    como se fosse horizontal e ignorava o arrasto (12-22
+    m/s² a esta velocidade), por isso subestimava o tempo
+    de voo duas vezes e o remate saía sempre por baixo.
+    */
+    _v1.set(alvoX, alvoY, bloqueado ? Match.ball.position.z + p.dirZ * 3 : p.targetGoalZ);
+    const dxR = _v1.x - Match.ball.position.x;
+    const dzR = _v1.z - Match.ball.position.z;
+    const distHR = Math.hypot(dxR, dzR);
+    const elevR = elevacaoParaAlvo(distHR, _v1.y, pow);
+    // Sem solução (longe demais para esta potência): sai no
+    // ângulo de alcance máximo em vez de rasteiro ao chão.
+    const eR = (elevR === null) ? Math.PI / 5 : elevR;
+    const vhR = pow * Math.cos(eR);
+    Match.ballVel.set(
+        (distHR > 0.001 ? dxR / distHR : 0) * vhR,
+        pow * Math.sin(eR),
+        (distHR > 0.001 ? dzR / distHR : p.dirZ) * vhR
+    );
+    p.hasBall = false; p.touchLock = BallControl.touchLock;
+    Match.ballCarrier = null;
+    Match.lastTouchedTeam = p.team;
+    Match.lastTouchedPlayer = p;
+
+    if (!bloqueado) {
+        let defendingTeam = (p.team === 'TeamA') ? 'TeamB' : 'TeamA';
+        // Notifica o GK adversário via propriedade de instância.
+        const gkDef = (p.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
+        if (gkDef) {
+            gkDef.gkDelayReacao = (forcedGKDelay !== null) ? forcedGKDelay : (0.45 - ((TeamSkills[defendingTeam].gk - 50) / 50) * 0.35);
+            gkDef.gkReagiu = false;
+        }
+        window.bolaChutada = true;
+    }
+}
+
 class PlayerFSM {
     constructor(player) {
         this.p = player; this.currentState = 'IDLE'; this.timer = 0;
@@ -486,7 +643,12 @@ class PlayerFSM {
                     lookPos.y = p.model.position.y;
                     lookAtBola(p.model, lookPos);
                 }
-                if (Match.setPieceTimer > ESPERA_APOS_REPOSICAO) {
+                /*
+                Só se bate o canto com a bola JÁ na quina: ela pode ainda estar
+                a rolar para trás da baliza (ver cantoBolaAlvo em match.js), e
+                cruzar dali era cruzar de um sítio onde ela não está.
+                */
+                if (Match.setPieceTimer > ESPERA_APOS_REPOSICAO && !Match.cantoBolaAlvo) {
                     if (Match.state === 'CORNER_KICK') {
                         const lado = Math.sign(Match.ball.position.x) || 1;
                         // Cruzamento visando o 1º pau e a entrada da pequena área onde convergem as jogadas ensaiadas
@@ -1244,159 +1406,21 @@ class PlayerFSM {
                     p.model.quaternion.slerp(_q1, Math.min(1.0, 15.0 * dt));
                 }
 
-                if (this.timer < 0.08) {
-                    rig.pelvis.rotation.z = lerpTo(rig.pelvis.rotation.z, 0.2, 0.25); rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, 0.4, 0.25);
-                    rig.lArm.rotation.z = lerpTo(rig.lArm.rotation.z, 1.2, 0.3); rig.lArm.rotation.x = lerpTo(rig.lArm.rotation.x, -0.5, 0.3);
-                    rig.rLeg.rotation.x = lerpTo(rig.rLeg.rotation.x, Math.PI / 3.5, 0.25); rig.rKnee.rotation.x = lerpTo(rig.rKnee.rotation.x, Math.PI / 2.0, 0.25);
-                } else {
-                    rig.rLeg.rotation.x = lerpTo(rig.rLeg.rotation.x, -Math.PI / 4, 0.3); rig.rKnee.rotation.x = lerpTo(rig.rKnee.rotation.x, 0, 0.3);
-                    if (p.hasBall) {
-                        const opponentsShoot = (p.team === 'TeamA') ? Match.opponents : Match.players;
-                        let bloqueador = null, distBloqueio = 999;
-                        for (const opp of opponentsShoot) {
-                            if (opp.role === 'gk') continue;
-                            const d = opp.model.position.distanceTo(p.model.position);
-                            if (d < 2.2 && d < distBloqueio) { distBloqueio = d; bloqueador = opp; }
-                        }
-                        // Bloqueado: Técnica (chutador) x Marcação (quem está em cima
-                        // dele) — base 0.6, favorece o chutador (defensor tem de
-                        // acertar o corte no timing certo).
-                        const bloqueado = bloqueador && !venceuDuelo(p.skillFor('TEC'), bloqueador.skillFor('MARKING'), 0.6);
-
-                        let maxC = (LARGURA_BALIZA / 2) - 0.5;
-                        let pow, alvoX, alvoY;
-
-                        let forcedGKDelay = null;
-                        if (bloqueado) {
-                            // Bola desviada, curta e fraca — não mira a baliza.
-                            pow = 4.0 + Math.random() * 2.4;
-                            alvoX = p.model.position.x + (Math.random() - 0.5) * 4.0;
-                            alvoY = 0.3;
-                        } else {
-                            const gkDef = (p.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
-                            let gkScore = 50; 
-                            if (gkDef) {
-                                gkScore = gkDef.skillFor('TEC') * 0.30 + gkDef.skillFor('GK') * 0.70;
-                            }
-                            
-                            // Penalização por distância: a eficácia do rematador cai à medida que a distância aumenta
-                            _v1.set(0, 0, p.targetGoalZ);
-                            const distBaliza = p.model.position.distanceTo(_v1);
-                            let distPenalty = 1.0;
-                            if (distBaliza > 10.0) {
-                                // Reduz gradualmente o score do chutador; ex: aos 20m cai para ~50%
-                                distPenalty = Math.max(0.2, 1.0 - ((distBaliza - 10.0) / 20.0));
-                            }
-                            
-                            const chutadorScore = p.skillFor('TEC') * distPenalty;
-                            const attackRatio = chutadorScore / (chutadorScore + gkScore);
-                            
-                            const weights = [
-                                { outcome: 'GOL', weight: Math.pow(attackRatio, 2) * 100 },
-                                { outcome: 'TRAVE_CAMPO', weight: attackRatio * 15 },
-                                { outcome: 'TRAVE_FORA', weight: attackRatio * 15 },
-                                { outcome: 'TRAVESSAO_CAMPO', weight: attackRatio * 15 },
-                                { outcome: 'TRAVESSAO_FORA', weight: attackRatio * 15 },
-                                { outcome: 'GOLEIRO_DEFENDE_VOLTA', weight: Math.pow(1 - attackRatio, 2) * 50 },
-                                { outcome: 'GOLEIRO_DEFENDE_FORA', weight: Math.pow(1 - attackRatio, 2) * 50 }
-                            ];
-                            
-                            let totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
-                            let roll = Math.random() * totalWeight;
-                            let selectedOutcome = 'GOLEIRO_DEFENDE_VOLTA';
-                            for (let w of weights) {
-                                if (roll < w.weight) {
-                                    selectedOutcome = w.outcome;
-                                    break;
-                                }
-                                roll -= w.weight;
-                            }
-                            
-                            let sinal = Math.random() > 0.5 ? 1 : -1;
-                            pow = (22.0 + ((p.skillFor('TEC') - 50) / 50) * 16.0) * 0.8;
-                            
-                            switch (selectedOutcome) {
-                                case 'GOL':
-                                    alvoX = sinal * maxC * 0.9;
-                                    alvoY = Math.random() > 0.5 ? 2.0 : 0.4;
-                                    forcedGKDelay = 1.0; 
-                                    break;
-                                case 'TRAVE_CAMPO':
-                                    alvoX = sinal * (LARGURA_BALIZA / 2 - 0.08);
-                                    alvoY = 0.5;
-                                    forcedGKDelay = 1.0;
-                                    break;
-                                case 'TRAVE_FORA':
-                                    alvoX = sinal * (LARGURA_BALIZA / 2 + 0.08);
-                                    alvoY = 0.5;
-                                    forcedGKDelay = 1.0;
-                                    break;
-                                case 'TRAVESSAO_CAMPO':
-                                    alvoX = (Math.random() - 0.5) * maxC;
-                                    alvoY = ALTURA_BALIZA - 0.08;
-                                    forcedGKDelay = 1.0;
-                                    break;
-                                case 'TRAVESSAO_FORA':
-                                    alvoX = (Math.random() - 0.5) * maxC;
-                                    alvoY = ALTURA_BALIZA + 0.08;
-                                    forcedGKDelay = 1.0;
-                                    break;
-                                case 'GOLEIRO_DEFENDE_VOLTA':
-                                    alvoX = (Math.random() - 0.5) * 1.5; 
-                                    alvoY = 1.0;
-                                    pow *= 0.7; // Reduz um pouco a força pro goleiro ter chance de espalmar pra frente ou encaixar
-                                    forcedGKDelay = 0; 
-                                    break;
-                                case 'GOLEIRO_DEFENDE_FORA':
-                                    alvoX = sinal * maxC * 1.05; 
-                                    alvoY = 1.0;
-                                    forcedGKDelay = 0;
-                                    break;
-                            }
-                        }
-
-                        /*
-                        Mira: resolve a ELEVAÇÃO que põe a bola no ponto
-                        visado à velocidade `pow` (ver elevacaoParaAlvo).
-
-                        A conta antiga compensava a gravidade com
-                        `t = dZ / pow; cY = ½·g·t²` — usava a velocidade 3D
-                        como se fosse horizontal e ignorava o arrasto (12-22
-                        m/s² a esta velocidade), por isso subestimava o tempo
-                        de voo duas vezes e o remate saía sempre por baixo.
-                        */
-                        _v1.set(alvoX, alvoY, bloqueado ? Match.ball.position.z + p.dirZ * 3 : p.targetGoalZ);
-                        const dxR = _v1.x - Match.ball.position.x;
-                        const dzR = _v1.z - Match.ball.position.z;
-                        const distHR = Math.hypot(dxR, dzR);
-                        const elevR = elevacaoParaAlvo(distHR, _v1.y, pow);
-                        // Sem solução (longe demais para esta potência): sai no
-                        // ângulo de alcance máximo em vez de rasteiro ao chão.
-                        const eR = (elevR === null) ? Math.PI / 5 : elevR;
-                        const vhR = pow * Math.cos(eR);
-                        Match.ballVel.set(
-                            (distHR > 0.001 ? dxR / distHR : 0) * vhR,
-                            pow * Math.sin(eR),
-                            (distHR > 0.001 ? dzR / distHR : p.dirZ) * vhR
-                        );
-                        p.hasBall = false; p.touchLock = BallControl.touchLock;
-                        Match.ballCarrier = null;
-                        Match.lastTouchedTeam = p.team;
-                        Match.lastTouchedPlayer = p;
-
-                        if (!bloqueado) {
-                            let defendingTeam = (p.team === 'TeamA') ? 'TeamB' : 'TeamA';
-                            // Notifica o GK adversário via propriedade de instância.
-                            const gkDef = (p.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
-                            if (gkDef) {
-                                gkDef.gkDelayReacao = (forcedGKDelay !== null) ? forcedGKDelay : (0.45 - ((TeamSkills[defendingTeam].gk - 50) / 50) * 0.35);
-                                gkDef.gkReagiu = false;
-                            }
-                            window.bolaChutada = true;
-                        }
+                /*
+                O gesto inteiro sai do ShotClip (12 keyframes) e a bola parte no
+                contactTime, dentro do ActionState criado em initiateShoot.
+                Antes eram duas poses com lerp e 0.2 s de estado — lia-se como
+                uma estocada, não como um remate.
+                */
+                if (p.actionState) {
+                    const normR = p.actionState.update(dt, p);
+                    p.aplicarFrameRemate(amostrarClipRemate(normR));
+                    if (p.actionState.isDone()) {
+                        p.actionState = null;
+                        p.resetBonesToDefault();
+                        this.changeState('IDLE');
                     }
-                }
-                if (this.timer >= 0.2) {
+                } else {
                     this.changeState('IDLE');
                 }
                 break;

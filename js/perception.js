@@ -22,8 +22,77 @@ const Perception = {
     HZ: 15,
 
     tick: function (match, dt) {
+        this.reconstruirTrajectoria(match);
         this.updatePlayers(match.players, match, dt);
         this.updatePlayers(match.opponents, match, dt);
+    },
+
+    /*
+    TRAJECTÓRIA PARTILHADA — a bola só tem uma, e é a mesma para os 22.
+
+    Integra a bola 2 s à frente com a MESMA física do jogo (arrasto, gravidade,
+    quique com restituição, perda horizontal no embate e travagem a rolar) e
+    guarda uma amostra a cada `passoAmostra`. Uma vez por frame, não uma vez
+    por jogador — 240 passos no total em vez de 240 × 22.
+
+    Porquê: o cálculo antigo do ponto de interceptação usava a solução fechada
+    do arrasto SÓ NO PLANO, e ignorava a altura por completo. Uma bola alta era
+    tratada como se estivesse a rolar: o jogador ia para o sítio certo em
+    planta, mas a bola estava 2 m no ar, quicava e passava-lhe por cima. Era o
+    que se via.
+    */
+    horizonte: 2.0,
+    passoAmostra: 0.05,
+    _traj: null,
+
+    reconstruirTrajectoria: function (match) {
+        const B = BallPhysics;
+        const dt = 1 / 120;
+        const nAmostras = Math.round(this.horizonte / this.passoAmostra);
+        const porAmostra = Math.round(this.passoAmostra / dt);
+
+        if (!this._traj) {
+            this._traj = [];
+            for (let i = 0; i <= nAmostras; i++) this._traj.push({ x: 0, y: 0, z: 0 });
+        }
+
+        let x = match.ball.position.x, y = match.ball.position.y, z = match.ball.position.z;
+        let vx = match.ballVel.x, vy = match.ballVel.y, vz = match.ballVel.z;
+
+        this._traj[0].x = x; this._traj[0].y = y; this._traj[0].z = z;
+
+        for (let a = 1; a <= nAmostras; a++) {
+            for (let k = 0; k < porAmostra; k++) {
+                const sp = Math.hypot(vx, vy, vz);
+                if (sp > 0.001) {
+                    const dv = B.kArrasto * sp * sp * dt;
+                    vx -= vx / sp * dv; vy -= vy / sp * dv; vz -= vz / sp * dv;
+                }
+                vy -= B.gravidade * dt;
+                x += vx * dt; y += vy * dt; z += vz * dt;
+
+                if (y <= B.raio) {
+                    y = B.raio;
+                    if (vy < 0) {
+                        if (-vy > B.vMinRessalto) {
+                            vy *= -B.restituicao;
+                            vx *= B.atritoRessalto;
+                            vz *= B.atritoRessalto;
+                        } else {
+                            vy = 0;
+                        }
+                    }
+                    const vh = Math.hypot(vx, vz);
+                    if (vh > 0.0001) {
+                        const dvh = Math.min(vh, B.atritoRolamento * B.gravidade * dt);
+                        vx -= (vx / vh) * dvh;
+                        vz -= (vz / vh) * dvh;
+                        if (Math.hypot(vx, vz) < B.vMinRolar && vy === 0) { vx = 0; vz = 0; }
+                    }
+                }
+            }
+            this._traj[a].x = x; this._traj[a].y = y; this._traj[a].z = z;
+        }
     },
 
     updatePlayers: function (list, match, dt) {
@@ -118,16 +187,34 @@ const Perception = {
         Para arrasto quadrático puro no plano, a distância percorrida ao fim
         de `t` tem solução fechada:  d(t) = ln(1 + k·v0·t) / k
         */
-        const v0 = Math.hypot(vel.x, vel.z);
-        const k = (typeof BallPhysics !== 'undefined') ? BallPhysics.kArrasto : 0.0135;
-        const ux = v0 > 0.001 ? vel.x / v0 : 0;
-        const uz = v0 > 0.001 ? vel.z / v0 : 0;
+        const traj = this._traj;
+        if (!traj) {
+            bb.interceptable = false;
+            bb.interceptionPoint = null;
+            bb.timeToIntercept = Infinity;
+            bb.confidence = 0;
+            return;
+        }
+
+        /*
+        Percorre a trajectória partilhada e procura o primeiro instante em que
+        este jogador já lá chega. Duas condições, e a segunda é nova:
+
+          - chega ao ponto a tempo (corrida);
+          - a bola está a uma altura JOGÁVEL nesse instante.
+
+        A altura é o que faltava. Antes o ponto era escolhido em planta, sem
+        olhar ao ar: escolhia-se o instante em que a bola ia estar por cima da
+        cabeça dele, ele parava lá, e a bola quicava e seguia.
+        */
+        const alturaMax = ALTURA_TESTA + (typeof HeaderModel !== 'undefined' ? HeaderModel.janelaContacto : 0.3);
 
         let found = false;
-        for (let t = 0.1; t <= 2.0; t += 0.1) {
-            const d = (v0 > 0.001) ? Math.log(1 + k * v0 * t) / k : 0;
-            const bx = ball.x + ux * d;
-            const bz = ball.z + uz * d;
+        for (let a = 1; a < traj.length; a++) {
+            const t = a * this.passoAmostra;
+            const bx = traj[a].x, bz = traj[a].z, by = traj[a].y;
+            if (by > alturaMax) continue;          // ainda alta demais para ser jogada
+
             const reachDist = Math.hypot(bx - px, bz - pz);
             const playerReach = maxChase * t;
 

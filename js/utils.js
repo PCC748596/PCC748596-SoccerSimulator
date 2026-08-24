@@ -557,7 +557,37 @@ function preverBolaEm(t) {
         }
         vy -= B.gravidade * dt;
         x += vx * dt; y += vy * dt; z += vz * dt;
-        if (y <= B.raio) { y = B.raio; vy = 0; }
+
+        /*
+        O QUIQUE. Isto era `{ y = B.raio; vy = 0; }` — para a previsão, o
+        relvado absorvia tudo e a bola passava a rolar dali em diante. O
+        updateBall real ressalta (`restituicao`), perde velocidade horizontal
+        no embate (`atritoRessalto`) e só depois trava a rolar
+        (`atritoRolamento`). Resultado: o jogador corria para onde a previsão
+        dizia, a bola quicava e passava-lhe por cima.
+
+        Agora é a MESMA física do jogo, passo a passo — ver o bloco do solo em
+        Match.updateBall. Se um dia mudar lá, tem de mudar aqui.
+        */
+        if (y <= B.raio) {
+            y = B.raio;
+            if (vy < 0) {
+                if (-vy > B.vMinRessalto) {
+                    vy *= -B.restituicao;
+                    vx *= B.atritoRessalto;
+                    vz *= B.atritoRessalto;
+                } else {
+                    vy = 0;
+                }
+            }
+            const vh = Math.hypot(vx, vz);
+            if (vh > 0.0001) {
+                const dvh = Math.min(vh, B.atritoRolamento * B.gravidade * dt);
+                vx -= (vx / vh) * dvh;
+                vz -= (vz / vh) * dvh;
+                if (Math.hypot(vx, vz) < B.vMinRolar && vy === 0) { vx = 0; vz = 0; }
+            }
+        }
     }
     return { x: x, y: y, z: z };
 }
@@ -599,7 +629,31 @@ function preverBolaEmAltura(altura) {
                 tempo: (i + f) * dt
             };
         }
-        if (y <= B.raio) return null;
+        /*
+        A bola tocou no chão antes de cruzar esta altura em descida. NÃO se
+        desiste aqui: ela ressalta e volta a passar por esta altura, e é essa
+        a bola que se cabeceia ou se domina no peito. Antes devolvia null e o
+        jogador ignorava tudo o que viesse depois do primeiro toque no relvado.
+        */
+        if (y <= B.raio) {
+            y = B.raio;
+            if (vy < 0) {
+                if (-vy > B.vMinRessalto) {
+                    vy *= -B.restituicao;
+                    vx *= B.atritoRessalto;
+                    vz *= B.atritoRessalto;
+                } else {
+                    // Já não salta: nunca mais chega a essa altura.
+                    return null;
+                }
+            }
+            const vh = Math.hypot(vx, vz);
+            if (vh > 0.0001) {
+                const dvh = Math.min(vh, B.atritoRolamento * B.gravidade * dt);
+                vx -= (vx / vh) * dvh;
+                vz -= (vz / vh) * dvh;
+            }
+        }
     }
     return null;
 }

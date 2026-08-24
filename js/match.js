@@ -12,6 +12,7 @@ const Match = {
     golKickProntos: false, golKickEspera: 0, golKickAlvoEspera: 0,
     golKickPendente: false, golKickAtrasoInicio: 0,
     lateralPendente: false, lateralAtraso: 0,
+    cantoBolaAlvo: null, cantoAguardaChao: false, cantoBolaAtraso: 0,
     counterAttackTeam: null, counterAttackTimer: 0,
     specMesh: null, specData: [], specDummy: new THREE.Object3D(),
     crowdExcitement: 0, crowdTimer: 0,
@@ -1182,6 +1183,9 @@ const Match = {
         this.golKickAtrasoInicio = 0;
         this.lateralPendente = false;
         this.lateralAtraso = 0;
+        this.cantoBolaAlvo = null;
+        this.cantoAguardaChao = false;
+        this.cantoBolaAtraso = 0;
         [...this.players, ...this.opponents].forEach(p => {
             p.lateralAction = null;
             p.lateralLargou = false;
@@ -1325,6 +1329,26 @@ const Match = {
 
         if (this.state === 'CORNER_KICK') {
             this.setPieceTimer += dt;
+
+            /*
+            Bola ainda "a sair": segue o movimento até tocar no relvado, espera
+            `cantoBolaAtraso`, e só então vai para a quina e trava. Os jogadores
+            já se posicionaram no setupSetPiece — isto é só a bola.
+            */
+            if (this.cantoBolaAlvo) {
+                if (this.cantoAguardaChao) {
+                    if (this.ball.position.y <= BallPhysics.raio + 0.01) {
+                        this.cantoAguardaChao = false;
+                    }
+                } else {
+                    this.cantoBolaAtraso -= dt;
+                    if (this.cantoBolaAtraso <= 0) {
+                        this.ball.position.set(this.cantoBolaAlvo.x, this.cantoBolaAlvo.y, this.cantoBolaAlvo.z);
+                        this.ballVel.set(0, 0, 0);
+                        this.cantoBolaAlvo = null;
+                    }
+                }
+            }
         }
 
         if (this.state === 'THROW_IN') {
@@ -2574,7 +2598,14 @@ const Match = {
         // aqui, incondicional pra qualquer bola parada, matava esse
         // movimento no MESMO frame em que ela saía, antes mesmo de chegar
         // lá. Os outros tipos (canto, lateral) continuam a travar já.
-        if (type !== 'GOAL_KICK') this.ballVel.set(0, 0, 0);
+        /*
+        GOAL_KICK e CORNER_KICK são excepção: a bola continua com a velocidade
+        que trazia até tocar no chão (ver o countdown em update()). Zerar aqui
+        matava o movimento no MESMO frame em que ela saía — um remate que batia
+        no poste e ia para trás da baliza congelava no ar e aparecia no canto.
+        Os outros tipos (lateral) travam já.
+        */
+        if (type !== 'GOAL_KICK' && type !== 'CORNER_KICK') this.ballVel.set(0, 0, 0);
         this.intendedReceiver = null;
         this.passTargetPos = null;
 
@@ -2599,7 +2630,14 @@ const Match = {
             const flagX = canto.bola.x;
             const flagZ = canto.bola.z;
 
-            this.ball.position.set(canto.bola.x, canto.bola.y, canto.bola.z);
+            /*
+            A bola NÃO é teleportada aqui. Fica a correr o resto do lance — cai,
+            ressalta, passa para trás da baliza — e só depois é reposta na quina
+            (ver o countdown do canto em update()). Mesma ideia do tiro de meta.
+            */
+            this.cantoBolaAlvo = { x: canto.bola.x, y: canto.bola.y, z: canto.bola.z };
+            this.cantoAguardaChao = true;
+            this.cantoBolaAtraso = 1.2;
 
             /*
             Ninguém segura a bola numa bola parada. Sem isto o `hasBall` de

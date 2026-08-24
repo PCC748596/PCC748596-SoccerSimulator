@@ -482,7 +482,13 @@ uma dúzia de frames alguma das faces já tinha saído — o resultado real seri
 é limpa quando ele deixa de ter a bola (ver limparSaidaGK).
 */
 function decidirSaidaGK(p) {
-    p.gkSaida = 'chuteFrente';
+    const G = GoalkeeperDistribution;
+    let chance = G.laterais;
+    if (G.porEstilo && typeof Tatics !== 'undefined' &&
+        G.porEstilo[Tatics.teamPlayStyle] !== undefined) {
+        chance = G.porEstilo[Tatics.teamPlayStyle];
+    }
+    p.gkSaida = (Math.random() < chance) ? 'laterais' : 'chuteFrente';
     return p.gkSaida;
 }
 
@@ -1453,7 +1459,28 @@ function tratarGuardaRedes(ctx) {
         return;
     }
 
-    if (p.decisionTimer > 0.4) p.puntBall();
+    const G = GoalkeeperDistribution;
+    // Sorteada UMA vez por posse (ver decidirSaidaGK) — a cada frame seria
+    // "o que calhar primeiro" em vez da proporção pedida.
+    const saida = p.gkSaida || decidirSaidaGK(p);
+
+    if (saida === 'laterais') {
+        const lateral = acharLateralParaSaida(ctx);
+        if (lateral) {
+            if (p.decisionTimer > G.esperaSaidaCurta) actPassParaAlvo(ctx, lateral);
+            else actCarry(ctx);
+            return;
+        }
+        /*
+        Decidiu sair a jogar mas nenhum lateral está livre. Espera a ver se
+        algum se desmarca; passado `esperaMaxSemLinha` desiste e chuta, senão
+        ficava com a bola no pé até alguém lha tirar.
+        */
+        if (p.decisionTimer <= G.esperaMaxSemLinha) { actCarry(ctx); return; }
+        p.gkSaida = 'chuteFrente';
+    }
+
+    if (p.decisionTimer > G.esperaChutao) p.puntBall();
     else actCarry(ctx);
 }
 

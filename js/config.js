@@ -278,7 +278,72 @@ const ActionAnimClips = {
     // Lançamento com as mãos do guarda-redes
     gkThrow: { duration: 0.70, contactTime: 8 / 11 },
     // Arremesso lateral (ver ThrowInClip): a bola sai no frame 6 de 10.
-    throwIn: { duration: 0.90, contactTime: 5 / 9 }
+    throwIn: { duration: 0.90, contactTime: 5 / 9 },
+    // Remate (ver ShotClip). Contacto no frame 8 de 12 (t = 7/11 ≈ 0.64),
+    // ou seja ~0.32 s depois de o BT decidir rematar — tempo real de armar a
+    // perna. Antes o remate inteiro durava 0.2 s e eram duas poses.
+    shot: { duration: 0.50, contactTime: 7 / 11 }
+};
+
+/*
+=============================================================================
+SHOT_CLIP — remate em movimento, 12 keyframes
+=============================================================================
+Mesma convenção do GoalkeeperGroundKickClip:
+    coxaChute   > 0  perna para TRÁS   (< 0 é para a FRENTE)
+    joelhoChute > 0  joelho dobra, calcanhar sobe
+    chest       > 0  tronco para a FRENTE
+    leanZ       < 0  corpo inclina sobre o pé de apoio
+    pelvisY          rotação da bacia (o "abrir e fechar" da anca no remate)
+
+O que distingue isto do tiro de meta: aqui vem-se em CORRIDA, portanto há menos
+inclinação lateral e muito mais ROTAÇÃO — a bacia abre na armação e fecha no
+impacto, e é daí que vem a força. O braço contrário à perna de remate abre para
+fora a contrabalançar (é o gesto mais visível na referência).
+
+     1  perna de remate começa a recuar, apoio a descer
+     2  pé de apoio planta ao lado da bola, tronco inclina
+     3  armação: joelho a ~100°, bacia abre
+     4  armação máxima, braço contrário bem aberto
+     5  bacia inicia a rotação para a frente
+     6  chicote: a coxa acelera, o joelho ainda flectido
+     7  extensão rápida da tíbia, pé quase na bola
+     8  CONTACTO — perna esticada, tornozelo travado, corpo por cima da bola
+     9  pós-impacto, a perna continua pela inércia
+    10  follow-through alto, bacia fechada
+    11  desaceleração, o pé desce
+    12  recuperação, de novo em postura de jogo
+=============================================================================
+*/
+const ShotClip = {
+    pernaChute: 'r',
+    contactFrame: 8,
+    frames: [
+        // 1
+        { leanZ: -0.04, pelvisY: 0.10, chest: 0.18, chestY: -0.10, coxaChute: 0.30, joelhoChute: 0.70, coxaApoio: -0.20, joelhoApoio: 0.30, bracoLx: -0.35, bracoLz: 0.55, bracoRx: 0.25, bracoRz: -0.30, cotoveloL: -0.60, cotoveloR: -0.70, altura: 0.00 },
+        // 2
+        { leanZ: -0.10, pelvisY: 0.18, chest: 0.26, chestY: -0.18, coxaChute: 0.62, joelhoChute: 1.25, coxaApoio: -0.10, joelhoApoio: 0.34, bracoLx: -0.55, bracoLz: 0.85, bracoRx: 0.40, bracoRz: -0.36, cotoveloL: -0.45, cotoveloR: -0.80, altura: -0.01 },
+        // 3
+        { leanZ: -0.16, pelvisY: 0.26, chest: 0.30, chestY: -0.26, coxaChute: 0.88, joelhoChute: 1.75, coxaApoio: 0.00, joelhoApoio: 0.38, bracoLx: -0.70, bracoLz: 1.10, bracoRx: 0.52, bracoRz: -0.42, cotoveloL: -0.30, cotoveloR: -0.85, altura: -0.02 },
+        // 4  armação máxima
+        { leanZ: -0.20, pelvisY: 0.32, chest: 0.32, chestY: -0.32, coxaChute: 1.00, joelhoChute: 2.00, coxaApoio: 0.04, joelhoApoio: 0.40, bracoLx: -0.80, bracoLz: 1.35, bracoRx: 0.58, bracoRz: -0.46, cotoveloL: -0.20, cotoveloR: -0.90, altura: -0.03 },
+        // 5
+        { leanZ: -0.20, pelvisY: 0.22, chest: 0.30, chestY: -0.22, coxaChute: 0.72, joelhoChute: 1.90, coxaApoio: 0.05, joelhoApoio: 0.38, bracoLx: -0.72, bracoLz: 1.28, bracoRx: 0.46, bracoRz: -0.50, cotoveloL: -0.22, cotoveloR: -0.82, altura: -0.02 },
+        // 6  chicote
+        { leanZ: -0.18, pelvisY: 0.08, chest: 0.26, chestY: -0.10, coxaChute: 0.22, joelhoChute: 1.55, coxaApoio: 0.05, joelhoApoio: 0.34, bracoLx: -0.50, bracoLz: 1.15, bracoRx: 0.24, bracoRz: -0.56, cotoveloL: -0.26, cotoveloR: -0.68, altura: -0.01 },
+        // 7
+        { leanZ: -0.14, pelvisY: -0.06, chest: 0.20, chestY: 0.04, coxaChute: -0.35, joelhoChute: 0.75, coxaApoio: 0.06, joelhoApoio: 0.28, bracoLx: -0.20, bracoLz: 1.00, bracoRx: -0.05, bracoRz: -0.60, cotoveloL: -0.28, cotoveloR: -0.52, altura: 0.00 },
+        // 8  CONTACTO
+        { leanZ: -0.12, pelvisY: -0.16, chest: 0.14, chestY: 0.14, coxaChute: -0.72, joelhoChute: 0.10, coxaApoio: 0.06, joelhoApoio: 0.24, bracoLx: 0.05, bracoLz: 0.92, bracoRx: -0.28, bracoRz: -0.62, cotoveloL: -0.28, cotoveloR: -0.42, altura: 0.02 },
+        // 9
+        { leanZ: -0.10, pelvisY: -0.24, chest: 0.08, chestY: 0.22, coxaChute: -1.20, joelhoChute: 0.08, coxaApoio: 0.07, joelhoApoio: 0.18, bracoLx: 0.22, bracoLz: 0.85, bracoRx: 0.05, bracoRz: -0.66, cotoveloL: -0.26, cotoveloR: -0.36, altura: 0.07 },
+        // 10 follow-through alto
+        { leanZ: -0.06, pelvisY: -0.30, chest: 0.04, chestY: 0.28, coxaChute: -1.55, joelhoChute: 0.05, coxaApoio: 0.09, joelhoApoio: 0.14, bracoLx: 0.36, bracoLz: 0.78, bracoRx: 0.34, bracoRz: -0.70, cotoveloL: -0.22, cotoveloR: -0.28, altura: 0.13 },
+        // 11
+        { leanZ: -0.02, pelvisY: -0.18, chest: 0.10, chestY: 0.16, coxaChute: -0.80, joelhoChute: 0.22, coxaApoio: 0.05, joelhoApoio: 0.18, bracoLx: 0.20, bracoLz: 0.50, bracoRx: 0.18, bracoRz: -0.44, cotoveloL: -0.16, cotoveloR: -0.18, altura: 0.05 },
+        // 12 recuperação
+        { leanZ: 0.00, pelvisY: 0.00, chest: 0.00, chestY: 0.00, coxaChute: 0.00, joelhoChute: 0.10, coxaApoio: 0.00, joelhoApoio: 0.10, bracoLx: 0.00, bracoLz: Math.PI / 16, bracoRx: 0.00, bracoRz: -Math.PI / 16, cotoveloL: 0.00, cotoveloR: 0.00, altura: 0.00 }
+    ]
 };
 
 /*
@@ -1186,7 +1251,23 @@ const PassLineModel = {
     corredorMax: 7.0,
     pesoLinha: 300,          // mesma escala do bónus de receptor livre
     pesoCorpo: 60,           // por adversário dentro do corredor
-    factorOrquestrador: 0.4  // "vê através" — sofre menos com linhas apertadas
+    factorOrquestrador: 0.4, // "vê através" — sofre menos com linhas apertadas
+
+    /*
+    Perto da baliza a conta muda: a área é o sítio mais congestionado do campo,
+    e exigir linha limpa ali é exigir que nunca se jogue para dentro dela. Um
+    passe de risco à entrada da área vale muito mais do que um passe seguro no
+    meio-campo, porque o que está do outro lado é um remate.
+
+    Sem isto — medido depois de a linha passar a peso — os ataques morriam à
+    entrada do último terço: ninguém entrava a passar (tráfego) nem a conduzir
+    (orçamento de condução), e deixava de haver remates.
+
+    Aplica-se ao DESTINO do passe, não a quem passa: é entrar na zona que
+    justifica o risco.
+    */
+    factorUltimoTerco: 0.45,
+    ultimoTercoZ: 17.0       // mesma fronteira do bolaNoUltimoTerco do TeamBT
 };
 
 const PassModel = {
@@ -1302,14 +1383,22 @@ const PassModel = {
     /*
     Com que velocidade a bola CHEGA ao alvo num passe rasteiro.
 
-    4.5 fica confortavelmente abaixo do `BallControl.easySpeed` (7.75): a
-    bola chega viva mas dominável. Esteve a 1.0, e a 1 m/s morria antes de
-    lá chegar — era o que punha os dois testes deste ficheiro a vermelho.
+    É esta a manípula do RITMO do passe: a velocidade de saída é consequência
+    dela e da distância (ver velocidadeRasteiraPara), portanto subir isto
+    acelera a bola toda sem mexer na física.
 
-    Com o reforço do passe curto (ver velocidadeRasteiraPara) uma bola de
-    3 m chega a 6.12 m/s e uma de 25 m a 3.00 m/s.
+    Esteve a 2.8, e a esse valor um passe de 10 m demorava 1.57 s a chegar —
+    "câmara lenta", e com razão: no jogo real um passe rasteiro de 10 m anda
+    à volta de 1 s. A 6.0 o mesmo passe leva 1.12 s e sai a 11.8 m/s em vez
+    de 9.9.
+
+    O tecto é o `BallControl.easySpeed` (7.75), acima do qual o domínio deixa
+    de ser garantido. O reforço do passe curto soma até +2.16 m/s
+    (`(12 - dist) * 0.18`), portanto 6.0 é o máximo seguro: um passe de 3 m
+    chega a 7.62, ainda debaixo do limiar. Subir mais do que isto começa a
+    fazer os receptores falharem o primeiro toque.
     */
-    vChegadaRasteira: 2.8,
+    vChegadaRasteira: 6.0,
     vChegadaCruzamento: 2.8,
     vChegadaLancamento: 2.8,
 
@@ -2645,12 +2734,44 @@ Sem lateral disponível a tempo, cai no chutão: melhor a bola longe do que
 uma saída curta forçada para dentro.
 */
 const GoalkeeperDistribution = {
-    laterais: 0.0,
-    chuteFrente: 1.0,
+    /*
+    Probabilidade de SAIR A JOGAR pelos laterais, por Estilo Ofensivo da
+    equipa. O resto é chutão para a frente.
+
+    Estava tudo desligado (`laterais: 0.0`) e o `decidirSaidaGK` devolvia
+    'chuteFrente' fixo — o guarda-redes chutava sempre, mesmo em Possession.
+    A maquinaria da saída curta (acharLateralParaSaida, actPassParaAlvo) já
+    existia toda e não era chamada por ninguém.
+
+    Positional e Possession a 70%, como pedido. Os outros seguem a lógica do
+    estilo: Direct e Counter Attack querem a bola à frente depressa, Wing Play
+    fica a meio.
+    */
+    porEstilo: {
+        possession: 0.70,
+        positional: 0.70,
+        wing_play: 0.50,
+        direct: 0.25,
+        counter_attack: 0.25
+    },
+    laterais: 0.50,       // usado se o estilo não estiver na tabela
+    chuteFrente: 0.50,
+
     // Um lateral mais longe do que isto não conta como saída curta.
     distanciaMaxLateral: 45.0,
     // Lateral com adversário a menos disto em cima não serve.
-    folgaMinima: 4.0
+    folgaMinima: 4.0,
+
+    /*
+    Segundos com a bola no pé antes de largar. A saída curta é mais rápida do
+    que o chutão: quem sai a jogar levanta a cabeça e toca, quem chuta arma a
+    perna. E se decidiu sair a jogar mas não há lateral livre, espera
+    `esperaMaxSemLinha` a ver se aparece antes de desistir e chutar — é isso
+    que evita o guarda-redes preso com a bola.
+    */
+    esperaSaidaCurta: 0.5,
+    esperaChutao: 0.4,
+    esperaMaxSemLinha: 2.5
 };
 
 /*

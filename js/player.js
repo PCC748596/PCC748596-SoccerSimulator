@@ -55,6 +55,29 @@ function amostrarClipChuteChaoGR(norm) {
 }
 
 /*
+Amostra o clip do remate (ShotClip) num tempo normalizado 0..1.
+*/
+function amostrarClipRemate(norm) {
+    const fr = ShotClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => a[k] + (b[k] - a[k]) * u;
+    return {
+        leanZ: mix('leanZ'), pelvisY: mix('pelvisY'),
+        chest: mix('chest'), chestY: mix('chestY'),
+        coxaChute: mix('coxaChute'), joelhoChute: mix('joelhoChute'),
+        coxaApoio: mix('coxaApoio'), joelhoApoio: mix('joelhoApoio'),
+        bracoLx: mix('bracoLx'), bracoLz: mix('bracoLz'),
+        bracoRx: mix('bracoRx'), bracoRz: mix('bracoRz'),
+        cotoveloL: mix('cotoveloL'), cotoveloR: mix('cotoveloR'),
+        altura: mix('altura')
+    };
+}
+
+/*
 Amostra o clip do arremesso lateral (ThrowInClip) num tempo normalizado 0..1.
 */
 function amostrarClipLateral(norm) {
@@ -511,6 +534,48 @@ class FootballPlayer {
         Match.state = 'PLAY';
         if (typeof MatchStats !== 'undefined') MatchStats.registarPasseIniciado(this.team, 'passe');
         if (typeof EventBus !== 'undefined') EventBus.emit('THROW_IN_TAKEN', { team: this.team, p: this });
+    }
+
+    /*
+    Escreve no rig um frame do remate. Mesma ideia do aplicarFrameLateral: o
+    clip manda em tudo o que toca, e por isso o animateBones é saltado enquanto
+    isto corre (ver update()) — senão o ciclo de passada reescrevia as pernas
+    no mesmo frame.
+
+    A perna de apoio e a de remate saem de ShotClip.pernaChute, para o clip
+    servir um canhoto trocando uma letra.
+    */
+    aplicarFrameRemate(K) {
+        const rig = this.rig;
+        if (!rig) return;
+
+        const chuteR = (ShotClip.pernaChute === 'r');
+        const pernaC = chuteR ? rig.rLeg : rig.lLeg;
+        const joelhoC = chuteR ? rig.rKnee : rig.lKnee;
+        const pernaA = chuteR ? rig.lLeg : rig.rLeg;
+        const joelhoA = chuteR ? rig.lKnee : rig.rKnee;
+
+        // A bacia inclina e RODA: no remate em corrida a força vem da rotação,
+        // não da inclinação (essa é do tiro de meta, com o corpo parado).
+        rig.pelvis.position.set(0, 2.6, 0);
+        rig.pelvis.rotation.set(0, chuteR ? K.pelvisY : -K.pelvisY, K.leanZ);
+
+        rig.chest.rotation.set(K.chest, chuteR ? K.chestY : -K.chestY, 0);
+
+        pernaC.rotation.set(K.coxaChute, 0, 0);
+        joelhoC.rotation.set(K.joelhoChute, 0, 0);
+        pernaA.rotation.set(K.coxaApoio, 0, 0);
+        joelhoA.rotation.set(K.joelhoApoio, 0, 0);
+
+        rig.lArm.rotation.set(K.bracoLx, 0, K.bracoLz);
+        rig.rArm.rotation.set(K.bracoRx, 0, K.bracoRz);
+        rig.lElbow.rotation.x = K.cotoveloL;
+        rig.rElbow.rotation.x = K.cotoveloR;
+
+        rig.lFoot.rotation.set(0, Math.PI / 16, 0);
+        rig.rFoot.rotation.set(0, -Math.PI / 16, 0);
+
+        this.model.position.y = ALTURA_BASE_Y + (K.altura || 0);
     }
 
     resetBonesToDefault() {
@@ -1072,6 +1137,8 @@ class FootballPlayer {
             let penalLinha = PL.pesoLinha * (1 - qualidadeLinha)
                 + PL.pesoCorpo * corposNoCorredor * fatorIntercept;
             if (isOrchestrator) penalLinha *= PL.factorOrquestrador;
+            // Passe PARA o último terço: o risco vale a pena (ver PassLineModel).
+            if (optPos.z * dirZ > PL.ultimoTercoZ) penalLinha *= PL.factorUltimoTerco;
             score -= penalLinha;
 
             // Bónus/Penalidade ABSOLUTA pela marcação do RECEBEDOR
@@ -1422,6 +1489,14 @@ class FootballPlayer {
     initiateShoot() {
         this.showActionBanner('SHOT');
         if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
+        /*
+        O gesto tem duração própria (ShotClip) e a bola só sai no contactTime —
+        tal como no passe. Antes o remate era resolvido no frame seguinte ao da
+        decisão e o estado durava 0.2 s no total.
+        */
+        this.actionState = new ActionState('shot', {
+            onContact: () => { if (this.hasBall) executeShotGameplay(this); }
+        });
         this.fsm.changeState('SHOOT');
     }
 
@@ -1831,10 +1906,15 @@ class FootballPlayer {
             this.discoTatico.position.set(this.model.position.x, 0.04, this.model.position.z);
         }
 
-        // LATERAL escreve a pose inteira na FSM — o animateBones por cima
-        // devolvia os braços ao lado do corpo no mesmo frame.
+        /*
+        LATERAL e REMATE escrevem a pose inteira a partir de um clip — o
+        animateBones por cima devolvia braços e pernas ao ciclo de passada no
+        mesmo frame. O ramo `speed >= 0.1` do animateBones faz `set` directo
+        nas pernas, portanto não bastava excluí-los do bloco neutro.
+        */
         if ((this.role === 'gk' && Match.state !== 'CORNER_KICK') ||
-            this.fsm.currentState === 'LATERAL') {
+            this.fsm.currentState === 'LATERAL' ||
+            (this.fsm.currentState === 'SHOOT' && this.actionState)) {
         } else {
             this.animateBones(dt);
             // Camada da matada no peito: só a cintura para trás e os braços
