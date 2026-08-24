@@ -672,47 +672,102 @@ function computeBlock(bb) {
     let z0 = centroZ - (profundidade / 2);
     let z1 = centroZ + (profundidade / 2);
 
-    /* --- tecto da Linha Defensiva (painel, Offside-Trap) -----------------
-       A TRASEIRA do bloco é a linha defensiva da equipa, e o painel dá-lhe um
-       tecto (TeamShape.linhaDefensiva, no referencial de ataque). Isto faltava:
-       o z0 saía só de `centroZ - profundidade/2` e o único limite era a linha
-       de fundo, portanto o valor do painel não tinha efeito nenhum no bloco —
-       era lido só para DESENHAR a linha tracejada (ver match.js). Com a bola
-       no meio-campo adversário o bloco subia muito acima da linha que o
-       utilizador tinha escolhido.
-
-       Só SEM bola: com posse, o bloco sobe com a jogada e a linha defensiva
-       deixa de ser a restrição — quem trava a frente é o fora-de-jogo.
-
-       Empurrar o z0 para baixo mantém a profundidade (z1 acompanha); os
-       limites do campo, logo a seguir, continuam a mandar por cima disto.
-    */
-    if (!bb.isAttacking && typeof TeamShape !== 'undefined' &&
-        typeof Tatics !== 'undefined' && TeamShape.linhaDefensiva) {
-        const capLinha = TeamShape.linhaDefensiva[Tatics.linhaDefensiva]
-            ?? TeamShape.linhaDefensiva.medium;
-        if (z0 > capLinha) {
-            z0 = capLinha;
-            z1 = z0 + profundidade;
-        }
-    }
-
     /* --- limites em Z (Regra 2 e Regra 3) -------------------------------
-       LIMITADOS NOS LIMITES DO CAMPO E A MARCA DE PENALTY (11m da linha de fundo)
-       - Marca de penalty da defesa: -(CAMPO_COMP / 2 - 11.0) = -42.0m
-       - Marca de penalty do ataque: +(CAMPO_COMP / 2 - 11.0) = +42.0m
+       O rectângulo do bloco vai até à LINHA DA GRANDE ÁREA das duas balizas,
+       e não até à marca de penálti (11 m) como ia antes:
+       - Linha da grande área da defesa: -(CAMPO_COMP / 2 - 16.5) = -36.5 m
+       - Linha da grande área do ataque: +(CAMPO_COMP / 2 - 16.5) = +36.5 m
+
+       São 5.5 m de recuo em cada ponta face aos ±42.0 anteriores. A área é a
+       borda que se lê no campo, e é o slot da última linha que ali encosta —
+       um defensor não se põe dentro da própria grande área a organizar o
+       bloco, nem o bloco avança para dentro da área adversária.
     */
-    const minZ = -(CAMPO_COMP / 2 - 11.0);
-    const maxZ = (CAMPO_COMP / 2 - 11.0);
+    const minZ = -(CAMPO_COMP / 2 - AREA_GRANDE_PROF);
+    const maxZ = (CAMPO_COMP / 2 - AREA_GRANDE_PROF);
 
     if (z0 < minZ) {
         z0 = minZ;
         z1 = z0 + profundidade;
         if (z1 > maxZ) z1 = maxZ;
     } else if (z1 > maxZ) {
+        /*
+        A frente bate na marca de penálti adversária: o bloco ENCOLHE contra
+        ela. Fazia `z0 = z1 - profundidade`, ou seja arrastava o rectângulo
+        inteiro para trás — tocar numa borda recalculava a outra, o defeito que
+        já tinha sido corrigido nos outros caminhos. Era ele que punha a
+        traseira 26 m atrás do tecto da Linha Defensiva com bloco longo.
+        */
         z1 = maxZ;
-        z0 = z1 - profundidade;
+        if (z0 > z1) z0 = z1;
+    }
+
+    /* --- Linha Defensiva do painel (ÂNCORA da traseira) ------------------
+       A TRASEIRA do bloco é a linha defensiva da equipa, e o painel diz ONDE
+       ela se põe (TeamShape.linhaDefensiva, no referencial de ataque).
+
+       Era só um TECTO — cortava a linha quando ela subia demais, mas nunca a
+       fazia subir. Com bloco longo e a bola longe, a traseira saía do centro do
+       bloco e o tecto nunca mordia: medido sem posse com a bola em +20 e Length
+       `large`, `medium` (-18.25) e `high` (-2.0) davam os DOIS -20.0, ou seja o
+       botão não separava nada. Passa a âncora: a traseira assume o valor
+       pedido, e só recua de lá por uma razão de jogo.
+
+       Quem manda recuar é `recuoDaUltimaLinha` (config.js), que estava escrita
+       e nunca era chamada — os dois recuos legítimos são:
+
+         - o adversário mais recuado: a linha põe-se `distancia` metros atrás
+           dele (MarkingModel.distanciaPorPressao, do Defensive Pressure), senão
+           deixava-se um atacante nas costas;
+         - o piso do guarda-redes, que é um limite físico e ganha a tudo.
+
+       Só SEM bola: com posse o bloco sobe com a jogada e quem trava a frente é
+       o fora-de-jogo, não isto.
+
+       CORRE DEPOIS DOS LIMITES DO CAMPO, e fica com a última palavra. Corria
+       antes, e o `else if (z1 > maxZ)` recalculava `z0 = z1 - profundidade`,
+       arrastando o rectângulo inteiro para trás e desfazendo o que acabara de
+       ser aplicado.
+
+       Quando a linha pedida e a profundidade pedida não cabem entre ela e a
+       marca de penálti adversária, quem cede é a FRENTE: a traseira é escolha
+       explícita do painel, a frente é derivada. O bloco encolhe, com um mínimo
+       de `profundidadeMinima` para não colapsar numa linha só.
+    */
+    if (!bb.isAttacking && typeof TeamShape !== 'undefined' &&
+        typeof Tatics !== 'undefined' && TeamShape.linhaDefensiva) {
+        const capLinha = TeamShape.linhaDefensiva[Tatics.linhaDefensiva]
+            ?? TeamShape.linhaDefensiva.medium;
+
+        /*
+        Adversário de campo mais recuado e piso do guarda-redes, ambos no
+        referencial de ataque desta equipa. `null` quando não há lista de
+        adversários (harness de teste, arranque): aí a âncora manda sozinha.
+        */
+        let maisRecuadoDir = null, pisoDir = null;
+        if (bb.opp && bb.opp.length) {
+            for (const o of bb.opp) {
+                if (!o || o.role === 'gk' || !o.model) continue;
+                const zDir = o.model.position.z * bb.dir;
+                if (maisRecuadoDir === null || zDir < maisRecuadoDir) maisRecuadoDir = zDir;
+            }
+        }
+        if (bb.own && bb.own.length) {
+            const gk = bb.own.find(pl => pl && pl.role === 'gk' && pl.model);
+            if (gk) pisoDir = gk.model.position.z * bb.dir + 1.0;
+        }
+
+        const M = (typeof MarkingModel !== 'undefined') ? MarkingModel : null;
+        const distancia = (M && M.distanciaPorPressao)
+            ? (M.distanciaPorPressao[Tatics.pressaoDefensiva] ?? M.distanciaPorPressao.balanced)
+            : 3.0;
+
+        z0 = recuoDaUltimaLinha(z0, maisRecuadoDir, distancia, pisoDir, capLinha);
+
         if (z0 < minZ) z0 = minZ;
+        z1 = Math.min(z0 + profundidade, maxZ);
+        const profMin = B.profundidadeMinima ?? 20.0;
+        if (z1 - z0 < profMin) z1 = Math.min(z0 + profMin, maxZ);
     }
 
     /* --- largura e centro em X (Regra 1 e Regra 2) ----------------------

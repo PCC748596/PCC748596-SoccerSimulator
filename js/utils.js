@@ -282,6 +282,95 @@ function rodarNoPlano(x, z, angulo) {
 }
 
 /*
+Velocidade de saída para a bola chegar a um ponto com ALTURA — `distancia`
+metros à frente e `alturaAlvo` do chão, partindo de `alturaSaida`.
+
+Isto não existia. O lateral (e o chutão) usavam a fórmula de alcance,
+
+    v = sqrt(alcance * g / sin(2 * elev))
+
+que só vale quando a altura de saída é IGUAL à de chegada. A bola de um lateral
+sai das mãos, a uns 2 m do chão, e a fórmula trata esse ponto como se fosse o
+chão: o "alcance" que ela devolve é onde a bola voltaria à altura das mãos, não
+onde chega ao receptor. Resultado: mirava-se um companheiro e a bola chegava-lhe
+à altura que calhasse.
+
+Da parábola, com dh = alturaAlvo - alturaSaida:
+
+    dh = D * tan(elev) - g * D^2 / (2 * v^2 * cos^2(elev))
+    v^2 = g * D^2 / (2 * cos^2(elev) * (D * tan(elev) - dh))
+
+O denominador tem de ser positivo — `D * tan(elev) > dh` — senão o ângulo não
+chega para o alvo (alvo alto, ângulo baixo). Nesse caso sobe-se o ângulo em
+passos até haver solução; se nem no tecto houver, devolve `null` e quem chama
+que decida (o `lancarLateral` cai na fórmula de alcance de sempre).
+
+Devolve `{ v, elev }`: o ângulo pode não ser o pedido.
+
+Pura: sem Match, sem THREE, sem Math.random.
+*/
+function velocidadeDeLancamento(distancia, alturaSaida, alturaAlvo, elev, gravidade, elevMaxRad) {
+    const D = distancia;
+    if (!(D > 0.01)) return null;
+
+    const g = (typeof gravidade === 'number') ? gravidade : 9.81;
+    const tecto = (typeof elevMaxRad === 'number') ? elevMaxRad : (75 * Math.PI / 180);
+    const dh = alturaAlvo - alturaSaida;
+
+    // 12 passos até ao tecto: fino que chegue para não saltar por cima de uma
+    // solução, barato que chegue para correr num lançamento.
+    const PASSOS = 12;
+    let ang = elev;
+    for (let i = 0; i <= PASSOS; i++) {
+        const c = Math.cos(ang);
+        const denom = 2 * c * c * (D * Math.tan(ang) - dh);
+        if (denom > 1e-6) {
+            const v2 = (g * D * D) / denom;
+            if (v2 > 0 && isFinite(v2)) return { v: Math.sqrt(v2), elev: ang };
+        }
+        if (ang >= tecto) break;
+        ang = Math.min(tecto, ang + (tecto - elev) / PASSOS);
+    }
+    return null;
+}
+
+/*
+Dispersão angular de quem repõe um LATERAL, em radianos, a partir da TEC.
+
+Porque não o `sigmaDePasse`: ele mistura PASS com TEC e aplica pressão e ângulo
+do corpo. Num lateral nada disso se aplica — quem repõe está parado, fora do
+campo, virado para dentro, e os adversários estão obrigados a
+`ThrowInModel.afastaAdversarios` metros da bola. Sobra a técnica.
+
+Pura: sem Math.random — a amostra é sorteada por quem chama (ver
+amostraGaussiana).
+*/
+function sigmaDeLateral(tecSkill) {
+    const T = ThrowInModel;
+    const tec = Math.max(0, Math.min(100, tecSkill || 0)) / 100;
+    return T.sigmaMin + (T.sigmaMax - T.sigmaMin) * (1 - tec);
+}
+
+/*
+Onde a bola cai depois de uma matada no peito, em metros à frente do jogador.
+
+Era um binário: o `venceuDuelo` sorteava bom/mau e a distância saía de duas
+constantes fixas, 0.5 m ou 1.5 m. A técnica só mexia na probabilidade do
+sorteio, e mesmo o caso bom largava a bola a meio metro — que não é "no pé".
+
+Agora a TEC manda na distância, com dispersão à volta dela: técnico alto encosta
+a bola ao pé, técnico fraco larga-a longe e disputável. O `gauss` é injectado
+para a função ser pura e testável.
+*/
+function quedaNoPeito(tecSkill, gauss) {
+    const B = BallControl;
+    const tec = Math.max(0, Math.min(100, tecSkill || 0)) / 100;
+    const base = B.peitoQuedaMax + (B.peitoQuedaMin - B.peitoQuedaMax) * tec;
+    const dist = base * (1 + (gauss || 0) * B.sigmaQueda);
+    return Math.max(B.peitoQuedaMin * 0.6, Math.min(B.peitoQuedaMax * 1.3, dist));
+}
+
+/*
 Passe rasteiro: velocidade de saída para a bola percorrer `dist` metros e lá
 chegar ainda com `vChegada` m/s (um passe tem de chegar jogável, não morto).
 

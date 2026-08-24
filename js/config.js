@@ -165,6 +165,13 @@ do salto.
 const ALTURA_TESTA = ALTURA_CABECA - 0.10;   // 1.62
 const CAMPO_LARG = 68; const CAMPO_COMP = 106;
 
+/*
+Profundidade da grande área, da linha de fundo para dentro. É a borda do
+rectângulo do bloco táctico nas duas pontas (ver computeBlock em team_bt.js):
+|z| = CAMPO_COMP/2 - AREA_GRANDE_PROF = 36.5 m.
+*/
+const AREA_GRANDE_PROF = 16.5;
+
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
@@ -575,7 +582,42 @@ const ThrowInModel = {
     elevMax: 34 * Math.PI / 180,
     forcaBraco: 0.25,        // ±25% de alcance entre STRENGTH 0 e 100
     recuoDaLinha: 0.7,       // metros para lá da linha onde o batedor se põe
-    afastaAdversarios: 2.5   // ninguém do outro lado a menos disto da bola
+    afastaAdversarios: 2.5,  // ninguém do outro lado a menos disto da bola
+
+    /*
+    ALVO EM ALTURA. O lateral é cobrado nos PÉS do receptor ou no PEITO dele, e
+    a escolha é a distância: curto põe-se no pé, para ele sair a jogar já; mais
+    longo procura o peito, que é o alvo grande e o que se protege de costas.
+
+    A altura do peito NÃO tem constante própria — é a `BallControl.peitoAltura`
+    que a recepção usa. Se fossem duas, podiam divergir e a bola chegaria fora
+    da faixa `peitoYMin`/`peitoYMax` que dispara o `controlarNoPeito`: mirava-se
+    o peito e ele dominava com o pé.
+
+    Ver velocidadeDeLancamento em utils.js — a balística passou a resolver um
+    ponto (distância, altura), em vez da fórmula de alcance, que só vale com a
+    altura de chegada igual à de saída e portanto nunca mirou nada.
+    */
+    distanciaAosPes: 9.0,
+
+    /*
+    ERRO DE EXECUÇÃO, por TEC de quem repõe. Não havia nenhum: a direcção saía
+    exacta para o alvo e a única variação era o sorteio uniforme da elevação,
+    que muda a trajectória mas não a pontaria. Um jogador de TEC 20 repunha tão
+    bem como um de TEC 90.
+
+    `sigmaMax` fica um pouco abaixo dos ~9° do passe (PassErrorModel): o lateral
+    é curto e feito com as duas mãos, de pé parado. `sigmaMin` existe porque nem
+    o melhor executante é exacto.
+
+    O peso é um erro à parte, sobre a DISTÂNCIA alvo — cai curta ou passa o
+    receptor. Ver sigmaDeLateral em utils.js.
+    */
+    sigmaMax: 0.13,          // rad (~7.5°) a TEC 0
+    sigmaMin: 0.02,          // rad (~1.1°) a TEC 100
+    sigmaPeso: 0.10,         // desvio relativo no alcance a TEC 0
+    pesoMin: 0.6,            // cortes do erro de peso, para não sair absurdo
+    pesoMax: 1.4
 };
 
 const GoalkeeperThrowPower = 1.0;
@@ -870,6 +912,15 @@ const BlockShape = {
         mediumLarge: 60 / 106,    // 60 m — médio-longo
         large: 70 / 106           // 70 m — bloco longo
     },
+
+    /*
+    Profundidade MÍNIMA do bloco, em metros. Só entra quando o tecto da Linha
+    Defensiva e a marca de penálti adversária não deixam espaço para a
+    profundidade pedida (linha alta + bloco longo): aí a frente do bloco cede,
+    e é isto que a impede de colapsar em cima da traseira. Ver computeBlock em
+    team_bt.js.
+    */
+    profundidadeMinima: 20.0,
 
     /*
     Largura do bloco. É a amplitude da equipa — a manípula que o senhor pediu:
@@ -2945,20 +2996,32 @@ const BallControl = {
     Bola à altura do peito não se domina com o pé: o jogador inclina a
     cintura para trás e deixa-a bater no peito.
 
-    O sorteio decide só a QUALIDADE do amortecimento, não a posse: em
-    qualquer dos casos a bola fica à frente dele e ele sai a jogar. Ganhou,
-    morre-lhe aos pés (0.5 m); perdeu, repica mais longe (1.5 m) e fica
-    disputável.
+    Onde a bola cai sai da TÉCNICA, numa curva contínua (ver quedaNoPeito em
+    utils.js): técnico alto encosta-a ao pé, técnico fraco larga-a longe e
+    disputável. Em qualquer dos casos ela fica à frente dele e ele sai a jogar.
+
+    Era um binário — o `venceuDuelo` sorteava bom/mau e a distância saía de duas
+    constantes fixas, 0.5 m ou 1.5 m. A TEC só mexia na probabilidade do
+    sorteio, e mesmo o caso bom largava a bola a meio metro, que não é "no pé".
+    O sorteio continua a existir, mas só para a animação, as estatísticas e o
+    evento CHEST_CONTROL — deixou de decidir onde a bola cai.
     */
     // Alturas medidas a partir dos PÉS do jogador (ver distanciaAoCorpo).
     // peitoYMin tem de ser >= peitoAltura (1.20, mais abaixo): bola abaixo do
     // peito de verdade não faz sentido matar no peito, é toque de pé normal.
     peitoYMin: 1.15,       // altura mínima do contacto para contar como peito
     peitoYMax: 1.35,      // acima disto é cabeça (ver ALTURA_CABECA), não peito
-    peitoBase: 0.45,      // probabilidade base de amortecer bem
+    peitoBase: 0.45,      // probabilidade base de amortecer bem (só animação/stats)
     peitoDur: 0.55,       // duração (s) do gesto
-    peitoQueda: 0.5,      // metros à frente quando domina bem
-    peitoRepique: 1.5,    // metros à frente quando falha
+
+    /*
+    Distância a que a bola fica ADIANTADA depois da matada, por TEC. O máximo
+    (TEC 0) é o pior amortecimento que ainda conta como matada — acima disto
+    seria um ressalto, não uma recepção.
+    */
+    peitoQuedaMin: 0.35,  // metros à frente a TEC 100 — no pé
+    peitoQuedaMax: 1.6,   // e a TEC 0
+    sigmaQueda: 0.25,     // dispersão relativa em torno dessa distância
     /*
     Só a CINTURA para trás — `chest.rotation.x`, aplicado em
     player.aplicarCamadaPeito(). A pelvis não se toca: rodá-la deitava o
@@ -2971,9 +3034,9 @@ const BallControl = {
     /*
     A bola COLA ao peito antes de cair.
 
-    Antes era teleportada no frame do contacto para `peitoQueda`/`peitoRepique`
-    metros à frente e à altura do chão — nunca se via a bola encostada ao
-    corpo, só a aparecer longe dele. Agora fica presa ao tronco durante
+    Antes era teleportada no frame do contacto para a distância de queda, já à
+    altura do chão — nunca se via a bola encostada ao corpo, só a aparecer
+    longe dele. Agora fica presa ao tronco durante
     `peitoCola` segundos (acompanhando-o se ele ainda estiver a andar) e só
     depois é largada com velocidade, caindo sozinha à distância pedida.
     */

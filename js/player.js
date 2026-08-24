@@ -513,15 +513,53 @@ class FootballPlayer {
             dx = paraDentro * 12.0;
             dz = this.dirZ * 6.0;
         }
-        const dist = Math.hypot(dx, dz) || 1;
+        let dist = Math.hypot(dx, dz) || 1;
+
+        /*
+        ERRO DE EXECUÇÃO por TEC. Não havia nenhum: a direcção saía exacta para
+        o alvo e a única variação era o sorteio da elevação, que muda a
+        trajectória e não a pontaria.
+
+        Dois desvios independentes — a direcção (a bola sai torta) e o peso (cai
+        curta ou passa o receptor). Ver sigmaDeLateral em utils.js.
+        */
+        const sigma = sigmaDeLateral(this.skillFor('TEC'));
+        const desvio = amostraGaussiana(Math.random) * sigma;
+        const rodado = rodarNoPlano(dx, dz, desvio);
+        dx = rodado.x; dz = rodado.z;
+
+        const sigmaPeso = T.sigmaPeso * (sigma / T.sigmaMax);
+        const errePeso = THREE.MathUtils.clamp(
+            1 + amostraGaussiana(Math.random) * sigmaPeso, T.pesoMin, T.pesoMax);
 
         const forca = 1 + ((this.skillFor('STRENGTH') - 50) / 50) * T.forcaBraco;
-        const alcance = THREE.MathUtils.clamp(dist,
+        const alcance = THREE.MathUtils.clamp(dist * errePeso,
             T.alcanceMin, T.alcanceMax * forca);
         const elev = T.elevMin + Math.random() * (T.elevMax - T.elevMin);
 
-        const v = Math.sqrt((alcance * gGrav) / Math.sin(2 * elev));
-        const horiz = v * Math.cos(elev);
+        /*
+        ALVO EM ALTURA: os PÉS do receptor se o lateral for curto, o PEITO dele
+        se for mais longo.
+
+        A bola sai das mãos, a uns 2 m do chão, e a fórmula de alcance
+        (`v = sqrt(alcance * g / sin(2 * elev))`) só vale com a altura de
+        chegada igual à de saída — tratava o ponto de saída como se fosse o
+        chão, e por isso o lateral nunca mirou altura nenhuma: chegava ao
+        receptor à altura que calhasse.
+
+        `alturaSaida` é a da bola AGORA, que está nas mãos. Sem solução para o
+        ângulo sorteado, cai-se na fórmula de sempre.
+        */
+        const alvoNoPeito = alcance > T.distanciaAosPes;
+        const alturaAlvo = alvoNoPeito ? BallControl.peitoAltura : BallPhysics.raio;
+        const alturaSaida = Match.ball.position.y;
+
+        const bal = velocidadeDeLancamento(
+            alcance, alturaSaida, alturaAlvo, elev, gGrav, T.elevMax * 2);
+
+        const v = bal ? bal.v : Math.sqrt((alcance * gGrav) / Math.sin(2 * elev));
+        const angulo = bal ? bal.elev : elev;
+        const horiz = v * Math.cos(angulo);
 
         /*
         A bola SAI DE DENTRO da linha, não das mãos.
@@ -541,7 +579,8 @@ class FootballPlayer {
             Match.ball.position.y,
             Match.ball.position.z);
 
-        Match.ballVel.set((dx / dist) * horiz, v * Math.sin(elev), (dz / dist) * horiz);
+        dist = Math.hypot(dx, dz) || 1;
+        Match.ballVel.set((dx / dist) * horiz, v * Math.sin(angulo), (dz / dist) * horiz);
 
         this.hasBall = false;
         this.touchLock = BallControl.touchLock;
@@ -1044,15 +1083,24 @@ class FootballPlayer {
 
     /*
     Larga a bola do peito. Em vez de a teleportar, dá-se-lhe a velocidade que
-    a faz cair à distância pedida em config: resolve-se o tempo de queda da
-    altura do peito com a velocidade vertical de saída (para baixo se dominou,
-    para cima se falhou) e daí sai a componente horizontal.
+    a faz cair à distância pedida: resolve-se o tempo de queda da altura do
+    peito com a velocidade vertical de saída e daí sai a componente horizontal.
+
+    A distância vem da TÉCNICA, contínua (ver quedaNoPeito em utils.js), e não
+    de um binário bom/mau com duas constantes fixas. A velocidade vertical
+    acompanha a mesma fracção: quem amortece bem mata a bola para baixo, quem
+    amortece mal cospe-a para cima — antes eram duas coisas descorrelacionadas,
+    e via-se a bola morrer no pé mas a repicar.
     */
     largarDoPeito() {
         const B = BallControl;
         const g = BallPhysics.gravidade;
-        const dist = this.peitoBom ? B.peitoQueda : B.peitoRepique;
-        const vy = this.peitoBom ? B.peitoVelYBoa : B.peitoVelYMa;
+        const tec = this.skillFor('TEC');
+        const dist = quedaNoPeito(tec, amostraGaussiana(Math.random));
+
+        const frac = THREE.MathUtils.clamp(tec / 100, 0, 1);
+        const vy = B.peitoVelYMa + (B.peitoVelYBoa - B.peitoVelYMa) * frac;
+
         const queda = Math.max(0.1, B.peitoAltura - BallPhysics.raio);
         const t = (vy + Math.sqrt(vy * vy + 2 * g * queda)) / g;
         const vh = dist / Math.max(0.1, t);

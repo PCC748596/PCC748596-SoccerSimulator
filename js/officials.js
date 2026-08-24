@@ -235,8 +235,20 @@ const Officials = {
         return { x: px, z: pz };
     },
 
-    // Desloca um oficial para o alvo e anima a passada com o ciclo do jogo.
-    mover: function (o, alvoX, alvoZ, velMax, dt) {
+    /*
+    Desloca um oficial para o alvo e anima a passada com o ciclo do jogo.
+
+    `olharPara` (opcional, {x, z}) fixa a ORIENTAÇÃO do corpo num ponto — para o
+    árbitro, a bola. Sem isso ele vira-se para onde anda, e como o alvo dele é
+    uma projecção na diagonal do campo, passava metade do lance a correr de
+    costas para o lance. Um árbitro nunca perde a bola de vista: desloca-se de
+    lado ou de recuo, mas de cara para o jogo.
+
+    A orientação é escrita mesmo com ele parado — daí não passar pelo corte de
+    `d > 0.4` que a viragem para o movimento tem (esse existe para não fazer
+    piruetas quando o deslocamento é ruído).
+    */
+    mover: function (o, alvoX, alvoZ, velMax, dt, olharPara) {
         const dx = alvoX - o.model.position.x;
         const dz = alvoZ - o.model.position.z;
         const d = Math.hypot(dx, dz);
@@ -249,8 +261,14 @@ const Officials = {
         }
         const vel = dt > 0.0001 ? passo / dt : 0;
 
-        // Vira-se para onde anda; quase parado, mantém a orientação.
-        if (d > 0.4) o.model.rotation.y = Math.atan2(dx, dz);
+        if (olharPara) {
+            const ox = olharPara.x - o.model.position.x;
+            const oz = olharPara.z - o.model.position.z;
+            if (Math.hypot(ox, oz) > 0.05) o.model.rotation.y = Math.atan2(ox, oz);
+        } else if (d > 0.4) {
+            // Vira-se para onde anda; quase parado, mantém a orientação.
+            o.model.rotation.y = Math.atan2(dx, dz);
+        }
 
         const rig = o.rig;
         if (vel > 0.1 && typeof getGaitPose === 'function') {
@@ -258,18 +276,56 @@ const Officials = {
             o.animTimer += (vel * dt) / P0.passada;
             const t = ((o.animTimer % 1.0) + 1.0) % 1.0;
             const P = getGaitPose(t, vel);
-            rig.lLeg.rotation.x = P.lHip; rig.lKnee.rotation.x = P.lKnee;
-            rig.rLeg.rotation.x = P.rHip; rig.rKnee.rotation.x = P.rKnee;
-            rig.lArm.rotation.x = P.lArm; rig.rArm.rotation.x = P.rArm;
+
+            /*
+            PASSO LATERAL, o mesmo dos jogadores (LateralGait, ver animateBones
+            em player.js). Com o corpo preso à bola e o alvo noutro sítio, o
+            ciclo frontal ficava a correr por cima de uma deslocação de lado e o
+            árbitro patinava. `lateralidade` é 0 quando anda para onde olha e 1
+            quando anda de lado: encolhe a passada e abre as ancas em oposição
+            de fase.
+            */
+            let lateralidade = 0, ladoMov = 0;
+            if (d > 0.0001 && typeof LateralGait !== 'undefined') {
+                const fx = Math.sin(o.model.rotation.y), fz = Math.cos(o.model.rotation.y);
+                const mx = dx / d, mz = dz / d;
+                const alinhamento = fx * mx + fz * mz;
+                const desvio = Math.acos(THREE.MathUtils.clamp(Math.abs(alinhamento), -1, 1));
+                if (desvio > LateralGait.anguloMin) {
+                    lateralidade = Math.min(1, (desvio - LateralGait.anguloMin) /
+                        (Math.PI / 2 - LateralGait.anguloMin));
+                    ladoMov = Math.sign(fz * mx - fx * mz) || 1;
+                }
+            }
+            const amp = 1 - lateralidade *
+                ((typeof LateralGait !== 'undefined') ? LateralGait.reducaoPassada : 0);
+
+            rig.lLeg.rotation.x = P.lHip * amp; rig.lKnee.rotation.x = P.lKnee * amp;
+            rig.rLeg.rotation.x = P.rHip * amp; rig.rKnee.rotation.x = P.rKnee * amp;
+            rig.lArm.rotation.x = P.lArm * amp; rig.rArm.rotation.x = P.rArm * amp;
             rig.lElbow.rotation.x = P.cotovelo; rig.rElbow.rotation.x = P.cotovelo;
-            rig.chest.rotation.x = P.tronco;
+            rig.chest.rotation.x = P.tronco * amp;
             o.model.position.y = P.ressalto;
+
+            if (lateralidade > 0.001) {
+                const A = LateralGait.abertura * lateralidade;
+                const osc = Math.sin(t * Math.PI * 2) * A;
+                rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, ladoMov * A * 0.5 + osc, 0.35);
+                rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, ladoMov * A * 0.5 - osc, 0.35);
+            } else {
+                rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, 0);
+                rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, 0);
+            }
         } else {
             const ossos = ['lLeg', 'rLeg', 'lKnee', 'rKnee', 'lArm', 'rArm', 'lElbow', 'rElbow'];
             for (let i = 0; i < ossos.length; i++) {
                 rig[ossos[i]].rotation.x = lerpTo(rig[ossos[i]].rotation.x, 0, 0.2);
             }
             rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, 0, 0.2);
+            // Fecha também a abdução do passo lateral, senão ficava de pernas
+            // abertas ao parar.
+            rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, 0, 0.2);
+            rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, 0, 0.2);
             o.model.position.y = lerpTo(o.model.position.y, 0, 0.2);
         }
     },
@@ -301,7 +357,8 @@ const Officials = {
             R.velocidadeAssistente, dt);
 
         const alvoArb = this.pontoDoArbitro(Match.ball.position);
-        this.mover(this.arbitro, alvoArb.x, alvoArb.z, R.velocidade, dt);
+        this.mover(this.arbitro, alvoArb.x, alvoArb.z, R.velocidade, dt,
+            Match.ball.position);
     },
 
     setVisivel: function (on) {
