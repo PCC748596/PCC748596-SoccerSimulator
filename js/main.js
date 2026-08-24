@@ -177,20 +177,6 @@ function togglePlayingStyleBT() {
     }
 }
 
-function toggleSpatialGrid() {
-    if (typeof SpatialGrid === 'undefined') return;
-    SpatialGrid.setDebug(!SpatialGrid.debug);
-    document.getElementById('btn-spatialgrid').innerText = 'SG PASS/MARKING: ' + (SpatialGrid.debug ? 'ON' : 'OFF');
-    document.getElementById('btn-spatialgrid').classList.toggle('active', SpatialGrid.debug);
-}
-
-function togglePassCandidates() {
-    if (typeof PassCandidates === 'undefined') return;
-    PassCandidates.setDebug(!PassCandidates.debug);
-    document.getElementById('btn-passcandidates').innerText = 'PlayerPassTarget: ' + (PassCandidates.debug ? 'ON' : 'OFF');
-    document.getElementById('btn-passcandidates').classList.toggle('active', PassCandidates.debug);
-}
-
 function toggleUsarPasseGrid() {
     window.usarPasseGrid = !window.usarPasseGrid;
     document.getElementById('btn-passgrid').innerText = 'PassGrid (decisão): ' + (window.usarPasseGrid ? 'ON' : 'OFF');

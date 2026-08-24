@@ -1405,7 +1405,7 @@ const Match = {
         // Sem isto o leque de candidatos era desenhado UMA vez, no instante em
         // que se liga o toggle, e ficava congelado nesse frame: os jogadores
         // saíam de baixo dos pontos e parecia que os pontos desapareciam.
-        if (typeof PassCandidates !== 'undefined') PassCandidates.update(dt);
+
         if (typeof Perception !== 'undefined') Perception.tick(this, dt);
         this.runTeamAI();
 

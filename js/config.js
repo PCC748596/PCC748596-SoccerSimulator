@@ -626,9 +626,11 @@ const BlockShape = {
     do fora-de-jogo da equipa — ver computeBlock em team_bt.js.
     */
     profundidade: {
-        short: 30 / 106,      // 30 m — bloco curto
-        median: 40 / 106,     // 40 m — bloco médio (padrão)
-        large: 50 / 106       // 50 m — bloco longo
+        short: 30 / 106,          // 30 m — bloco curto
+        mediumSmall: 40 / 106,    // 40 m — médio-curto
+        median: 50 / 106,         // 50 m — bloco médio (padrão)
+        mediumLarge: 60 / 106,    // 60 m — médio-longo
+        large: 70 / 106           // 70 m — bloco longo
     },
 
     /*
@@ -1718,6 +1720,15 @@ const CarryModel = {
     touchShort: 0.96,     // toque curto (adversário perto < 8m)
     touchPower: 8.0,      // força base do toque (m/s)
     touchCooldown: 0.4,   // tempo mínimo entre toques (seg)
+
+    /*
+    Até onde um DEFESA conduz a bola, no referencial de ataque. Ele conduz para
+    sair a jogar, não para atacar: passada esta linha tem de largar a bola.
+    0 = meio-campo. Sem este tecto, um central que recebesse com campo aberto
+    à frente — o caso normal — caía no ramo ConduzirEmEspaco do BT e ia com ela
+    até à área adversária, driblando pelo caminho.
+    */
+    limiteConducaoDefesa: 0.0,
     touchMaxWait: 0.18,   // espera máx. pela janela da passada antes de forçar o toque (seg)
     recoverRadius: 0.8,   // distância para re-capturar a bola após toque
 
@@ -1731,7 +1742,17 @@ const CarryModel = {
     apontar para dentro da faixa, senão o
     jogador continuava a correr contra a linha sem nunca poder tocar.
     */
-    margemLinhaFundo: 0.0
+    /*
+    Metros à linha de fundo dentro dos quais NÃO se adianta a bola (ver
+    pertoDaLinhaDeFundo em utils.js). Estava em 0.0, o que desligava a trava
+    por completo — a função devolvia sempre false e o toque punha a bola fora
+    pela linha de fundo, dando pontapé de baliza ao adversário.
+
+    3.5 m cobre um toque curto (0.96) e boa parte de um médio (1.6) a partir
+    da linha; o resto é apanhado pelo emZonaDeFinalizacao, que trava o toque
+    em toda a zona de remate.
+    */
+    margemLinhaFundo: 3.5
 };
 
 /*

@@ -35,11 +35,6 @@ const SpatialGrid = {
     minX: 0, minZ: 0,
     cells: null,
 
-    debug: false,
-    _mesh: null, _canvas: null, _ctx: null, _tex: null,
-    _redrawAccum: 0,
-    _redrawEvery: 0.15, // debug é caro (texto por célula) — não vale redesenhar a 60fps
-
     init: function () {
         this.minX = -CAMPO_LARG / 2;
         this.minZ = -CAMPO_COMP / 2;
@@ -81,13 +76,6 @@ const SpatialGrid = {
             this.cells[this.idx(c.ix, c.iz)].TeamB.push(p);
         }
 
-        if (this.debug) {
-            this._redrawAccum += (dt || 0);
-            if (this._redrawAccum >= this._redrawEvery) {
-                this._redrawAccum = 0;
-                this.updateDebugVisual();
-            }
-        }
     },
 
     /*
@@ -108,30 +96,6 @@ const SpatialGrid = {
             return Math.max(50, 100 - 5 * distCelulas);
         },
 
-        /*
-        MARCAÇÃO: 100 desde a linha de fundo própria até 1 célula fora da
-        própria grande área (à frente dela, ainda dentro da largura da
-        área) — a "zona núcleo". A partir daí desconta 5 por célula em DUAS
-        direcções, que se somam:
-            longitudinal — em direcção à linha central (fora do núcleo em Z)
-            lateral      — em direcção à linha lateral, nas células ao lado
-                           da área mas ainda ao nível dela (fora do núcleo em X)
-        Sem bónus no meio-campo adversário (avanco > 0) — marcação é coisa
-        do terço defensivo.
-        */
-        marking: function (avanco, cx) {
-            if (avanco > 0) return 0;
-
-            let meioComp = CAMPO_COMP / 2;
-            const limiteAreaZ = -(meioComp - 16.5);              // -36.5, linha da própria área
-            const nucleoZ = limiteAreaZ + SpatialGrid.cellSizeZ; // 1 célula à frente da área
-            const nucleoX = 20.16;                          // meia-largura da área
-
-            const distZ = (avanco > nucleoZ) ? Math.floor((avanco - nucleoZ) / SpatialGrid.cellSizeZ) : 0;
-            const distX = (Math.abs(cx) > nucleoX) ? Math.floor((Math.abs(cx) - nucleoX) / SpatialGrid.cellSizeX) : 0;
-
-            return Math.max(0, 100 - 5 * (distZ + distX));
-        },
         /*
         CRUZAMENTO: faixa lateral entre a grande área e a linha lateral,
         junto à linha de fundo adversária. Duas escadinhas independentes,
@@ -192,9 +156,7 @@ const SpatialGrid = {
             const valor = base - 5 * Math.floor(colDistCel);
 
             return valor < 50 ? 0 : valor;
-        },
-
-        lancamento: function (avanco, cx) { return 0; }
+        }
     },
 
     /*
@@ -258,123 +220,5 @@ const SpatialGrid = {
             }
         }
         return melhor;
-    },
-
-    /* --- Visualização de debug -------------------------------------------
-    Fundo transparente (o relvado escuro do campo já fica visível por
-    baixo) + linhas mais claras a cada célula + valor de cada camada activa
-    (por agora só PASS; MARKING aparece a 0 até ser autorada).
-    ----------------------------------------------------------------------- */
-
-    pxPerMeter: 32,
-
-    buildDebugVisual: function () {
-        const w = Math.round(CAMPO_LARG * this.pxPerMeter);
-        const h = Math.round(CAMPO_COMP * this.pxPerMeter);
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        const tex = new THREE.CanvasTexture(canvas);
-        // Mipmap em texto fino borra tudo a qualquer ângulo/zoom que não seja
-        // 1:1 — desliga mipmap e usa filtro linear simples (nítido, sem serrilhado).
-        tex.generateMipmaps = false;
-        tex.minFilter = THREE.LinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false });
-        const geo = new THREE.PlaneGeometry(CAMPO_LARG, CAMPO_COMP);
-        const mesh = new THREE.Mesh(geo, mat);
-        // SÓ o rotation.x deita o plano no chão, alinhado com o campo
-        // (68 de largura em X, 106 de comprimento em Z). Rodar a MALHA
-        // inteira troca essas dimensões de eixo — ver histórico no commit
-        // anterior. O giro pedido é só do TEXTO (ctx.rotate), não da malha.
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.position.y = 0.03;
-        mesh.visible = false;
-        Match.scene.add(mesh);
-        this._canvas = canvas; this._ctx = ctx; this._tex = tex; this._mesh = mesh;
-    },
-
-    updateDebugVisual: function () {
-        if (!this._mesh) this.buildDebugVisual();
-        this._mesh.visible = this.debug;
-        if (!this.debug) return;
-
-        const ctx = this._ctx;
-        const csX = this.cellSizeX * this.pxPerMeter;
-        const csZ = this.cellSizeZ * this.pxPerMeter;
-        const w = this._canvas.width, h = this._canvas.height;
-        ctx.clearRect(0, 0, w, h);
-
-        // Linhas mais claras a cada célula, sobre o verde escuro do campo
-        // (que fica por baixo — este canvas é transparente).
-        ctx.strokeStyle = 'rgba(200, 255, 210, 0.22)';
-        ctx.lineWidth = 1;
-        for (let ix = 0; ix <= this.cols; ix++) {
-            ctx.beginPath(); ctx.moveTo(ix * csX, 0); ctx.lineTo(ix * csX, h); ctx.stroke();
-        }
-        for (let iz = 0; iz <= this.rows; iz++) {
-            ctx.beginPath(); ctx.moveTo(0, iz * csZ, 0); ctx.lineTo(w, iz * csZ); ctx.stroke();
-        }
-
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        // Só o TEXTO gira (90° anti-horário pedido), a malha fica alinhada
-        // com o campo. Um único sítio pra ajustar o sinal se sair invertido.
-        const textAngle = -Math.PI / 2;
-
-        for (let iz = 0; iz < this.rows; iz++) {
-            for (let ix = 0; ix < this.cols; ix++) {
-                // Linha 0 do canvas = topo = -Z no mundo (plano roda -90° em
-                // X); inverte a linha pra bater com o campo.
-                const linha = this.rows - 1 - iz;
-                const px = ix * csX + csX / 2;
-                const py = linha * csZ + csZ / 2;
-
-                const cx = this.minX + (ix + 0.5) * this.cellSizeX;
-                const cz = this.minZ + (iz + 0.5) * this.cellSizeZ;
-
-                const passA = this.layerValueAt('pass', cx, cz, 'TeamA');
-                const passB = this.layerValueAt('pass', cx, cz, 'TeamB');
-                const markA = this.layerValueAt('marking', cx, cz, 'TeamA');
-                const markB = this.layerValueAt('marking', cx, cz, 'TeamB');
-                const shotA = this.layerValueAt('chute', cx, cz, 'TeamA');
-                const shotB = this.layerValueAt('chute', cx, cz, 'TeamB');
-                const crossA = this.layerValueAt('cruzamento', cx, cz, 'TeamA');
-                const crossB = this.layerValueAt('cruzamento', cx, cz, 'TeamB');
-
-                const l1 = 'PASS | R:' + passB + ', B:' + passA;
-                const l2 = 'MARK | R:' + markB + ', B:' + markA;
-                const l3 = 'SHOT | R:' + shotB + ', B:' + shotA;
-                const l4 = 'CROSS| R:' + crossB + ', B:' + crossA;
-
-                ctx.save();
-                ctx.translate(px, py);
-                ctx.rotate(textAngle);
-
-                ctx.fillStyle = 'rgba(0,0,0,0.55)';
-                ctx.fillText(l1, 0.6, -csZ * 0.33 + 0.6);
-                ctx.fillText(l2, 0.6, -csZ * 0.11 + 0.6);
-                ctx.fillText(l3, 0.6, csZ * 0.11 + 0.6);
-                ctx.fillText(l4, 0.6, csZ * 0.33 + 0.6);
-                ctx.fillStyle = 'rgba(235,255,235,0.92)';
-                ctx.fillText(l1, 0, -csZ * 0.33);
-                ctx.fillText(l2, 0, -csZ * 0.11);
-                ctx.fillText(l3, 0, csZ * 0.11);
-                ctx.fillText(l4, 0, csZ * 0.33);
-
-                ctx.restore();
-            }
-        }
-
-        this._tex.needsUpdate = true;
-    },
-
-    setDebug: function (on) {
-        this.debug = on;
-        if (!this._mesh) this.buildDebugVisual();
-        this._mesh.visible = on;
-        if (on) this.updateDebugVisual();
     }
 };

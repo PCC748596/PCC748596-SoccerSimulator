@@ -1255,6 +1255,23 @@ class FootballPlayer {
 
     executeHeader() {
         this.showActionBanner('HEADER');
+
+        /*
+        Anti ping-pong: TODOS os cabeceios contam, não só os de fora da zona de
+        remate. O contador vivia dentro do ramo `else` lá em baixo, portanto
+        uma disputa perto da área — que é justamente onde a bola fica a saltar
+        de cabeça em cabeça — nunca chegava ao limite de
+        HeaderModel.maxHeadersSeguidos e o travão nunca entrava.
+
+        O contador zera sozinho passado HeaderModel.cooldownDisputa sem novo
+        cabeceio (ver Match.update), e também quando alguém domina no peito ou
+        a bola assenta.
+        */
+        if (typeof Match !== 'undefined') {
+            Match.aerialHeaderCount = (Match.aerialHeaderCount || 0) + 1;
+            Match.aerialHeaderTimer = (typeof HeaderModel !== 'undefined' && HeaderModel.cooldownDisputa)
+                ? HeaderModel.cooldownDisputa : 2.2;
+        }
         // De frente para a bola, mesma correcção do controlarNoPeito — sem
         // isto o corpo ficava com a orientação da última corrida, muitas
         // vezes atravessado em relação à bola que chega para a cabeçada.
@@ -1420,18 +1437,13 @@ class FootballPlayer {
             }
         } else {
             /*
-            Fora da zona de remate:
-            1. Incrementa contador de cabeceios aéreos sucessivos no Match.
-            2. Se houver colega próximo, faz escora/cabeceio para baixo (downward header)
+            Fora da zona de remate (a contagem de cabeceios seguidos é feita
+            no topo do executeHeader, para todos os casos):
+            1. Se houver colega próximo, faz escora/cabeceio para baixo (downward header)
                para que a bola caia rápida no chão para domínio com os pés.
-            3. Se for alívio defensivo (sem companheiro próximo seguro ou sob pressão),
+            2. Se for alívio defensivo (sem companheiro próximo seguro ou sob pressão),
                faz alívio longo para frente e para os lados, evitando subir na vertical.
             */
-            if (typeof Match !== 'undefined') {
-                Match.aerialHeaderCount = (Match.aerialHeaderCount || 0) + 1;
-                Match.aerialHeaderTimer = (typeof HeaderModel !== 'undefined' && HeaderModel.cooldownDisputa) ? HeaderModel.cooldownDisputa : 2.2;
-            }
-
             const target = this.findPassTarget('mid') || this.findPassTarget('atk') ||
                 this.findPassTarget('def');
 

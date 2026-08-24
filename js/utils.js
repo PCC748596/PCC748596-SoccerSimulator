@@ -613,6 +613,29 @@ punha-a fora e dava pontapé de baliza ao adversário.
 
 Usado pelo toque do CARRY (fsm.js).
 */
+/*
+Este jogador está em posição de finalizar?
+
+O mesmo teste geométrico do `emZonaDeRemate` do BT (distância ao centro da
+baliza dentro do `shootingRange()` dele, e ângulo dentro de
+`ShootingModel.maxOffsetX`), sem a parte de zona/grelha — aqui não interessa
+decidir SE remata, só saber que a bola não deve ser adiantada dali.
+
+Usado pelo toque do CARRY (fsm.js): dentro desta zona a bola fica no pé, para
+o ramo `Rematar` a poder usar. Sem isto, o portador chegava à frente do
+guarda-redes e continuava a tocar para a frente — e como o GK está fora da
+contagem de adversários do toque, o toque saía LONGO (2.8 m) e punha a bola
+fora pela linha de fundo.
+*/
+function emZonaDeFinalizacao(p) {
+    if (!p || !p.model || typeof p.shootingRange !== 'function') return false;
+    if (typeof ShootingModel === 'undefined') return false;
+    const dx = p.model.position.x;
+    const dz = p.targetGoalZ - p.model.position.z;
+    return Math.hypot(dx, dz) < p.shootingRange() &&
+        Math.abs(dx) < ShootingModel.maxOffsetX;
+}
+
 function pertoDaLinhaDeFundo(p) {
     const avanco = p.model.position.z * p.dirZ;
     return (CAMPO_COMP / 2 - avanco) < CarryModel.margemLinhaFundo;

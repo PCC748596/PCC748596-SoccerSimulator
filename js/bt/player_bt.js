@@ -257,10 +257,10 @@ function findThroughBall(ctx) {
             if (!livre) continue;
         }
 
+        // A camada `lancamento` da SpatialGrid somava-se aqui com peso 0.5, mas
+        // a função devolvia 0 em toda a parte — nunca chegou a ser autorada.
+        // Saiu com a camada; a nota é a distância e o ganho de profundidade.
         let nota = 100 - dist * 0.5 + (linhaNoNosso - mateZ) * 2.0;
-        if (typeof SpatialGrid !== 'undefined' && SpatialGrid.cells) {
-            nota += SpatialGrid.layerValueAt('lancamento', alvoX, alvoZ, p.team) * 0.5;
-        }
         if (window.showPlayerPoints) { mate.debugPoints = mate.debugPoints || {}; mate.debugPoints['Lanç'] = Math.round(nota); }
         if (nota > melhorNota) { melhorNota = nota; melhor = { mate: mate, alvoX: alvoX, alvoZ: alvoZ }; }
     }
@@ -715,6 +715,10 @@ function podeDriblar(ctx) {
     if (tec < 75) return false;
     if (p.fsm.currentState === 'DRIBBLE') return false;
     if (p.model.position.z * p.dirZ < 0) return false; // Na defesa, prioriza o passe em vez do drible
+    // Um defesa não dribla, em zona nenhuma do campo: tira a bola da zona a
+    // passar. Perder o duelo com a bola ao pé de um central é golo do outro
+    // lado, e o ganho de um drible bem sucedido ali é nenhum.
+    if (p.role === 'def') return false;
 
     // Verificar se há adversário próximo à sua frente bloqueando a passagem
     let oppProximo = null;
@@ -1532,7 +1536,22 @@ const PlayerBT = sel('PlayerRoot',
 
             // 3. Conduzir em espaço aberto (+150 pontos se sem marcação a 10m em 20 graus)
             seq('ConduzirEmEspaco',
-                cond('campoAberto', (ctx) => ctx.p.role !== 'gk' && (ctx.campoAberto || ctx.livreAFrente10m20g)),
+                cond('campoAberto', (ctx) => {
+                    const p = ctx.p;
+                    if (p.role === 'gk') return false;
+                    if (!(ctx.campoAberto || ctx.livreAFrente10m20g)) return false;
+                    /*
+                    Um defesa conduz para SAIR A JOGAR, não para atacar. Sem este
+                    tecto ele recebia atrás — com campo aberto à frente, que é o
+                    caso normal — e levava a bola até à área adversária, porque
+                    este ramo está acima do CircularNaDefesa e o CircularNaDefesa
+                    desiste justamente quando há campo aberto.
+                    */
+                    if (p.role === 'def' && ctx.zoneAhead > CarryModel.limiteConducaoDefesa) {
+                        return false;
+                    }
+                    return true;
+                }),
                 act('atacarOEspaco', actCarry)
             ),
 

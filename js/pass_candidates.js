@@ -1,11 +1,14 @@
 /*
 =============================================================================
-PlayerPassTarget — pontos candidatos para passe (debug visual)
+PlayerPassTarget — pontos candidatos para passe
 =============================================================================
 Implementa o algoritmo clássico de geração de pontos candidatos ao redor de
 cada companheiro de equipa (sem bola) do jogador com a posse, filtrando os
-que seriam facilmente interceptados. Só visualização — não decide nada (ver
-findPassTarget em player.js para a decisão real).
+que seriam facilmente interceptados.
+
+O leque é consumido pelo PassTypes (ver pontosPorMate em pass_types.js): é
+dele que saem os pontos de mira `space` / `leading` / `direct` de cada passe.
+A visualização de debug que existia aqui foi removida — nada disto desenha.
 
 Geração (por companheiro, "referencial de ataque": frente = dirZ, lateral = X):
     j de 1 a `arcos` (raio = j*`espacamento` -> arcos a 3, 6, 9 ... 21 m)
@@ -42,68 +45,12 @@ const PassCandidates = {
     passoAngular: 15,      // graus entre pontos do mesmo arco
     arcos: 7,              // quantos arcos concêntricos (3, 6, 9 ... 21 m)
     espacamento: 3.0,      // metros entre arcos (o 1º fica a esta distância)
-    raioPonto: 0.15,       // raio do disco desenhado, em metros
     raioAdversario: 2.0,   // adversário a menos disto do ponto -> ponto descartado
-
-    debug: false,
-    _group: null,
-    _pool: [],
-    _usados: 0,
-    _geo: null,
-
-    ensureGroup: function () {
-        if (this._group) return;
-        this._group = new THREE.Group();
-        Match.scene.add(this._group);
-        // Círculo achatado sobre o gramado, não uma esfera flutuando no ar.
-        this._geo = new THREE.CircleGeometry(this.raioPonto, 10);
-        this._mat = new THREE.MeshBasicMaterial({ color: 0xff8c1a, side: THREE.DoubleSide });
-    },
-
-    getDot: function () {
-        if (this._usados < this._pool.length) {
-            const m = this._pool[this._usados++];
-            m.visible = true;
-            return m;
-        }
-        const mesh = new THREE.Mesh(this._geo, this._mat);
-        mesh.rotation.x = -Math.PI / 2;
-        this._group.add(mesh);
-        this._pool.push(mesh);
-        this._usados++;
-        return mesh;
-    },
-
-    esconderResto: function () {
-        for (let i = this._usados; i < this._pool.length; i++) this._pool[i].visible = false;
-    },
-
-    setDebug: function (on) {
-        this.debug = on;
-        this.ensureGroup();
-        this._group.visible = on;
-        if (on) this.rebuild();
-        else { this._usados = 0; this.esconderResto(); }
-    },
-
-    /*
-    Todos os frames. Havia aqui um acumulador que só redesenhava de 0.2 em
-    0.2s: entre redesenhos os jogadores continuavam a correr e os pontos
-    ficavam para trás, pousados em relva vazia a vários metros do dono. A
-    5 redesenhos por segundo o leque nunca coincidia com quem o gerou.
-
-    O custo é o que já era — a mesma conta que corria a cada 0.2s — e é
-    debug, só corre com o toggle ligado.
-    */
-    update: function () {
-        if (!this.debug) return;
-        this.rebuild();
-    },
 
     /*
     Gera a lista de candidatos sobreviventes para o `carrier` — pura, sem
-    THREE, usada tanto pelo desenho de debug como pela decisão de passe real
-    (ver findGridPassTarget em player_bt.js). Devolve [{x, z, mate}, ...].
+    THREE (ver pontosPorMate em pass_types.js e findGridPassTarget em
+    player_bt.js). Devolve [{x, z, mate}, ...].
     */
     gerarCandidatos: function (carrier) {
         const out = [];
@@ -171,32 +118,6 @@ const PassCandidates = {
         }
 
         return out;
-    },
-
-    rebuild: function () {
-        this.ensureGroup();
-        this._usados = 0;
-
-        /*
-        `ballCarrier` fica a null em cada toque da condução (touchLock) e
-        durante todo o voo de um passe — ou seja, boa parte do tempo em que
-        a bola está viva. Ler só esse campo apagava o leque inteiro nesses
-        instantes, e o efeito no ecrã era um pisca-pisca.
-
-        `lastTouchedPlayer` cobre essa janela: na condução é o próprio
-        condutor, num passe é quem o fez. O leque continua a ser desenhado
-        em torno da equipa que tem a bola.
-        */
-        const carrier = Match.ballCarrier || Match.lastTouchedPlayer;
-        if (!carrier) { this.esconderResto(); return; }
-
-        const cands = this.gerarCandidatos(carrier);
-        for (const c of cands) {
-            const dot = this.getDot();
-            dot.position.set(c.x, 0.05, c.z);
-        }
-
-        this.esconderResto();
     },
 
     // `teammates` saiu da assinatura com a regra do "mais próximo": nenhuma

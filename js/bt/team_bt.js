@@ -655,6 +655,31 @@ function computeBlock(bb) {
     let z0 = centroZ - (profundidade / 2);
     let z1 = centroZ + (profundidade / 2);
 
+    /* --- tecto da Linha Defensiva (painel, Offside-Trap) -----------------
+       A TRASEIRA do bloco é a linha defensiva da equipa, e o painel dá-lhe um
+       tecto (TeamShape.linhaDefensiva, no referencial de ataque). Isto faltava:
+       o z0 saía só de `centroZ - profundidade/2` e o único limite era a linha
+       de fundo, portanto o valor do painel não tinha efeito nenhum no bloco —
+       era lido só para DESENHAR a linha tracejada (ver match.js). Com a bola
+       no meio-campo adversário o bloco subia muito acima da linha que o
+       utilizador tinha escolhido.
+
+       Só SEM bola: com posse, o bloco sobe com a jogada e a linha defensiva
+       deixa de ser a restrição — quem trava a frente é o fora-de-jogo.
+
+       Empurrar o z0 para baixo mantém a profundidade (z1 acompanha); os
+       limites do campo, logo a seguir, continuam a mandar por cima disto.
+    */
+    if (!bb.isAttacking && typeof TeamShape !== 'undefined' &&
+        typeof Tatics !== 'undefined' && TeamShape.linhaDefensiva) {
+        const capLinha = TeamShape.linhaDefensiva[Tatics.linhaDefensiva]
+            ?? TeamShape.linhaDefensiva.medium;
+        if (z0 > capLinha) {
+            z0 = capLinha;
+            z1 = z0 + profundidade;
+        }
+    }
+
     /* --- limites em Z (Regra 2 e Regra 3) -------------------------------
        LIMITADOS NOS LIMITES DO CAMPO E A LINHA DA PEQUENA ÁREA (5.5m da linha de fundo)
        - Pequena área da defesa: -(CAMPO_COMP / 2 - 5.5) = -47.5m

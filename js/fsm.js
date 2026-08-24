@@ -715,7 +715,8 @@ class PlayerFSM {
                 correr, mas com a bola no pé (ver pertoDaLinhaDeFundo).
                 */
                 if (p.hasBall && p.velocity.lengthSq() > 2.0 && this.timer > CarryModel.touchCooldown
-                    && !pertoDaLinhaDeFundo(p) && p.gkEstado !== 'segurando') {
+                    && !pertoDaLinhaDeFundo(p) && !emZonaDeFinalizacao(p)
+                    && p.gkEstado !== 'segurando') {
                     let forward = p.velocity.clone().normalize();
                     let allOpps = (p.team === 'TeamA') ? Match.opponents : Match.players;
 

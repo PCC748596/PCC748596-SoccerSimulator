@@ -81,8 +81,10 @@
 
             <label>Length Compactness</label>
             <select id="t-length-compactness" onchange="Tatics.update()">
-                <option value="large">Large (50m)</option>
-                <option value="median" selected>Medium (40m)</option>
+                <option value="large">Large (70m)</option>
+                <option value="mediumLarge">Medium-Large (60m)</option>
+                <option value="median" selected>Medium (50m)</option>
+                <option value="mediumSmall">Medium-Small (40m)</option>
                 <option value="short">Small (30m)</option>
             </select>
 
@@ -221,10 +223,6 @@
 
                 <button type="button" class="btn-sector" id="btn-playingstylebt" onclick="togglePlayingStyleBT()">PlayingStyleBT:
                     OFF</button>
-                <button type="button" class="btn-sector" id="btn-spatialgrid" onclick="toggleSpatialGrid()">SG
-                    PASS/MARKING: OFF</button>
-                <button type="button" class="btn-sector" id="btn-passcandidates"
-                    onclick="togglePassCandidates()">PlayerPassTarget: OFF</button>
                 <button type="button" class="btn-sector" id="btn-passgrid"
                     onclick="toggleUsarPasseGrid()">PassGrid (decisão): OFF</button>
                 <button type="button" class="btn-sector" id="btn-touch-toggle"
