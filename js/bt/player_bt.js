@@ -1421,8 +1421,33 @@ const ehGK = (ctx) => ctx.p.role === 'gk';
 // Zona/ângulo de finalizar — usado por Rematar E por Dominar (para não fazer
 // o jogador "pensar" 3s com o guarda-redes já batido à sua frente).
 function emZonaDeRemate(ctx) {
-    if (ctx.zoneAhead <= 15) return false;
     const p = ctx.p;
+
+    /*
+    DENTRO DA GRANDE ÁREA remata-se, e mais nada tem voto.
+
+    O `shootingRange` é uma distância ao CENTRO DA BALIZA e não cobria a área:
+    com a skill de ataque a 50 dá 13.0 m no eixo, e a área tem 16.5 m de fundo;
+    fora do eixo a `centralidade` ainda o encolhe (a 15 m de X sobram 10.2 m,
+    e dali a baliza está a 15.5 m). Medido numa grelha de 20 posições dentro da
+    área, rematava-se em **6** — 30%. Da entrada da área, nunca.
+
+    Também não se aplica aqui o corte da camada CHUTE do SpatialGrid: uma
+    célula não autorada dentro da própria área é um buraco na grelha, não uma
+    decisão táctica.
+
+    O `zoneAhead` fica de fora pela mesma razão — quem está dentro da área do
+    adversário está, por definição, à frente no campo.
+    */
+    const A = ShootingModel.dentroDaArea;
+    if (A) {
+        const distFundo = Math.abs(p.targetGoalZ - p.model.position.z);
+        if (distFundo <= A.profundidade && Math.abs(p.model.position.x) <= A.meiaLargura) {
+            return true;
+        }
+    }
+
+    if (ctx.zoneAhead <= 15) return false;
     _v1.set(0, 0, p.targetGoalZ);
     const dist = p.model.position.distanceTo(_v1);
     if (!(dist < p.shootingRange() && Math.abs(p.model.position.x) < ShootingModel.maxOffsetX)) return false;

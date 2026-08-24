@@ -1331,7 +1331,38 @@ const ShootingModel = {
     // Um defesa que suba não remata como um avançado: só de muito perto.
     // Antes o central caía no ramo genérico e rematava em 10.4% das vezes
     // em que aparecia no último terço.
-    defenderFactor: 0.55
+    defenderFactor: 0.55,
+
+    /*
+    DENTRO DA GRANDE ÁREA REMATA-SE, PONTO.
+
+    O alcance acima é uma distância ao CENTRO DA BALIZA, e não cobria a área:
+    com a skill de ataque a 50 dá 13.0 m no eixo, e a área tem 16.5 m de
+    profundidade. Pior fora do eixo, onde a `centralidade` ainda o encolhe — a
+    15 m de X sobram 10.2 m, e daí a baliza está a 15.5 m.
+
+    Medido numa grelha de 20 posições dentro da área: **rematava-se em 6**
+    (30%). Da entrada da área não se rematava nunca, e da meia-lua também não.
+    É a explicação directa dos 0-6 remates por jogo que as simulações davam.
+
+    Dentro da área o alcance deixa de decidir: quem lá está e tem a bola
+    remata. O `maxOffsetX` (24 m) não é problema — a área tem 20.16 de
+    meia-largura, portanto está toda dentro dele.
+
+    Isto NÃO mexe no remate de fora da área, que continua a ser o alcance por
+    skill de sempre.
+    */
+    dentroDaArea: {
+        profundidade: 16.5,   // da linha de fundo para dentro
+        meiaLargura: 20.16,
+        /*
+        Dentro da área também não se aplica o corte da camada CHUTE do
+        SpatialGrid (`chuteVal <= 0` mandava não rematar). Uma célula não
+        autorada dentro da própria área é um buraco na grelha, não uma decisão
+        táctica — e era mais um sítio onde o remate se perdia em silêncio.
+        */
+        ignoraGrid: true
+    }
 };
 
 /*
