@@ -141,7 +141,20 @@ const GoalFrame = {
 
 window.Config = {
     usePlayingStyles: true,
-    enableCrowd: false
+
+    /*
+    Público no estádio. LIGADO.
+
+    Esteve a `false` desde que o público antigo (`createSpectatorGeometry` +
+    shader de animação por vértice) foi considerado caro de mais — e ficou
+    assim, o que fazia os adeptos simplesmente não aparecerem.
+
+    O sistema actual (js/crowd.js) é outra coisa: 15 000 adeptos em QUATRO
+    InstancedMesh estáticos, sem shader e sem update por frame. Para desligar
+    em jogo há o botão *Fans* no painel direito, que é onde essa decisão deve
+    ser tomada; este flag fica como interruptor de arranque.
+    */
+    enableCrowd: true
 };
 
 /*
