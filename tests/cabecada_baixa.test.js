@@ -127,8 +127,83 @@ if (/elevacaoAlivio\s*\|\|/.test(srcPlayer)) {
     erro('js/player.js voltou a usar elevacaoAlivio');
 }
 
+/*
+8 — DUAS CABEÇADAS SEGUIDAS DO MESMO JOGADOR.
+
+A distância pedida era `min(distância ao colega, alcanceAlivioBaixo)`, sem
+mínimo: com um colega a 1 m a balística resolvia para **1.93 m/s**, e em 0.35 s
+— o `BallControl.touchLock` — a bola percorria 66 cm e ficava à frente da cara
+de quem a cabeceou, ainda à altura da testa. Passado o lock, ele cabeceava
+outra vez.
+
+Mede-se onde a bola está quando o lock acaba: tem de estar fora do alcance de
+contacto do próprio cabeceador, OU fora da janela de altura do cabeceio.
+*/
+{
+    const BallControl = extrairObjecto(srcConfig, 'BallControl', 'js/config.js');
+    const alcanceContacto = BallControl.reach;
+
+    console.log(`\nposição da bola quando o touchLock (${BallControl.touchLock} s) acaba`);
+    console.log('  colega a   dist pedida   v saída   bola a   altura   pode recabecear?');
+
+    let maus = 0;
+    for (const dColega of [0.5, 1, 2, 3.5, 5, 8, 12]) {
+        const distDesejada = Math.max(HeaderModel.alcanceMin,
+            Math.min(dColega, HeaderModel.alcanceAlivioBaixo));
+        const bal = velocidadeDeLancamento(distDesejada, ALTURA_TESTA, BallPhysics.raio,
+            HeaderModel.elevacaoEscora, BallPhysics.gravidade);
+        const v = Math.max(HeaderModel.velocidadeMin,
+            Math.min(bal ? bal.v : 0, HeaderModel.velocidadeMax));
+        const ang = bal ? bal.elev : HeaderModel.elevacaoEscora;
+
+        // Integra até ao fim do touchLock, com ressalto no chão.
+        const g = BallPhysics.gravidade, k = BallPhysics.kArrasto, r = BallPhysics.raio;
+        let x = 0, y = ALTURA_TESTA, vx = v * Math.cos(ang), vy = v * Math.sin(ang);
+        const dt = 1 / 480;
+        for (let i = 0; i < Math.round(BallControl.touchLock / dt); i++) {
+            const s = Math.hypot(vx, vy);
+            if (s > 0.001) { const dv = k * s * s * dt; vx -= vx / s * dv; vy -= vy / s * dv; }
+            if (y > r + 0.001) vy -= g * dt;
+            x += vx * dt; y += vy * dt;
+            if (y <= r) {
+                y = r;
+                if (vy < 0) {
+                    if (-vy > BallPhysics.restituicao * 0 + 0.6) {
+                        vy *= -BallPhysics.restituicao; vx *= BallPhysics.atritoRessalto;
+                    } else vy = 0;
+                }
+            }
+        }
+
+        // Ele pode voltar a cabecear se a bola ainda estiver ao alcance E na
+        // janela de altura da testa.
+        const naJanela = Math.abs(y - ALTURA_TESTA) <= HeaderModel.janelaContacto;
+        const aoAlcance = x <= alcanceContacto;
+        const recabeceia = naJanela && aoAlcance;
+        if (recabeceia) maus++;
+
+        console.log(`  ${dColega.toFixed(1).padStart(5)} m   ${distDesejada.toFixed(1).padStart(6)} m   ` +
+            `${v.toFixed(2).padStart(6)}   ${x.toFixed(2).padStart(5)} m   ${y.toFixed(2)} m   ` +
+            `${recabeceia ? 'SIM  X' : 'não'}`);
+    }
+    if (maus > 0) {
+        erro(`${maus} casos em que o mesmo jogador volta a ter a bola na testa ` +
+            `assim que o touchLock acaba`);
+    } else {
+        console.log('  nunca: a bola sai sempre do alcance ou da altura da testa');
+    }
+
+    // E o piso de velocidade tem de existir mesmo.
+    if (!(HeaderModel.velocidadeMin > 0 && HeaderModel.velocidadeMin < HeaderModel.velocidadeMax)) {
+        erro(`HeaderModel.velocidadeMin=${HeaderModel.velocidadeMin} inválido`);
+    }
+    if (!(HeaderModel.alcanceMin > 0 && HeaderModel.alcanceMin < HeaderModel.alcanceAlivioBaixo)) {
+        erro(`HeaderModel.alcanceMin=${HeaderModel.alcanceMin} inválido`);
+    }
+}
+
 if (falhas > 0) {
     console.error(`\nFALHOU: ${falhas} casos.`);
     process.exit(1);
 }
-console.log('\nOK: fora da zona de remate a cabeçada é sempre para baixo.');
+console.log('\nOK: cabeçada para baixo, com pancada, e sem recabeceio do mesmo jogador.');

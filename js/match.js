@@ -707,7 +707,18 @@ const Match = {
             stepGeos.push(geo);
         }
 
-        const seatGeo = new THREE.BoxGeometry(0.5, 0.3, 0.4);
+        /*
+        Cadeiras da bancada. A altura passou de 0.30 para 0.075 — um quarto:
+        eram cubos altos de mais e liam-se como caixotes, não como assentos.
+
+        A geometria é centrada na origem, portanto encolher só a altura fazia a
+        BASE subir metade da diferença e as cadeiras ficavam a flutuar acima do
+        degrau. O `translate` desce o centro exactamente essa metade, e a base
+        fica onde estava.
+        */
+        const SEAT_ALT_ANTIGA = 0.3, SEAT_ALT = SEAT_ALT_ANTIGA / 4;
+        const seatGeo = new THREE.BoxGeometry(0.5, SEAT_ALT, 0.4);
+        seatGeo.translate(0, -(SEAT_ALT_ANTIGA - SEAT_ALT) / 2, 0);
         const seatMat = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.1 });
 
         const maxSeats = 30000;

@@ -1604,6 +1604,28 @@ class FootballPlayer {
                 score -= penalMax * fatorRisco * precisaoPassador;
             }
 
+            /*
+            NAS LATERAIS DA ÁREA, o passe rasteiro cede ao CRUZAMENTO.
+
+            Os bónus do `CrossModel` empurram o cruzamento para cima nessa
+            zona, mas isso sozinho não decide nada: a escolha não é entre
+            cruzar e não fazer nada, é entre cruzar e PASSAR — e a nota do
+            passe não sabia que o passador estava na ala junto à área. Um passe
+            curto para trás pontuava ali o mesmo que pontuaria no meio-campo, e
+            ganhava.
+
+            A penalização entra em rampa (ver zonaLateralDaArea em utils.js),
+            não em degrau: com um corte binário o jogador mudava de ideias de
+            um frame para o outro ao atravessar a fronteira.
+            */
+            if (typeof zonaLateralDaArea === 'function' && typeof CrossModel !== 'undefined') {
+                const naAla = zonaLateralDaArea(ownX, ownZ * dirZ);
+                if (naAla > 0) {
+                    const cheio = CrossModel.penalPasseRasteiro ?? 0.45;
+                    score *= 1 - (1 - cheio) * naAla;
+                }
+            }
+
             if (window.showPlayerPoints) { opt.debugPoints = opt.debugPoints || {}; opt.debugPoints['Pass'] = Math.round(score); }
             ratedCandidates.push({ player: opt, score: score });
         }
@@ -2083,9 +2105,16 @@ class FootballPlayer {
                 const d = Math.hypot(dxP, dzP);
                 if (d > 0.001) { uxP = dxP / d; uzP = dzP / d; }
 
-                // Escora curta para o colega, ou alívio na direcção dele quando
-                // está longe de mais para lhe chegar de cabeça.
-                distDesejada = Math.min(d, tectoAlivio);
+                /*
+                Escora para o colega, ou alívio na direcção dele quando está
+                longe de mais para lhe chegar de cabeça.
+
+                O `alcanceMin` é o que impede a cabeçada mansa: sem ele, um
+                colega a 1 m fazia a balística resolver para 1.93 m/s, e a bola
+                ficava à frente da cara do próprio cabeceador — que a cabeceava
+                outra vez assim que o `touchLock` passava.
+                */
+                distDesejada = THREE.MathUtils.clamp(d, HeaderModel.alcanceMin, tectoAlivio);
             } else {
                 // Alívio defensivo sem destinatário: para a frente, com leve
                 // dispersão diagonal para não ficar na mesma linha.
@@ -2115,8 +2144,9 @@ class FootballPlayer {
             na velocidade — a sair a -9° de 1.62 m a bola chega no máximo a
             ~9.5 m, e pedir 9 m dava 69 m/s. Com o tecto é a distância que cede.
             */
-            const vP = Math.min(
+            const vP = THREE.MathUtils.clamp(
                 balC ? balC.v : velocidadeParaAlcance(distDesejada, eP),
+                HeaderModel.velocidadeMin || 7.0,
                 HeaderModel.velocidadeMax || 13.0);
             const angC = balC ? balC.elev : eP;
             Match.ballVel.set(uxP * vP * Math.cos(angC), vP * Math.sin(angC), uzP * vP * Math.cos(angC));
@@ -3496,16 +3526,42 @@ class FootballPlayer {
             if (andando) {
                 const P = GoalkeeperPose.andar;
 
-                // Mesma convenção de ciclo do jogador de campo, com passada curta.
-                this.animTimer += (velPlanar * dt) / 3.0;
-                const t = ((this.animTimer % 1.0) + 1.0) % 1.0;
-                const pose = getRunPose(t);
-                const e = P.passada;
+                /*
+                O MESMO ciclo de passada do jogador de campo (getGaitPose), e
+                não o antigo `getRunPose` com 3 m por ciclo fixos.
 
-                gkRig.lLeg.rotation.x = lerpTo(gkRig.lLeg.rotation.x, pose.lHip * e, 0.4);
-                gkRig.rLeg.rotation.x = lerpTo(gkRig.rLeg.rotation.x, pose.rHip * e, 0.4);
-                gkRig.lKnee.rotation.x = lerpTo(gkRig.lKnee.rotation.x, P.kneeBase + pose.lKnee * P.passadaJoelho, 0.4);
-                gkRig.rKnee.rotation.x = lerpTo(gkRig.rKnee.rotation.x, P.kneeBase + pose.rKnee * P.passadaJoelho, 0.4);
+                Estava assim:
+
+                    this.animTimer += (velPlanar * dt) / 3.0;
+                    const pose = getRunPose(t);
+                    const e = P.passada;              // encolhia a amplitude
+
+                — que é exactamente o defeito já corrigido no `animateBones`
+                dos jogadores de campo e que ficou por corrigir aqui. Três
+                coisas erradas ao mesmo tempo, todas a produzir deslize:
+
+                  1. TRÊS METROS POR CICLO A QUALQUER ANDAMENTO. A passada real
+                     é 1.55 m a andar, 2.90 a trotar e 4.40 a correr
+                     (GaitModel); com 3.0 fixo, a cadência só bate por acaso a
+                     um andamento e desliza em todos os outros;
+                  2. `getRunPose` tem AMPLITUDE FIXA — não distingue andar de
+                     correr, e é isso que faz a corrida ler como devagar;
+                  3. `P.passada` encolhia a amplitude das pernas sem encolher o
+                     avanço: passos curtos a percorrer o caminho todo.
+
+                A postura de guarda-redes — braços abertos, tronco, joelhos
+                sempre um pouco flectidos — fica; o que muda é o ciclo das
+                pernas, que passa a ser o do jogo.
+                */
+                const P0 = getGaitPose(0, velPlanar);
+                this.animTimer += (velPlanar * dt) / P0.passada;
+                const t = ((this.animTimer % 1.0) + 1.0) % 1.0;
+                const pose = getGaitPose(t, velPlanar);
+
+                gkRig.lLeg.rotation.x = lerpTo(gkRig.lLeg.rotation.x, pose.lHip, 0.4);
+                gkRig.rLeg.rotation.x = lerpTo(gkRig.rLeg.rotation.x, pose.rHip, 0.4);
+                gkRig.lKnee.rotation.x = lerpTo(gkRig.lKnee.rotation.x, P.kneeBase + pose.lKnee, 0.4);
+                gkRig.rKnee.rotation.x = lerpTo(gkRig.rKnee.rotation.x, P.kneeBase + pose.rKnee, 0.4);
                 gkRig.lLeg.rotation.z = lerpTo(gkRig.lLeg.rotation.z, 0, 0.3);
                 gkRig.rLeg.rotation.z = lerpTo(gkRig.rLeg.rotation.z, 0, 0.3);
 
@@ -3621,13 +3677,19 @@ class FootballPlayer {
 
             // Ciclo de passada da corrida de aproximação (Figura 1)
             {
+                /*
+                Corrida de aproximação ao tiro de meta: mesmo ciclo do jogo
+                (getGaitPose), pela mesma razão do bloco `andando` mais acima —
+                a passada por ciclo tem de vir do andamento, não de um 3.0/1.55
+                escritos à mão, senão o boneco desliza.
+                */
                 const P = G.andar;
                 const velPlanarTM = dt > 0.0001 ? Math.hypot(sxTM, szTM) / dt : 0;
-                const speedScale = (this.gkTiroFase === 0) ? 3.0 : 1.55;
-                this.animTimer += (velPlanarTM * dt) / speedScale;
+                const P0TM = getGaitPose(0, velPlanarTM);
+                this.animTimer += (velPlanarTM * dt) / P0TM.passada;
                 const tt = ((this.animTimer % 1.0) + 1.0) % 1.0;
-                const pose = getRunPose(tt);
-                const amp = (this.gkTiroFase === 0) ? P.passada : 1.25;
+                const pose = getGaitPose(tt, velPlanarTM);
+                const amp = 1.0;
 
                 gkRig.lLeg.rotation.x = lerpTo(gkRig.lLeg.rotation.x, pose.lHip * amp, 0.45);
                 gkRig.rLeg.rotation.x = lerpTo(gkRig.rLeg.rotation.x, pose.rHip * amp, 0.45);
@@ -3907,14 +3969,18 @@ class FootballPlayer {
             // Pernas a acompanhar. Os braços ficam na pose de segurar, acima:
             // a bola continua fechada no peito enquanto ele anda.
             if (andouSeg > 0.001) {
+                // Andar com a bola nas mãos: mesmo ciclo do jogo, com a passada
+                // a vir do andamento (ver o bloco `andando` mais acima).
                 const Pa = GoalkeeperPose.andar;
-                this.animTimer += andouSeg / 3.0;
+                const velSeg = dt > 0.0001 ? andouSeg / dt : 0;
+                const P0Seg = getGaitPose(0, velSeg);
+                this.animTimer += andouSeg / P0Seg.passada;
                 const tt = ((this.animTimer % 1.0) + 1.0) % 1.0;
-                const poseSeg = getRunPose(tt);
-                gkRig.lLeg.rotation.x = lerpTo(gkRig.lLeg.rotation.x, poseSeg.lHip * Pa.passada, 0.4);
-                gkRig.rLeg.rotation.x = lerpTo(gkRig.rLeg.rotation.x, poseSeg.rHip * Pa.passada, 0.4);
-                gkRig.lKnee.rotation.x = lerpTo(gkRig.lKnee.rotation.x, Pa.kneeBase + poseSeg.lKnee * Pa.passadaJoelho, 0.4);
-                gkRig.rKnee.rotation.x = lerpTo(gkRig.rKnee.rotation.x, Pa.kneeBase + poseSeg.rKnee * Pa.passadaJoelho, 0.4);
+                const poseSeg = getGaitPose(tt, velSeg);
+                gkRig.lLeg.rotation.x = lerpTo(gkRig.lLeg.rotation.x, poseSeg.lHip, 0.4);
+                gkRig.rLeg.rotation.x = lerpTo(gkRig.rLeg.rotation.x, poseSeg.rHip, 0.4);
+                gkRig.lKnee.rotation.x = lerpTo(gkRig.lKnee.rotation.x, Pa.kneeBase + poseSeg.lKnee, 0.4);
+                gkRig.rKnee.rotation.x = lerpTo(gkRig.rKnee.rotation.x, Pa.kneeBase + poseSeg.rKnee, 0.4);
             }
 
             /*

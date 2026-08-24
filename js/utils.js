@@ -61,9 +61,15 @@ function misturarAndamento(vel) {
 /*
 Pose de locomoção para um dado ponto do ciclo `t` (0..1) e uma velocidade.
 
-Ao contrário do getRunPose (que ficou para o guarda-redes, que tem andamento
-próprio), aqui a AMPLITUDE também depende da velocidade — é isso que faz andar
-parecer andar e não correr devagar.
+Ao contrário do getRunPose, aqui a AMPLITUDE também depende da velocidade — é
+isso que faz andar parecer andar e não correr devagar. E a `passada` que
+devolve é o avanço por ciclo DAQUELE andamento (1.55 m a andar, 4.40 a correr),
+que é o que a cadência tem de usar: `animTimer += vel * dt / passada`.
+
+O `getRunPose` era usado pelo guarda-redes e **já não tem chamadores** — o GK
+passou a usar esta função, como o resto do jogo. Ele tinha ficado com a versão
+antiga do ciclo (3 m por ciclo a qualquer andamento, amplitude fixa) e era isso
+que o fazia deslizar em vez de correr.
 
 O joelho só dobra na fase de balanço (`max(0, sin)`): a perna de apoio fica
 quase direita, que é o que distingue uma passada de uma corrida.
@@ -401,6 +407,34 @@ function cruzamentoParaArea(bolaPos, ownGoalZ, dirZ, lado, rnd) {
     if (d > 0.0001) { dx /= d; dz /= d; }
 
     return { x: dx * 24.0, y: 9.6, z: dz * 24.0 };
+}
+
+/*
+Quanto é que quem tem a bola está NAS LATERAIS DA ÁREA — 0 fora, 1 na zona
+cheia junto à linha de fundo e encostado à linha lateral.
+
+É a zona onde se cruza, e a mesma que dá os bónus de cruzamento
+(`CrossModel.bonusLargura`/`bonusFundo`). Devolver uma FRACÇÃO e não um
+booleano é de propósito: um degrau na decisão faz o jogador mudar de ideias de
+um frame para o outro ao atravessar a fronteira.
+
+    x     posição em X no mundo
+    zDir  posição em Z no referencial de ataque (positivo = mais perto da
+          baliza atacada)
+
+Pura: sem Match, sem THREE.
+*/
+function zonaLateralDaArea(x, zDir) {
+    const C = CrossModel;
+    const ax = Math.abs(x);
+    if (ax < C.alaX || zDir < C.zonaZ) return 0;
+
+    const largura = Math.min(1, (ax - C.alaX) / Math.max(0.001, 28.0 - C.alaX));
+    const fundo = Math.min(1, (zDir - C.zonaZ) / Math.max(0.001, C.fundoZ - C.zonaZ));
+
+    // Precisa das duas coisas: estar na ala E estar adiantado. No meio-campo
+    // encostado à linha não se cruza, faz-se o jogo.
+    return Math.max(0, Math.min(1, largura * fundo));
 }
 
 /*

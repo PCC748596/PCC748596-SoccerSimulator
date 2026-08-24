@@ -3082,7 +3082,29 @@ const CrossModel = {
     // exactamente a faixa das laterais da área. 0.30 -> 0.60.
     pesoGrid: 0.60,
     penalPressao: 0.30,   // sob pressão o cruzamento sai mal
-    chanceMax: 0.97
+    chanceMax: 0.97,
+
+    /*
+    NAS LATERAIS DA ÁREA O CRUZAMENTO TEM DE GANHAR AO PASSE RASTEIRO.
+
+    Os bónus acima já empurram o cruzamento para cima nessa zona, mas isso não
+    chega: a decisão não é entre "cruzar" e "não fazer nada" — é entre cruzar e
+    PASSAR, e a nota do passe não sabia nada de estar na ala junto à área. Um
+    passe curto para trás pontuava na mesma o que pontuaria no meio-campo, e
+    ganhava.
+
+    Daí a penalização do outro lado da balança: dentro da zona (ver
+    `zonaLateralDaArea` em utils.js) a nota do passe rasteiro e do lançamento
+    rasteiro é multiplicada por `penalPasseRasteiro`. O cruzamento não é
+    tocado — sobe por comparação, que é o que "mais bónus para cruzamento do
+    que para passe" quer dizer.
+
+    A zona é a mesma dos bónus: da ala (`alaX`) para fora, e do `zonaZ` para a
+    frente. A penalização entra a 0 na borda e chega ao valor cheio junto à
+    linha de fundo, para não haver um degrau na decisão.
+    */
+    penalPasseRasteiro: 0.45,   // a nota do passe vale isto, na zona cheia
+    penalLancamentoRasteiro: 0.35
 };
 
 /*
@@ -3269,6 +3291,28 @@ const HeaderModel = {
     um ponto (distância, altura) a partir de uma altura de saída.
     */
     alcanceAlivioBaixo: 8.0,
+
+    /*
+    PISO da cabeçada — e é ele que impede o mesmo jogador de cabecear duas
+    vezes seguidas.
+
+    A distância pedida era `min(distância ao colega, alcanceAlivioBaixo)`, sem
+    mínimo nenhum. Com um colega a 1 m, a balística resolvia a cabeçada para
+    **1.93 m/s**: em 0.35 s — o `BallControl.touchLock` — a bola percorria 66 cm
+    e ficava ali à frente da cara de quem a cabeceou, à altura da testa. Ele
+    voltava a alcançá-la assim que o lock passava, e cabeceava outra vez. Era
+    isso que se via como "duas cabeçadas seguidas rápidas do mesmo jogador".
+
+    Uma cabeçada tem sempre pancada: mesmo a escorar para o lado, a bola sai
+    com alguns metros por segundo. `alcanceMin` impede que se peça um alvo
+    absurdamente perto, e `velocidadeMin` é o piso duro, para o caso de a
+    geometria ainda produzir uma solução mansa.
+
+    Os dois juntos garantem que a bola sai da zona de alcance do próprio
+    cabeceador dentro do `touchLock`.
+    */
+    alcanceMin: 3.5,        // metros — nunca se cabeceia para mais perto do que isto
+    velocidadeMin: 7.0,     // m/s à saída, piso duro
 
     /*
     Tecto da velocidade de saída de uma cabeçada, em m/s. Uma cabeçada leva a

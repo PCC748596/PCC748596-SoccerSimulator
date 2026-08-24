@@ -291,6 +291,24 @@ function findThroughBall(ctx) {
         // a função devolvia 0 em toda a parte — nunca chegou a ser autorada.
         // Saiu com a camada; a nota é a distância e o ganho de profundidade.
         let nota = 100 - dist * 0.5 + (linhaNoNosso - mateZ) * 2.0;
+
+        /*
+        NAS LATERAIS DA ÁREA, o lançamento RASTEIRO cede ao cruzamento — a
+        penalização é maior do que a do passe normal (`penalLancamentoRasteiro`
+        contra `penalPasseRasteiro`), porque dali um lançamento rasteiro é a
+        pior das três opções: atravessa a defesa toda junto ao chão, no sítio
+        onde ela está mais junta.
+
+        Em rampa e não em degrau (ver zonaLateralDaArea em utils.js).
+        */
+        if (typeof zonaLateralDaArea === 'function' && typeof CrossModel !== 'undefined') {
+            const naAla = zonaLateralDaArea(p.model.position.x, p.model.position.z * p.dirZ);
+            if (naAla > 0) {
+                const cheio = CrossModel.penalLancamentoRasteiro ?? 0.35;
+                nota *= 1 - (1 - cheio) * naAla;
+            }
+        }
+
         if (window.showPlayerPoints) { mate.debugPoints = mate.debugPoints || {}; mate.debugPoints['Lanç'] = Math.round(nota); }
         if (nota > melhorNota) { melhorNota = nota; melhor = { mate: mate, alvoX: alvoX, alvoZ: alvoZ }; }
     }
