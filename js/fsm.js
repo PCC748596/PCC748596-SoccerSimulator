@@ -366,7 +366,8 @@ function executeShotGameplay(p) {
         }
         
         let sinal = Math.random() > 0.5 ? 1 : -1;
-        pow = (22.0 + ((p.skillFor('TEC') - 50) / 50) * 16.0) * 0.8;
+        pow = Math.max(ShotModel.potenciaMin,
+            ShotModel.potenciaBase + ((p.skillFor('TEC') - 50) / 50) * ShotModel.potenciaPorSkill);
         
         switch (selectedOutcome) {
             case 'GOL':
@@ -425,7 +426,7 @@ function executeShotGameplay(p) {
     const elevR = elevacaoParaAlvo(distHR, _v1.y, pow);
     // Sem solução (longe demais para esta potência): sai no
     // ângulo de alcance máximo em vez de rasteiro ao chão.
-    const eR = (elevR === null) ? Math.PI / 5 : elevR;
+    const eR = (elevR === null) ? ShotModel.elevacaoRecurso : elevR;
     const vhR = pow * Math.cos(eR);
     Match.ballVel.set(
         (distHR > 0.001 ? dxR / distHR : 0) * vhR,

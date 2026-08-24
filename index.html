@@ -330,9 +330,12 @@
     <script src="js/utils.js"></script>
     <script src="js/controls.js"></script>
 
-    <!-- IK de duas articulações (braço/perna) e mergulho do GR — ver o
-         cabeçalho de js/gk_dive.js para o que substitui e porquê. -->
+    <!-- IK de duas articulações (braço/perna), a camada Reach que a usa para
+         alcançar um ponto com a mão ou o pé, e o mergulho do GR — ver o
+         cabeçalho de js/reach.js e de js/gk_dive.js. O reach.js vem depois do
+         ik.js (usa o IK e o IKChains) e antes do gk_dive.js. -->
     <script src="js/ik.js"></script>
+    <script src="js/reach.js"></script>
     <script src="js/gk_dive.js"></script>
 
     <!-- Sincronização gameplay <-> animação (ver ActionAnimClips em config.js) -->

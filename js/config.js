@@ -1510,15 +1510,23 @@ const PassModel = {
     à volta de 1 s. A 6.0 o mesmo passe leva 1.12 s e sai a 11.8 m/s em vez
     de 9.9.
 
-    O tecto é o `BallControl.easySpeed` (7.75), acima do qual o domínio deixa
-    de ser garantido. O reforço do passe curto soma até +2.16 m/s
-    (`(12 - dist) * 0.18`), portanto 6.0 é o máximo seguro: um passe de 3 m
-    chega a 7.62, ainda debaixo do limiar. Subir mais do que isto começa a
-    fazer os receptores falharem o primeiro toque.
+    Subiu 25% (6.0 -> 7.5, e 2.8 -> 3.5 nos outros dois) por o passe continuar
+    a ler como fraco em campo.
+
+    ISSO OBRIGOU A SUBIR O `BallControl.easySpeed` NA MESMA PROPORÇÃO, e a
+    razão está aqui: o `easySpeed` é a velocidade acima da qual o domínio deixa
+    de ser garantido, e o reforço do passe curto soma até +2.16 m/s
+    (`(12 - dist) * 0.18`). A 6.0 um passe de 3 m chegava a 7.62, mesmo debaixo
+    do limiar de 7.75 — era por isso que 6.0 estava documentado como "o máximo
+    seguro". A 7.5 o mesmo passe chega a **9.12 m/s**, e com o limiar antigo
+    TODOS os passes curtos passariam a falhar o primeiro toque.
+
+    Ou seja: acelerar o passe sem acelerar o controlo não faz o jogo mais
+    rápido, faz os receptores mais incompetentes. Ver BallControl.easySpeed.
     */
-    vChegadaRasteira: 6.0,
-    vChegadaCruzamento: 2.8,
-    vChegadaLancamento: 2.8,
+    vChegadaRasteira: 7.5,
+    vChegadaCruzamento: 3.5,
+    vChegadaLancamento: 3.5,
 
     /*
     Erro máximo no PESO da bola, para skill de passe 0. Escala com
@@ -2879,6 +2887,47 @@ distância regulamentar. Se o ponto estiver dentro do alcance de remate de quem
 bate, ele remata; senão, joga em passe.
 =============================================================================
 */
+/*
+=============================================================================
+REMATE — potência
+=============================================================================
+Estava escrito à mão dentro do `executeShotGameplay` (fsm.js):
+
+    pow = (22.0 + ((TEC - 50) / 50) * 16.0) * 0.8
+
+que dava 4.8 m/s a TEC 0, **9.9 m/s a TEC 20** e 17.6 a TEC 50. Um remate de
+futebol anda nos 25-35 m/s (90-125 km/h); 9.9 m/s é um passe fraco.
+
+O que isso fazia, medido em tests/remate_mira.test.js: a TEC 50 o alcance útil
+era **23.5 m** — mais longe do que isso a `elevacaoParaAlvo` não encontrava
+ângulo nenhum e devolvia `null`, e o remate saía nos **36° fixos** do ramo de
+recurso. Um balão para o ar, de qualquer posição além dos 23 m. E mesmo dentro
+do alcance a mira ficava alta de mais: a 22 m precisava de 32° de elevação só
+para chegar ao canto rasteiro.
+
+Com estes valores a mesma mira a 22 m sai a ~13°, que é a trajectória tensa de
+um remate a sério.
+=============================================================================
+*/
+const ShotModel = {
+    /*
+    Subiu de 28/8 para 32/9 depois de se ver em campo: continuava a ler como
+    fraco. Passa a 23.0 m/s a TEC 0, 32.0 a TEC 50 e 41.0 a TEC 100 — a ponta
+    de cima é a de um remate de elite (~148 km/h), que é o que um TEC 100 deve
+    bater.
+    */
+    potenciaBase: 32.0,     // m/s a TEC 50
+    potenciaPorSkill: 9.0,  // ± isto entre TEC 0 e TEC 100
+    potenciaMin: 16.0,      // nem o pior rematador bate mais fraco do que isto
+
+    /*
+    Elevação de recurso, para quando nem no ângulo óptimo a bola chega ao alvo
+    (remate de muito longe). Era `Math.PI / 5` (36°) escrito à mão — um balão.
+    A 20° a bola vai mais longe e mais tensa, e ainda tem hipótese de incomodar.
+    */
+    elevacaoRecurso: 20 * Math.PI / 180
+};
+
 const FreeKickModel = {
     /*
     DECISÃO DA COBRANÇA — ver decisaoDeFalta em utils.js. Três casos:
@@ -3060,7 +3109,14 @@ const BallControl = {
     lado do jogador em vez de no pé dele. -0.4 m aperta o domínio.
     */
     reach: 0.9,           // raio de contacto com a bola, em metros
-    easySpeed: 7.75,      // abaixo disto domina-se sempre (a regra antiga)
+    /*
+    Abaixo disto domina-se sempre. Subiu 25% com o `PassModel.vChegadaRasteira`
+    (7.75 -> 9.69), e tinha de subir: o passe curto passou a chegar a 9.12 m/s,
+    e com o limiar antigo TODOS os passes curtos falhariam o primeiro toque.
+    Acelerar o passe sem acelerar o controlo não faz o jogo mais rápido, faz os
+    receptores mais incompetentes.
+    */
+    easySpeed: 9.69,      // abaixo disto domina-se sempre (a regra antiga)
     hardSpeed: 30.0,      // acima disto é praticamente impossível dominar
     receiverBonus: 0.35,  // vantagem de quem é o destinatário do passe
     touchLock: 0.35,      // segundos sem poder tocar depois de largar a bola

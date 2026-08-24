@@ -2031,7 +2031,7 @@ class FootballPlayer {
             const dzC = alvoZc - Match.ball.position.z;
             const distHC = Math.hypot(dxC, dzC);
             const elevC = elevacaoParaAlvo(distHC, alvoY, pow);
-            const eC = (elevC === null) ? Math.PI / 5 : elevC;
+            const eC = (elevC === null) ? ShotModel.elevacaoRecurso : elevC;
             const vhC = pow * Math.cos(eC);
             Match.ballVel.set(
                 (distHC > 0.001 ? dxC / distHC : 0) * vhC,

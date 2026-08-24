@@ -150,15 +150,32 @@ const IK = {
     /*
     Mistura o resultado do IK com a pose que já lá estava, para o membro não
     "saltar" para o alvo num frame só. `peso` 0 = pose antiga, 1 = IK puro.
+
+    CUIDADO com a ordem, que já esteve errada aqui. A linha era:
+
+        raiz.quaternion.copy(qAnt).slerp(raiz.quaternion, peso);
+
+    — copia a pose ANTIGA para `raiz.quaternion` e só depois faz slerp para
+    `raiz.quaternion`, que nesse instante já é a pose antiga. Interpolava
+    entre uma coisa e ela própria, e portanto a rotação que o `resolver`
+    tinha acabado de escrever era deitada fora: sobrevivia só a flexão do
+    meio. Medido com peso 1.0, que devia ser IK puro, a ponta ficava a 5-24 cm
+    do alvo. O mergulho do guarda-redes usa esta função — os braços dele nunca
+    foram exactamente para onde o IK mandava.
+
+    A solução resolvida tem de ser guardada num quaternião à parte ANTES de a
+    raiz ser reposta.
     */
     resolverSuave(raiz, meio, L1, L2, alvoMundo, planoMundo, peso) {
         const qAnt = this._qAnt || (this._qAnt = new THREE.Quaternion());
+        const qNovo = this._qNovo || (this._qNovo = new THREE.Quaternion());
         const xAnt = meio.rotation.x;
         qAnt.copy(raiz.quaternion);
 
         const ok = this.resolver(raiz, meio, L1, L2, alvoMundo, planoMundo);
 
-        raiz.quaternion.copy(qAnt).slerp(raiz.quaternion, peso);
+        qNovo.copy(raiz.quaternion);
+        raiz.quaternion.copy(qAnt).slerp(qNovo, peso);
         meio.rotation.x = xAnt + (meio.rotation.x - xAnt) * peso;
         return ok;
     }
