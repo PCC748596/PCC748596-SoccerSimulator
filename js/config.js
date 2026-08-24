@@ -3095,10 +3095,59 @@ vida real.
 const HeaderModel = {
     alcanceMax: 16.0,          // alcance máximo de um alívio de cabeça
     alcancePasse: 8.5,         // alcance de escora para colega
-    // Trajectória padrão e variantes
-    elevacao: 22 * Math.PI / 180,        // elevação mais baixa para a bola descer rápido ao chão
-    elevacaoAlivio: 28 * Math.PI / 180,  // elevação para alívio longo defensivo
-    elevacaoEscora: 8 * Math.PI / 180,   // cabeceio/escora para baixo em direção ao chão
+
+    /*
+    FORA DA ZONA DE REMATE A CABEÇADA É SEMPRE PARA BAIXO.
+
+    Era o `elevacaoAlivio` a 28° que alimentava o ping-pong aéreo: a bola subia,
+    voltava a cair à altura da testa e o seguinte cabeceava outra vez. O travão
+    do `maxHeadersSeguidos` corta a sequência ao terceiro, mas dois cabeceios
+    seguidos já se vêem, e a bola ficava no ar entre eles.
+
+    Uma cabeçada defensiva bem feita é para BAIXO — bate no chão perto e
+    ressalta rasteira, que é o que a tira da altura da cabeça de toda a gente.
+    Por isso o alívio longo deixou de existir como trajectória própria: fora da
+    zona de remate usa-se sempre `elevacaoEscora`, e o que muda entre escorar
+    para um colega e aliviar sem destinatário é a DISTÂNCIA, não o ângulo.
+
+    O `elevacao` (22°) fica para quem o chamar de fora daqui; o `elevacaoAlivio`
+    foi REMOVIDO, para ninguém lhe voltar a pegar por engano.
+    */
+    elevacao: 22 * Math.PI / 180,        // elevação genérica de cabeceio
+
+    /*
+    Ângulo da cabeçada para baixo — NEGATIVO, a bola sai a descer. Estava em
+    +8°, e a +8° a partir da testa (1.62 m) a bola ainda subia até ~1.75 m e
+    voltava a passar pela altura de cabeceio na descida: o ping-pong recomeçava
+    ali mesmo. Para a bola nunca mais estar à altura da cabeça de ninguém, tem
+    de sair já a descer.
+    */
+    elevacaoEscora: -9 * Math.PI / 180,
+
+    /*
+    Alcance de um alívio para baixo, em metros. A bola sai a descer e bate no
+    chão perto — quer-se isso, não distância. Este é o tecto da distância pedida
+    fora da zona de remate.
+
+    ATENÇÃO ao calcular a velocidade para esta distância: a cabeçada parte de
+    ALTURA_TESTA, não do chão. O `velocidadeParaAlcance` resolve o alcance de um
+    lançamento que SAI DO CHÃO, e usá-lo aqui punha a bola pedida a 4 m a cair
+    aos 8.4 m — o dobro. Usa-se `velocidadeDeLancamento` (utils.js), que resolve
+    um ponto (distância, altura) a partir de uma altura de saída.
+    */
+    alcanceAlivioBaixo: 8.0,
+
+    /*
+    Tecto da velocidade de saída de uma cabeçada, em m/s. Uma cabeçada leva a
+    velocidade da testa e do tronco, não de uma perna a rodar: 13 m/s é o topo.
+
+    Sem este tecto a DISTÂNCIA PEDIDA mandava na velocidade, e a geometria de um
+    ângulo descendente fixo é implacável — a sair a -9° de 1.62 m, a bola chega
+    no máximo a ~9.5 m mesmo com velocidade infinita. Pedir 9 m dava **69 m/s**.
+    Com o tecto, é a distância que cede: a bola cai mais perto, ainda para baixo,
+    que é o que interessa.
+    */
+    velocidadeMax: 13.0,
 
     /*
     Meia-largura, em metros, da faixa à volta de ALTURA_TESTA onde o contacto

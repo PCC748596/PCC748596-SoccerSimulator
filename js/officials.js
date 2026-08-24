@@ -238,11 +238,29 @@ const Officials = {
     /*
     Desloca um oficial para o alvo e anima a passada com o ciclo do jogo.
 
-    `olharPara` (opcional, {x, z}) fixa a ORIENTAÇÃO do corpo num ponto — para o
-    árbitro, a bola. Sem isso ele vira-se para onde anda, e como o alvo dele é
-    uma projecção na diagonal do campo, passava metade do lance a correr de
-    costas para o lance. Um árbitro nunca perde a bola de vista: desloca-se de
-    lado ou de recuo, mas de cara para o jogo.
+    `olharPara` (opcional, {x, z}) é o ponto que o oficial quer ter debaixo de
+    olho — para o árbitro, a bola. Sem isso vira-se para onde anda.
+
+    ORIENTAÇÃO, e porque não é simplesmente "olha sempre para a bola": prender o
+    corpo à bola em plena corrida põe o ciclo de passada frontal por cima de uma
+    deslocação de lado, e o boneco DESLIZA. Medido em
+    tests/arbitro_passada.test.js: com o corpo a 90° do movimento ele percorria
+    **2.85×** o chão que as pernas davam.
+
+    Vale a mesma regra dos jogadores (LateralGait, ver animateBones em
+    player.js), que existe exactamente para isto:
+
+        acima de `velViragem` (3.6 m/s)  o corpo roda PARA O MOVIMENTO
+        abaixo dela                      fica virado para a bola e dá passo
+                                         lateral, com a velocidade encolhida
+
+    Ou seja: em corrida aberta corre de frente, como um árbitro a fechar espaço;
+    em ritmo de acompanhamento — que é a maior parte do tempo — anda de lado, de
+    cara para o jogo.
+
+    A velocidade é encolhida pelo MESMO factor que encolhe a passada. Sem isso o
+    passo lateral continuava a deslizar: as pernas dão passos curtos e o corpo
+    percorria na mesma o caminho todo. Quem anda de lado anda mais devagar.
 
     A orientação é escrita mesmo com ele parado — daí não passar pelo corte de
     `d > 0.4` que a viragem para o movimento tem (esse existe para não fazer
@@ -253,15 +271,17 @@ const Officials = {
         const dz = alvoZ - o.model.position.z;
         const d = Math.hypot(dx, dz);
 
-        let passo = 0;
-        if (d > 0.05) {
-            passo = Math.min(d, velMax * dt);
-            o.model.position.x += (dx / d) * passo;
-            o.model.position.z += (dz / d) * passo;
-        }
-        const vel = dt > 0.0001 ? passo / dt : 0;
+        const L = (typeof LateralGait !== 'undefined') ? LateralGait : null;
 
-        if (olharPara) {
+        /*
+        Decidir ORIENTAÇÃO e LATERALIDADE antes de dar o passo: é a lateralidade
+        que limita a velocidade deste frame.
+        */
+        let lateralidade = 0, ladoMov = 0;
+        const velDesejada = (d > 0.05) ? Math.min(velMax, d / Math.max(dt, 1e-4)) : 0;
+        const emCorrida = !L || velDesejada > L.velViragem;
+
+        if (olharPara && !emCorrida) {
             const ox = olharPara.x - o.model.position.x;
             const oz = olharPara.z - o.model.position.z;
             if (Math.hypot(ox, oz) > 0.05) o.model.rotation.y = Math.atan2(ox, oz);
@@ -270,35 +290,40 @@ const Officials = {
             o.model.rotation.y = Math.atan2(dx, dz);
         }
 
+        if (L && d > 0.0001) {
+            const fx = Math.sin(o.model.rotation.y), fz = Math.cos(o.model.rotation.y);
+            const mx = dx / d, mz = dz / d;
+            const alinhamento = fx * mx + fz * mz;
+            const desvio = Math.acos(THREE.MathUtils.clamp(Math.abs(alinhamento), -1, 1));
+            if (desvio > L.anguloMin) {
+                lateralidade = Math.min(1, (desvio - L.anguloMin) /
+                    (Math.PI / 2 - L.anguloMin));
+                // >0 = movimento para a direita do corpo.
+                ladoMov = Math.sign(fz * mx - fx * mz) || 1;
+            }
+        }
+
+        const amp = 1 - lateralidade * (L ? L.reducaoPassada : 0);
+
+        let passo = 0;
+        if (d > 0.05) {
+            passo = Math.min(d, velMax * amp * dt);
+            o.model.position.x += (dx / d) * passo;
+            o.model.position.z += (dz / d) * passo;
+        }
+        const vel = dt > 0.0001 ? passo / dt : 0;
+
         const rig = o.rig;
         if (vel > 0.1 && typeof getGaitPose === 'function') {
+            /*
+            A cadência sai da velocidade REAL e da passada JÁ ENCOLHIDA — é esta
+            divisão que faz o pé ficar colado ao chão. Usar a passada inteira
+            aqui era metade do deslize.
+            */
             const P0 = getGaitPose(0, vel);
-            o.animTimer += (vel * dt) / P0.passada;
+            o.animTimer += (vel * dt) / (P0.passada * amp);
             const t = ((o.animTimer % 1.0) + 1.0) % 1.0;
             const P = getGaitPose(t, vel);
-
-            /*
-            PASSO LATERAL, o mesmo dos jogadores (LateralGait, ver animateBones
-            em player.js). Com o corpo preso à bola e o alvo noutro sítio, o
-            ciclo frontal ficava a correr por cima de uma deslocação de lado e o
-            árbitro patinava. `lateralidade` é 0 quando anda para onde olha e 1
-            quando anda de lado: encolhe a passada e abre as ancas em oposição
-            de fase.
-            */
-            let lateralidade = 0, ladoMov = 0;
-            if (d > 0.0001 && typeof LateralGait !== 'undefined') {
-                const fx = Math.sin(o.model.rotation.y), fz = Math.cos(o.model.rotation.y);
-                const mx = dx / d, mz = dz / d;
-                const alinhamento = fx * mx + fz * mz;
-                const desvio = Math.acos(THREE.MathUtils.clamp(Math.abs(alinhamento), -1, 1));
-                if (desvio > LateralGait.anguloMin) {
-                    lateralidade = Math.min(1, (desvio - LateralGait.anguloMin) /
-                        (Math.PI / 2 - LateralGait.anguloMin));
-                    ladoMov = Math.sign(fz * mx - fx * mz) || 1;
-                }
-            }
-            const amp = 1 - lateralidade *
-                ((typeof LateralGait !== 'undefined') ? LateralGait.reducaoPassada : 0);
 
             rig.lLeg.rotation.x = P.lHip * amp; rig.lKnee.rotation.x = P.lKnee * amp;
             rig.rLeg.rotation.x = P.rHip * amp; rig.rKnee.rotation.x = P.rKnee * amp;

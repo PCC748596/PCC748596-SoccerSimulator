@@ -1887,17 +1887,27 @@ class FootballPlayer {
         } else {
             /*
             Fora da zona de remate (a contagem de cabeceios seguidos é feita
-            no topo do executeHeader, para todos os casos):
-            1. Se houver colega próximo, faz escora/cabeceio para baixo (downward header)
-               para que a bola caia rápida no chão para domínio com os pés.
-            2. Se for alívio defensivo (sem companheiro próximo seguro ou sob pressão),
-               faz alívio longo para frente e para os lados, evitando subir na vertical.
+            no topo do executeHeader, para todos os casos) a cabeçada é SEMPRE
+            PARA BAIXO — `HeaderModel.elevacaoEscora`.
+
+            Havia aqui um segundo ângulo, o `elevacaoAlivio` a 28°, para o
+            alívio longo. Era ele que alimentava o ping-pong aéreo: a bola
+            subia, voltava a cair à altura da testa e o jogador seguinte
+            cabeceava outra vez. O travão do `maxHeadersSeguidos` corta a
+            sequência ao terceiro, mas dois cabeceios seguidos já se vêem, e
+            entre eles a bola andava no ar.
+
+            Uma cabeçada defensiva bem feita é para baixo: bate no chão perto e
+            ressalta rasteira, fora da altura da cabeça de toda a gente. O que
+            muda entre escorar para um colega e aliviar sem destinatário é a
+            DISTÂNCIA, não o ângulo.
             */
             const target = this.findPassTarget('mid') || this.findPassTarget('atk') ||
                 this.findPassTarget('def');
 
-            let uxP = 0, uzP = this.dirZ, distDesejada = HeaderModel.alcanceMax;
-            let eP = HeaderModel.elevacao;
+            const tectoAlivio = HeaderModel.alcanceAlivioBaixo || 11.0;
+            let uxP = 0, uzP = this.dirZ, distDesejada = tectoAlivio;
+            const eP = HeaderModel.elevacaoEscora || (8 * Math.PI / 180);
 
             if (target) {
                 const dxP = target.model.position.x - Match.ball.position.x;
@@ -1905,20 +1915,13 @@ class FootballPlayer {
                 const d = Math.hypot(dxP, dzP);
                 if (d > 0.001) { uxP = dxP / d; uzP = dzP / d; }
 
-                if (d <= (HeaderModel.alcancePasse || 8.5)) {
-                    // Escora para baixo para colega próximo: trajetória descendente rápida
-                    distDesejada = d;
-                    eP = HeaderModel.elevacaoEscora || (8 * Math.PI / 180);
-                } else {
-                    // Alívio na direção do colega
-                    distDesejada = Math.min(d, HeaderModel.alcanceMax);
-                    eP = HeaderModel.elevacaoAlivio || (26 * Math.PI / 180);
-                }
+                // Escora curta para o colega, ou alívio na direcção dele quando
+                // está longe de mais para lhe chegar de cabeça.
+                distDesejada = Math.min(d, tectoAlivio);
             } else {
-                // Alívio defensivo longo para a frente/diagonal
-                distDesejada = HeaderModel.alcanceMax;
-                eP = HeaderModel.elevacaoAlivio || (26 * Math.PI / 180);
-                // Leve dispersão diagonal para não ficar na mesma linha
+                // Alívio defensivo sem destinatário: para a frente, com leve
+                // dispersão diagonal para não ficar na mesma linha.
+                distDesejada = tectoAlivio;
                 uxP = (Math.random() - 0.5) * 0.4;
                 uzP = this.dirZ;
                 const len = Math.hypot(uxP, uzP);
@@ -1926,8 +1929,29 @@ class FootballPlayer {
                 uzP /= len;
             }
 
-            const vP = velocidadeParaAlcance(distDesejada, eP);
-            Match.ballVel.set(uxP * vP * Math.cos(eP), vP * Math.sin(eP), uzP * vP * Math.cos(eP));
+            /*
+            A velocidade sai de `velocidadeDeLancamento`, que resolve o ponto
+            (distância, CHÃO) a partir da ALTURA DA TESTA.
+
+            Era `velocidadeParaAlcance`, que resolve o alcance de um lançamento
+            que sai DO CHÃO — e uma cabeçada sai de 1.62 m. Medido: uma escora
+            pedida a 4 m ia bater no chão aos 8.4 m, o dobro, e ainda subia
+            acima da testa pelo caminho. Mesmo defeito que o lateral tinha.
+            */
+            const balC = velocidadeDeLancamento(
+                distDesejada, ALTURA_TESTA, BallPhysics.raio, eP, BallPhysics.gravidade);
+
+            /*
+            Tecto de velocidade: uma cabeçada leva a velocidade da testa e do
+            tronco, não de uma perna a rodar. Sem ele a distância pedida mandava
+            na velocidade — a sair a -9° de 1.62 m a bola chega no máximo a
+            ~9.5 m, e pedir 9 m dava 69 m/s. Com o tecto é a distância que cede.
+            */
+            const vP = Math.min(
+                balC ? balC.v : velocidadeParaAlcance(distDesejada, eP),
+                HeaderModel.velocidadeMax || 13.0);
+            const angC = balC ? balC.elev : eP;
+            Match.ballVel.set(uxP * vP * Math.cos(angC), vP * Math.sin(angC), uzP * vP * Math.cos(angC));
 
             this.hasBall = false;
             this.touchLock = BallControl.touchLock;
