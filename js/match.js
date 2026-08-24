@@ -705,7 +705,7 @@ const Match = {
         const seatGeo = new THREE.BoxGeometry(0.5, 0.3, 0.4);
         const seatMat = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.1 });
 
-        const maxSeats = 12000;
+        const maxSeats = 30000;
         const seatMesh = new THREE.InstancedMesh(seatGeo, seatMat, maxSeats);
         seatMesh.castShadow = false;
         seatMesh.receiveShadow = false;
@@ -813,8 +813,10 @@ const Match = {
             }
         }
 
+        const rows = 30;
+
         function buildCorner(cx, cz, startAngle) {
-            for (let r = 0; r < 20; r++) {
+            for (let r = 0; r < rows; r++) {
                 const R = 6.5 + r * 1.2;
                 const standY = 0.25 + (r * 0.5);
 
@@ -839,7 +841,6 @@ const Match = {
             }
         }
 
-        const rows = 20;
         // Bancada Oeste (Esquerda)
         for (let r = 0; r < rows; r++) {
             const standX = -(CAMPO_LARG / 2 + 4.5) - (r * 1.2);
@@ -847,7 +848,10 @@ const Match = {
             addStepBox(1.2, 0.5, CAMPO_COMP + 2, standX, standY, 0, 0);
 
             const seatYOffset = standY + 0.25 + 0.15;
-            for (let z = -(CAMPO_COMP / 2) + 1; z <= (CAMPO_COMP / 2) - 1; z += 0.85) {
+            let colIdx = 0;
+            for (let z = -(CAMPO_COMP / 2) + 1; z <= (CAMPO_COMP / 2) - 1; z += 0.85, colIdx++) {
+                // 2 colunas sem cadeiras a cada 20 cadeiras para criar os corredores/escadas do estádio
+                if (colIdx % 22 >= 20) continue;
                 addSeatInstance(standX, seatYOffset, z, Math.PI / 2);
             }
         }
@@ -859,7 +863,10 @@ const Match = {
             addStepBox(1.2, 0.5, CAMPO_COMP + 2, standX, standY, 0, 0);
 
             const seatYOffset = standY + 0.25 + 0.15;
-            for (let z = -(CAMPO_COMP / 2) + 1; z <= (CAMPO_COMP / 2) - 1; z += 0.85) {
+            let colIdx = 0;
+            for (let z = -(CAMPO_COMP / 2) + 1; z <= (CAMPO_COMP / 2) - 1; z += 0.85, colIdx++) {
+                // 2 colunas sem cadeiras a cada 20 cadeiras para criar os corredores/escadas do estádio
+                if (colIdx % 22 >= 20) continue;
                 addSeatInstance(standX, seatYOffset, z, -Math.PI / 2);
             }
         }
@@ -871,7 +878,10 @@ const Match = {
             addStepBox(CAMPO_LARG - 4, 0.5, 1.2, 0, standY, standZ, 0);
 
             const seatYOffset = standY + 0.25 + 0.15;
-            for (let x = -(CAMPO_LARG / 2) + 2; x <= (CAMPO_LARG / 2) - 2; x += 0.85) {
+            let colIdx = 0;
+            for (let x = -(CAMPO_LARG / 2) + 2; x <= (CAMPO_LARG / 2) - 2; x += 0.85, colIdx++) {
+                // 2 colunas sem cadeiras periodicamente
+                if (colIdx % 20 >= 18) continue;
                 if (Math.abs(x) > 4.5 || r > 1) {
                     addSeatInstance(x, seatYOffset, standZ, Math.PI);
                 }
@@ -885,7 +895,10 @@ const Match = {
             addStepBox(64, 0.5, 1.2, 0, standY, standZ, 0);
 
             const seatYOffset = standY + 0.25 + 0.15;
-            for (let x = -32; x <= 32; x += 0.85) {
+            let colIdx = 0;
+            for (let x = -32; x <= 32; x += 0.85, colIdx++) {
+                // 2 colunas sem cadeiras periodicamente
+                if (colIdx % 20 >= 18) continue;
                 if (Math.abs(x) > 4.5 || r > 1) {
                     addSeatInstance(x, seatYOffset, standZ, 0);
                 }
@@ -1583,13 +1596,15 @@ const Match = {
         if (!this.nivel2Activo()) return;
 
         /*
-        Duas fases, com a atribuição de marcações pelo meio. A marcação é uma
-        decisão de EQUIPA (um adversário, um marcador) e não se pode tomar
-        dentro do ciclo por jogador: cada um escolhia o mais perto do seu slot
-        sem saber dos companheiros, e com a bola numa ala dois do lado oposto
-        caíam no mesmo homem — e no mesmo ponto, porque o pontoDeMarcacao
-        mapeia um homem para uma coordenada só. Era o RM e o CM a esbarrar.
+        Duas fases, com a otimização de slots por posição e a atribuição de marcações.
+        Otimiza os alvos dos jogadores da mesma posição para evitarem esbarrar ou
+        correrem para o mesmo alvo.
         */
+        if (typeof PosicionamentoAI.otimizarSlotsPorPosicao === 'function') {
+            PosicionamentoAI.otimizarSlotsPorPosicao(this.players, bbA);
+            PosicionamentoAI.otimizarSlotsPorPosicao(this.opponents, bbB);
+        }
+
         this.players.forEach(p => PosicionamentoAI.tickBase(p, bbA));
         this.opponents.forEach(p => PosicionamentoAI.tickBase(p, bbB));
 
@@ -1749,6 +1764,8 @@ const Match = {
             // O guarda-redes nunca controla a bola com o pé por aqui — só
             // apanha com as mãos, sempre via updateGK() (gkEstado 'apanhar').
             if (p.role === 'gk') return;
+            // Companheiro de time NÃO tira a bola do próprio jogador com a bola
+            if (this.ballCarrier && p !== this.ballCarrier && p.team === this.ballCarrier.team) return;
             // Distância ao CORPO (pés..testa), não à origem do modelo — ver
             // distanciaAoCorpo em utils.js.
             const r = distanciaAoCorpo(p, this.ball.position);

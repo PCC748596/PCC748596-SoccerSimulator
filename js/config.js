@@ -758,7 +758,7 @@ const PlayingStyles = {
     },
     dummy_runner: {
         nome: 'Dummy Runner', posicoes: ['CF', 'SS', 'AM'],
-        largura: 5, passe: 1.3, remate: 0.9,
+        avancoComBola: 6, largura: 5, passe: 1.3, remate: 0.9,
         atraiDefesa: true
     },
     fox_in_the_box: {
@@ -1988,13 +1988,13 @@ que continua a travar a subida — mas o piso ganha-lhe, porque estar atrás do
 guarda-redes não é opção.
 */
 function recuoDaUltimaLinha(z0Dir, maisRecuadoDir, distancia, pisoDir, tectoDir) {
-    let z = z0Dir;
+    let z = (tectoDir !== null && tectoDir !== undefined) ? tectoDir : z0Dir;
     if (maisRecuadoDir !== null && maisRecuadoDir !== undefined) {
         const atrasDoHomem = maisRecuadoDir - distancia;
-        if (z < atrasDoHomem) z = atrasDoHomem;
+        if (atrasDoHomem < z) z = atrasDoHomem;
     }
     if (tectoDir !== null && tectoDir !== undefined && z > tectoDir) z = tectoDir;
-    if (z < pisoDir) z = pisoDir;
+    if (pisoDir !== null && pisoDir !== undefined && z < pisoDir) z = pisoDir;
     return z;
 }
 
@@ -2042,37 +2042,8 @@ os N melhores candidatos (os mais perto da bola) e o resto vai ocupar a
 posição normal (MOVE_TO_POS), que é o que já devia acontecer.
 */
 const SupportModel = {
-    maxPorLado: 0, // Desabilitado a pedido do utilizador (era 1)
-
     /*
-    Distância à BOLA/CARRY a que o apoio se coloca.
-    O alvo passa a ser medido a partir do portador/bola num ângulo próximo a 45º
-    para cada lado do deslocamento (à frente para FWR_SUPPORT e para trás para AFT_SUPPORT).
-    */
-    raioMax: 7.0,
-    raioMin: 3.5,
-
-    /*
-    Ângulos de apoio relativos à linha de deslocamento:
-    45 graus (PI / 4) para cada lado do deslocamento onde houver espaço.
-    FWR_SUPPORT: +45º e -45º à frente do deslocamento.
-    AFT_SUPPORT: +135º e -135º (45º para trás para cada lado).
-    */
-    anguloApoio: Math.PI / 4,
-    toleranciaAngulo: Math.PI / 12,
-
-    /*
-    Vantagem, em metros, de quem JÁ estava a fazer o apoio.
-    */
-    bonusOcupante: 2.5,
-
-    /*
-    Apoio de CIRCULACAO — a outra camada, a distancia de passe (ver
-    atribuirApoios). O apoio acima e curto (3.5 a 7 m): serve a tabela, nao
-    serve a troca de passes que faz a bola girar.
-
-    `desvioMax` e o mesmo principio do biasMax da marcacao: o apoio inclina
-    quem ja estava por perto, nao arranca ninguem do outro lado do campo.
+    Apoio de CIRCULACAO — camada a distancia de passe (ver atribuirApoios).
     */
     circulacao: {
         maxApoios: 3,
@@ -2082,20 +2053,6 @@ const SupportModel = {
         margemLinha: 2.0,
         margemAdversario: 3.0,
 
-        /*
-        PESOS DA ESCOLHA DO PONTO (ver notaPontoDeApoio em utils.js).
-
-        Entre os pontos que servem, escolhia-se o mais BARATO — o mais perto
-        do slot. Era isso que punha o médio a fechar para dentro em vez de se
-        pôr no vão entre dois adversários: o ponto cómodo passava no teste
-        binário de "linha livre" à tangente e ganhava ao vão aberto que
-        ficava dois metros mais longe.
-
-        `pesoFolgaLinha` acima do `pesoFolgaPonto` de propósito: o que faz o
-        jogo acontecer é a bola conseguir lá chegar, não ele estar sozinho.
-        Com `pesoCusto` a 0.5, cada metro extra de caminho paga-se com 0.42 m
-        de linha mais aberta.
-        */
         pesoFolgaLinha: 1.2,
         pesoFolgaPonto: 1.0,
         pesoCusto: 0.5,
@@ -2564,9 +2521,9 @@ const PerceptionModel = {
 
 
 const DefensivePressureModel = {
-    low: 6.0,
-    balanced: 4.0,
-    high: 2.0
+    low: 0.0,
+    balanced: 0.0,
+    high: 0.0
 };
 
 /*

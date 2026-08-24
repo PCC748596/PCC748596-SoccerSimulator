@@ -98,15 +98,8 @@ const PlayingStyleTriggers = {
     // Corre na linha do último defensor — só quando há ataque para atacar.
     goal_poacher: (p, bb, s) => s.atacando && s.bolaAvanco > 5,
 
-    // Puxa marcação para abrir espaço a outro: Meias centrais com a bola no meio campo, ou pontas do mesmo lado.
-    dummy_runner: (p, bb, s) => {
-        if (!s.atacando || !bb.carrier || bb.carrier === p) return false;
-        const meiaCentral = ['CM', 'AM', 'DM'].includes(bb.carrier.pos) && Math.abs(s.bolaAvanco) <= 17;
-        const pontaMesmoLado = ['RW', 'LW', 'RM', 'LM'].includes(bb.carrier.pos) && 
-                               Math.sign(p.baseTarget.x) === Math.sign(bb.carrier.baseTarget.x) && 
-                               Math.sign(p.baseTarget.x) !== 0;
-        return meiaCentral || pontaMesmoLado;
-    },
+    // Puxa marcação para abrir espaço a outro: qualquer companheiro com bola no ataque.
+    dummy_runner: (p, bb, s) => s.atacando && bb.carrier && bb.carrier !== p,
 
     // Espreita na área: só a partir do momento em que a bola pode lá chegar.
     fox_in_the_box: (p, bb, s) => s.atacando && s.bolaAvanco > 12,
@@ -432,14 +425,38 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
         }
 
         /*
-        `atraiDefesa` (Dummy Runner): afasta-se do portador em vez de se
-        oferecer. É isso que puxa o marcador dele e abre o espaço para
-        outro — o oposto do que qualquer outra folha faz.
+        `atraiDefesa` (Dummy Runner): faz uma corrida de desmarque em profundidade
+        e diagonal (puxa o zagueiro/marcador para a ponta/corredor), abrindo o
+        corredor central para o condutor da bola ou jogadores de 2ª linha.
         */
         if (est.atraiDefesa && bb && bb.isAttacking && bb.carrier && bb.carrier !== p) {
-            const fx = targetX - bb.carrier.model.position.x;
-            const fd = Math.abs(fx) || 1;
-            targetX += (fx / fd) * 6.0;
+            const ladoEst = Math.sign(p.baseTarget.x) || 1;
+            const carrierX = bb.carrier.model ? bb.carrier.model.position.x : 0;
+            const carrierZ = bb.carrier.model ? bb.carrier.model.position.z : 0;
+
+            // Desloca-se em X para o corredor lateral/meio-espaço para abrir o centro
+            if (Math.abs(carrierX) < 8.0) {
+                targetX = ladoEst * 15.0;
+            } else {
+                const fx = targetX - carrierX;
+                const fd = Math.abs(fx) || 1;
+                targetX += (fx / fd) * 7.0;
+            }
+
+            // Desloca-se em Z à frente da jogada/portador (profundidade de ataque)
+            const zAtkMin = (carrierZ * p.dirZ) + 6.0;
+            let zAtk = Math.max(targetZ * p.dirZ, zAtkMin);
+
+            // Respeita a linha de impedimento para arrastar a defesa sem ficar impedido
+            if (bb.offsideLimitDir !== null && bb.offsideLimitDir !== undefined) {
+                zAtk = Math.min(zAtk, bb.offsideLimitDir - 0.8);
+            }
+
+            targetZ = zAtk * p.dirZ;
+
+            // Limites do campo
+            targetX = THREE.MathUtils.clamp(targetX, -(CAMPO_LARG / 2 - 3.0), (CAMPO_LARG / 2 - 3.0));
+            targetZ = THREE.MathUtils.clamp(targetZ, -(CAMPO_COMP / 2 - 2.0), (CAMPO_COMP / 2 - 2.0));
         }
 
         // `colaNaLinha` (Cross Specialist) vs `cortaParaDentro`.

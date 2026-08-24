@@ -583,6 +583,7 @@ function encontrarDefesaParaSaida(p) {
         }
 
         let score = (livre ? 25.0 : 0.0) + distAdvMaisPerto * 1.5;
+        if (distAdvMaisPerto >= 3.5) score += 200.0;
         if (dist >= 8 && dist <= 30) score += 10.0;
         else score -= Math.abs(dist - 18) * 0.4;
 
@@ -1007,224 +1008,6 @@ function actReceivePass(ctx) {
     p.fsm.changeState('MOVE_TO_POS');
 }
 
-/*
-Vaga de apoio: `p` é um dos SupportModel.maxPorLado mais perto da bola, de
-entre os colegas que caem no MESMO lado (à frente da bola ou atrás dela)?
-
-Contar estados já atribuídos não servia: o BT corre jogador a jogador dentro
-do frame, por isso quem tickasse primeiro ficava com as vagas — a escolha
-mudava com a ordem da lista em vez de com o jogo. O critério aqui não depende
-de ordem nenhuma: cada jogador mede-se contra os colegas e chega sozinho à
-mesma resposta.
-*/
-// Distância à bola para efeitos de disputa da vaga: quem já está a apoiar
-// conta como estando `bonusOcupante` metros mais perto (ver SupportModel).
-function distDisputaApoio(jogador, bola) {
-    const d = jogador.model.position.distanceTo(bola);
-    return jogador.apoioAtivo ? d - SupportModel.bonusOcupante : d;
-}
-
-function temVagaDeApoio(ctx, aFrenteDaBola) {
-    const p = ctx.p;
-    // O guarda-redes nunca participa nem ocupa vagas de apoio FWR/AFT
-    if (p.role === 'gk') return false;
-    // Guarda-redes com a bola nas mãos ou em posse: não há vagas de apoio FWR/AFT
-    if (typeof Match !== 'undefined' && Match.gkHoldingBall && Match.gkHoldingBall[p.team]) return false;
-    if (ctx.bb && ctx.bb.carrier && ctx.bb.carrier.role === 'gk') return false;
-    // Quem vai buscar a bola (destinatário de um passe, ou do seu próprio
-    // toque de condução) tem tarefa; apoiar é para os outros.
-    if (Match.intendedReceiver === p) return false;
-    /*
-    Tecto a zero é o apoio DESLIGADO, e tem de ser verificado ANTES do ciclo.
-
-    O corte vivia só lá dentro (`if (melhores >= maxPorLado) return false`),
-    portanto só falava se houvesse pelo menos um companheiro a chegar ao fim
-    do corpo do ciclo. Quem estivesse sozinho do seu lado da bola — todos os
-    outros filtrados pelos `continue` — saía por baixo com `return true` e
-    entrava em FWR/AFT_SUPPORT mesmo com o tecto a 0. Era o caso reportado:
-    um jogador isolado à frente da bola rotulado FWR_SUPPORT com o apoio
-    desligado no painel.
-    */
-    if (SupportModel.maxPorLado <= 0) return false;
-
-    const bola = Match.ball.position;
-    const minhaDist = distDisputaApoio(p, bola);
-    let melhores = 0;
-
-    for (const mate of ctx.teammates) {
-        if (mate === p || mate.role === 'gk') continue;
-        if (mate === Match.ballCarrier) continue;
-        // Mesmo lado da bola que eu? (zoneAhead no referencial de ataque)
-        if ((mate.model.position.z * mate.dirZ > ctx.bb.ballZ) !== aFrenteDaBola) continue;
-
-        const d = distDisputaApoio(mate, bola);
-        // Empate exacto desempata pelo id, para os dois lados do teste
-        // concordarem sobre quem vem primeiro.
-        if (d < minhaDist || (d === minhaDist && mate.id < p.id)) melhores++;
-        if (melhores >= SupportModel.maxPorLado) return false;
-    }
-    return true;
-}
-
-/*
-Põe o alvo do apoio em ângulos próximos a 45º para cada lado do deslocamento do carry,
-onde houver espaço livre:
-- FWR_SUPPORT: à frente do carry (+45º e -45º em relação ao vetor de deslocamento)
-- AFT_SUPPORT: para trás do carry (+135º e -135º em relação ao vetor de deslocamento, i.e. 45º para trás de cada lado)
-*/
-function alvoDeApoio(p, aFrenteDaBola, ctx) {
-    if (p.role === 'gk') return;
-    const bola = (typeof Match !== 'undefined' && Match.ball && Match.ball.position) ? Match.ball.position : { x: 0, y: 0, z: 0 };
-    const carrier = (typeof Match !== 'undefined' && Match.ballCarrier) ? Match.ballCarrier : null;
-    const carryPos = (carrier && carrier.model && carrier.model.position) ? carrier.model.position : bola;
-
-    // Vetor de deslocamento do portador (ou direção de ataque da equipa)
-    let vx = 0;
-    let vz = (p && p.dirZ) ? p.dirZ : 1;
-
-    if (carrier && carrier.velocity && Math.hypot(carrier.velocity.x, carrier.velocity.z) > 0.35) {
-        const velLen = Math.hypot(carrier.velocity.x, carrier.velocity.z);
-        vx = carrier.velocity.x / velLen;
-        vz = carrier.velocity.z / velLen;
-    } else if (carrier && carrier.model && typeof carrier.model.rotation === 'object' && carrier.fsm && (carrier.fsm.currentState === 'CARRY' || carrier.fsm.currentState === 'DRIBBLE')) {
-        const sinR = Math.sin(carrier.model.rotation.y || 0);
-        const cosR = Math.cos(carrier.model.rotation.y || 0);
-        if (Math.hypot(sinR, cosR) > 0.1) {
-            vx = sinR;
-            vz = cosR;
-        }
-    }
-
-    const vNorm = Math.hypot(vx, vz);
-    if (vNorm > 0.001) {
-        vx /= vNorm;
-        vz /= vNorm;
-    } else {
-        vx = 0;
-        vz = (p && p.dirZ) ? p.dirZ : 1;
-    }
-
-    // Ângulo base do vetor de deslocamento
-    const thetaDesl = Math.atan2(vx, vz);
-
-    // Distância desejada (respeita a janela [raioMin, raioMax])
-    const pTargetPos = p.dynamicTarget || (p.model ? p.model.position : carryPos);
-    let dxSlot = pTargetPos.x - carryPos.x;
-    let dzSlot = pTargetPos.z - carryPos.z;
-    let dSlot = Math.hypot(dxSlot, dzSlot);
-    const raio = Math.min(Math.max(dSlot, SupportModel.raioMin), SupportModel.raioMax);
-
-    // Ângulo base: 45º (+PI/4 e -PI/4) para FWR; 135º (+3PI/4 e -3PI/4) para AFT
-    const anguloBase = SupportModel.anguloApoio || (Math.PI / 4);
-    const nominalEsquerda = aFrenteDaBola ? -anguloBase : -(Math.PI - anguloBase);
-    const nominalDireita  = aFrenteDaBola ?  anguloBase :  (Math.PI - anguloBase);
-
-    // Lado natural do jogador em relação à linha de deslocamento (produto vetorial 2D)
-    const cross = dxSlot * vz - dzSlot * vx;
-    const prefereDireita = cross > 0;
-
-    // Colegas e adversários para avaliar espaço livre
-    const teammates = (ctx && ctx.teammates) ? ctx.teammates : ((typeof Match !== 'undefined' && Match.players) ? ((p.team === 'TeamA') ? Match.players : Match.opponents) : []);
-    const opponents = (ctx && ctx.opponents) ? ctx.opponents : ((typeof Match !== 'undefined' && Match.opponents) ? ((p.team === 'TeamA') ? Match.opponents : Match.players) : []);
-
-    // Verifica se outro apoio ativo já ocupa a direita ou a esquerda
-    let outroOcupouDireita = false;
-    let outroOcupouEsquerda = false;
-    for (const mate of teammates) {
-        if (mate === p || mate.role === 'gk' || !mate.apoioAtivo) continue;
-        const targetPos = mate.dynamicTarget || (mate.model ? mate.model.position : null);
-        if (!targetPos) continue;
-        const mateDx = targetPos.x - carryPos.x;
-        const mateDz = targetPos.z - carryPos.z;
-        const mateCross = mateDx * vz - mateDz * vx;
-        if (mateCross > 0.5) outroOcupouDireita = true;
-        else if (mateCross < -0.5) outroOcupouEsquerda = true;
-    }
-
-    // Variações de ângulo ao redor dos 45º nominais para buscar espaço livre
-    const variacoes = [-0.22, -0.11, 0, 0.11, 0.22];
-    const lados = [
-        { lado: 'esquerda', nominal: nominalEsquerda, ocupado: outroOcupouEsquerda, natural: !prefereDireita },
-        { lado: 'direita',  nominal: nominalDireita,  ocupado: outroOcupouDireita,  natural: prefereDireita }
-    ];
-
-    let melhorPonto = null;
-    let melhorScore = -Infinity;
-
-    for (const l of lados) {
-        for (const v of variacoes) {
-            const ang = thetaDesl + l.nominal + v;
-            const cx = carryPos.x + Math.sin(ang) * raio;
-            const cz = carryPos.z + Math.cos(ang) * raio;
-
-            let score = 100;
-
-            // 1. Limites do campo (largura 68m, comprimento 106m)
-            if (Math.abs(cx) > 33.0 || Math.abs(cz) > 52.0) {
-                score -= 1000;
-            } else if (Math.abs(cx) > 30.0) {
-                score -= (Math.abs(cx) - 30.0) * 20;
-            }
-
-            // 2. Espaço livre de adversários (evitar marcação próxima e linhas tapadas)
-            for (const opp of opponents) {
-                if (opp.role === 'gk' || !opp.model) continue;
-                const oppPos = opp.model.position;
-                const distOpp = Math.hypot(cx - oppPos.x, cz - oppPos.z);
-                if (distOpp < 2.2) {
-                    score -= (2.2 - distOpp) * 40;
-                } else if (distOpp > 4.5) {
-                    score += 5;
-                }
-
-                // Verifica se o adversário está a bloquear a linha de passe do carry
-                const segDx = cx - carryPos.x;
-                const segDz = cz - carryPos.z;
-                const segLenSq = segDx * segDx + segDz * segDz;
-                if (segLenSq > 0.01) {
-                    const t = Math.max(0, Math.min(1, ((oppPos.x - carryPos.x) * segDx + (oppPos.z - carryPos.z) * segDz) / segLenSq));
-                    const projX = carryPos.x + t * segDx;
-                    const projZ = carryPos.z + t * segDz;
-                    const distLinha = Math.hypot(oppPos.x - projX, oppPos.z - projZ);
-                    if (distLinha < 1.3) {
-                        score -= (1.3 - distLinha) * 35;
-                    }
-                }
-            }
-
-            // 3. Distribuição entre colegas de equipa (evitar embolar apoios)
-            for (const mate of teammates) {
-                if (mate === p || mate.role === 'gk' || !mate.apoioAtivo) continue;
-                const targetPos = mate.dynamicTarget || (mate.model ? mate.model.position : null);
-                if (!targetPos) continue;
-                const distMate = Math.hypot(cx - targetPos.x, cz - targetPos.z);
-                if (distMate < 3.5) {
-                    score -= (3.5 - distMate) * 30;
-                }
-            }
-
-            // 4. Preferência pelo lado natural e lado livre
-            if (l.natural) score += 20;
-            if (!l.ocupado) score += 25;
-
-            // 5. Preferência pelo ângulo nominal exato de 45º
-            score -= Math.abs(v) * 15;
-
-            if (score > melhorScore) {
-                melhorScore = score;
-                melhorPonto = { x: cx, z: cz };
-            }
-        }
-    }
-
-    if (melhorPonto) {
-        p.dynamicTarget.set(melhorPonto.x, ALTURA_BASE_Y, melhorPonto.z);
-    } else {
-        const angFallback = thetaDesl + (prefereDireita ? nominalDireita : nominalEsquerda);
-        p.dynamicTarget.set(carryPos.x + Math.sin(angFallback) * raio, ALTURA_BASE_Y, carryPos.z + Math.cos(angFallback) * raio);
-    }
-}
-
 // Ocupa a posição que o nível 2 lhe deu.
 /*
 APOIO DE CIRCULACAO — ir para o ponto onde sou opcao de passe.
@@ -1438,18 +1221,9 @@ function actHoldPosition(ctx) {
     ficar tudo escondido atrás de "MOVE_TO_POS":
         marcando um adversário específico  -> MARKING
         sem par E perto da bola, a fechar a linha -> BLOCKING (p.isCovering)
-        equipa tem a bola, à frente dela    -> FWR_SUPPORT
-        equipa tem a bola, atrás dela       -> AFT_SUPPORT
         resto (posição genérica, fora de fase de bola) -> MOVE_TO_POS
     */
-    const aFrenteDaBola = ctx.zoneAhead > ctx.bb?.ballZ;
-    if (ctx.bb && ctx.bb.isAttacking && temVagaDeApoio(ctx, aFrenteDaBola)) {
-        // O apoio posiciona-se a 45º do deslocamento do carry onde houver espaço livre
-        alvoDeApoio(p, aFrenteDaBola, ctx);
-        p.apoioAtivo = true;
-        // zoneAhead/ballZ já no referencial de ataque — comparação directa.
-        p.fsm.changeState(aFrenteDaBola ? 'FWR_SUPPORT' : 'AFT_SUPPORT');
-    } else if (p.markingTarget) {
+    if (p.markingTarget) {
         p.apoioAtivo = false;
         p.fsm.changeState('MARKING');
     } else if (ctx.bb && ctx.bb.blocker === p) {
@@ -1872,6 +1646,14 @@ const PlayerBT = sel('PlayerRoot',
                 cond('podeDesarmar', (ctx) => {
                     const carrier = Match.ballCarrier;
                     if (!carrier || carrier.team === ctx.p.team || carrier.role === 'gk') return false;
+
+                    // Marcação com roubo de bola no Defensive Pressure Balanceado (e Low) SOMENTE no campo de defesa.
+                    // No campo de ataque (carrierZ * dirZ > 0), a equipa marca à distância e não faz roubo de bola,
+                    // a não ser que a pressão defensiva esteja configurada como High ('high').
+                    const carrierZInAtk = carrier.model.position.z * ctx.p.dirZ;
+                    if (typeof Tatics !== 'undefined' && Tatics.pressaoDefensiva !== 'high' && carrierZInAtk > 0) {
+                        return false;
+                    }
                     
                     const dist = ctx.distToBall;
                     if (dist > 3.0) return false; // Longe demais para carrinho
@@ -1932,7 +1714,6 @@ const PlayerBT = sel('PlayerRoot',
             // Ir à bola: sou o perseguidor designado pela equipa.
             seq('IrABola',
                 cond('souEuAIr', (ctx) =>
-                    ctx.distToBall < 12 &&
                     (Match.chaserA === ctx.p || Match.chaserB === ctx.p)),
                 act('perseguir', actChaseBall)
             ),

@@ -97,6 +97,8 @@ class FootballPlayer {
         this.passAimPoint = null;
         this.passTipo = 'direct';
         this.overlapTimer = 0;
+        this.passInertiaTimer = 0;
+        this.passInertiaZDir = null;
         // Saída de bola sorteada para esta posse (ver decidirSaidaGK).
         this.gkSaida = null;
         // Está a fazer FWR/AFT_SUPPORT neste momento (ver temVagaDeApoio).
@@ -345,9 +347,13 @@ class FootballPlayer {
             let isDefender = (this.role === 'def' || this.role === 'gk' || opt.role === 'def');
             
             if (distMarcador >= 5.0) {
-                score += 300;
+                // Muito espaço, bónus esmagador (+200 pts) para garantir passe em jogadores livres
+                score += 500;
             } else if (distMarcador >= 3.5) {
-                score += 100;
+                // Espaço livre (+200 pts)
+                score += 300;
+            } else if (distMarcador >= 2.5) {
+                score += 200;
             } else {
                 if (inDefensiveZone || isDefender) {
                     score -= 550;
@@ -357,8 +363,15 @@ class FootballPlayer {
             }
 
             let progression = (optPos.z - ownZ) * dirZ;
+            let relX = Math.abs(optPos.x - ownX);
+
             if (progression > 0) {
                 score += 20;
+            }
+
+            // Defensores tocando para o lado (circulação na linha defensiva)
+            if (isDefender && relX >= 4.0) {
+                score += 200;
             }
 
             ratedCandidates.push({ player: opt, score: score });
@@ -476,10 +489,14 @@ class FootballPlayer {
 
             _line1.set(this.model.position, optPos);
             let minOppDist = 999, oppMaisPerto = null;
+            let distMarcador = 999;
             for (let i = 0; i < opponents.length; i++) {
                 let opp = opponents[i];
                 if (opp.role === 'gk') continue;
                 
+                let dMarc = optPos.distanceTo(opp.model.position);
+                if (dMarc < distMarcador) distMarcador = dMarc;
+
                 _v3.subVectors(opp.model.position, this.model.position);
                 if (_v3.dot(toTarget) < -0.1) continue;
 
@@ -500,12 +517,18 @@ class FootballPlayer {
             if (isOrchestrator) safetyEff *= 0.3;
             if (minOppDist < safetyEff) continue;
 
-            // Sem termo de distancia, os 100 pontos de base eram iguais para um
-            // passe de 3 m e um de 25 m, e o desempate ficava todo no angulo e
-            // na folga do adversario — o curto ganhava.
             let score = notaDistanciaPasse(dist, 1.0, 1.0) * 0.6
                 - (angle / maxAngleRad) * 30
                 + Math.min(30, minOppDist * 4);
+
+            if (distMarcador >= 5.0) score += 500;
+            else if (distMarcador >= 3.5) score += 300;
+            else if (distMarcador >= 2.5) score += 200;
+
+            let isDefender = (this.role === 'def' || this.role === 'gk' || opt.role === 'def');
+            let relX = Math.abs(optPos.x - this.model.position.x);
+            if (isDefender && relX >= 4.0) score += 200;
+
             ratedCandidates.push({ player: opt, score: score });
         }
 
@@ -761,13 +784,16 @@ class FootballPlayer {
             let isDefender = (this.role === 'def' || this.role === 'gk' || opt.role === 'def');
             
             if (distMarcador >= 5.0) {
-                // Muito espaço, bónus esmagador para garantir que a bola vá para ele (ex: pontas)
-                score += 300;
+                // Muito espaço, bónus esmagador (+200 pts) para garantir que a bola vá para ele
+                score += 500;
             } else if (distMarcador >= 3.5) {
-                // Algum espaço
-                score += 100;
+                // Espaço livre (+200 pts)
+                score += 300;
+            } else if (distMarcador >= 2.5) {
+                // Jogador desmarcado (+200 pts)
+                score += 200;
             } else {
-                // Marcado de perto (distMarcador < 3.5). Penalização severa.
+                // Marcado de perto (distMarcador < 2.5). Penalização severa.
                 if (this.role === 'gk') {
                     score -= 605; // Erro fatal do goleiro (aumentada em mais 10%)
                 } else if (inDefensiveZone || isDefender) {
@@ -786,12 +812,12 @@ class FootballPlayer {
             const isSameSide = Math.sign(pSideAtk) === Math.sign(oSideAtk) || Math.abs(pSideAtk) < 5 || Math.abs(oSideAtk) < 5;
 
             if (pRole === 'GK') {
-                if (['CB', 'LB', 'RB', 'CM', 'RM', 'LM'].includes(oRole)) priorityBonus = 40;
+                if (['CB', 'LB', 'RB', 'CM', 'RM', 'LM'].includes(oRole)) priorityBonus = 80;
             } else if (pRole === 'CB') {
-                if (['CB', 'DM', 'CM'].includes(oRole)) priorityBonus = 40;
-                if (['LB', 'RB', 'LM', 'RM'].includes(oRole) && isSameSide) priorityBonus = 40;
+                if (['CB', 'DM', 'CM'].includes(oRole)) priorityBonus = 80;
+                if (['LB', 'RB', 'LM', 'RM'].includes(oRole) && isSameSide) priorityBonus = 120;
             } else if (pRole === 'LB' || pRole === 'RB') {
-                if (['CB', 'CM', 'LM', 'RM'].includes(oRole) && isSameSide) priorityBonus = 40;
+                if (['CB', 'CM', 'LM', 'RM'].includes(oRole) && isSameSide) priorityBonus = 120;
             } else if (pRole === 'CM') {
                 if (['AM', 'CF'].includes(oRole)) priorityBonus = 40;
                 if (['LM', 'RM'].includes(oRole) && isSameSide) priorityBonus = 40;
@@ -824,19 +850,6 @@ class FootballPlayer {
             
             if (progression > 0) {
                 let progBonus = Math.min(25, progression * 0.9) * verticalidade;
-                /*
-                Lançamento em espaço vazio. A escala vem da MESMA curva de
-                distância (formaDistanciaPasse): valia +60 a +84 fixos, cegos
-                à distância — mais do que toda a amplitude da nota de
-                distância — e por isso um toque de 4 m para um colega livre
-                batia a bola de 15 m que faz o jogo girar. Um lançamento no
-                espaço é, por natureza, uma bola longa; agora o bónus só vale
-                o que a distância merece.
-
-                Medido (8 sementes, 100 s cada): com o bónus cego, 22.6% dos
-                passes abaixo de 5 m e 28.9 passes por semente; com ele
-                desligado de vez, 15.2% e 34.8 passes.
-                */
                 if (minOppDist > 8.0) {
                     const aggr = teamBB ? teamBB.aggression : 0.5;
                     progBonus += 60 * (0.6 + aggr * 0.8) * formaDistanciaPasse(dist);
@@ -845,14 +858,19 @@ class FootballPlayer {
             } else {
                 if (isOrchestrator) {
                     score += Math.abs(progression) * 0.8;
-                } else {
+                } else if (!isDefender && !inDefensiveZone) {
                     score -= Math.abs(progression) * 1.5 / circulacao;
                 }
             }
 
+            // Bônus explícito para defensores tocando para o lado (+200 pts)
+            if (isDefender && relX >= 4.0) {
+                score += 200;
+            }
+
             // Bônus explícito para passes laterais e para trás (Aumento de 20%)
             if (progression <= 2.0 && relX > 5.0) {
-                score *= 1.20; // Lado
+                score *= 1.25; // Lado
             } else if (progression < -2.0) {
                 score *= 1.20; // Trás
             }
@@ -1041,6 +1059,12 @@ class FootballPlayer {
         });
         // Consumido: o próximo passe volta a decidir o seu próprio ponto.
         this.passAimPoint = null;
+
+        // Ativar Inércia pós-passe de 4.0s: o jogador não recua para o posto base atrás da cota da jogada
+        if (this.role !== 'gk') {
+            this.passInertiaTimer = 4.0;
+            this.passInertiaZDir = this.model.position.z * this.dirZ;
+        }
 
         // Ativar Overlap / Tabelinha para jogadores de campo (não guarda-redes nem centrais puros)
         if (this.role !== 'gk' && this.pos !== 'CB' && !this.isThroughBall && !this.isCross) {
@@ -1385,6 +1409,7 @@ class FootballPlayer {
     update(dt) {
         if (this.touchLock > 0) this.touchLock = Math.max(0, this.touchLock - dt);
         if (this.overlapTimer > 0) this.overlapTimer = Math.max(0, this.overlapTimer - dt);
+        if (this.passInertiaTimer > 0) this.passInertiaTimer = Math.max(0, this.passInertiaTimer - dt);
         // Arrefecimento da corrida ao espaco (ver RunIntoSpaceModel). Corre
         // aqui e nao na FSM: a FSM so mexe no estado corrente, e o
         // arrefecimento tem de correr JUSTAMENTE quando ele ja nao esta a
@@ -1699,7 +1724,7 @@ class FootballPlayer {
         let lookTarget = target;
         if (this.fsm && Match.ball) {
             const s = this.fsm.currentState;
-            if (s === 'MARKING' || s === 'BLOCKING' || s === 'AFT_SUPPORT' || s === 'SUPPORT_PASS') {
+            if (s === 'MARKING' || s === 'BLOCKING' || s === 'SUPPORT_PASS') {
                 lookTarget = Match.ball.position;
             }
         }

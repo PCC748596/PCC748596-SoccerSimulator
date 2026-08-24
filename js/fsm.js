@@ -269,6 +269,10 @@ function executePassGameplay(p) {
     Match.ballVel.set(dirX * forcaPasse, Match.ballVel.y, dirZ * forcaPasse);
     p.hasBall = false;
     p.touchLock = BallControl.touchLock;
+    if (p.role !== 'gk') {
+        p.passInertiaTimer = 4.0;
+        p.passInertiaZDir = p.model.position.z * p.dirZ;
+    }
     Match.ballCarrier = null;
     Match.intendedReceiver = p.passTarget;
     if (Match.passTargetVisual) Match.passTargetVisual.visible = false;
@@ -468,13 +472,9 @@ class PlayerFSM {
                 }
                 break;
             /*
-            MARKING / BLOCKING / FWR_SUPPORT / AFT_SUPPORT — mesma locomoção
+            MARKING / BLOCKING — mesma locomoção
             do MOVE_TO_POS (o alvo já vem calculado do nível 2: marcar(),
-            cobertura ou posicionamento de apoio). Estados próprios só para
-            aparecerem como tal no debug/labels — antes tudo isto ficava
-            disfarçado de "MOVE_TO_POS" e parecia que só 3 estados existiam.
-            FWR_SUPPORT/AFT_SUPPORT distinguem o apoio à frente da bola do
-            apoio atrás (opção de recuo) — ver actHoldPosition.
+            cobertura ou posicionamento).
             */
             /*
             MARKING respeita o CÍRCULO à volta do homem: acompanha-o pelo
@@ -538,8 +538,6 @@ class PlayerFSM {
                 }
                 break;
             case 'BLOCKING':
-            case 'FWR_SUPPORT':
-            case 'AFT_SUPPORT':
             // INTERCEPT: mesma locomoção, estado próprio só para aparecer como
             // tal no debug. O alvo é o ponto de interceptação calculado pela
             // percepção (ver actIntercept), não a posição actual da bola.
