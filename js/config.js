@@ -3030,10 +3030,25 @@ const GoalkeeperDistribution = {
     laterais: 0.50,       // usado se o estilo não estiver na tabela
     chuteFrente: 0.50,
 
-    // Um lateral mais longe do que isto não conta como saída curta.
+    // Um defesa mais longe do que isto não conta como saída curta.
     distanciaMaxLateral: 45.0,
-    // Lateral com adversário a menos disto em cima não serve.
+    // Defesa com adversário a menos disto em cima não serve.
     folgaMinima: 4.0,
+
+    /*
+    A saída curta aceita LATERAIS (LB/RB) e CENTRAIS (CB/DC), com preferência
+    pelos laterais — ver acharLateralParaSaida em bt/player_bt.js.
+
+    Só aceitava laterais, e com dois candidatos apenas (ambos obrigados a estar
+    a mais de `folgaMinima` de qualquer adversário) era frequente não haver
+    nenhum: o guarda-redes esperava `esperaMaxSemLinha` e acabava a chutar na
+    mesma. A saída a jogar existia e quase não se via.
+
+    `bonusLateral` é somado à folga do candidato: entre um lateral e um central
+    igualmente livres sai pelo lateral, que é por onde se sai a jogar; o central
+    entra quando é ele o que está mesmo desmarcado.
+    */
+    bonusLateral: 3.0,
 
     /*
     Segundos com a bola no pé antes de largar. A saída curta é mais rápida do

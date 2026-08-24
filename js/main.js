@@ -203,6 +203,24 @@ function toggleArbitragem() {
     }
 }
 
+/*
+Adeptos ON/OFF. São 15 000 bonecos em quatro InstancedMesh (ver js/crowd.js) —
+desligar é útil para medir o custo do resto da cena sem eles.
+
+O estado vive no próprio botão e não no `Crowd`, porque o `Crowd` não guarda
+nenhum: `setVisivel` mexe só no `.visible` das malhas.
+*/
+function toggleFans() {
+    if (typeof Crowd === 'undefined' || !Crowd._meshes) return;
+    const b = document.getElementById('btn-fans');
+    const ligado = b ? !b.classList.contains('active') : true;
+    Crowd.setVisivel(ligado);
+    if (b) {
+        b.innerText = 'Fans: ' + (ligado ? 'ON' : 'OFF');
+        b.classList.toggle('active', ligado);
+    }
+}
+
 function toggleMinimapa() {
     if (typeof Minimap === 'undefined') return;
     Minimap.setVisivel(!Minimap.visivel);

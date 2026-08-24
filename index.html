@@ -234,6 +234,8 @@
                     onclick="toggleMinimapa()">Minimapa: ON</button>
                 <button type="button" class="btn-sector active" id="btn-arbitragem"
                     onclick="toggleArbitragem()">Arbitragem: ON</button>
+                <button type="button" class="btn-sector active" id="btn-fans"
+                    onclick="toggleFans()">Fans: ON</button>
                 <button type="button" class="btn-sector" id="btn-passgrid"
                     onclick="toggleUsarPasseGrid()">PassGrid (decisão): OFF</button>
                 <button type="button" class="btn-sector" id="btn-touch-toggle"
@@ -364,6 +366,11 @@
     <script src="js/simulate.js"></script>
     <script src="js/minimap.js"></script>
     <script src="js/officials.js"></script>
+    <!-- Adeptos com o modelo dos jogadores, quatro InstancedMesh (um por canal
+         de cor). Pode vir depois do match.js: o `Crowd` só é tocado em runtime,
+         dentro do createField, que corre no DOMContentLoaded do main.js. Usa o
+         mergeNonIndexedGeometries do utils.js, carregado bem acima. -->
+    <script src="js/crowd.js"></script>
 
     <!-- Depende de FootballPlayer (player.js) e Sim (simulate.js) já existirem -->
     <script src="js/bt/btDebug.js"></script>

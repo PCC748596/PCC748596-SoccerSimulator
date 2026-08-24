@@ -17,6 +17,18 @@ Spec em [docs/superpowers/specs/2026-08-24-lateral-e-matada-no-peito-design.md](
   - **A regra dos jogadores** (`LateralGait.velViragem`, 3.6 m/s): acima dela o corpo roda para o movimento, abaixo dela fica virado para a bola e dá passo lateral. Em corrida aberta corre de frente; em ritmo de acompanhamento — a maior parte do tempo — anda de lado, de cara para o jogo.
   - **A velocidade encolhe pelo mesmo factor que a passada** (`amp`). Sem isto o passo lateral continuava a deslizar: as pernas dão passos curtos e o corpo percorria o caminho todo à mesma. Quem anda de lado anda mais devagar. A cadência passou também a dividir pela passada **já encolhida** (`P0.passada * amp`) — usar a passada inteira era metade do deslize.
   - Medida do teste: **escorregamento** = chão percorrido ÷ (ciclos × passada efectiva). 1.00 é o pé colado ao chão. Estava em 2.85 com a bola a 90°; está em 1.00.
+### Sessão de 24 de Agosto de 2026 — 15 000 adeptos e saída do guarda-redes
+
+- **`js/crowd.js` (ficheiro novo) — 15 000 adeptos com o MODELO DOS JOGADORES, sentados** (teste `tests/crowd.test.js`). O público era o `createSpectatorGeometry`: seis caixas fundidas numa peça e **uma cor por adepto**. Agora é o mesmo corpo do `buildBody`, na pose sentada.
+  - **O problema, e a solução: um InstancedMesh tem uma geometria e `setColorAt` dá UMA cor por instância — e o modelo do jogador tem quatro cores independentes** (pele, camisa, calção, cabelo). Não cabe num InstancedMesh só. A solução é **um InstancedMesh por CANAL DE COR**: fundem-se as peças de pele numa geometria, as de camisa noutra, e os quatro meshes recebem as **mesmas matrizes** por instância. As quatro peças coincidem no espaço porque partilham a matriz, e cada uma leva a sua cor. Custo: **4 draw calls** para 15 000 adeptos, geometria construída **uma vez** (972 vértices por adepto, ~43 ms para os 15 000).
+  - **A pose sentada é assada na geometria.** Não há rig por adepto: monta-se um esqueleto temporário de `Object3D`, poem-se-lhe as rotações de quem está sentado, deixa-se o THREE calcular as matrizes de mundo, e cada caixa é transformada por essa matriz antes de ser fundida. A hierarquia existe só na construção. Medido: **0.59 × 1.32 × 0.59 m** (de pé seriam ~1.80 de altura e ~0.30 de profundidade) — a altura cai e a profundidade cresce porque as coxas passam a apontar para a frente, e é essa a assinatura da pose.
+  - **Duas claques, uma em cada ponta, mescladas no meio** (`CrowdModel.fracaoPura: 0.35` + `Crowd.claqueEm`). A mescla é uma **transição de probabilidade** e não uma fronteira: sem ela via-se uma linha a direito a meio da bancada. Medido em cinco faixas: 100% / 98% / 50% / 2% / 0%.
+  - **Construção determinística** (gerador com semente): com `Math.random` o estádio mudava de cores a cada refresh e nenhuma comparação visual entre execuções seria possível.
+  - **Variação por adepto** — cor multiplicada por ±14%, escala 0.88 a 1.06, rotação ±0.25 rad. Sem isso 15 000 bonecos iguais leem-se como um padrão impresso, não como gente.
+  - **Os lugares vêm do `createField`** (`lugares[]` recolhido no `addSeatInstance`), porque só quem constrói as bancadas sabe onde eles ficam — e o Crowd precisa deles **todos** antes de decidir seja o que for: a mescla sai da posição em Z face aos extremos do estádio. O `specMesh` antigo ficou desligado (`crowdAllowed = false && ...`) e o `updateCrowd` já tolerava a ausência dele. O `Crowd.build` regista na consola quantos adeptos entraram em quantos lugares — se o estádio tiver menos lugares do que o pedido, isso passava despercebido.
+  - **Botão `Fans: ON/OFF`** no painel direito (`toggleFans`, js/main.js).
+- **O guarda-redes sai a jogar mais vezes** (`acharLateralParaSaida`, js/bt/player_bt.js + `GoalkeeperDistribution.bonusLateral`, js/config.js): só aceitava **LB/RB**, e com dois candidatos apenas — ambos obrigados a estar a mais de `folgaMinima` (4 m) de qualquer adversário — era frequente não haver nenhum. Aí o guarda-redes esperava `esperaMaxSemLinha` e acabava a chutar na mesma: a saída curta existia e quase não se via. Passa a aceitar também os **centrais** (CB/DC), com `bonusLateral: 3.0` somado à folga para os laterais continuarem a ser a primeira opção — entre dois igualmente livres sai pelo lateral, que é por onde se sai a jogar; o central entra quando é ele o que está mesmo desmarcado.
+
 ### Sessão de 24 de Agosto de 2026 — ritmo do passe, cabeçada, guarda-redes, cruzamento
 
 - **Passe 25% mais vivo, e o `easySpeed` teve de o acompanhar** (`PassModel.vChegadaRasteira` 6.0 → **7.5**, cruzamento e lançamento 2.8 → 3.5; `BallControl.easySpeed` 7.75 → **9.69**; teste `tests/passe_ritmo.test.js`). O `easySpeed` é a velocidade acima da qual o domínio deixa de ser garantido, e o reforço do passe curto soma até +2.16 m/s: a 7.5 um passe de 3 m chega a **9.12 m/s**, e com o limiar antigo TODOS os passes curtos passariam a falhar o primeiro toque. **Acelerar o passe sem acelerar o controlo não faz o jogo mais rápido, faz os receptores mais incompetentes.** Medido depois: passe de 10 m em **0.97 s**, e os 7 passes da amostra (3 a 25 m) continuam todos a chegar domináveis.
@@ -244,14 +256,19 @@ three.min.js (CDN)
   └─ assets/ball_mesh.js
   └─ event_bus.js → joint_limits.js
        → config.js → stats.js → utils.js → controls.js
+       → ik.js → reach.js → gk_dive.js
        → bt/action_state.js → perception.js
        → spatial_grid.js → pass_candidates.js
        → bt/core.js → bt/team_bt.js → bt/position_bt.js → bt/player_bt.js
        → match.js → player.js → fsm.js → simulate.js
-       → minimap.js → officials.js
+       → minimap.js → officials.js → crowd.js
        → bt/btDebug.js
        → main.js
 ```
+
+O `reach.js` vem depois do `ik.js` (usa o `IK` e o `IKChains`) e antes do
+`gk_dive.js`. O `crowd.js` pode vir depois do `match.js`: só é tocado em
+runtime, dentro do `createField`, que corre no `DOMContentLoaded` do `main.js`.
 
 (nota: `perception.js` vive em `js/perception.js`, não em `js/bt/` — o diagrama
 acima segue a ordem real de carregamento no `index.html`, não a pasta.)

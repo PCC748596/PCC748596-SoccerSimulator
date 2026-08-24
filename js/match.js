@@ -793,6 +793,15 @@ const Match = {
             return palette[Math.floor(Math.random() * palette.length)];
         }
 
+        /*
+        Todos os lugares construídos, para o `Crowd` (js/crowd.js) lá pôr os
+        adeptos com o modelo dos jogadores. É recolhido aqui porque só quem
+        constrói as bancadas sabe onde os lugares ficam — e o Crowd precisa
+        deles TODOS antes de decidir seja o que for: a mescla das duas claques
+        sai da posição em Z de cada lugar face aos extremos do estádio.
+        */
+        const lugares = [];
+
         function addSeatInstance(x, y, z, rotY) {
             if (seatIndex >= maxSeats) return;
             dummy.position.set(x, y, z);
@@ -802,7 +811,10 @@ const Match = {
             seatMesh.setColorAt(seatIndex, getSeatColor());
             seatIndex++;
 
-            const crowdAllowed = (typeof Config === 'undefined' || Config.enableCrowd !== false);
+            // O adepto senta-se um pouco acima do assento.
+            lugares.push({ x: x, y: y + 0.13, z: z, rotY: rotY });
+
+            const crowdAllowed = false && (typeof Config === 'undefined' || Config.enableCrowd !== false);
             if (crowdAllowed && Math.random() < 0.75 && spectatorIndex < maxSeats) {
                 specDummy.position.set(x, y + 0.13, z);
                 specDummy.rotation.set(0, rotY, 0);
@@ -927,6 +939,22 @@ const Match = {
         buildCorner(cornerX, cornerZ, 0);
         buildCorner(-cornerX, -cornerZ, Math.PI);
         buildCorner(cornerX, -cornerZ, 3 * Math.PI / 2);
+
+        /*
+        ADEPTOS. Corre depois de todas as bancadas estarem construídas, porque
+        a mescla das duas claques precisa de conhecer os extremos do estádio em
+        Z (ver Crowd.claqueEm em js/crowd.js).
+
+        Substitui o `specMesh` — o boneco simplificado de seis caixas com uma
+        cor só, que ficou desligado acima (`crowdAllowed = false && ...`). Este
+        usa o modelo dos jogadores, na pose sentada, com quatro InstancedMesh —
+        um por canal de cor, que é o que permite pele, camisa, calção e cabelo
+        independentes na mesma instância.
+        */
+        if (typeof Crowd !== 'undefined' &&
+            (typeof Config === 'undefined' || Config.enableCrowd !== false)) {
+            Crowd.build(campoGrupo, lugares);
+        }
 
         // Geometria fundida das bancadas para mínimo de draw calls
         if (stepGeos.length > 0) {

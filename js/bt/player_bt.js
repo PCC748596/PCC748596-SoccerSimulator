@@ -515,18 +515,32 @@ function limparSaidaGK(p) {
 }
 
 /*
-Lateral disponível para a saída curta: o mais desmarcado dos dois, dentro do
-alcance. "Desmarcado" aqui é literal — adversário mais próximo a mais de
-`folgaMinima`; um lateral com um extremo em cima não é saída, é oferta.
+Defesa disponível para a saída curta: o mais desmarcado, dentro do alcance.
+"Desmarcado" aqui é literal — adversário mais próximo a mais de `folgaMinima`;
+um defesa com um extremo em cima não é saída, é oferta.
+
+CANDIDATOS: laterais (LB/RB) **e** centrais (CB/DC), com PREFERÊNCIA pelos
+laterais.
+
+Só aceitava LB/RB. Com dois candidatos apenas, e os dois a terem de estar a
+mais de 4 m de qualquer adversário, era frequente não haver nenhum — e aí o
+guarda-redes esperava `esperaMaxSemLinha` e acabava a chutar. A saída a jogar
+existia mas quase não se via.
+
+A preferência pelo lateral é o `bonusLateral` somado à folga: entre um lateral
+e um central igualmente livres sai pelo lateral, que é por onde se sai a jogar;
+o central entra quando é ele o que está mesmo livre.
 */
 function acharLateralParaSaida(ctx) {
     const p = ctx.p;
     const G = GoalkeeperDistribution;
-    let melhor = null, melhorFolga = -Infinity;
+    let melhor = null, melhorNota = -Infinity;
 
     for (const mate of ctx.teammates) {
         if (mate === p) continue;
-        if (mate.pos !== 'LB' && mate.pos !== 'RB') continue;
+        const ehLateral = (mate.pos === 'LB' || mate.pos === 'RB');
+        const ehCentral = (mate.pos === 'CB' || mate.pos === 'DC');
+        if (!ehLateral && !ehCentral) continue;
         if (p.model.position.distanceTo(mate.model.position) > G.distanciaMaxLateral) continue;
 
         let folga = Infinity;
@@ -536,7 +550,9 @@ function acharLateralParaSaida(ctx) {
             if (d < folga) folga = d;
         }
         if (folga < G.folgaMinima) continue;
-        if (folga > melhorFolga) { melhorFolga = folga; melhor = mate; }
+
+        const nota = folga + (ehLateral ? (G.bonusLateral || 0) : 0);
+        if (nota > melhorNota) { melhorNota = nota; melhor = mate; }
     }
     return melhor;
 }
