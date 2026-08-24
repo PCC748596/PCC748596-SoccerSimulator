@@ -1426,6 +1426,12 @@ function tratarBolaParada(p) {
         if (s !== 'SET_PIECE_TAKER' && s !== 'SET_PIECE_WAIT' && s !== 'MOVE_TO_POS') {
             fsm.changeState('SET_PIECE_WAIT');
         }
+    } else if (Match.state === 'THROW_IN') {
+        // O batedor está em LATERAL (pose + gesto) e não passa por aqui; os
+        // outros continuam a posicionar-se normalmente pelo nível 2.
+        if (s !== 'LATERAL' && s !== 'MOVE_TO_POS') {
+            fsm.changeState('MOVE_TO_POS');
+        }
     } else if (Match.state === 'GOAL') {
         if (s !== 'MOVE_TO_POS') {
             fsm.changeState('IDLE');
@@ -1995,7 +2001,9 @@ const PlayingStyleBTs = {
 const PlayerAI = {
     tick: function (player, dt) {
         const s = player.fsm ? player.fsm.currentState : "";
-        if (player.actionState || s === "PASS" || s === "SHOOT" || s === "CROSS" || s === "TACKLE" || s === "SLIDE_TACKLE" || s === "CHEST_CONTROL") return;
+        // LATERAL entra na lista: é um gesto com duração própria (ThrowInClip),
+        // e deixar o BT decidir por cima dele tirava-lhe a bola das mãos a meio.
+        if (player.actionState || s === "PASS" || s === "SHOOT" || s === "CROSS" || s === "TACKLE" || s === "SLIDE_TACKLE" || s === "CHEST_CONTROL" || s === "LATERAL") return;
 
         if (!player.btCtx) player.btCtx = new PlayerContext(player);
         const ctx = player.btCtx.prepare(dt);

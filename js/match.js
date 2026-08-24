@@ -11,6 +11,7 @@ const Match = {
     // updateGoalKickWait / setupSetPiece).
     golKickProntos: false, golKickEspera: 0, golKickAlvoEspera: 0,
     golKickPendente: false, golKickAtrasoInicio: 0,
+    lateralPendente: false, lateralAtraso: 0,
     counterAttackTeam: null, counterAttackTimer: 0,
     specMesh: null, specData: [], specDummy: new THREE.Object3D(),
     crowdExcitement: 0, crowdTimer: 0,
@@ -1179,6 +1180,12 @@ const Match = {
         this.golKickAlvoEspera = 0;
         this.golKickPendente = false;
         this.golKickAtrasoInicio = 0;
+        this.lateralPendente = false;
+        this.lateralAtraso = 0;
+        [...this.players, ...this.opponents].forEach(p => {
+            p.lateralAction = null;
+            p.lateralLargou = false;
+        });
         this.golKickBolaAtraso = 0;
         this.golKickBolaAlvo = null;
         this.golKickAguardaChao = false;
@@ -1318,6 +1325,41 @@ const Match = {
 
         if (this.state === 'CORNER_KICK') {
             this.setPieceTimer += dt;
+        }
+
+        if (this.state === 'THROW_IN') {
+            this.setPieceTimer += dt;
+
+            /*
+            Espera de ESPERA_APOS_REPOSICAO (a mesma de todas as reposições) e
+            depois arranca o gesto. Quem larga a bola é o ActionState, no
+            contactTime do clip — ver ThrowInClip e o case LATERAL da FSM.
+            */
+            if (this.lateralPendente) {
+                this.lateralAtraso -= dt;
+                if (this.lateralAtraso <= 0) {
+                    this.lateralPendente = false;
+                    const t = this.setPieceTaker;
+                    if (t && t.fsm.currentState === 'LATERAL') {
+                        t.lateralAction = new ActionState('throwIn', {
+                            onContact: () => {
+                                t.lateralLargou = true;
+                                t.lancarLateral();
+                            }
+                        });
+                    } else {
+                        // Sem batedor válido, não deixa o jogo preso.
+                        this.state = 'PLAY';
+                    }
+                }
+            }
+
+            // Rede de segurança: gesto interrompido, batedor derrubado, etc.
+            if (this.setPieceTimer > 15.0) {
+                this.setPieceTimer = 0;
+                this.state = 'PLAY';
+                this.lateralPendente = false;
+            }
         }
 
         /*
@@ -1583,7 +1625,10 @@ const Match = {
     mostrar o slot congelado do último frame de jogo corrido.
     */
     nivel2Activo: function () {
-        return this.state === 'PLAY' || this.state === 'GOAL_KICK';
+        // THROW_IN incluído: só o batedor fica parado na linha, os outros dez
+        // continuam a mover-se para dar e tapar linhas de reposição.
+        return this.state === 'PLAY' || this.state === 'GOAL_KICK' ||
+            this.state === 'THROW_IN';
     },
 
     runTeamAI: function () {
@@ -1753,6 +1798,9 @@ const Match = {
     e a intercepção seria certa.
     */
     resolveBallContact: function () {
+        // Ninguém toca na bola que está nas mãos de quem vai repor.
+        if (this.state === 'THROW_IN') return false;
+
         /*
         Prioridade do guarda-redes na própria área: sem isto, um atacante
         colado a ele (ex.: cena de disputa junto à baliza) podia ganhar-lhe
@@ -2164,6 +2212,15 @@ const Match = {
 
     updateBall: function () {
         /*
+        No LATERAL a bola está NAS MÃOS do batedor, e é ele que lhe escreve a
+        posição todos os frames (aplicarFrameLateral, player.js). Deixar a
+        física correr aqui punha a gravidade a puxá-la enquanto o clip a
+        repunha — tremia no ar. Volta a correr assim que ela é largada, porque
+        o lancarLateral põe o estado em PLAY.
+        */
+        if (this.state === 'THROW_IN') return;
+
+        /*
         Integração semi-implícita: forças primeiro, posição depois. Constantes
         reais em BallPhysics (config.js) — 430 g, raio 0.11 m, g = 9.81 m/s²,
         ar a 1 atm ao nível do mar.
@@ -2232,6 +2289,20 @@ const Match = {
             _q1.setFromAxisAngle(_v1, (speed * this.delta) / r);
             this.ballVisual.quaternion.premultiply(_q1);
             this.ballVisual.quaternion.normalize();
+        }
+
+        /*
+        LATERAL. Corre antes da barreira do estádio: é ela que trava a bola, e
+        se corresse primeiro a bola nunca chegava a estar fora.
+
+        Regra: a bola tem de passar a linha por INTEIRO (por isso o `- raio`).
+        Repõe quem NÃO lhe tocou por último.
+        */
+        if (this.state === 'PLAY' &&
+            Math.abs(this.ball.position.x) - BallPhysics.raio > CAMPO_LARG / 2) {
+            const ultimo = this.lastTouchedTeam || 'TeamA';
+            const repoe = (ultimo === 'TeamA') ? 'TeamB' : 'TeamA';
+            this.setupSetPiece('THROW_IN', repoe);
         }
 
         /*
@@ -2717,6 +2788,66 @@ const Match = {
                 lookAtBola(attGK.model, this.ball.position);
                 attGK.fsm.changeState('SET_PIECE_WAIT');
             }
+
+        } else if (type === 'THROW_IN') {
+            /*
+            LATERAL. A bola volta ao ponto da linha por onde saiu (z travado
+            para não ficar em cima da bandeirola de canto), e repõe o jogador
+            de campo mais perto desse ponto.
+
+            Não se mexe nos outros dez: o nível 2 continua ligado no THROW_IN
+            (ver nivel2Activo), portanto eles reorganizam-se sozinhos com o
+            bloco em vez de irem para slots escritos à mão como no canto.
+            */
+            const ladoLinha = Math.sign(this.ball.position.x) || 1;
+            const zLinha = THREE.MathUtils.clamp(this.ball.position.z,
+                -(CAMPO_COMP / 2 - 1.0), CAMPO_COMP / 2 - 1.0);
+            const xLinha = ladoLinha * (CAMPO_LARG / 2);
+
+            this.ball.position.set(xLinha, BallPhysics.raio, zLinha);
+            this.ballVel.set(0, 0, 0);
+
+            this.players.concat(this.opponents).forEach(p => { p.hasBall = false; });
+            this.ballCarrier = null;
+
+            let taker = null, minDist = 999;
+            attackingPlayers.forEach(p => {
+                if (p.role === 'gk') return;
+                const d = p.model.position.distanceTo(this.ball.position);
+                if (d < minDist) { minDist = d; taker = p; }
+            });
+            this.setPieceTaker = taker || null;
+
+            if (taker) {
+                // Fica FORA do campo, atrás da linha, como manda a regra.
+                taker.model.position.set(
+                    ladoLinha * (CAMPO_LARG / 2 + ThrowInModel.recuoDaLinha),
+                    ALTURA_BASE_Y, zLinha);
+                taker.hasBall = false;
+                taker.lateralAction = null;
+                taker.lateralLargou = false;
+                taker.fsm.changeState('LATERAL');
+            }
+
+            /*
+            Adversários a menos de `afastaAdversarios` da bola dão um passo
+            atrás — a regra manda 2 m, e sem isto ficavam colados ao batedor
+            porque o slot do bloco os punha ali.
+            */
+            defendingPlayers.forEach(p => {
+                if (p.role === 'gk') return;
+                const dx = p.model.position.x - xLinha;
+                const dz = p.model.position.z - zLinha;
+                const d = Math.hypot(dx, dz);
+                if (d > 0.001 && d < ThrowInModel.afastaAdversarios) {
+                    const k = ThrowInModel.afastaAdversarios / d;
+                    p.model.position.x = xLinha + dx * k;
+                    p.model.position.z = zLinha + dz * k;
+                }
+            });
+
+            this.lateralPendente = true;
+            this.lateralAtraso = ESPERA_APOS_REPOSICAO;
 
         } else if (type === 'GOAL_KICK') {
             /*

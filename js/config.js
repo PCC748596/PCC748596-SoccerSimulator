@@ -242,7 +242,13 @@ existe pela mesma razão nos estádios a sério.
 =============================================================================
 */
 const BarreiraCampo = {
-    x: (CAMPO_LARG / 2),
+    /*
+    A barreira lateral estava EM CIMA da linha (CAMPO_LARG/2), portanto a bola
+    ressaltava na linha lateral e nunca saía — não havia lateral nenhum no jogo.
+    Agora tem a mesma folga de 4 m que o lado da linha de fundo já tinha: a bola
+    sai, o lateral é assinalado, e a barreira só a trava depois disso.
+    */
+    x: (CAMPO_LARG / 2) + 4.0,
     z: (CAMPO_COMP / 2) + 4.0,
     alturaPainel: 1.1,      // muro de publicidade, opaco
     alturaRede: 4.5,        // rede de protecção por cima, translúcida
@@ -270,7 +276,9 @@ const ActionAnimClips = {
     // Contacto no frame 8 (t = 7/11 ≈ 0.636) do clip de 12 frames
     gkPuntChao: { duration: 0.82, contactTime: 7 / 11 },
     // Lançamento com as mãos do guarda-redes
-    gkThrow: { duration: 0.70, contactTime: 8 / 11 }
+    gkThrow: { duration: 0.70, contactTime: 8 / 11 },
+    // Arremesso lateral (ver ThrowInClip): a bola sai no frame 6 de 10.
+    throwIn: { duration: 0.90, contactTime: 5 / 9 }
 };
 
 /*
@@ -427,6 +435,70 @@ const LateralPose = {
 
     // Qual o pé que vai à frente ('r' ou 'l').
     peFrente: 'r'
+};
+
+/*
+=============================================================================
+THROW_IN_CLIP — arremesso lateral, 10 keyframes
+=============================================================================
+Parte da LateralPose (a pose de espera, já validada no ecrã) e leva-a pelo
+gesto todo. Convenção do braço igual à da pose: `bracoX` MAIS negativo inclina
+os braços para TRÁS por cima da cabeça, menos negativo traz-nos para a frente.
+
+     1-2  espera, com a bola nas mãos por trás da cabeça
+     3-4  arco para trás: tronco arqueia, braços passam por cima
+     5    armação máxima
+     6    LARGA A BOLA (contactFrame), braços a passar a vertical
+     7-8  chicote para a frente, tronco fecha
+     9-10 recuperação e regresso à postura de jogo
+
+O pé de trás sobe na ponta no fim do gesto (`altura`), como quem se projecta —
+sem isso o arremesso lê-se como um empurrão só de braços.
+=============================================================================
+*/
+const ThrowInClip = {
+    contactFrame: 6,   // índice 5, t = 5/9
+    frames: [
+        // 1: pose de espera
+        { chest: -0.22, pelvisX: -0.06, bracoX: -2.75, bracoZ: 0.22, cotovelo: -0.55, coxaFrente: -0.18, joelhoFrente: 0.20, coxaTras: 0.22, joelhoTras: 0.35, altura: 0.00 },
+        // 2: carrega o peso na perna de trás
+        { chest: -0.30, pelvisX: -0.09, bracoX: -2.85, bracoZ: 0.22, cotovelo: -0.62, coxaFrente: -0.22, joelhoFrente: 0.24, coxaTras: 0.30, joelhoTras: 0.42, altura: -0.02 },
+        // 3: arco para trás
+        { chest: -0.42, pelvisX: -0.14, bracoX: -3.00, bracoZ: 0.20, cotovelo: -0.80, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.38, joelhoTras: 0.50, altura: -0.03 },
+        // 4: quase no limite do arco
+        { chest: -0.50, pelvisX: -0.17, bracoX: -3.12, bracoZ: 0.18, cotovelo: -0.92, coxaFrente: -0.28, joelhoFrente: 0.28, coxaTras: 0.42, joelhoTras: 0.55, altura: -0.04 },
+        // 5: armação máxima, tudo carregado para trás
+        { chest: -0.52, pelvisX: -0.18, bracoX: -3.18, bracoZ: 0.16, cotovelo: -0.95, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.40, joelhoTras: 0.52, altura: -0.04 },
+        // 6: LARGA A BOLA — braços a passar a vertical, tronco já a fechar
+        { chest: -0.05, pelvisX: -0.02, bracoX: -2.80, bracoZ: 0.14, cotovelo: -0.35, coxaFrente: -0.20, joelhoFrente: 0.20, coxaTras: 0.26, joelhoTras: 0.34, altura: 0.02 },
+        // 7: chicote para a frente
+        { chest: 0.26, pelvisX: 0.06, bracoX: -2.10, bracoZ: 0.12, cotovelo: -0.20, coxaFrente: -0.12, joelhoFrente: 0.16, coxaTras: 0.16, joelhoTras: 0.24, altura: 0.05 },
+        // 8: braços à frente, corpo projectado
+        { chest: 0.34, pelvisX: 0.08, bracoX: -1.30, bracoZ: 0.10, cotovelo: -0.12, coxaFrente: -0.06, joelhoFrente: 0.12, coxaTras: 0.08, joelhoTras: 0.18, altura: 0.06 },
+        // 9: braços a cair, peso a passar para a frente
+        { chest: 0.18, pelvisX: 0.04, bracoX: -0.60, bracoZ: 0.10, cotovelo: -0.10, coxaFrente: -0.02, joelhoFrente: 0.10, coxaTras: 0.04, joelhoTras: 0.14, altura: 0.02 },
+        // 10: postura de jogo
+        { chest: 0.00, pelvisX: 0.00, bracoX: 0.00, bracoZ: Math.PI / 16, cotovelo: 0.00, coxaFrente: 0.00, joelhoFrente: 0.00, coxaTras: 0.00, joelhoTras: 0.00, altura: 0.00 }
+    ]
+};
+
+/*
+Arremesso lateral: a que distância a bola cai e com que elevação. A potência
+sai da balística (v = sqrt(R*g / sin2θ)), como no chutão do guarda-redes — não
+de um número à mão.
+
+`alcanceMin/Max` é curto de propósito: um lateral não é um passe longo, e o
+regulamento não deixa correr para o ganhar. O `forcaBraco` escala com o
+atributo STRENGTH de quem repõe.
+*/
+const ThrowInModel = {
+    alcanceMin: 9.0,
+    alcanceMax: 18.0,
+    elevMin: 22 * Math.PI / 180,
+    elevMax: 34 * Math.PI / 180,
+    forcaBraco: 0.25,        // ±25% de alcance entre STRENGTH 0 e 100
+    recuoDaLinha: 0.7,       // metros para lá da linha onde o batedor se põe
+    afastaAdversarios: 2.5   // ninguém do outro lado a menos disto da bola
 };
 
 const GoalkeeperThrowPower = 1.0;
@@ -1076,6 +1148,47 @@ O lançamento (passe para o espaço nas costas da linha adversária) não existi
 todos os passes miravam a posição actual de um colega. Estes valores dizem onde
 se põe a bola em relação à linha que o nível 1 do adversário já calcula.
 */
+/*
+=============================================================================
+QUALIDADE DA LINHA DE PASSE
+=============================================================================
+Antes isto era um FILTRO binário com um corredor de 1 a 2.6 m: um adversário
+mais perto do que isso da recta eliminava o candidato, e a recompensa por ter
+a linha limpa valia no máximo +50 pontos — irrelevante ao lado dos +200/+500
+que a liberdade do RECEPTOR vale. Duas consequências medidas no jogo:
+
+  - o passe curto para dentro de tráfego passava, porque bastavam 2 m de folga;
+  - o passe longo para um colega livre era ELIMINADO antes de ser pontuado,
+    porque a recta atravessa o bloco todo e há sempre alguém a 2 m dela.
+
+Agora:
+
+  `bloqueioDuro`  o único corte que resta — alguém literalmente em cima da
+                  recta. É geometria, não julgamento: a bola não passa ali.
+
+  `corredor`      a largura em que um adversário ainda ameaça, e CRESCE com a
+                  distância do passe: numa bola de 8 m um defesa a 3 m não
+                  chega lá; numa de 35 m chega com tempo de sobra.
+
+  `pesoLinha`     a qualidade da linha (0 = colado, 1 = limpa) passa a valer
+                  na MESMA escala da liberdade do receptor, e não 1/10 dela.
+
+  `pesoCorpo`     desconto por CADA adversário dentro do corredor. Uma recta
+                  que passa a 2 m de cinco pessoas não é a mesma coisa que
+                  passar a 2 m de uma — e antes pontuavam igual, porque só se
+                  olhava para o mais próximo.
+=============================================================================
+*/
+const PassLineModel = {
+    bloqueioDuro: 0.9,       // metros: abaixo disto a bola não passa, ponto final
+    corredorBase: 3.0,       // largura do corredor de ameaça num passe curto
+    corredorPorMetro: 0.06,  // e quanto cresce por metro de passe
+    corredorMax: 7.0,
+    pesoLinha: 300,          // mesma escala do bónus de receptor livre
+    pesoCorpo: 60,           // por adversário dentro do corredor
+    factorOrquestrador: 0.4  // "vê através" — sofre menos com linhas apertadas
+};
+
 const PassModel = {
     carryChance: 0.10,
     carryChanceShort: 0.05,

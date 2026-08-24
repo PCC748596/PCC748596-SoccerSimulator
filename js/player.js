@@ -54,6 +54,31 @@ function amostrarClipChuteChaoGR(norm) {
     };
 }
 
+/*
+Amostra o clip do arremesso lateral (ThrowInClip) num tempo normalizado 0..1.
+*/
+function amostrarClipLateral(norm) {
+    const fr = ThrowInClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => a[k] + (b[k] - a[k]) * u;
+    return {
+        chest: mix('chest'),
+        pelvisX: mix('pelvisX'),
+        bracoX: mix('bracoX'),
+        bracoZ: mix('bracoZ'),
+        cotovelo: mix('cotovelo'),
+        coxaFrente: mix('coxaFrente'),
+        joelhoFrente: mix('joelhoFrente'),
+        coxaTras: mix('coxaTras'),
+        joelhoTras: mix('joelhoTras'),
+        altura: mix('altura')
+    };
+}
+
 function amostrarClipLancamentoGR(norm) {
     const fr = GoalkeeperThrowClip.frames;
     const n = fr.length;
@@ -383,6 +408,109 @@ class FootballPlayer {
                 this.model.position.z + _v1.z);
             Match.ballVel.set(0, 0, 0);
         }
+    }
+
+    /*
+    Escreve no rig um frame do arremesso lateral. `K` vem do amostrarClipLateral;
+    a pose de espera é o frame 0 do mesmo clip, por isso não há salto entre
+    esperar e lançar.
+
+    `segurarBola` cola a bola às mãos — verdade até ela ser largada
+    (ThrowInClip.contactFrame, disparado pelo ActionState).
+    */
+    aplicarFrameLateral(K, segurarBola) {
+        const rig = this.rig;
+        if (!rig) return;
+        const L = LateralPose;
+
+        rig.pelvis.position.set(0, 2.6, 0);
+        rig.pelvis.rotation.set(K.pelvisX, 0, 0);
+        rig.chest.rotation.set(K.chest, 0, 0);
+
+        rig.lArm.rotation.set(K.bracoX, 0, K.bracoZ);
+        rig.rArm.rotation.set(K.bracoX, 0, -K.bracoZ);
+        rig.lElbow.rotation.set(K.cotovelo, 0, 0);
+        rig.rElbow.rotation.set(K.cotovelo, 0, 0);
+
+        const frenteR = (L.peFrente === 'r');
+        const pernaF = frenteR ? rig.rLeg : rig.lLeg;
+        const joelhoF = frenteR ? rig.rKnee : rig.lKnee;
+        const pernaT = frenteR ? rig.lLeg : rig.rLeg;
+        const joelhoT = frenteR ? rig.lKnee : rig.rKnee;
+
+        pernaF.rotation.set(K.coxaFrente, 0, 0);
+        joelhoF.rotation.set(K.joelhoFrente, 0, 0);
+        pernaT.rotation.set(K.coxaTras, 0, 0);
+        joelhoT.rotation.set(K.joelhoTras, 0, 0);
+
+        rig.lFoot.rotation.set(0, Math.PI / 16, 0);
+        rig.rFoot.rotation.set(0, -Math.PI / 16, 0);
+
+        this.model.position.y = ALTURA_BASE_Y + (K.altura || 0);
+
+        if (segurarBola && typeof Match !== 'undefined' && Match.ball) {
+            /*
+            A bola segue as MÃOS, e as mãos seguem o clip: em vez de a colar a
+            uma altura fixa, lê-se a posição do punho no mundo. Sem isto ela
+            ficava suspensa atrás da cabeça enquanto os braços já iam à frente.
+            */
+            const mao = rig.lHand || rig.rHand;
+            if (mao) {
+                mao.updateWorldMatrix(true, false);
+                _v1.setFromMatrixPosition(mao.matrixWorld);
+                // Entre as duas mãos, e um pouco à frente delas.
+                if (rig.lHand && rig.rHand) {
+                    rig.rHand.updateWorldMatrix(true, false);
+                    _v2.setFromMatrixPosition(rig.rHand.matrixWorld);
+                    _v1.lerp(_v2, 0.5);
+                }
+                Match.ball.position.copy(_v1);
+            }
+            Match.ballVel.set(0, 0, 0);
+        }
+    }
+
+    /*
+    A bola sai das mãos. Mira um companheiro se houver linha; senão, campo
+    adentro. A potência sai da balística, como no chutão do GR.
+    */
+    lancarLateral() {
+        const T = ThrowInModel;
+        const gGrav = BallPhysics.gravidade;
+
+        const alvo = this.findPassTarget() || this.findPassTargetRelaxed('frente');
+        const paraDentro = -Math.sign(this.model.position.x) || 1;
+
+        let dx, dz;
+        if (alvo && alvo.model) {
+            dx = alvo.model.position.x - Match.ball.position.x;
+            dz = alvo.model.position.z - Match.ball.position.z;
+        } else {
+            // Sem ninguém: campo adentro e um pouco para a frente.
+            dx = paraDentro * 12.0;
+            dz = this.dirZ * 6.0;
+        }
+        const dist = Math.hypot(dx, dz) || 1;
+
+        const forca = 1 + ((this.skillFor('STRENGTH') - 50) / 50) * T.forcaBraco;
+        const alcance = THREE.MathUtils.clamp(dist,
+            T.alcanceMin, T.alcanceMax * forca);
+        const elev = T.elevMin + Math.random() * (T.elevMax - T.elevMin);
+
+        const v = Math.sqrt((alcance * gGrav) / Math.sin(2 * elev));
+        const horiz = v * Math.cos(elev);
+
+        Match.ballVel.set((dx / dist) * horiz, v * Math.sin(elev), (dz / dist) * horiz);
+
+        this.hasBall = false;
+        this.touchLock = BallControl.touchLock;
+        Match.ballCarrier = null;
+        Match.intendedReceiver = (alvo && alvo.model) ? alvo : null;
+        Match.lastTouchedTeam = this.team;
+        Match.lastTouchedPlayer = this;
+        Match.state = 'PLAY';
+        if (typeof MatchStats !== 'undefined') MatchStats.registarPasseIniciado(this.team, 'passe');
+        if (typeof EventBus !== 'undefined') EventBus.emit('THROW_IN_TAKEN', { team: this.team, p: this });
     }
 
     resetBonesToDefault() {
@@ -815,7 +943,9 @@ class FootballPlayer {
         const getSectorOfX = (x) => Tatics.sectorDeX(x, dirZ);
 
         let skillVal = this.skillFor('PASS');
-        let safetyLimit = 1.0 + (1.0 - (skillVal / 100)) * 0.6;
+        // O antigo `safetyLimit` (1.0 a 1.6 m) saiu daqui: era o corredor do
+        // filtro binário, hoje substituído pela qualidade de linha
+        // (PassLineModel). O que resta do corte duro está no ciclo, abaixo.
 
         let opponents = (this.team === 'TeamA') ? Match.opponents : Match.players;
         let ratedCandidates = [];
@@ -861,6 +991,17 @@ class FootballPlayer {
             _v2.subVectors(optPos, this.model.position).normalize();
             let minOppDist = 999, oppMaisPerto = null;
             let distMarcador = 999;
+
+            /*
+            O corredor de ameaça cresce com a distância do passe: um defesa a
+            3 m da recta não chega a uma bola de 8 m, mas chega de sobra a uma
+            de 35 m. Ver PassLineModel.
+            */
+            const PL = PassLineModel;
+            const corredor = Math.min(PL.corredorMax,
+                PL.corredorBase + dist * PL.corredorPorMetro);
+            let corposNoCorredor = 0;
+
             for (let i = 0; i < opponents.length; i++) {
                 let opp = opponents[i];
                 if (opp.role === 'gk') continue;
@@ -874,6 +1015,9 @@ class FootballPlayer {
                     minOppDist = d;
                     oppMaisPerto = opp;
                 }
+                // Quantos ameaçam, não só o mais perto.
+                if (d < corredor) corposNoCorredor++;
+
                 let dMarc = optPos.distanceTo(opp.model.position);
                 if (dMarc < distMarcador) {
                     distMarcador = dMarc;
@@ -888,14 +1032,22 @@ class FootballPlayer {
             */
             let isOrchestrator = (this.playingStyle === 'orchestrator' && this.styleAtivo);
 
-            let safetyEff = safetyLimit;
+            /*
+            Só sobra um corte DURO: alguém literalmente em cima da recta, onde
+            a bola não passa. Tudo o resto passou a ser peso, mais abaixo.
+
+            O `fatorIntercept` continua a valer — um bom interceptador tapa
+            mais campo do que um mau — mas agora sobre uma largura de
+            centímetros, não sobre o julgamento inteiro do passe.
+            */
+            let fatorIntercept = 1.0;
             if (oppMaisPerto) {
-                const fatorIntercept = THREE.MathUtils.clamp(
+                fatorIntercept = THREE.MathUtils.clamp(
                     1 + (oppMaisPerto.skillFor('INTERCEPT') - skillVal) / 150, 0.6, 1.6);
-                safetyEff = safetyLimit * fatorIntercept;
             }
-            if (isOrchestrator) safetyEff *= 0.3; // Orquestrador enxerga através dos adversários (arrisca mais o passe)
-            if (minOppDist < safetyEff) continue;
+            let bloqueio = PL.bloqueioDuro * fatorIntercept;
+            if (isOrchestrator) bloqueio *= PL.factorOrquestrador;
+            if (minOppDist < bloqueio) continue;
 
             let circulacao = teamStyle ? teamStyle.circulacao : 1.0;
             let verticalidade = teamStyle ? teamStyle.verticalidade : 1.0;
@@ -909,8 +1061,18 @@ class FootballPlayer {
             */
             let score = notaDistanciaPasse(dist, circulacao, verticalidade);
 
-            // Bónus por linha de passe livre (antigo)
-            score += Math.min(50, Math.max(0, (minOppDist - safetyLimit) * 8));
+            /*
+            QUALIDADE DA LINHA, na mesma escala do bónus de receptor livre.
+            0 = a bola raspa por alguém, 1 = corredor limpo. Antes isto valia
+            no máximo +50 contra os +500 do receptor livre, e era por isso que
+            um passe para dentro de tráfego ganhava a um colega desmarcado.
+            */
+            const qualidadeLinha = THREE.MathUtils.clamp(
+                (minOppDist - bloqueio) / Math.max(0.001, corredor - bloqueio), 0, 1);
+            let penalLinha = PL.pesoLinha * (1 - qualidadeLinha)
+                + PL.pesoCorpo * corposNoCorredor * fatorIntercept;
+            if (isOrchestrator) penalLinha *= PL.factorOrquestrador;
+            score -= penalLinha;
 
             // Bónus/Penalidade ABSOLUTA pela marcação do RECEBEDOR
             // Um jogador livre tem que SEMPRE ganhar de um marcado

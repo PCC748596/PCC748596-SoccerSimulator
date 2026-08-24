@@ -438,12 +438,35 @@ class PlayerFSM {
             */
             case 'LATERAL':
                 p.velocity.set(0, 0, 0);
-                p.aplicarPoseLateral(true);
-                if (Match.ball) {
-                    // Vira-se para DENTRO do campo, não para a bola: a bola
-                    // está nas mãos dele.
-                    _v1.set(0, p.model.position.y, p.model.position.z);
-                    lookAtBola(p.model, _v1);
+
+                // Vira-se para DENTRO do campo, não para a bola: a bola está
+                // nas mãos dele.
+                _v1.set(0, p.model.position.y, p.model.position.z);
+                lookAtBola(p.model, _v1);
+
+                /*
+                Duas fases no mesmo estado:
+
+                  sem `lateralAction`  espera com a bola nas mãos (frame 0 do
+                                       ThrowInClip, que é a LateralPose)
+                  com `lateralAction`  o gesto, com a bola a sair no
+                                       contactTime (ver ActionAnimClips.throwIn)
+
+                Quem cria o ActionState é o Match, depois da espera de
+                ESPERA_APOS_REPOSICAO — o mesmo tempo das outras reposições.
+                */
+                if (p.lateralAction) {
+                    const nL = p.lateralAction.update(dt, p);
+                    const K = amostrarClipLateral(nL);
+                    p.aplicarFrameLateral(K, !p.lateralLargou);
+                    if (p.lateralAction.isDone()) {
+                        p.lateralAction = null;
+                        p.lateralLargou = false;
+                        p.resetBonesToDefault();
+                        this.changeState('IDLE');
+                    }
+                } else {
+                    p.aplicarPoseLateral(true);
                 }
                 break;
             case 'SET_PIECE_TAKER':
