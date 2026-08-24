@@ -543,6 +543,35 @@ Os valores intermédios são interpolados, por isso a transição entre andament
 não tem degraus.
 =============================================================================
 */
+/*
+=============================================================================
+DESLOCAÇÃO LATERAL — não se corre de frente andando de lado
+=============================================================================
+Um marcador tem o corpo virado para a bola (ver steerArrive em player.js) mas o
+alvo dele é o homem: sempre que os dois não estão na mesma direcção, ele
+deslocava-se de lado com o ciclo de passada frontal a tocar por cima. Lia-se
+como um boneco a patinar.
+
+Duas respostas, conforme a velocidade:
+
+    devagar   fica virado para a bola e faz PASSO LATERAL — passada curta e
+              pernas a abrir/fechar, que é o que um defesa faz mesmo.
+    depressa  acima de `velViragem` ninguém se desloca de lado: o corpo roda
+              para a direcção do movimento e volta ao ciclo normal. A cabeça
+              e a cintura continuam a acompanhar a bola (até ±80°), portanto
+              não se perde a bola de vista.
+
+`anguloMin` é a partir de que desvio isto conta como lateral — abaixo disso é
+uma corrida em frente com uma curva, e não se mexe em nada.
+=============================================================================
+*/
+const LateralGait = {
+    anguloMin: 35 * Math.PI / 180,   // desvio entre a frente do corpo e o movimento
+    velViragem: 3.6,                 // m/s acima dos quais o corpo roda para o movimento
+    reducaoPassada: 0.65,            // quanto encolhe a passada no passo lateral
+    abertura: 0.30                   // abdução/adução da anca no passo lateral (rad, limite 45°)
+};
+
 const GaitModel = {
     andar: {
         vel: 1.8,             // velocidade típica deste andamento (m/s)

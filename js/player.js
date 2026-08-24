@@ -1863,12 +1863,37 @@ class FootballPlayer {
 
 
 
-        // Corpo vira para a direcção do movimento (ou para a bola ao defender/apoiar)
+        /*
+        Corpo vira para a direcção do movimento (ou para a bola ao defender/
+        apoiar).
+
+        A excepção da excepção: ninguém se desloca DEPRESSA de lado. Acima de
+        LateralGait.velViragem, se o movimento se afastar mais de `anguloMin`
+        da direcção da bola, o corpo roda para onde ele vai — senão ficava a
+        correr de frente e a deslizar de lado. Abaixo dessa velocidade
+        mantém-se virado para a bola e o animateBones desenha passo lateral.
+        */
         let lookTarget = target;
         if (this.fsm && Match.ball) {
             const s = this.fsm.currentState;
             if (s === 'MARKING' || s === 'BLOCKING' || s === 'SUPPORT_PASS') {
                 lookTarget = Match.ball.position;
+
+                if (typeof LateralGait !== 'undefined' && d > 0.0001) {
+                    const velAlvo = maxSpeed;
+                    if (velAlvo > LateralGait.velViragem) {
+                        // desired já está normalizado e depois escalado; usa-se
+                        // a direcção para o alvo, que é a mesma coisa.
+                        _v2.subVectors(Match.ball.position, this.model.position);
+                        _v2.y = 0;
+                        if (_v2.lengthSq() > 0.01) {
+                            _v2.normalize();
+                            const dirMov = _v1.copy(desired).normalize();
+                            const cosDesvio = dirMov.x * _v2.x + dirMov.z * _v2.z;
+                            if (cosDesvio < Math.cos(LateralGait.anguloMin)) lookTarget = target;
+                        }
+                    }
+                }
             }
         }
         _v1.set(this.model.position.x * 2 - lookTarget.x, this.model.position.y, this.model.position.z * 2 - lookTarget.z);
@@ -2255,19 +2280,58 @@ class FootballPlayer {
             this.animPhase = t;
             const P = getGaitPose(t, speed);
 
-            rig.lLeg.rotation.x = P.lHip; rig.lKnee.rotation.x = P.lKnee; rig.lFoot.rotation.x = P.lFoot;
-            rig.rLeg.rotation.x = P.rHip; rig.rKnee.rotation.x = P.rKnee; rig.rFoot.rotation.x = P.rFoot;
-            rig.lArm.rotation.x = P.lArm; rig.rArm.rotation.x = P.rArm;
+            /*
+            PASSO LATERAL. `alinhamento` é o coseno entre a frente do corpo e a
+            direcção do movimento: 1 a direito, 0 de lado, -1 de costas.
+            `lateralidade` (0..1) é quanto disto é deslocação de lado.
+
+            Quem se desloca de lado não dá passadas inteiras — encolhe-se a
+            amplitude e abrem-se/fecham-se as ancas ao ritmo do ciclo, que é o
+            passo do defesa. Sem isto o ciclo frontal tocava por cima de uma
+            deslocação lateral e o boneco patinava.
+            */
+            let lateralidade = 0;
+            let ladoMov = 0;
+            if (typeof LateralGait !== 'undefined') {
+                const alinhamento = fwd.dot(velDir);
+                const desvio = Math.acos(THREE.MathUtils.clamp(Math.abs(alinhamento), -1, 1));
+                if (desvio > LateralGait.anguloMin) {
+                    lateralidade = Math.min(1, (desvio - LateralGait.anguloMin) /
+                        (Math.PI / 2 - LateralGait.anguloMin));
+                    // >0 = movimento para a direita do corpo.
+                    ladoMov = Math.sign(fwd.z * velDir.x - fwd.x * velDir.z) || 1;
+                }
+            }
+            const amp = 1 - lateralidade *
+                ((typeof LateralGait !== 'undefined') ? LateralGait.reducaoPassada : 0);
+
+            rig.lLeg.rotation.x = P.lHip * amp; rig.lKnee.rotation.x = P.lKnee * amp; rig.lFoot.rotation.x = P.lFoot * amp;
+            rig.rLeg.rotation.x = P.rHip * amp; rig.rKnee.rotation.x = P.rKnee * amp; rig.rFoot.rotation.x = P.rFoot * amp;
+            rig.lArm.rotation.x = P.lArm * amp; rig.rArm.rotation.x = P.rArm * amp;
 
             // O cotovelo abre a andar e fecha a correr — era fixo em -1.2, que
             // é postura de sprint aplicada também a quem está a passear.
             rig.lElbow.rotation.x = P.cotovelo; rig.rElbow.rotation.x = P.cotovelo;
 
-            rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, 0); rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, 0);
+            /*
+            Abdução das ancas no passo lateral: as pernas abrem e fecham em
+            oposição de fase, e o par inteiro pende para o lado do movimento.
+            Dentro do limite anatómico da anca (JointLimits.hip.z, +45°/-30°) —
+            `LateralGait.abertura` é 0.30 rad (~17°), com folga de sobra.
+            */
+            if (lateralidade > 0.001) {
+                const A = LateralGait.abertura * lateralidade;
+                const osc = Math.sin(t * Math.PI * 2) * A;
+                rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, ladoMov * A * 0.5 + osc, 0.35);
+                rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, ladoMov * A * 0.5 - osc, 0.35);
+            } else {
+                rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, 0); rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, 0);
+            }
             rig.lArm.rotation.z = lerpTo(rig.lArm.rotation.z, Math.PI / 16); rig.rArm.rotation.z = lerpTo(rig.rArm.rotation.z, -Math.PI / 16);
 
             // Tronco: a prumo a andar, inclinado a correr. Era 0.3 rad sempre.
-            const inclinacao = movingBackwards ? P.tronco * 0.4 : P.tronco;
+            // De lado o tronco também não vai inclinado como numa corrida.
+            const inclinacao = (movingBackwards ? P.tronco * 0.4 : P.tronco) * amp;
             rig.chest.rotation.x = inclinacao + Math.sin(t * Math.PI * 2) * 0.04;
             // Mesma cintura a acompanhar a cabeça também a correr/andar — sem
             // isto ficava só parado a olhar de lado com o tronco reto.
