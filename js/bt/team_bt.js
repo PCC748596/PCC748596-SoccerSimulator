@@ -1372,10 +1372,26 @@ function atribuirApoiosDaEquipa(lista, bb) {
     Por isso a limpeza dos pontos NAO pode ser feita antes disto: o ponto
     anterior tem de sobreviver ate a nova atribuicao o confirmar ou largar.
     */
+    /*
+    Um DEFESA só se oferece como apoio na SAÍDA A JOGAR — bola no nosso terço.
+
+    Não havia filtro de função nenhum: qualquer jogador entrava no leilão, e o
+    custo é a distância do PONTO ao slot dele (`desvioMax` = 8 m). Com a bola a
+    meio-campo, os pontos de apoio atrás do portador (o leque inclui ±150°)
+    caem em cima dos slots dos centrais e laterais — e lá iam eles para
+    SUPPORT_PASS, a deixar a última linha para dar uma linha de passe que o
+    médio ao lado dava melhor. Era o caso do CB e do RB reportados.
+
+    Mesmo corte de terço usado no TeamBT (bolaNoNossoTerco, -17 m no
+    referencial de ataque).
+    */
+    const bolaNoNossoTerco = (refZ * dirZref) < -17.0;
+
     const candidatos = [];
     for (const p of lista) {
         if (!p || p.role === 'gk' || !p.postoBase) continue;
         if (portador && p === portador) continue;
+        if (p.role === 'def' && !bolaNoNossoTerco) continue;
         // Quem esta em cima da bola tambem nao: e ele que a vai jogar.
         if (Math.hypot(p.model.position.x - refX, p.model.position.z - refZ) < 2.0) continue;
         // Quem vai receber a bola tem tarefa; oferecer-se e para os outros.

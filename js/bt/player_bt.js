@@ -1263,6 +1263,79 @@ function actGoalkeeperPosition(ctx) {
     p.fsm.changeState('MOVE_TO_POS');
 }
 
+/*
+MARCACAO POR ZONA — acompanhar o homem que entrou no meu sector.
+
+Quem escolhe o par e o nivel de equipa (atribuirMarcacoesDaEquipa, team_bt.js),
+com histerese e exclusividade: `p.marcRef` e o homem deste jogador. O que
+faltava era alguem EXECUTAR essa escolha — o estado MARKING da FSM existia
+inteiro (circulo a volta do homem, recuo quando ele vem para cima) mas nunca
+era activado, porque dependia de `p.markingTarget`, que ninguem escrevia. A
+marcacao resumia-se ao desvio posicional limitado a `biasMax` (poucos metros),
+e por isso nao se via marcacao nenhuma.
+
+Zonal: so acompanha se o homem estiver dentro de `MarkingModel.raioSetor` do
+POSTO dele (nao da posicao actual) — sai do sector, deixa de ser problema
+dele e o nivel de equipa entrega-o a outro. E so a defender: com bola quem
+manda sao os estilos e a circulacao.
+
+Nao entra quem ja tem tarefa com a bola (chaser, blocker, intercetor) — essas
+folhas estao acima na arvore, isto e a rede de quem sobra.
+*/
+function podeMarcar(ctx) {
+    const p = ctx.p;
+    if (p.role === 'gk') return false;
+    if (typeof MarkingModel === 'undefined') return false;
+
+    const bb = ctx.bb;
+    if (!bb || bb.isAttacking) return false;
+
+    const homem = p.marcRef;
+    if (!homem || !homem.model) return false;
+
+    if (Match.chaserA === p || Match.chaserB === p) return false;
+    if (bb.blocker === p || bb.intercetor === p) return false;
+
+    const base = p.postoBase || p.model.position;
+    const d = Math.hypot(homem.model.position.x - base.x,
+        homem.model.position.z - base.z);
+    if (d > MarkingModel.raioSetor) return false;
+
+    ctx.marcado = homem;
+    return true;
+}
+
+function actMarcar(ctx) {
+    const p = ctx.p;
+    const homem = ctx.marcado;
+    p.markingTarget = homem;
+
+    /*
+    O ponto fica na recta homem->propria baliza, a `MarkingModel.distancia`
+    dele — e o mesmo pontoDeMarcacao da camada posicional, mas com o tecto
+    aberto ate ao raio do sector em vez do `biasMax` de poucos metros: aqui a
+    intencao E acompanhar o homem, nao inclinar o slot. O raio do sector
+    continua a ser o limite, portanto ninguem atravessa o campo atras de
+    ninguem.
+
+    Meio segundo de antecipacao na posicao do homem, como na camada
+    posicional — sem isso o marcador anda sempre atras dele.
+    */
+    const base = p.postoBase || p.model.position;
+    const dist = MarkingModel.distanciaPara(homem.model.position.z * p.dirZ);
+    const v = homem.velocity;
+    const hx = homem.model.position.x + (v ? v.x * 0.5 : 0);
+    const hz = homem.model.position.z + (v ? v.z * 0.5 : 0);
+
+    const ponto = pontoDeMarcacao(base.x, base.z, hx, hz,
+        p.ownGoalZ, dist, MarkingModel.raioSetor);
+
+    p.dynamicTarget.set(ponto.x, ALTURA_BASE_Y, ponto.z);
+    p.speedMult = (5.8 + ((ctx.skillSpeed - 50) / 50) * 1.4) * 1.25 * 0.9;
+    p.apoioAtivo = false;
+    p.fsm.changeState('MARKING');
+}
+
 /* =========================================================================
    A ÁRVORE
    ========================================================================= */
@@ -1736,6 +1809,17 @@ const PlayerBT = sel('PlayerRoot',
             ),
 
             /*
+            Marcacao por zona. Vem depois de tudo o que e bola (desarme,
+            intercepcao, perseguicao, recepcao) e ANTES das folhas de
+            posicionamento: quem tem um homem no sector acompanha-o em vez de
+            ir ocupar um ponto no mapa.
+            */
+            seq('Marcar',
+                cond('temHomemNoSector', podeMarcar),
+                act('marcar', actMarcar)
+            ),
+
+            /*
             Ataque à área: colega na ala em posição de cruzar (mesmos limiares
             do findCross/CrossModel) e eu sou atacante/médio sem bola — em vez
             do slot genérico do PositionBT, ataco a área a sério (perto/longe
@@ -1877,6 +1961,15 @@ const PlayerAI = {
 
         if (!player.btCtx) player.btCtx = new PlayerContext(player);
         const ctx = player.btCtx.prepare(dt);
+
+        /*
+        `markingTarget` vale para o tick em que a folha Marcar o escreve, e
+        mais nada. Limpo aqui, no unico sitio por onde todos os ramos passam:
+        se a arvore levar o jogador a outra coisa qualquer neste frame, ele
+        deixa de estar a marcar, e nem a FSM (case MARKING) nem o
+        estouAMarcar ficam a olhar para um homem que ele ja largou.
+        */
+        player.markingTarget = null;
 
         /*
         1. BT do Playing Style — só na FASE DE ATAQUE da equipa.

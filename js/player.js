@@ -179,9 +179,12 @@ class FootballPlayer {
         this.runCarrier = null;
         this.runCooldown = 0;
 
-        // markingTarget e o estado MARKING da FSM continuam mortos (ninguém os
-        // escreve). A marcação posicional usa os dois campos abaixo e nunca
-        // muda de estado na FSM — ver aplicarMarcacaoPosicional em team_bt.js.
+        // `marcRef` é a escolha do nível de equipa (atribuirMarcacoesDaEquipa,
+        // team_bt.js): quem este jogador acompanha, com histerese.
+        // `markingTarget` é a EXECUÇÃO dessa escolha no frame corrente — a
+        // folha Marcar do BT escreve-o e entra no estado MARKING da FSM; o
+        // PlayerAI.tick limpa-o no início de cada tick. A marcação posicional
+        // (aplicarMarcacaoPosicional) continua a inclinar o slot por cima.
         this.markingTarget = null;
         this.marcRef = null;      // adversário que está a acompanhar, ou null
         this.marcTimer = 0;       // segundos desde a última mudança de decisão
