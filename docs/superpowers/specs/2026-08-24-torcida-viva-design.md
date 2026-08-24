@@ -62,9 +62,11 @@ que o `Crowd` já usa (a multidão tem de ser igual em cada arranque):
 | `aRitmo` | ~0.85..1.15. Multiplicador de velocidade, pela mesma razão. |
 | `aClaque` | 0 = claque A, 1 = claque B. Já decidido por `Crowd.claqueEm`. |
 
-Uniforms, escritos só quando o lance muda: por claque, `uFracAnt`, `uFracNova`,
-`uTempoTroca`; global, `uTempo`, `uDurTransicao`, `uSalto`, e `uFesta` por
-claque.
+Uniforms. Por claque (vector de 2, indexado por `aClaque` convertido a inteiro):
+`uFracAnt`, `uFracNova`, `uTempoTroca`, `uFesta` — escritos só quando o lance
+muda. Globais, constantes depois do arranque: `uDurTransicao`, `uAmpIdle`,
+`uRitmoIdle`, `uSalto`, `uRitmoSalto`. O único uniform escrito por frame é
+`uTempo`.
 
 O estado de cada adepto sai de uma comparação, não de um valor guardado por
 instância — é isso que evita reescrever atributos:
