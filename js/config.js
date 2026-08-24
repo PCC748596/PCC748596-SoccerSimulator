@@ -2819,6 +2819,10 @@ const PenaltyModel = {
     raioMeiaLua: 9.15,         // ninguém dentro disto além do batedor
     margemArea: 16.5,          // linha da grande área
     recuoBatedor: 2.6,         // onde ele espera, atrás da bola
+    areaX: 20.16,              // meia-largura da grande área
+    folgaArco: 0.6,            // quanto ficam PARA LÁ da meia-lua
+    folgaArea: 0.8,            // e para lá da linha da área
+    espacamentoFila: 3.2,      // entre jogadores na fila da entrada da área
     potencia: 26.0,            // m/s à saída
     alturaMax: 1.9,            // não se coloca acima disto (trave a 2.44)
     margemPoste: 0.45,         // quanto se afasta do poste ao colocar

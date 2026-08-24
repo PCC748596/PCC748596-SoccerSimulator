@@ -22,28 +22,50 @@ POSICIONAMENTO
   assistente 2 em -X na metade +Z, a diagonal do árbitro vai de (-X, -Z) a
   (+X, +Z).
 
-  O árbitro projecta a bola nessa diagonal e depois AFASTA-SE ao longo dela até
-  ficar a `RefereeModel.distanciaBola` da bola. É o pedido tal como foi feito;
-  40 m é bastante mais do que a arbitragem real usa (15-25 m), por isso ficou
-  num número só, fácil de baixar.
+  A diagonal é a do LATERAL DIREITO ao PONTA ESQUERDA do TeamB — de (+X, +Z) a
+  (-X, -Z). O árbitro projecta a bola nela e depois AFASTA-SE ao longo dela até
+  ficar a `RefereeModel.distanciaBola` da bola (15 m).
 =============================================================================
 */
 const RefereeModel = {
-    // Diagonal do árbitro, em fracção da meia-largura e do meio-campo.
-    diagonalX: 0.55,
-    diagonalZ: 0.85,
-    distanciaBola: 40.0,     // afastamento pedido, em metros
+    /*
+    Diagonal do árbitro, em fracção da meia-largura e do meio-campo.
+
+    É a diagonal do LATERAL DIREITO ao PONTA ESQUERDA do TeamB (vermelho): esse
+    lado ataca -Z, portanto a sua direita é +X e o lateral direito fica em
+    (+X, +Z); o ponta esquerda fica no canto oposto, (-X, -Z). É a mesma recta
+    percorrida nos dois sentidos, e é a que deixa o árbitro sempre do lado
+    contrário ao do assistente daquela metade.
+
+    Os extremos são LARGOS (0.68 → ±23 m) e não muito FUNDOS (0.75 → ±40 m),
+    porque são as posições de um lateral e de um extremo, não das bandeirolas
+    de canto.
+    */
+    diagonalX: 0.68,
+    diagonalZ: 0.75,
+    distanciaBola: 15.0,     // afastamento à bola, em metros
+    /*
+    Colocação inicial do árbitro: junto ao círculo central, do lado da sua
+    diagonal — entre as duas linhas que se formam para o pontapé de saída. 12 m
+    põe-no logo por fora do círculo (raio 9.15) sem ficar longe do lance.
+    Depois do arranque passa a mandar o `distanciaBola`.
+    */
+    distanciaInicial: 12.0,
+    raioCirculoCentral: 9.15,
     velocidade: 5.2,         // m/s, ritmo de quem acompanha o jogo
 
     // Assistentes: quanto ficam PARA FORA da linha lateral.
     margemLinha: 1.4,
     velocidadeAssistente: 6.0,
 
-    // Equipamento, preto por agora.
-    corCamisa: 0x14161a,
-    corCalcao: 0x14161a,
-    corMeia: 0x14161a,
-    corPele: 0xc68642
+    /*
+    Equipamento, preto por agora. Em texto e não em hexadecimal numérico: o
+    `buildBody` dos jogadores pinta as texturas da camisola e dos meiões num
+    canvas 2D, e o canvas quer uma cor CSS.
+    */
+    corCamisa: '#14161a',
+    corCalcao: '#14161a',
+    corBota: '#0f1114'
 };
 
 const Officials = {
@@ -52,99 +74,46 @@ const Officials = {
     _ativo: true,
 
     /*
-    Corpo simples, com a mesma linguagem visual dos jogadores (caixas) mas sem
-    número, sem cara e sem pitons: o árbitro é cenário, não protagonista, e
-    cada polígono aqui é polígono que não serve para nada.
+    Corpo: o MESMO modelo dos jogadores. Instancia-se um `FootballPlayer` só
+    para nos dar `model` + `rig`, com o equipamento todo preto.
+
+    O construtor do FootballPlayer é seguro para isto: não se inscreve em lado
+    nenhum, não toca no `Match`, e o que acrescenta à cena são dois sprites
+    (etiqueta e banner) que nascem invisíveis dentro do próprio `model`. O
+    `discoTatico` — esse sim vive na cena — é criado dentro do `updateShirt`,
+    que nunca chamamos: sem número nas costas e sem disco na vista táctica, que
+    é o que se quer para um árbitro.
+
+    Os ossos têm os mesmos nomes (`lLeg`, `rKnee`, `lArm`, `chest`…), por isso o
+    `mover()` aqui em baixo não muda nada.
     */
-    criarCorpo: function () {
-        const corpo = new THREE.Group();
+    criarCorpo: function (id) {
         const R = RefereeModel;
+        const jogador = new FootballPlayer(id, R.corCamisa, R.corCalcao, 'TeamA');
 
-        const matCamisa = new THREE.MeshStandardMaterial({ color: R.corCamisa, roughness: 0.9 });
-        const matCalcao = new THREE.MeshStandardMaterial({ color: R.corCalcao, roughness: 0.9 });
-        const matMeia = new THREE.MeshStandardMaterial({ color: R.corMeia, roughness: 0.9 });
-        const matPele = new THREE.MeshStandardMaterial({ color: R.corPele, roughness: 0.8 });
+        /*
+        As chuteiras saem do baralho de aparências (`escolherAparencia`) e vêm
+        às cores. Aqui pintam-se de preto: recalcula-se a mesma aparência para
+        saber QUE cor procurar, e trocam-se só os materiais com essa cor — a
+        pele, o cabelo e os olhos ficam intactos.
+        */
+        if (typeof escolherAparencia === 'function') {
+            const ap = escolherAparencia(id, 11, 0);
+            const alvoBota = new THREE.Color(ap.corChuteira).getHex();
+            jogador.model.traverse(function (o) {
+                if (!o.material || !o.material.color) return;
+                if (o.material.color.getHex() === alvoBota) {
+                    o.material = o.material.clone();
+                    o.material.color.set(R.corBota);
+                }
+            });
+        }
 
-        const rig = {};
-
-        // Bacia à mesma altura da dos jogadores (ver resetBonesToDefault).
-        const pelvis = new THREE.Group();
-        pelvis.position.set(0, 2.6, 0);
-        corpo.add(pelvis);
-        rig.pelvis = pelvis;
-
-        const chest = new THREE.Group();
-        chest.position.y = 0.225;
-        pelvis.add(chest);
-        rig.chest = chest;
-
-        const tronco = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.15, 0.55), matCamisa);
-        tronco.position.y = 0.30;
-        chest.add(tronco);
-
-        const anca = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.45, 0.55), matCalcao);
-        anca.position.y = -0.28;
-        pelvis.add(anca);
-
-        const pescoco = new THREE.Group();
-        pescoco.position.y = 0.95;
-        chest.add(pescoco);
-        rig.neck = pescoco;
-        const cabeca = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.62), matPele);
-        cabeca.position.y = 0.32;
-        pescoco.add(cabeca);
-
-        const braco = (lado) => {
-            const raiz = new THREE.Group();
-            raiz.position.set(lado * 0.62, 0.525, 0);
-            const sup = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 0.3), matCamisa);
-            sup.position.y = -0.45;
-            raiz.add(sup);
-            const cot = new THREE.Group();
-            cot.position.y = -0.9;
-            raiz.add(cot);
-            const inf = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.75, 0.26), matPele);
-            inf.position.y = -0.38;
-            cot.add(inf);
-            raiz.rotation.z = lado * Math.PI / 16;
-            chest.add(raiz);
-            return { raiz: raiz, cot: cot };
-        };
-        const bE = braco(1), bD = braco(-1);
-        rig.lArm = bE.raiz; rig.lElbow = bE.cot;
-        rig.rArm = bD.raiz; rig.rElbow = bD.cot;
-
-        const perna = (lado) => {
-            const raiz = new THREE.Group();
-            raiz.position.set(lado * 0.28, -0.3, 0);
-            const coxa = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.9, 0.4), matPele);
-            coxa.position.y = -0.45;
-            raiz.add(coxa);
-            const calcao = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.45, 0.46), matCalcao);
-            calcao.position.y = 0.22;
-            coxa.add(calcao);
-            const joelho = new THREE.Group();
-            joelho.position.y = -0.9;
-            raiz.add(joelho);
-            const canela = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.85, 0.36), matMeia);
-            canela.position.y = -0.42;
-            joelho.add(canela);
-            const pe = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.22, 0.7), matMeia);
-            pe.position.set(0, -0.92, 0.14);
-            joelho.add(pe);
-            pelvis.add(raiz);
-            return { raiz: raiz, joelho: joelho };
-        };
-        const pE = perna(1), pD = perna(-1);
-        rig.lLeg = pE.raiz; rig.lKnee = pE.joelho;
-        rig.rLeg = pD.raiz; rig.rKnee = pD.joelho;
-
-        corpo.scale.setScalar(0.42);   // mesma escala aparente dos jogadores
-        return { corpo: corpo, rig: rig };
+        return { corpo: jogador.model, rig: jogador.rig, jogador: jogador };
     },
 
-    criarOficial: function (scene) {
-        const feito = this.criarCorpo();
+    criarOficial: function (scene, id) {
+        const feito = this.criarCorpo(id);
         scene.add(feito.corpo);
         return {
             model: feito.corpo,
@@ -155,8 +124,65 @@ const Officials = {
 
     init: function (scene) {
         if (this.arbitro) return;
-        this.arbitro = this.criarOficial(scene);
-        this.assistentes = [this.criarOficial(scene), this.criarOficial(scene)];
+        this.arbitro = this.criarOficial(scene, 0);
+        this.assistentes = [this.criarOficial(scene, 1), this.criarOficial(scene, 2)];
+        this.colocarInicial();
+    },
+
+    /*
+    Coloca os três no sítio LOGO no arranque, em vez de os deixar nascer em
+    (0,0) e virem a correr do meio do campo até à posição — que era o que se
+    via nos primeiros segundos.
+
+    Assistentes: já sobre a linha de impedimento da metade que cobrem.
+    Árbitro: `distanciaInicial` da bola, sobre a sua diagonal e por fora do
+    círculo central.
+    */
+    colocarInicial: function () {
+        if (!this.arbitro) return;
+        if (typeof Match === 'undefined' || !Match.ball ||
+            !Match.players || !Match.players.length) return;
+
+        const R = RefereeModel;
+        const meiaLarg = CAMPO_LARG / 2;
+
+        const zA = this.linhaDeImpedimento(Match.players, 1);
+        const zB = this.linhaDeImpedimento(Match.opponents, -1);
+
+        this.assistentes[0].model.position.set(
+            meiaLarg + R.margemLinha, 0,
+            THREE.MathUtils.clamp(zA, -(CAMPO_COMP / 2), 0));
+        this.assistentes[1].model.position.set(
+            -(meiaLarg + R.margemLinha), 0,
+            THREE.MathUtils.clamp(zB, 0, CAMPO_COMP / 2));
+
+        const bola = Match.ball.position;
+        const ax = -meiaLarg * R.diagonalX, az = -(CAMPO_COMP / 2) * R.diagonalZ;
+        const bx = meiaLarg * R.diagonalX, bz = (CAMPO_COMP / 2) * R.diagonalZ;
+        const dx = bx - ax, dz = bz - az;
+        const comprimento = Math.hypot(dx, dz);
+
+        // Ponto da diagonal mais perto da bola, recuado `distanciaInicial`.
+        let t = ((bola.x - ax) * dx + (bola.z - az) * dz) / (comprimento * comprimento);
+        t = THREE.MathUtils.clamp(t - R.distanciaInicial / comprimento, 0, 1);
+        let px = ax + dx * t, pz = az + dz * t;
+
+        // Nunca dentro do círculo central.
+        const dCentro = Math.hypot(px, pz);
+        if (dCentro < R.raioCirculoCentral) {
+            const k = (dCentro > 0.001) ? (R.raioCirculoCentral + 1.0) / dCentro : 1;
+            px *= k; pz *= k;
+        }
+        this.arbitro.model.position.set(px, 0, pz);
+
+        // Virados para a bola, para não nascerem de costas.
+        const olhar = (o) => {
+            o.model.rotation.y = Math.atan2(
+                bola.x - o.model.position.x, bola.z - o.model.position.z);
+        };
+        olhar(this.arbitro);
+        olhar(this.assistentes[0]);
+        olhar(this.assistentes[1]);
     },
 
     /*

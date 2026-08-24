@@ -3067,28 +3067,48 @@ const Match = {
             }
 
             /*
-            Todos os outros: fora da área e fora da meia-lua, à espera do
-            ressalto. Empurra-se cada um para trás ao longo do eixo do campo,
-            mantendo o x — assim a distribuição lateral não se amontoa.
+            Todos os outros formam a fila da ENTRADA DA ÁREA, como nas imagens
+            de referência: alinhados na linha da grande área, alternando para os
+            dois lados a partir do centro, e sempre por FORA da meia-lua.
+
+            A meia-lua é um círculo de 9.15 m centrado na MARCA, não uma faixa
+            em z — a primeira versão testava `|x| < raio` e `|z - marca| < raio`,
+            que é um quadrado, e deixava jogadores dentro do arco nas diagonais.
+            Aqui o teste é o do círculo, e quem cai lá dentro é empurrado
+            radialmente para fora a partir da marca.
             */
             const limiteZ = linhaGolPen - attDir * PM.margemArea;
-            this.players.concat(this.opponents).forEach(p => {
-                if (p === takerPen || p.role === 'gk') return;
-                let z = p.model.position.z;
-                if ((z - limiteZ) * attDir > 0) z = limiteZ;               // fora da área
-                if (Math.abs(z - marcaZ) < PM.raioMeiaLua &&
-                    Math.abs(p.model.position.x) < PM.raioMeiaLua) {
-                    z = marcaZ - attDir * PM.raioMeiaLua;                  // fora da meia-lua
+            const filaZ = limiteZ - attDir * PM.folgaArea;   // um passo fora da área
+
+            const naFila = this.players.concat(this.opponents)
+                .filter(p => p !== takerPen && p.role !== 'gk');
+
+            naFila.forEach((p, i) => {
+                // Alterna esquerda/direita a partir do eixo: 0, +1, -1, +2, -2...
+                const passo = Math.ceil((i + 1) / 2) * ((i % 2 === 0) ? 1 : -1);
+                let x = passo * PM.espacamentoFila;
+                x = THREE.MathUtils.clamp(x, -(PM.areaX + 4.0), PM.areaX + 4.0);
+                let z = filaZ;
+
+                // Fora da meia-lua: círculo de raio 9.15 centrado na marca.
+                const dx = x - 0, dz = z - marcaZ;
+                const d = Math.hypot(dx, dz);
+                const rMin = PM.raioMeiaLua + PM.folgaArco;
+                if (d < rMin) {
+                    const k = (d > 0.001) ? rMin / d : 1;
+                    x = dx * k;
+                    z = marcaZ + (d > 0.001 ? dz * k : -attDir * rMin);
                 }
-                p.model.position.set(p.model.position.x, ALTURA_BASE_Y, z);
+
+                p.model.position.set(x, ALTURA_BASE_Y, z);
                 lookAtBola(p.model, this.ball.position);
                 p.fsm.changeState('SET_PIECE_WAIT');
             });
 
-            // Guarda-redes que defende: na linha, pronto a reagir.
+            // Guarda-redes que defende: SOBRE a linha de golo, pronto a reagir.
             const gkPen = defendingPlayers.find(p => p.role === 'gk');
             if (gkPen) {
-                gkPen.model.position.set(0, ALTURA_BASE_Y, linhaGolPen - attDir * 0.4);
+                gkPen.model.position.set(0, ALTURA_BASE_Y, linhaGolPen - attDir * 0.05);
                 gkPen.gkEstado = 'idle';
                 gkPen.gkReagiu = false;
                 gkPen.gkDelayReacao = 0;
