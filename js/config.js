@@ -1714,6 +1714,26 @@ const CarryModel = {
     distanciaMax: 16.0,
     distanciaMaxDefesa: 2.0,
 
+    /*
+    EXCEPÇÃO AO ORÇAMENTO: estar livre à frente (`livreAFrente10m20g` — ninguém
+    a 10 m num cone de 20°) deixa conduzir para lá do orçamento, mas só no
+    ÚLTIMO TERÇO e sem ser em sprint.
+
+    Porquê manter a excepção: com a baliza à frente e o caminho aberto, obrigar
+    a passar é o que faz o portador tocar para trás em vez de progredir para a
+    zona de remate.
+
+    Porquê limitá-la: sem limite nenhum era a anulação do orçamento — quem
+    arranca em velocidade limpa o cone por si próprio, e o portador atravessava
+    o campo todo. Fora do último terço, ou a sprintar, manda o orçamento.
+
+    `zonaLivre` no referencial de ataque (17 m ≈ entrada do último terço, mesma
+    convenção do bolaNoUltimoTerco do TeamBT). `velMaxLivre` é o topo da corrida
+    normal — acima disto é sprint (ver GaitModel.correr.vel).
+    */
+    zonaLivre: 17.0,
+    velMaxLivre: GaitModel.correr.vel,
+
     // Toques de condução — distância do toque depende do espaço à frente
     touchLong: 2.8,       // toque longo (campo aberto, adversário > 15m)
     touchMedium: 1.6,     // toque médio (adversário entre 8-15m)
@@ -2717,32 +2737,43 @@ sobre pesos já existentes:
     cruzamento      multiplica a chance de cruzamento (findCross, player_bt.js)
     pressaoPosPerda multiplica a reacção depois de perder a bola — menor
                      valor = reage mais depressa (pickChaser, team_bt.js)
+    conducao        multiplica o ORÇAMENTO de condução (CarryModel.distanciaMax
+                     e distanciaMaxDefesa, ver campoAberto em player_bt.js):
+                     quantos metros o portador leva a bola antes de o ramo de
+                     espaço aberto deixar de o servir e ele ter de passar.
+                     Só no contra-ataque é que correr com a bola é o plano;
+                     em Possession e Positional o plano é tocar.
 */
 const TeamPlayStyles = {
     possession: {
         nome: 'Possession',
         circulacao: 1.9, verticalidade: 0.6, viradas: 1.3,
-        corredores: 0.9, cruzamento: 0.9, pressaoPosPerda: 1.0
+        corredores: 0.9, cruzamento: 0.9, pressaoPosPerda: 1.0,
+        conducao: 0.45
     },
     direct: {
         nome: 'Direct',
         circulacao: 0.65, verticalidade: 1.4, viradas: 0.7,
-        corredores: 1.0, cruzamento: 1.0, pressaoPosPerda: 1.0
+        corredores: 1.0, cruzamento: 1.0, pressaoPosPerda: 1.0,
+        conducao: 1.0
     },
     counter_attack: {
         nome: 'Counter Attack',
         circulacao: 0.8, verticalidade: 1.25, viradas: 0.9,
-        corredores: 1.0, cruzamento: 1.0, pressaoPosPerda: 0.8
+        corredores: 1.0, cruzamento: 1.0, pressaoPosPerda: 0.8,
+        conducao: 1.75
     },
     wing_play: {
         nome: 'Wing Play',
         circulacao: 1.1, verticalidade: 0.9, viradas: 1.1,
-        corredores: 1.5, cruzamento: 1.4, pressaoPosPerda: 1.0
+        corredores: 1.5, cruzamento: 1.4, pressaoPosPerda: 1.0,
+        conducao: 0.9
     },
     positional: {
         nome: 'Positional',
         circulacao: 1.5, verticalidade: 0.75, viradas: 1.15,
-        corredores: 1.1, cruzamento: 1.0, pressaoPosPerda: 1.0
+        corredores: 1.1, cruzamento: 1.0, pressaoPosPerda: 1.0,
+        conducao: 0.55
     },
 };
 

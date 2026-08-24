@@ -147,8 +147,28 @@ class PlayerContext {
         const naDefesa = (this.p.model.position.z * this.p.dirZ < 0) || this.p.role === 'def';
         const espacoReq = naDefesa ? (CarryModel.espacoLivreDefesa || 24.0) : CarryModel.espacoLivre;
         if (this.espacoAFrente < espacoReq && !this.livreAFrente10m20g) return false;
-        const maxDist = naDefesa ? (CarryModel.distanciaMaxDefesa || 6.0) : CarryModel.distanciaMax;
-        return (this.p.carryDist || 0) < maxDist || this.livreAFrente10m20g;
+
+        // O orçamento escala com o Estilo Ofensivo da equipa: correr com a
+        // bola é o plano do contra-ataque, não do jogo de posse.
+        const maxDist = (naDefesa ? (CarryModel.distanciaMaxDefesa || 6.0) : CarryModel.distanciaMax)
+            * multiplicadorConducao();
+        if ((this.p.carryDist || 0) < maxDist) return true;
+
+        /*
+        Orçamento GASTO. Estar livre à frente ainda deixa continuar, mas só no
+        ÚLTIMO TERÇO e sem ser em sprint (ver CarryModel.zonaLivre/velMaxLivre).
+
+        Antes era `|| this.livreAFrente10m20g` sem condição nenhuma, o que
+        anulava o orçamento: quem arranca em velocidade limpa o cone de 20° por
+        si próprio, logo a condição era sempre verdadeira e o portador
+        atravessava o campo inteiro. Tirá-la de todo também não serve — com a
+        baliza à frente e o caminho aberto, obrigar a passar é o que produz o
+        toque para trás em vez da progressão para a zona de remate.
+        */
+        if (this.zoneAhead <= CarryModel.zonaLivre) return false;
+        if (!this.livreAFrente10m20g) return false;
+        const vel = this.p.velocity ? this.p.velocity.length() : 0;
+        return vel <= CarryModel.velMaxLivre;
     }
 
     get livreAFrente10m20g() {
@@ -163,6 +183,16 @@ class PlayerContext {
     // Blackboard da própria equipa — usado por actHoldPosition para escolher
     // entre MARKING/BLOCKING/SUPPORT.
     get bb() { return TeamAI.get(this.p.team); }
+}
+
+/*
+Multiplicador do orçamento de condução, vindo do Estilo Ofensivo da equipa
+(TeamPlayStyles.conducao, config.js). 1.0 se o estilo não o definir.
+*/
+function multiplicadorConducao() {
+    if (typeof TeamPlayStyles === 'undefined' || typeof Tatics === 'undefined') return 1.0;
+    const e = TeamPlayStyles[Tatics.teamPlayStyle] || TeamPlayStyles.positional;
+    return (e && typeof e.conducao === 'number') ? e.conducao : 1.0;
 }
 
 /* =========================================================================
@@ -1612,7 +1642,10 @@ const PlayerBT = sel('PlayerRoot',
                 cond('campoAberto', (ctx) => {
                     const p = ctx.p;
                     if (p.role === 'gk') return false;
-                    if (!(ctx.campoAberto || ctx.livreAFrente10m20g)) return false;
+                    // Só `campoAberto` — ele já pesa o `livreAFrente10m20g` por
+                    // dentro, contra o orçamento de condução. Aceitá-lo aqui
+                    // outra vez era saltar o orçamento pela segunda vez.
+                    if (!ctx.campoAberto) return false;
                     /*
                     Um defesa conduz para SAIR A JOGAR, não para atacar. Sem este
                     tecto ele recebia atrás — com campo aberto à frente, que é o
@@ -1657,7 +1690,12 @@ const PlayerBT = sel('PlayerRoot',
             */
             seq('CircularNaDefesa',
                 cond('circulacaoDefensiva', (ctx) => {
-                    if (ctx.livreAFrente10m20g || ctx.campoAberto) return false;
+                    // Mesma razão do ConduzirEmEspaco: o teste é o `campoAberto`,
+                    // que já tem o orçamento lá dentro. Com o `livreAFrente10m20g`
+                    // solto aqui, um portador com o orçamento gasto mas o cone
+                    // livre não conduzia (bem) nem circulava (mal) — caía até ao
+                    // fundo da árvore.
+                    if (ctx.campoAberto) return false;
                     const naDefesa = (ctx.p.model.position.z * ctx.p.dirZ < 0) || ctx.p.role === 'def';
                     if (!naDefesa) return false;
                     const passChoice = findBestPassAnywhere(ctx);

@@ -2564,24 +2564,38 @@ const Match = {
             // ==========================================
             // POSICIONAMENTO DO ATAQUE (9 jogadores de linha + batedor + GR)
             // ==========================================
+            /*
+            Geometria de referência (canto real): o miolo do ataque é um
+            aglomerado APERTADO entre a linha da pequena área (5.5 m) e a marca
+            de penálti (11 m), não uma fila espalhada pela área. Cada um destes
+            slots tem o seu marcador em defenseSetup, a 1-1.5 m do lado da
+            baliza — os dois arrays andam a par, mexer num pede mexer no outro.
+
+            `initial` é onde ele espera pelo lance, `target` para onde ataca
+            quando a bola sai: o movimento é sempre de FORA para DENTRO e da
+            profundidade para a bola, que é como se ganha o corpo ao marcador.
+
+            relX é medido do eixo da baliza, com sinal do lado do canto
+            (+ = lado do batedor). Postes em ±3.66, pequena área em ±9.16.
+            */
             const attackSetup = [
-                // 1. Pequena área (segundo pau / lado oposto)
-                { initial: { relX: -2.5, dist: 2.5 }, target: { relX: -2.5, dist: 3.5 } },
-                // 2. Pequena área (primeiro pau - com corrida em direção ao primeiro poste/flanco)
-                { initial: { relX: 2.0, dist: 2.5 }, target: { relX: 8.0, dist: 2.0 } },
-                // 3. Marca do pênalti (com infiltração diagonal em direção à entrada da pequena área / 1º pau)
-                { initial: { relX: -1.0, dist: 11.5 }, target: { relX: 1.5, dist: 6.0 } },
-                // 4. Centro da área (lado direito da marca do pênalti)
-                { initial: { relX: 2.0, dist: 12.0 }, target: { relX: 1.5, dist: 8.5 } },
-                // 5. Entrada da área à direita (segundo escalão)
-                { initial: { relX: 5.0, dist: 12.0 }, target: { relX: 4.0, dist: 8.0 } },
-                // 6. Borda da área à direita (com corrida longa de arranque para dentro da área)
-                { initial: { relX: 6.5, dist: 19.5 }, target: { relX: 4.5, dist: 8.5 } },
-                // 7. Sobra / Rebote à esquerda (fora da meia-lua)
-                { initial: { relX: -4.5, dist: 21.0 }, target: { relX: -3.5, dist: 19.0 } },
-                // 8. Sobra / Rebote central (fora da meia-lua)
-                { initial: { relX: 0.5, dist: 23.0 }, target: { relX: 0.5, dist: 20.0 } },
-                // 9. Último homem / Segurança defensiva (meio-campo/intermediária)
+                // 1. Primeiro pau: entra a atacar a bola à frente do marcador
+                { initial: { relX: 2.5, dist: 7.5 }, target: { relX: 3.6, dist: 4.5 } },
+                // 2. Coração da área, à altura da marca de penálti
+                { initial: { relX: 0.0, dist: 11.0 }, target: { relX: 0.0, dist: 8.0 } },
+                // 3. Segundo pau: ataca de trás para a frente
+                { initial: { relX: -4.5, dist: 8.5 }, target: { relX: -3.6, dist: 5.5 } },
+                // 4. Segunda vaga central (chega atrasado à marca de penálti)
+                { initial: { relX: 1.5, dist: 14.0 }, target: { relX: 1.5, dist: 11.0 } },
+                // 5. Segunda vaga do lado oposto
+                { initial: { relX: -2.5, dist: 13.0 }, target: { relX: -2.0, dist: 10.0 } },
+                // 6. Em cima do guarda-redes, na linha da pequena área
+                { initial: { relX: 1.0, dist: 6.5 }, target: { relX: 1.0, dist: 5.0 } },
+                // 7. Sobra na entrada da área (meia-lua), para o ressalto
+                { initial: { relX: 0.5, dist: 19.0 }, target: { relX: 0.5, dist: 17.5 } },
+                // 8. Aberto no vértice da área, do lado do batedor
+                { initial: { relX: 8.0, dist: 18.0 }, target: { relX: 7.0, dist: 16.5 } },
+                // 9. Último homem / segurança defensiva
                 { initial: { relX: 0.5, dist: 36.0 }, target: { relX: 0.5, dist: 34.0 } }
             ];
 
@@ -2621,30 +2635,48 @@ const Match = {
             // ==========================================
             // POSICIONAMENTO DA DEFESA (10 jogadores de linha + GR)
             // ==========================================
+            /*
+            Defesa: dois homens nos postes, um marcador por cada atacante do
+            aglomerado (sempre do lado da BALIZA em relação ao homem dele, ~1.5 m
+            à frente), um na entrada da área para o ressalto e um saída no campo.
+
+            Os índices 3-8 emparelham com os slots 1-6 do attackSetup pela mesma
+            ordem. Se mexeres num array, mexe no outro.
+            */
             const defenseSetup = [
-                // 1. Pequena área (segundo pau / lado oposto)
-                { relX: -4.5, dist: 3.0, tgt: { relX: -4.5, dist: 3.0 } },
-                // 2. Pequena área (primeiro pau / lado do batedor)
-                { relX: 4.5, dist: 3.0, tgt: { relX: 4.5, dist: 3.0 } },
-                // 3. Linha da pequena área (lado esquerdo / segundo pau)
-                { relX: -3.0, dist: 6.0, tgt: { relX: -2.5, dist: 5.5 } },
-                // 4. Linha da pequena área (centro)
-                { relX: 0.5, dist: 6.0, tgt: { relX: 0.5, dist: 5.5 } },
-                // 5. Linha da pequena área (lado direito / primeiro pau)
-                { relX: 4.0, dist: 6.0, tgt: { relX: 3.5, dist: 5.5 } },
-                // 6. Marcação no miolo da área (centro-esquerda)
-                { relX: -2.5, dist: 9.5, tgt: { relX: -2.0, dist: 8.5 } },
-                // 7. Marcação no miolo da área (centro / pênalti)
-                { relX: 0.5, dist: 10.0, tgt: { relX: 0.5, dist: 9.0 } },
-                // 8. Bloqueio / Cobertura lateral do corner curto (com seta roxa para a direita)
-                { relX: 5.5, dist: 10.5, tgt: { relX: 8.5, dist: 9.0 } },
-                // 9. Entrada da área / Meia-lua (lado esquerdo)
-                { relX: -1.0, dist: 17.0, tgt: { relX: -1.0, dist: 16.0 } },
-                // 10. Entrada da área / Meia-lua (lado direito)
-                { relX: 3.5, dist: 18.0, tgt: { relX: 3.5, dist: 17.0 } }
+                // 1. Primeiro pau, em cima da linha
+                { relX: 3.4, dist: 0.6, tgt: { relX: 3.4, dist: 0.6 } },
+                // 2. Segundo pau, em cima da linha
+                { relX: -3.4, dist: 0.6, tgt: { relX: -3.4, dist: 0.6 } },
+                // 3. Marca o atacante do primeiro pau (att 1)
+                { relX: 3.4, dist: 5.8, tgt: { relX: 3.6, dist: 3.2 } },
+                // 4. Marca o do coração da área (att 2)
+                { relX: 0.0, dist: 9.2, tgt: { relX: 0.0, dist: 6.6 } },
+                // 5. Marca o do segundo pau (att 3)
+                { relX: -4.2, dist: 6.8, tgt: { relX: -3.6, dist: 4.2 } },
+                // 6. Marca a segunda vaga central (att 4)
+                { relX: 1.5, dist: 12.2, tgt: { relX: 1.5, dist: 9.6 } },
+                // 7. Marca a segunda vaga do lado oposto (att 5)
+                { relX: -2.5, dist: 11.2, tgt: { relX: -2.0, dist: 8.6 } },
+                // 8. Zona da pequena área, à frente do guarda-redes (att 6)
+                { relX: 1.0, dist: 4.2, tgt: { relX: 1.0, dist: 3.6 } },
+                // 9. Entrada da área: corta o ressalto e o corner curto
+                { relX: 2.0, dist: 16.5, tgt: { relX: 1.5, dist: 15.5 } },
+                // 10. Saída: fica no campo para o contra-ataque
+                { relX: 1.0, dist: 30.0, tgt: { relX: 1.0, dist: 30.0 } }
             ];
 
             let defendersInBox = defendingPlayers.filter(p => p.role !== 'gk');
+            /*
+            Ordena ao contrário do ataque: defesas e médios ocupam postes e
+            marcações dentro da área, o avançado sobra para o slot 10 (saída no
+            campo). Sem isto o slot era pela ordem do plantel — um avançado
+            podia ficar no poste e um central lá longe no meio-campo.
+            */
+            defendersInBox.sort((a, b) => {
+                const roleOrder = { 'def': 1, 'mid': 2, 'ata': 3 };
+                return (roleOrder[a.role] || 2) - (roleOrder[b.role] || 2);
+            });
             defendersInBox.forEach((p, idx) => {
                 const cfg = defenseSetup[idx] || defenseSetup[defenseSetup.length - 1];
                 const initX = lado * cfg.relX;
