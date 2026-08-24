@@ -783,14 +783,63 @@ const Match = {
         const dummy = new THREE.Object3D();
         const specDummy = new THREE.Object3D();
 
-        const palette = [
-            new THREE.Color('#3498db'),
-            new THREE.Color('#e74c3c'),
-            new THREE.Color('#ffffff'),
-            new THREE.Color('#f1c40f')
-        ];
-        function getSeatColor() {
-            return palette[Math.floor(Math.random() * palette.length)];
+        /*
+        CORES DA BANCADA — vermelho e branco, em composição desenhada.
+
+        Antes cada cadeira sorteava uma de quatro cores (azul, vermelho,
+        branco, amarelo) com `Math.random`. Isso dá ruído: de longe lê-se como
+        um chão salpicado, não como uma bancada. Um estádio real pinta os
+        assentos num PADRÃO, e é o padrão que se vê da câmara alta.
+
+        Aqui o padrão sai da FILA e da COLUNA de cada cadeira, portanto é
+        determinístico — a bancada é a mesma em cada arranque, como já é a
+        multidão (ver o gerador com semente em js/crowd.js).
+
+        A composição, de baixo para cima nas 30 filas:
+
+            filas 0-1     branco   contorno claro a rodear o campo
+            filas 8-9     branco   faixa do meio
+            filas 18-19   branco   faixa alta
+            filas 28-29   branco   remate do topo
+            resto         vermelho
+
+        As filas logo acima de cada faixa branca levam DENTES: blocos brancos
+        de 3 colunas a cada 12, deslocados pela fila. Sem eles as faixas eram
+        quatro linhas a direito e o conjunto ficava com ar de código de barras;
+        os dentes quebram a horizontal e dão a leitura de mosaico.
+        */
+        const SEAT_VERMELHO = new THREE.Color('#c0392b');
+        const SEAT_BRANCO = new THREE.Color('#ecf0f1');
+        const SEAT_FILAS_BRANCAS = [0, 1, 8, 9, 18, 19, 28, 29];
+        // Filas com dentes: a que fica logo acima de cada faixa branca.
+        const SEAT_FILAS_DENTADAS = [2, 10, 20];
+        const SEAT_DENTE_PERIODO = 12, SEAT_DENTE_LARGURA = 3;
+
+        /*
+        Variação de tom por cadeira. Sem isto uma faixa inteira é uma chapa de
+        cor exacta e o plástico não se lê. É determinística — um hash da fila e
+        da coluna, não `Math.random` — para a bancada não mudar entre corridas.
+        */
+        const SEAT_VARIACAO = 0.10;
+        const _seatCor = new THREE.Color();
+
+        function seatEhBranca(fila, coluna) {
+            if (SEAT_FILAS_BRANCAS.indexOf(fila) !== -1) return true;
+            if (SEAT_FILAS_DENTADAS.indexOf(fila) !== -1) {
+                // O deslocamento por fila impede que os dentes de duas filas
+                // dentadas fiquem alinhados na vertical.
+                const c = (coluna + fila * 5) % SEAT_DENTE_PERIODO;
+                return c < SEAT_DENTE_LARGURA;
+            }
+            return false;
+        }
+
+        function getSeatColor(fila, coluna) {
+            _seatCor.copy(seatEhBranca(fila, coluna) ? SEAT_BRANCO : SEAT_VERMELHO);
+            // Hash inteiro barato: dá sempre o mesmo valor para a mesma cadeira.
+            const h = ((fila * 73856093) ^ (coluna * 19349663)) & 0x7fffffff;
+            const k = 1 + ((h / 0x7fffffff) - 0.5) * 2 * SEAT_VARIACAO;
+            return _seatCor.multiplyScalar(k);
         }
 
         /*
@@ -802,13 +851,13 @@ const Match = {
         */
         const lugares = [];
 
-        function addSeatInstance(x, y, z, rotY) {
+        function addSeatInstance(x, y, z, rotY, fila, coluna) {
             if (seatIndex >= maxSeats) return;
             dummy.position.set(x, y, z);
             dummy.rotation.set(0, rotY, 0);
             dummy.updateMatrix();
             seatMesh.setMatrixAt(seatIndex, dummy.matrix);
-            seatMesh.setColorAt(seatIndex, getSeatColor());
+            seatMesh.setColorAt(seatIndex, getSeatColor(fila || 0, coluna || 0));
             seatIndex++;
 
             // O adepto senta-se um pouco acima do assento.
@@ -864,7 +913,7 @@ const Match = {
                     const sx = cx + R * Math.cos(angle);
                     const sz = cz + R * Math.sin(angle);
                     const rotY = Math.atan2(-sx, -sz);
-                    addSeatInstance(sx, seatYOffset, sz, rotY);
+                    addSeatInstance(sx, seatYOffset, sz, rotY, r, i);
                 }
             }
         }
@@ -880,7 +929,7 @@ const Match = {
             for (let z = -(CAMPO_COMP / 2) + 1; z <= (CAMPO_COMP / 2) - 1; z += 0.85, colIdx++) {
                 // 2 colunas sem cadeiras a cada 20 cadeiras para criar os corredores/escadas do estádio
                 if (colIdx % 22 >= 20) continue;
-                addSeatInstance(standX, seatYOffset, z, Math.PI / 2);
+                addSeatInstance(standX, seatYOffset, z, Math.PI / 2, r, colIdx);
             }
         }
 
@@ -895,7 +944,7 @@ const Match = {
             for (let z = -(CAMPO_COMP / 2) + 1; z <= (CAMPO_COMP / 2) - 1; z += 0.85, colIdx++) {
                 // 2 colunas sem cadeiras a cada 20 cadeiras para criar os corredores/escadas do estádio
                 if (colIdx % 22 >= 20) continue;
-                addSeatInstance(standX, seatYOffset, z, -Math.PI / 2);
+                addSeatInstance(standX, seatYOffset, z, -Math.PI / 2, r, colIdx);
             }
         }
 
@@ -911,7 +960,7 @@ const Match = {
                 // 2 colunas sem cadeiras periodicamente
                 if (colIdx % 20 >= 18) continue;
                 if (Math.abs(x) > 4.5 || r > 1) {
-                    addSeatInstance(x, seatYOffset, standZ, Math.PI);
+                    addSeatInstance(x, seatYOffset, standZ, Math.PI, r, colIdx);
                 }
             }
         }
@@ -928,7 +977,7 @@ const Match = {
                 // 2 colunas sem cadeiras periodicamente
                 if (colIdx % 20 >= 18) continue;
                 if (Math.abs(x) > 4.5 || r > 1) {
-                    addSeatInstance(x, seatYOffset, standZ, 0);
+                    addSeatInstance(x, seatYOffset, standZ, 0, r, colIdx);
                 }
             }
         }
