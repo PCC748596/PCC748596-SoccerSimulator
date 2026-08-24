@@ -52,11 +52,11 @@ const RefereeModel = {
     */
     distanciaInicial: 12.0,
     raioCirculoCentral: 9.15,
-    velocidade: 5.2,         // m/s, ritmo de quem acompanha o jogo
+    velocidade: 7.5,         // m/s, ritmo de quem acompanha o jogo
 
     // Assistentes: quanto ficam PARA FORA da linha lateral.
     margemLinha: 1.4,
-    velocidadeAssistente: 6.0,
+    velocidadeAssistente: 8.5,
 
     /*
     Equipamento, preto por agora. Em texto e não em hexadecimal numérico: o

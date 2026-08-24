@@ -1174,11 +1174,11 @@ const PlayingStyles = {
         // livre + equipa a atacar — sem isso ficava preso na linha, apesar
         // do estilo. `avanco` é base, sempre activo, contraparte do -2 do
         // defensive_fullback.
-        avanco: 4, cruzar: 1.25, colaNaLinha: true
+        avanco: 4, avancoComBola: 12, cruzar: 1.25, colaNaLinha: true
     },
     fullback_finisher: {
         nome: 'Full-back Finisher', posicoes: ['LB', 'RB'],
-        largura: -5, remate: 1.2, cruzar: 0.8,
+        avanco: 4, avancoComBola: 12, largura: -5, remate: 1.2, cruzar: 0.8,
         cortaParaDentro: true
     },
     defensive_fullback: {

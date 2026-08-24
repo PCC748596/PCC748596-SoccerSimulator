@@ -5,6 +5,17 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 24 de Agosto de 2026 (bola parada em cima da linha depois do golo)
+
+- **~10% dos golos acabavam com a bola congelada em cima da linha, do lado de fora da baliza** (`dentroDaArmacao`, js/match.js — função nova; teste `tests/golo_rede.test.js`). Não era a rede a deixar passar a bola: era o bloco da linha de fundo a declará-la fora. Depois do golo a bola escorrega pelo pano de trás e desliza para o lado até encostar por dentro ao pano lateral, onde a `colidirComRede` a fixa em `LARGURA_BALIZA/2 - raio` = **3.55 m**. Mas o teste do vão nesse bloco é o do GOLO (`|x| < LARGURA_BALIZA/2 - 0.1` = **3.56 m**) e a `colidirComRede` corre **depois** dele, por isso o passo de integração punha a bola em 3.57-3.61 antes de a rede a corrigir. A faixa entre 3.56 e 3.66 é interior da baliza, e o ramo "jogo já parado" teleportava a bola para `z = ±53` e fazia `ballVel.set(0,0,0)` — daí ela aparecer parada em cima da linha, encostada ao poste. A guarda `dentroDaArmacao` (entre os postes, abaixo do travessão, à frente do pano de trás, tudo com margem de um raio) impede o ramo de disparar com a bola dentro da armação e deixa a rede resolver. Medido no teste: 120 de 1208 golos simulados (**9.9%**) antes, **0** depois.
+- **`tests/` recuperado.** A pasta tinha desaparecido (o `filesSummary` refere ficheiros de teste que já não existiam). O teste novo corre com `node tests/golo_rede.test.js` e extrai `colidirComRede`/`dentroDaArmacao` do próprio `js/match.js` por texto — corre o código de produção sem precisar de browser nem de jsdom.
+
+### Sessão de 24 de Agosto de 2026 (Correções Rápidas)
+
+- **Overlapping dos laterais (`js/config.js`):** Restaurado o parâmetro `avancoComBola: 12` para os estilos `offensive_fullback` e `fullback_finisher`. Após a remoção do antigo `position_bt.js`, estes jogadores apenas possuíam um avanço base passivo (`avanco: 4`) e ficavam parados atrás no ataque. Agora sobem no terreno e fazem *overlapping* com os extremos.
+- **Velocidade da Arbitragem (`js/officials.js`):** Aumentada a velocidade base do árbitro principal de 5.2 para 7.5 m/s, e a dos assistentes de 6.0 para 8.5 m/s, para acompanharem melhor o jogo.
+- **Limites do Bloco Tático (`js/bt/team_bt.js`):** O `computeBlock` passou a limitar a profundidade dos retângulos da equipa na marca de penálti (11m da linha de fundo) em vez da linha da pequena área (5.5m).
+
 ### Sessão de 24 de Agosto de 2026 — bolas paradas, arbitragem e decisão
 
 **Bolas paradas novas**

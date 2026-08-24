@@ -2208,6 +2208,30 @@ const Match = {
     },
 
     /*
+    A bola está DENTRO da armação da baliza (entre os postes, abaixo do
+    travessão e à frente do pano de trás)?
+
+    Serve para o bloco da linha de fundo saber que a bola não está "fora": a
+    seguir a um golo ela escorrega pelo pano e vai encostar por dentro ao pano
+    lateral, onde a `colidirComRede` a fixa em `LARGURA_BALIZA/2 - raio`
+    (3.55 m). O teste de golo é `|x| < LARGURA_BALIZA/2 - 0.1` (3.56 m) e o
+    passo de integração leva a bola até ~3.61 m antes de a rede a corrigir,
+    porque a `colidirComRede` corre DEPOIS. Sem esta guarda, ~10% dos golos
+    acabavam com a bola teleportada para cima da linha e congelada lá.
+
+    As margens de raio são de propósito: o critério é o volume da bola tocar o
+    interior da armação, não o centro dela.
+    */
+    dentroDaArmacao: function (zSinal) {
+        const rB = BallPhysics.raio;
+        const b = this.ball.position;
+        const d = b.z * zSinal - CAMPO_COMP / 2;
+        return Math.abs(b.x) <= LARGURA_BALIZA / 2 + rB &&
+               b.y <= ALTURA_BALIZA + rB &&
+               d <= GoalNet.profBase + rB;
+    },
+
+    /*
     Colisão da bola com postes e travessão das duas balizas.
 
     Os postes são cilindros VERTICAIS: a colisão resolve-se no plano XZ,
@@ -2502,7 +2526,8 @@ const Match = {
                         // Atacante tocou por último: tiro de meta.
                         this.setupSetPiece('GOAL_KICK', donoDaBaliza);
                     }
-                } else if (!(this.state === 'GOAL_KICK' && this.golKickBolaAlvo)) {
+                } else if (!(this.state === 'GOAL_KICK' && this.golKickBolaAlvo) &&
+                           !this.dentroDaArmacao(zSinal)) {
                     /*
                     Jogo já parado (GOAL/OUT/bola parada) e a bola volta a
                     passar a linha de fundo fora da baliza. Antes fazia-se
@@ -2517,6 +2542,16 @@ const Match = {
                     antes do teleporte para a quina da pequena área (ver
                     update()) — senão este clamp prendia-a na linha no
                     mesmo frame em que saiu, antes de o atraso pedido correr.
+
+                    E excepto com a bola DENTRO da armação (`dentroDaArmacao`):
+                    era isto que punha ~10% dos golos com a bola parada em cima
+                    da linha, do lado de fora. O teste do vão acima é o do GOLO
+                    (`|x| < LARGURA_BALIZA/2 - 0.1`, ou seja 3.56), mas a bola
+                    encostada por dentro ao pano lateral descansa em
+                    `LARGURA_BALIZA/2 - raio` = 3.55, e o passo de integração
+                    leva-a até ~3.61 antes de a rede a corrigir — a
+                    `colidirComRede` corre DEPOIS deste bloco. A faixa entre
+                    3.56 e 3.66 é interior da baliza, não é bola fora.
                     */
                     this.ball.position.z = (CAMPO_COMP / 2) * zSinal;
                     this.ballVel.set(0, 0, 0);

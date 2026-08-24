@@ -698,12 +698,12 @@ function computeBlock(bb) {
     }
 
     /* --- limites em Z (Regra 2 e Regra 3) -------------------------------
-       LIMITADOS NOS LIMITES DO CAMPO E A LINHA DA PEQUENA ÁREA (5.5m da linha de fundo)
-       - Pequena área da defesa: -(CAMPO_COMP / 2 - 5.5) = -47.5m
-       - Pequena área do ataque: +(CAMPO_COMP / 2 - 5.5) = +47.5m
+       LIMITADOS NOS LIMITES DO CAMPO E A MARCA DE PENALTY (11m da linha de fundo)
+       - Marca de penalty da defesa: -(CAMPO_COMP / 2 - 11.0) = -42.0m
+       - Marca de penalty do ataque: +(CAMPO_COMP / 2 - 11.0) = +42.0m
     */
-    const minZ = -(CAMPO_COMP / 2 - 5.5);
-    const maxZ = (CAMPO_COMP / 2 - 5.5);
+    const minZ = -(CAMPO_COMP / 2 - 11.0);
+    const maxZ = (CAMPO_COMP / 2 - 11.0);
 
     if (z0 < minZ) {
         z0 = minZ;
