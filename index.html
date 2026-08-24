@@ -30,6 +30,10 @@
                 <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerGoalKick()">Tiro de Meta</button>
                 <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerCornerKick()">Corner</button>
             </div>
+            <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerFreeKick()">Falta</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerPenalty()">Pênalti</button>
+            </div>
 
             <label>Formation Team A</label>
             <select id="t-formacao-A" onchange="Tatics.update()">
@@ -225,6 +229,8 @@
                     OFF</button>
                 <button type="button" class="btn-sector active" id="btn-minimapa"
                     onclick="toggleMinimapa()">Minimapa: ON</button>
+                <button type="button" class="btn-sector active" id="btn-arbitragem"
+                    onclick="toggleArbitragem()">Arbitragem: ON</button>
                 <button type="button" class="btn-sector" id="btn-passgrid"
                     onclick="toggleUsarPasseGrid()">PassGrid (decisão): OFF</button>
                 <button type="button" class="btn-sector" id="btn-touch-toggle"
@@ -351,6 +357,7 @@
     <script src="js/fsm.js"></script>
     <script src="js/simulate.js"></script>
     <script src="js/minimap.js"></script>
+    <script src="js/officials.js"></script>
 
     <!-- Depende de FootballPlayer (player.js) e Sim (simulate.js) já existirem -->
     <script src="js/bt/btDebug.js"></script>

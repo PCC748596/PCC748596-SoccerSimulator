@@ -486,16 +486,28 @@ const LateralPose = {
     pelvisX: -0.06,
 
     bracoX: -2.75,       // os dois braços por cima, ligeiramente atrás
-    bracoZ: 0.22,        // fechados para dentro (sinal trocado no braço direito)
-    cotovelo: -0.55,     // antebraço a cair para a frente, mãos sobre a testa
+    /*
+    `bracoZ` é ABDUÇÃO — abre o braço para FORA do corpo, e é aplicado antes da
+    subida (ordem de Euler XYZ: o z roda primeiro, o x levanta depois). Estava
+    em 0.22 e era isso que dava o V aberto: os braços subiam já afastados.
+    Perto de zero eles sobem colados ao eixo do corpo, que é a pose real do
+    lateral — as duas mãos encontram-se na bola.
+    */
+    bracoZ: 0.05,
+    cotovelo: -0.72,     // mais flectido: traz as mãos para trás da cabeça, não para cima dela
 
     coxaFrente: -0.18,   // pé da frente adiantado
     joelhoFrente: 0.20,
     coxaTras: 0.22,      // e o outro atrás, a apoiar
     joelhoTras: 0.35,
 
-    // Onde a bola fica, em relação ao jogador: acima da testa e um pouco atrás.
-    bolaAltura: ALTURA_TESTA + 0.42,
+    /*
+    Onde a bola fica, em relação ao jogador: logo acima da testa e um pouco
+    atrás. Esteve em +0.42 (2.04 m), o que a punha um palmo acima do crânio e
+    fora das mãos — parecia equilibrada no ar. +0.16 encosta-a à cabeça, que é
+    onde ela está quando se arma um lateral.
+    */
+    bolaAltura: ALTURA_TESTA + 0.16,
     bolaRecuo: 0.18,
 
     // Qual o pé que vai à frente ('r' ou 'l').
@@ -525,19 +537,19 @@ const ThrowInClip = {
     contactFrame: 6,   // índice 5, t = 5/9
     frames: [
         // 1: pose de espera
-        { chest: -0.22, pelvisX: -0.06, bracoX: -2.75, bracoZ: 0.22, cotovelo: -0.55, coxaFrente: -0.18, joelhoFrente: 0.20, coxaTras: 0.22, joelhoTras: 0.35, altura: 0.00 },
+        { chest: -0.22, pelvisX: -0.06, bracoX: -2.75, bracoZ: 0.05, cotovelo: -0.72, coxaFrente: -0.18, joelhoFrente: 0.20, coxaTras: 0.22, joelhoTras: 0.35, altura: 0.00 },
         // 2: carrega o peso na perna de trás
-        { chest: -0.30, pelvisX: -0.09, bracoX: -2.85, bracoZ: 0.22, cotovelo: -0.62, coxaFrente: -0.22, joelhoFrente: 0.24, coxaTras: 0.30, joelhoTras: 0.42, altura: -0.02 },
+        { chest: -0.30, pelvisX: -0.09, bracoX: -2.85, bracoZ: 0.05, cotovelo: -0.78, coxaFrente: -0.22, joelhoFrente: 0.24, coxaTras: 0.30, joelhoTras: 0.42, altura: -0.02 },
         // 3: arco para trás
-        { chest: -0.42, pelvisX: -0.14, bracoX: -3.00, bracoZ: 0.20, cotovelo: -0.80, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.38, joelhoTras: 0.50, altura: -0.03 },
+        { chest: -0.42, pelvisX: -0.14, bracoX: -3.00, bracoZ: 0.05, cotovelo: -0.92, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.38, joelhoTras: 0.50, altura: -0.03 },
         // 4: quase no limite do arco
-        { chest: -0.50, pelvisX: -0.17, bracoX: -3.12, bracoZ: 0.18, cotovelo: -0.92, coxaFrente: -0.28, joelhoFrente: 0.28, coxaTras: 0.42, joelhoTras: 0.55, altura: -0.04 },
+        { chest: -0.50, pelvisX: -0.17, bracoX: -3.12, bracoZ: 0.04, cotovelo: -1.00, coxaFrente: -0.28, joelhoFrente: 0.28, coxaTras: 0.42, joelhoTras: 0.55, altura: -0.04 },
         // 5: armação máxima, tudo carregado para trás
-        { chest: -0.52, pelvisX: -0.18, bracoX: -3.18, bracoZ: 0.16, cotovelo: -0.95, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.40, joelhoTras: 0.52, altura: -0.04 },
+        { chest: -0.52, pelvisX: -0.18, bracoX: -3.18, bracoZ: 0.04, cotovelo: -1.02, coxaFrente: -0.26, joelhoFrente: 0.26, coxaTras: 0.40, joelhoTras: 0.52, altura: -0.04 },
         // 6: LARGA A BOLA — braços a passar a vertical, tronco já a fechar
-        { chest: -0.05, pelvisX: -0.02, bracoX: -2.80, bracoZ: 0.14, cotovelo: -0.35, coxaFrente: -0.20, joelhoFrente: 0.20, coxaTras: 0.26, joelhoTras: 0.34, altura: 0.02 },
+        { chest: -0.05, pelvisX: -0.02, bracoX: -2.80, bracoZ: 0.05, cotovelo: -0.45, coxaFrente: -0.20, joelhoFrente: 0.20, coxaTras: 0.26, joelhoTras: 0.34, altura: 0.02 },
         // 7: chicote para a frente
-        { chest: 0.26, pelvisX: 0.06, bracoX: -2.10, bracoZ: 0.12, cotovelo: -0.20, coxaFrente: -0.12, joelhoFrente: 0.16, coxaTras: 0.16, joelhoTras: 0.24, altura: 0.05 },
+        { chest: 0.26, pelvisX: 0.06, bracoX: -2.10, bracoZ: 0.07, cotovelo: -0.24, coxaFrente: -0.12, joelhoFrente: 0.16, coxaTras: 0.16, joelhoTras: 0.24, altura: 0.05 },
         // 8: braços à frente, corpo projectado
         { chest: 0.34, pelvisX: 0.08, bracoX: -1.30, bracoZ: 0.10, cotovelo: -0.12, coxaFrente: -0.06, joelhoFrente: 0.12, coxaTras: 0.08, joelhoTras: 0.18, altura: 0.06 },
         // 9: braços a cair, peso a passar para a frente
@@ -702,6 +714,24 @@ Duas respostas, conforme a velocidade:
 uma corrida em frente com uma curva, e não se mexe em nada.
 =============================================================================
 */
+/*
+VELOCIDADE DE GIRO do corpo, em 1/s (constante do slerp por segundo). Quanto
+maior, mais depressa o jogador se vira para onde vai.
+
+Estava escrita à mão em 5.5 dentro do steerArrive, o que dá uma constante de
+tempo de ~0.18 s — a virar 180° o jogador levava perto de um segundo a acabar
+o giro, e via-se a deslizar de lado durante a curva.
+
+`base` é o giro normal; `comBola` é mais lento de propósito (conduzir e mudar
+de direcção ao mesmo tempo é mais difícil do que virar sem bola), e o gesto de
+passe/remate tem os seus próprios valores no fsm, que são ainda mais rápidos
+porque ali a orientação faz parte da execução.
+*/
+const TurnModel = {
+    base: 12.0,
+    comBola: 9.0
+};
+
 const LateralGait = {
     anguloMin: 35 * Math.PI / 180,   // desvio entre a frente do corpo e o movimento
     velViragem: 3.6,                 // m/s acima dos quais o corpo roda para o movimento
@@ -2049,6 +2079,25 @@ const CarryModel = {
     touchCooldown: 0.4,   // tempo mínimo entre toques (seg)
 
     /*
+    DISPUTA DO TOQUE — o toque é validado por quem chega primeiro à bola, e não
+    pela distância a que o adversário está AGORA.
+
+    O problema que isto resolve: o toque leva ~0.7 s a fechar (a bola afasta-se
+    e volta ao pé), mas o tamanho era escolhido com a distância do instante. Um
+    defesa a 11 m a fechar a 6 m/s está a 7 m quando a bola assenta — e o toque
+    tinha sido dimensionado para os 11 m. Resultado: tocava para a frente e
+    perdia a bola, parecendo que não via ninguém.
+
+    `velAdversario`  a que velocidade se assume que o adversário corre para a
+                     bola. É deliberadamente generoso (é o topo da corrida sem
+                     bola), porque errar por prudência custa um toque curto e
+                     errar por optimismo custa a posse.
+    `margem`         quanto tempo o portador tem de ganhar para o toque valer.
+    */
+    velAdversarioDisputa: 7.0,
+    margemDisputa: 0.15,
+
+    /*
     Até onde um DEFESA conduz a bola, no referencial de ataque. Ele conduz para
     sair a jogar, não para atacar: passada esta linha tem de largar a bola.
     0 = meio-campo. Sem este tecto, um central que recebesse com campo aberto
@@ -2733,6 +2782,49 @@ saída construída, por fora, longe do miolo onde a perda custa golo.
 Sem lateral disponível a tempo, cai no chutão: melhor a bola longe do que
 uma saída curta forçada para dentro.
 */
+/*
+=============================================================================
+FALTA (livre directo/indirecto)
+=============================================================================
+A bola fica ONDE ESTÁ, quem sofreu a falta cobra, e a defesa monta barreira à
+distância regulamentar. Se o ponto estiver dentro do alcance de remate de quem
+bate, ele remata; senão, joga em passe.
+=============================================================================
+*/
+const FreeKickModel = {
+    distanciaBarreira: 9.15,   // os 9.15 m do regulamento
+    barreiraMin: 2,            // quantos formam barreira, longe da baliza
+    barreiraMax: 4,            // e perto dela
+    barreiraZonaZ: 30.0,       // no referencial de ataque: daqui p/ a frente é barreira cheia
+    espacamentoBarreira: 0.85, // ombro com ombro
+    recuoBatedor: 1.4,         // atrás da bola, na linha bola->baliza
+    afastaAdversarios: 9.15    // ninguém da defesa mais perto do que isto da bola
+};
+
+/*
+=============================================================================
+PENÁLTI
+=============================================================================
+Marca a 11 m, toda a gente fora da área e fora da meia-lua, guarda-redes na
+linha. O remate tem resolução própria — os pesos do remate em jogo corrido
+(bloqueadores, distância, ângulo) não fazem sentido aqui.
+
+`chanceBase` é a probabilidade de o remate ir enquadrado e bem colocado antes
+de o guarda-redes contar; o duelo com ele resolve-se depois, pelo mergulho
+normal (o GK reage com `gkDelayReacao`, como em qualquer remate).
+=============================================================================
+*/
+const PenaltyModel = {
+    marcaZ: 11.0,              // distância à linha de fundo
+    raioMeiaLua: 9.15,         // ninguém dentro disto além do batedor
+    margemArea: 16.5,          // linha da grande área
+    recuoBatedor: 2.6,         // onde ele espera, atrás da bola
+    potencia: 26.0,            // m/s à saída
+    alturaMax: 1.9,            // não se coloca acima disto (trave a 2.44)
+    margemPoste: 0.45,         // quanto se afasta do poste ao colocar
+    chanceGolo: 0.78           // enquadrado e colocado; o resto vai por fora
+};
+
 const GoalkeeperDistribution = {
     /*
     Probabilidade de SAIR A JOGAR pelos laterais, por Estilo Ofensivo da

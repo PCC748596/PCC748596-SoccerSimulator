@@ -690,6 +690,61 @@ function emZonaDeFinalizacao(p) {
         Math.abs(dx) < ShootingModel.maxOffsetX;
 }
 
+/*
+O MAIOR TOQUE QUE ELE AINDA GANHA.
+
+Recebe o toque que as faixas de distância escolheram e devolve o maior toque
+(dessa lista para baixo) que o portador ainda alcança antes de qualquer
+adversário. Se nenhum serve, devolve 0 — e 0 quer dizer "não toques, leva a
+bola no pé".
+
+A conta, por candidato:
+
+    ponto  = posição + direcção * lead
+    tMeu   = √(2·lead / a)                          (a = μ·g, travagem a rolar)
+    tDele  = distância(adversário, ponto) / velAdversarioDisputa
+
+    serve se  tMeu + margem < tDele
+
+`tMeu` NÃO é `lead / velocidade`: o portador não chega ao ponto quando lá
+chegaria a correr, chega quando a bola lá está — e a bola vai à frente e
+desacelera. O afastamento é máximo em t = u/a com u = √(2·a·lead), o que dá
+√(2·lead/a). Com a = 3.73 m/s²: um toque de 2.8 m demora 1.22 s a fechar, um
+de 0.96 m demora 0.72 s. Usar `lead / velocidade` (0.43 s e 0.15 s) fazia a
+validação passar quase sempre — media o corredor, não a disputa.
+
+O guarda-redes CONTA aqui, ao contrário do que acontece na escolha da faixa
+(onde é excluído para não disparar o drible 1v1 contra ele): à frente da baliza
+é ele quem chega à bola adiantada, e ignorá-lo era o que dava o toque longo por
+cima do guardião.
+
+Pura de propósito: sem Match, sem THREE — recebe listas de {x, z}.
+*/
+function maiorToqueSeguro(px, pz, dirX, dirZ, velPortador, leadInicial, adversarios) {
+    const C = CarryModel;
+    const vAdv = C.velAdversarioDisputa || 7.0;
+    const margem = C.margemDisputa || 0.15;
+    const a = BallPhysics.atritoRolamento * BallPhysics.gravidade;
+
+    const candidatos = [leadInicial, C.touchMedium, C.touchShort, C.touchShort * 0.5]
+        .filter(l => l > 0 && l <= leadInicial);
+
+    for (const lead of candidatos) {
+        const ax = px + dirX * lead;
+        const az = pz + dirZ * lead;
+        const tMeu = Math.sqrt(2 * lead / a);
+
+        let seguro = true;
+        for (let i = 0; i < adversarios.length; i++) {
+            const o = adversarios[i];
+            const tDele = Math.hypot(o.x - ax, o.z - az) / vAdv;
+            if (tMeu + margem >= tDele) { seguro = false; break; }
+        }
+        if (seguro) return lead;
+    }
+    return 0;
+}
+
 function pertoDaLinhaDeFundo(p) {
     const avanco = p.model.position.z * p.dirZ;
     return (CAMPO_COMP / 2 - avanco) < CarryModel.margemLinhaFundo;

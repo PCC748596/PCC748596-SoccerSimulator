@@ -193,6 +193,16 @@ function testarLateral(idx = 8, equipa = 'TeamA') {
     return p;
 }
 
+function toggleArbitragem() {
+    if (typeof Officials === 'undefined') return;
+    Officials.setVisivel(!Officials._ativo);
+    const b = document.getElementById('btn-arbitragem');
+    if (b) {
+        b.innerText = 'Arbitragem: ' + (Officials._ativo ? 'ON' : 'OFF');
+        b.classList.toggle('active', Officials._ativo);
+    }
+}
+
 function toggleMinimapa() {
     if (typeof Minimap === 'undefined') return;
     Minimap.setVisivel(!Minimap.visivel);
@@ -571,6 +581,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         Match.init(scene);
         if (typeof Minimap !== 'undefined') Minimap.init();
+        if (typeof Officials !== 'undefined') Officials.init(scene);
         Tatics.updateSkills();
         popularPainelJogadores();
         requestAnimationFrame(animate);

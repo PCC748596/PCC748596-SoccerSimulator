@@ -1432,6 +1432,10 @@ function tratarBolaParada(p) {
         if (s !== 'SET_PIECE_TAKER' && s !== 'SET_PIECE_WAIT' && s !== 'MOVE_TO_POS') {
             fsm.changeState('SET_PIECE_WAIT');
         }
+    } else if (Match.state === 'FREE_KICK' || Match.state === 'PENALTY') {
+        // Posições impostas pelo setupSetPiece (barreira, meia-lua): ninguém
+        // decide nada até a bola sair.
+        if (s !== 'SET_PIECE_WAIT') fsm.changeState('SET_PIECE_WAIT');
     } else if (Match.state === 'THROW_IN') {
         // O batedor está em LATERAL (pose + gesto) e não passa por aqui; os
         // outros continuam a posicionar-se normalmente pelo nível 2.

@@ -523,6 +523,24 @@ class FootballPlayer {
         const v = Math.sqrt((alcance * gGrav) / Math.sin(2 * elev));
         const horiz = v * Math.cos(elev);
 
+        /*
+        A bola SAI DE DENTRO da linha, não das mãos.
+
+        O batedor está fora do campo (ThrowInModel.recuoDaLinha) e a bola está
+        nas mãos dele, logo também está fora. Largá-la ali punha-a com
+        |x| > CAMPO_LARG/2 no frame em que o estado volta a PLAY — e o
+        updateBall assinalava logo OUTRO lateral, agora para a equipa
+        contrária. Era isso que se via: o gesto completo, a bola a não sair, e
+        o batedor a mudar de equipa.
+
+        Repõe-se sobre a linha, meio metro para dentro, à altura das mãos.
+        */
+        const dentroX = -Math.sign(this.model.position.x) || 1;
+        Match.ball.position.set(
+            (CAMPO_LARG / 2 - 0.5) * -dentroX,
+            Match.ball.position.y,
+            Match.ball.position.z);
+
         Match.ballVel.set((dx / dist) * horiz, v * Math.sin(elev), (dz / dist) * horiz);
 
         this.hasBall = false;
@@ -576,6 +594,98 @@ class FootballPlayer {
         rig.rFoot.rotation.set(0, -Math.PI / 16, 0);
 
         this.model.position.y = ALTURA_BASE_Y + (K.altura || 0);
+    }
+
+    /*
+    COBRAR A FALTA. Dentro do alcance de remate, remata — e usa o mesmo gesto e
+    o mesmo ShotClip de qualquer outro remate. Fora dele, joga em passe.
+
+    Não há aqui balística própria: o `initiateShoot` já resolve mira, potência
+    e o aviso ao guarda-redes, e o `initiatePass` já resolve o passe. Duplicar
+    isso era garantir que divergiam.
+    */
+    baterFalta() {
+        Match.state = 'PLAY';
+
+        if (typeof emZonaDeFinalizacao === 'function' && emZonaDeFinalizacao(this)) {
+            this.hasBall = true;          // o remate exige posse (ver executeShotGameplay)
+            Match.ballCarrier = this;
+            this.initiateShoot();
+            return;
+        }
+
+        const alvo = this.findPassTarget('frente') || this.findPassTarget() ||
+            this.findPassTargetRelaxed('frente');
+        if (alvo) {
+            this.hasBall = true;
+            Match.ballCarrier = this;
+            this.initiatePass(alvo);
+            return;
+        }
+
+        // Sem ninguém: bola para a frente, para não ficar o jogo parado.
+        const g = BallPhysics.gravidade;
+        const elev = 25 * Math.PI / 180;
+        const v = Math.sqrt((25.0 * g) / Math.sin(2 * elev));
+        Match.ballVel.set(0, v * Math.sin(elev), this.dirZ * v * Math.cos(elev));
+        Match.lastTouchedTeam = this.team;
+        Match.lastTouchedPlayer = this;
+    }
+
+    /*
+    COBRAR O PENÁLTI.
+
+    Resolução própria, e de propósito: os pesos do remate em jogo corrido
+    (bloqueadores a 2.2 m, penalização por distância, ângulo) não descrevem uma
+    bola parada a 11 m sem oposição. Aqui é `chanceGolo` contra a colocação, e
+    o duelo com o guarda-redes resolve-se pelo mergulho normal — ele reage com
+    `gkDelayReacao = 0`, posto no setupSetPiece.
+    */
+    baterPenalti() {
+        const PM = PenaltyModel;
+        Match.state = 'PLAY';
+
+        const maxC = (LARGURA_BALIZA / 2) - PM.margemPoste;
+        const lado = Math.random() > 0.5 ? 1 : -1;
+
+        // A técnica do batedor decide se a bola vai colocada ou se sai.
+        const tec = this.skillFor('TEC');
+        const chance = PM.chanceGolo * (0.75 + (tec / 100) * 0.35);
+        const enquadrado = Math.random() < chance;
+
+        let alvoX, alvoY;
+        if (enquadrado) {
+            alvoX = lado * maxC * (0.55 + Math.random() * 0.45);
+            alvoY = Math.random() > 0.5 ? (0.3 + Math.random() * 0.5)
+                                        : (1.1 + Math.random() * (PM.alturaMax - 1.1));
+        } else {
+            // Falhado: por fora do poste ou por cima.
+            alvoX = lado * (LARGURA_BALIZA / 2 + 0.3 + Math.random() * 0.8);
+            alvoY = (Math.random() > 0.5) ? ALTURA_BALIZA + 0.4 : 1.0;
+        }
+
+        const golZ = this.targetGoalZ;
+        const dx = alvoX - Match.ball.position.x;
+        const dz = golZ - Match.ball.position.z;
+        const distH = Math.hypot(dx, dz) || 1;
+
+        const pow = PM.potencia;
+        const elev = (typeof elevacaoParaAlvo === 'function')
+            ? elevacaoParaAlvo(distH, alvoY - BallPhysics.raio, pow)
+            : Math.atan2(alvoY, distH);
+        const vh = pow * Math.cos(elev);
+
+        Match.ballVel.set((dx / distH) * vh, pow * Math.sin(elev), (dz / distH) * vh);
+
+        this.hasBall = false;
+        this.touchLock = BallControl.touchLock;
+        Match.ballCarrier = null;
+        Match.intendedReceiver = null;
+        Match.lastTouchedTeam = this.team;
+        Match.lastTouchedPlayer = this;
+        window.bolaChutada = true;
+        if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
+        if (typeof EventBus !== 'undefined') EventBus.emit('PENALTY_TAKEN', { team: this.team, p: this });
     }
 
     resetBonesToDefault() {
@@ -2141,7 +2251,15 @@ class FootballPlayer {
         _v1.set(this.model.position.x * 2 - lookTarget.x, this.model.position.y, this.model.position.z * 2 - lookTarget.z);
         _m1.lookAt(this.model.position, _v1, this.model.up);
         _q1.setFromRotationMatrix(_m1);
-        this.model.quaternion.slerp(_q1, Math.min(1.0, 5.5 * Match.delta));
+        /*
+        Giro: 5.5/s dava ~0.18 s de constante de tempo, quase um segundo para
+        completar uma inversão de 180°. Agora sai do TurnModel — com bola é mais
+        lento, que é o que separa mudar de direcção a conduzir de virar sem ela.
+        */
+        const giro = (typeof TurnModel !== 'undefined')
+            ? (this.hasBall ? TurnModel.comBola : TurnModel.base)
+            : 5.5;
+        this.model.quaternion.slerp(_q1, Math.min(1.0, giro * Match.delta));
         // Inércia ajustada para fator 5.0 (curvas bastante responsivas e quase sem derrapagem)
         this.velocity.lerp(desired, Math.min(1.0, 5.0 * Match.delta));
         return this.velocity;

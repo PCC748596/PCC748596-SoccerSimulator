@@ -570,7 +570,16 @@ class PlayerFSM {
                     typeof SetPieceJostle !== 'undefined') {
                     const J = SetPieceJostle;
                     p.jostleTimer = (p.jostleTimer || 0) - dt;
-                    if (p.jostleTimer <= 0) {
+                    /*
+                    `jostleAngulo === undefined` tem de entrar aqui. O timer
+                    arranca com um valor aleatório POSITIVO (para não pulsarem
+                    todos ao mesmo tempo), portanto nos primeiros frames este
+                    bloco não corria e o ângulo ficava por sortear — e
+                    `Math.cos(undefined) * 0` é NaN, não 0. O jogador passava a
+                    perseguir um alvo NaN, a posição dele virava NaN e o
+                    SpatialGrid rebentava a indexar com NaN.
+                    */
+                    if (p.jostleTimer <= 0 || p.jostleAngulo === undefined) {
                         p.jostleAngulo = Math.random() * Math.PI * 2;
                         p.jostleRaio = Math.random() * J.raio;
                         p.jostleTimer = J.intervaloMin +
@@ -998,6 +1007,32 @@ class PlayerFSM {
                             this.changeState('DRIBBLE');
                         }
                         break;
+                    }
+
+                    /*
+                    VALIDAÇÃO POR DISPUTA. As faixas acima escolheram o toque
+                    pela distância do INSTANTE; aqui pergunta-se quem chega
+                    primeiro ao sítio onde a bola vai ficar — que é a pergunta
+                    certa, porque o toque só fecha ~0.7 s depois.
+
+                    Devolve o maior toque que ele ainda ganha, ou 0. Zero quer
+                    dizer "leva a bola no pé": sai-se sem tocar, e ele continua a
+                    conduzir colado à bola em vez de a oferecer.
+
+                    O guarda-redes entra na lista de propósito — está fora da
+                    escolha da faixa (para não disparar drible contra ele), mas à
+                    frente da baliza é quem chega à bola adiantada.
+                    */
+                    if (typeof maiorToqueSeguro === 'function') {
+                        if (!p._advDisputa) p._advDisputa = [];
+                        p._advDisputa.length = 0;
+                        for (const opp of allOpps) {
+                            p._advDisputa.push({ x: opp.model.position.x, z: opp.model.position.z });
+                        }
+                        leadDist = maiorToqueSeguro(
+                            p.model.position.x, p.model.position.z,
+                            forward.x, forward.z, curSpeed, leadDist, p._advDisputa);
+                        if (leadDist <= 0) break;   // sem toque seguro: bola no pé
                     }
 
                     // Só solta a bola quando a perna de balanço está à frente do

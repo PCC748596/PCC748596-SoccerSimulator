@@ -13,6 +13,8 @@ const Match = {
     golKickPendente: false, golKickAtrasoInicio: 0,
     lateralPendente: false, lateralAtraso: 0,
     cantoBolaAlvo: null, cantoAguardaChao: false, cantoBolaAtraso: 0,
+    faltaPendente: false, faltaAtraso: 0,
+    penaltiPendente: false, penaltiAtraso: 0,
     counterAttackTeam: null, counterAttackTimer: 0,
     specMesh: null, specData: [], specDummy: new THREE.Object3D(),
     crowdExcitement: 0, crowdTimer: 0,
@@ -1186,6 +1188,10 @@ const Match = {
         this.cantoBolaAlvo = null;
         this.cantoAguardaChao = false;
         this.cantoBolaAtraso = 0;
+        this.faltaPendente = false;
+        this.faltaAtraso = 0;
+        this.penaltiPendente = false;
+        this.penaltiAtraso = 0;
         [...this.players, ...this.opponents].forEach(p => {
             p.lateralAction = null;
             p.lateralLargou = false;
@@ -1351,6 +1357,34 @@ const Match = {
             }
         }
 
+        if (this.state === 'FREE_KICK') {
+            this.setPieceTimer += dt;
+            if (this.faltaPendente) {
+                this.faltaAtraso -= dt;
+                if (this.faltaAtraso <= 0) {
+                    this.faltaPendente = false;
+                    const t = this.setPieceTaker;
+                    if (t) t.baterFalta();
+                    else this.state = 'PLAY';
+                }
+            }
+            if (this.setPieceTimer > 15.0) { this.setPieceTimer = 0; this.state = 'PLAY'; this.faltaPendente = false; }
+        }
+
+        if (this.state === 'PENALTY') {
+            this.setPieceTimer += dt;
+            if (this.penaltiPendente) {
+                this.penaltiAtraso -= dt;
+                if (this.penaltiAtraso <= 0) {
+                    this.penaltiPendente = false;
+                    const t = this.setPieceTaker;
+                    if (t) t.baterPenalti();
+                    else this.state = 'PLAY';
+                }
+            }
+            if (this.setPieceTimer > 15.0) { this.setPieceTimer = 0; this.state = 'PLAY'; this.penaltiPendente = false; }
+        }
+
         if (this.state === 'THROW_IN') {
             this.setPieceTimer += dt;
 
@@ -1464,6 +1498,9 @@ const Match = {
             if (this.passTargetVisual) this.passTargetVisual.visible = false;
             if (this.passLineVisual) this.passLineVisual.visible = false;
         }
+
+        // Arbitragem: fora das listas de jogadores, corre à parte (officials.js).
+        if (typeof Officials !== 'undefined') Officials.update(dt);
 
         this.updateBall();
         // Sai sozinho quando nenhuma rede está a abanar (ver NetWave.update).
@@ -1653,6 +1690,9 @@ const Match = {
         // continuam a mover-se para dar e tapar linhas de reposição.
         return this.state === 'PLAY' || this.state === 'GOAL_KICK' ||
             this.state === 'THROW_IN';
+        // FREE_KICK e PENALTY ficam de FORA: ali as posições são impostas pelo
+        // setupSetPiece (barreira, meia-lua) e o nível 2 desfá-las-ia no frame
+        // seguinte, como acontece no canto.
     },
 
     runTeamAI: function () {
@@ -1822,8 +1862,14 @@ const Match = {
     e a intercepção seria certa.
     */
     resolveBallContact: function () {
-        // Ninguém toca na bola que está nas mãos de quem vai repor.
-        if (this.state === 'THROW_IN') return false;
+        /*
+        Bola parada à espera de ser cobrada: ninguém lhe toca. No lateral está
+        nas mãos do batedor; na falta e no penálti está pousada no chão à
+        espera dos 3 s, e sem isto o primeiro que lhe passasse ao lado ficava
+        com ela e a cobrança nunca acontecia.
+        */
+        if (this.state === 'THROW_IN' || this.state === 'FREE_KICK' ||
+            this.state === 'PENALTY') return false;
 
         /*
         Prioridade do guarda-redes na própria área: sem isto, um atacante
@@ -2323,7 +2369,10 @@ const Match = {
         Repõe quem NÃO lhe tocou por último.
         */
         if (this.state === 'PLAY' &&
-            Math.abs(this.ball.position.x) - BallPhysics.raio > CAMPO_LARG / 2) {
+            Math.abs(this.ball.position.x) - BallPhysics.raio > CAMPO_LARG / 2 &&
+            // ...e a ir para FORA. Uma bola já lá fora mas a entrar (a reposição
+            // acabada de fazer, um ressalto na barreira) não é lateral nenhum.
+            Math.sign(this.ballVel.x) === Math.sign(this.ball.position.x)) {
             const ultimo = this.lastTouchedTeam || 'TeamA';
             const repoe = (ultimo === 'TeamA') ? 'TeamB' : 'TeamA';
             this.setupSetPiece('THROW_IN', repoe);
@@ -2571,6 +2620,26 @@ const Match = {
         }
     },
 
+    /*
+    FALTA no sítio onde a bola está, a favor de quem a tem. Sem portador
+    (bola solta), usa-se quem lhe tocou por último — que é a mesma convenção
+    das saídas pela linha.
+    */
+    triggerFreeKick: function (forceTeam = null) {
+        const team = forceTeam ||
+            (this.ballCarrier ? this.ballCarrier.team : null) ||
+            this.possessionTeam || this.lastTouchedTeam || 'TeamA';
+        this.setupSetPiece('FREE_KICK', team);
+    },
+
+    // Penálti a favor de quem tem a bola, na baliza que essa equipa ataca.
+    triggerPenalty: function (forceTeam = null) {
+        const team = forceTeam ||
+            (this.ballCarrier ? this.ballCarrier.team : null) ||
+            this.possessionTeam || this.lastTouchedTeam || 'TeamA';
+        this.setupSetPiece('PENALTY', team);
+    },
+
     triggerCornerKick: function (forceTeam = null) {
         let team = forceTeam;
         if (!team) {
@@ -2740,6 +2809,8 @@ const Match = {
                 p.setPieceTarget = new THREE.Vector3().copy(p.model.position);
                 // Âncora da disputa antes da batida (ver SET_PIECE_WAIT na FSM).
                 p.jostleAncora = { x: initX, z: initZ };
+                p.jostleAngulo = Math.random() * Math.PI * 2;
+                p.jostleRaio = Math.random() * SetPieceJostle.raio;
                 p.jostleTimer = Math.random() * SetPieceJostle.intervaloMax;
                 p.fsm.changeState('SET_PIECE_WAIT');
                 lookAtBola(p.model, this.ball.position);
@@ -2800,6 +2871,8 @@ const Match = {
                 p.model.position.set(initX, ALTURA_BASE_Y, initZ);
                 p.dynamicTarget.set(tgtX, ALTURA_BASE_Y, tgtZ);
                 p.jostleAncora = { x: initX, z: initZ };
+                p.jostleAngulo = Math.random() * Math.PI * 2;
+                p.jostleRaio = Math.random() * SetPieceJostle.raio;
                 p.jostleTimer = Math.random() * SetPieceJostle.intervaloMax;
                 p.fsm.changeState('SET_PIECE_WAIT');
                 lookAtBola(p.model, this.ball.position);
@@ -2886,6 +2959,145 @@ const Match = {
 
             this.lateralPendente = true;
             this.lateralAtraso = ESPERA_APOS_REPOSICAO;
+
+        } else if (type === 'FREE_KICK') {
+            /*
+            FALTA. A bola fica onde está — é esse o ponto da infracção. Cobra o
+            jogador da equipa beneficiada mais perto dela; a defesa monta
+            barreira na linha bola->baliza, à distância regulamentar, e quem
+            estiver mais perto do que isso é afastado.
+            */
+            const F = FreeKickModel;
+            const bolaFK = this.ball.position.clone();
+            bolaFK.y = BallPhysics.raio;
+            this.ball.position.copy(bolaFK);
+
+            this.players.concat(this.opponents).forEach(p => { p.hasBall = false; });
+            this.ballCarrier = null;
+
+            // Direcção da bola para a baliza atacada — serve para o batedor
+            // (atrás da bola) e para a barreira (à frente dela).
+            const golFK = new THREE.Vector3(0, 0, attDir * (CAMPO_COMP / 2));
+            const dirFK = new THREE.Vector3().subVectors(golFK, bolaFK);
+            dirFK.y = 0;
+            if (dirFK.lengthSq() < 0.0001) dirFK.set(0, 0, attDir);
+            dirFK.normalize();
+
+            let takerFK = null, minFK = 999;
+            attackingPlayers.forEach(p => {
+                if (p.role === 'gk') return;
+                const d = p.model.position.distanceTo(bolaFK);
+                if (d < minFK) { minFK = d; takerFK = p; }
+            });
+            this.setPieceTaker = takerFK || null;
+
+            if (takerFK) {
+                takerFK.model.position.set(
+                    bolaFK.x - dirFK.x * F.recuoBatedor, ALTURA_BASE_Y,
+                    bolaFK.z - dirFK.z * F.recuoBatedor);
+                lookAtBola(takerFK.model, bolaFK);
+                takerFK.fsm.changeState('SET_PIECE_WAIT');
+            }
+
+            /*
+            Barreira: mais gente quanto mais perto da baliza. Perpendicular à
+            linha bola->baliza, ombro com ombro, centrada nessa linha.
+            */
+            const avancoFK = bolaFK.z * attDir;
+            const nBarreira = (avancoFK > F.barreiraZonaZ) ? F.barreiraMax : F.barreiraMin;
+            const perpFK = new THREE.Vector3(-dirFK.z, 0, dirFK.x);
+
+            const defesaOrdenada = defendingPlayers
+                .filter(p => p.role !== 'gk')
+                .sort((a, b) => a.model.position.distanceTo(bolaFK) - b.model.position.distanceTo(bolaFK));
+
+            defesaOrdenada.forEach((p, i) => {
+                if (i < nBarreira) {
+                    const off = (i - (nBarreira - 1) / 2) * F.espacamentoBarreira;
+                    p.model.position.set(
+                        bolaFK.x + dirFK.x * F.distanciaBarreira + perpFK.x * off, ALTURA_BASE_Y,
+                        bolaFK.z + dirFK.z * F.distanciaBarreira + perpFK.z * off);
+                } else {
+                    // Fora da barreira: só não pode estar mais perto do que 9.15 m.
+                    const dx = p.model.position.x - bolaFK.x;
+                    const dz = p.model.position.z - bolaFK.z;
+                    const d = Math.hypot(dx, dz);
+                    if (d > 0.001 && d < F.afastaAdversarios) {
+                        const k = F.afastaAdversarios / d;
+                        p.model.position.x = bolaFK.x + dx * k;
+                        p.model.position.z = bolaFK.z + dz * k;
+                    }
+                }
+                lookAtBola(p.model, bolaFK);
+                p.fsm.changeState('SET_PIECE_WAIT');
+            });
+
+            this.faltaPendente = true;
+            this.faltaAtraso = ESPERA_APOS_REPOSICAO;
+
+        } else if (type === 'PENALTY') {
+            /*
+            PENÁLTI. Bola na marca, batedor atrás dela, guarda-redes na linha e
+            toda a gente fora da área E fora da meia-lua. O remate tem resolução
+            própria (ver executarPenalti) — os pesos do remate em jogo corrido
+            não se aplicam a uma bola parada a 11 m sem oposição.
+            */
+            const PM = PenaltyModel;
+            const linhaGolPen = attDir * (CAMPO_COMP / 2);
+            const marcaZ = linhaGolPen - attDir * PM.marcaZ;
+
+            this.ball.position.set(0, BallPhysics.raio, marcaZ);
+            this.ballVel.set(0, 0, 0);
+            this.players.concat(this.opponents).forEach(p => { p.hasBall = false; });
+            this.ballCarrier = null;
+
+            // Bate o melhor rematador da equipa.
+            let takerPen = null, melhorTec = -1;
+            attackingPlayers.forEach(p => {
+                if (p.role === 'gk') return;
+                const t = p.skillFor('TEC');
+                if (t > melhorTec) { melhorTec = t; takerPen = p; }
+            });
+            this.setPieceTaker = takerPen || null;
+
+            if (takerPen) {
+                takerPen.model.position.set(0, ALTURA_BASE_Y, marcaZ - attDir * PM.recuoBatedor);
+                lookAtBola(takerPen.model, this.ball.position);
+                takerPen.fsm.changeState('SET_PIECE_WAIT');
+            }
+
+            /*
+            Todos os outros: fora da área e fora da meia-lua, à espera do
+            ressalto. Empurra-se cada um para trás ao longo do eixo do campo,
+            mantendo o x — assim a distribuição lateral não se amontoa.
+            */
+            const limiteZ = linhaGolPen - attDir * PM.margemArea;
+            this.players.concat(this.opponents).forEach(p => {
+                if (p === takerPen || p.role === 'gk') return;
+                let z = p.model.position.z;
+                if ((z - limiteZ) * attDir > 0) z = limiteZ;               // fora da área
+                if (Math.abs(z - marcaZ) < PM.raioMeiaLua &&
+                    Math.abs(p.model.position.x) < PM.raioMeiaLua) {
+                    z = marcaZ - attDir * PM.raioMeiaLua;                  // fora da meia-lua
+                }
+                p.model.position.set(p.model.position.x, ALTURA_BASE_Y, z);
+                lookAtBola(p.model, this.ball.position);
+                p.fsm.changeState('SET_PIECE_WAIT');
+            });
+
+            // Guarda-redes que defende: na linha, pronto a reagir.
+            const gkPen = defendingPlayers.find(p => p.role === 'gk');
+            if (gkPen) {
+                gkPen.model.position.set(0, ALTURA_BASE_Y, linhaGolPen - attDir * 0.4);
+                gkPen.gkEstado = 'idle';
+                gkPen.gkReagiu = false;
+                gkPen.gkDelayReacao = 0;
+                gkPen.dive = null;
+                lookAtBola(gkPen.model, this.ball.position);
+            }
+
+            this.penaltiPendente = true;
+            this.penaltiAtraso = ESPERA_APOS_REPOSICAO;
 
         } else if (type === 'GOAL_KICK') {
             /*

@@ -51,6 +51,16 @@ const SpatialGrid = {
     idx: function (ix, iz) { return iz * this.cols + ix; },
 
     cellIndexAt: function (x, z) {
+        /*
+        Uma coordenada inválida (NaN, Infinity) atravessava os clamps — 
+        `Math.max(0, Math.min(24, NaN))` é NaN — e chegava ao `cells[NaN]`, que
+        é undefined: um único jogador com a posição estragada derrubava o loop
+        de render inteiro. Cai no centro do campo, que é errado mas visível e
+        recuperável, em vez de rebentar.
+        */
+        if (!Number.isFinite(x) || !Number.isFinite(z)) {
+            return { ix: (this.cols / 2) | 0, iz: (this.rows / 2) | 0 };
+        }
         let ix = Math.floor((x - this.minX) / this.cellSizeX);
         let iz = Math.floor((z - this.minZ) / this.cellSizeZ);
         ix = Math.max(0, Math.min(this.cols - 1, ix));
