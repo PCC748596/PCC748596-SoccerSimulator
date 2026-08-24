@@ -10,6 +10,7 @@ const Match = {
     // Tiro de meta: espera 3-6s depois de todos posicionados (ver
     // updateGoalKickWait / setupSetPiece).
     golKickProntos: false, golKickEspera: 0, golKickAlvoEspera: 0,
+    golKickPendente: false, golKickAtrasoInicio: 0,
     counterAttackTeam: null, counterAttackTimer: 0,
     specMesh: null, specData: [], specDummy: new THREE.Object3D(),
     crowdExcitement: 0, crowdTimer: 0,
@@ -1167,6 +1168,7 @@ const Match = {
                 // Tiro de meta interrompido a meio (golo do outro lado, etc.).
                 gk.gkKickAction = null;
                 gk.gkKickTipo = null;
+                gk.gkKickBlend = null;
                 gk.gkTiroFase = 0;
                 gk.gkTiroAlvo = null;
             }
@@ -1174,6 +1176,8 @@ const Match = {
         this.golKickProntos = false;
         this.golKickEspera = 0;
         this.golKickAlvoEspera = 0;
+        this.golKickPendente = false;
+        this.golKickAtrasoInicio = 0;
         this.golKickBolaAtraso = 0;
         this.golKickBolaAlvo = null;
         this.golKickAguardaChao = false;
@@ -1271,7 +1275,7 @@ const Match = {
         // livremente pelo campo (runTeamAI/BT não corre) até o timer zerar,
         // e aí o "taker" toca para o apoio — isso é que dá o pontapé de saída.
         this.kickoffActive = true;
-        this.kickoffTimer = 0.0;
+        this.kickoffTimer = ESPERA_APOS_REPOSICAO;
         this.kickoffTaker = taker;
         this.kickoffApoio = apoio;
         this.kickoffTeam = startA ? 'TeamA' : 'TeamB';
@@ -1341,6 +1345,23 @@ const Match = {
                         this.ball.position.set(this.golKickBolaAlvo.x, BallPhysics.raio, this.golKickBolaAlvo.z);
                         this.ballVel.set(0, 0, 0);
                         this.golKickBolaAlvo = null;
+                    }
+                }
+            }
+
+            /*
+            Bola já pousada: conta ESPERA_APOS_REPOSICAO e só então o GR entra
+            em 'tiro_meta'. Até lá fica parado no ponto de arranque, virado
+            para a bola (postura escrita no setupSetPiece).
+            */
+            if (this.golKickPendente && !this.golKickBolaAlvo) {
+                this.golKickAtrasoInicio -= dt;
+                if (this.golKickAtrasoInicio <= 0) {
+                    this.golKickPendente = false;
+                    const gkTM = this.setPieceTaker;
+                    if (gkTM && gkTM.role === 'gk' && gkTM.gkEstado === 'tiro_meta_espera') {
+                        gkTM.gkEstado = 'tiro_meta';
+                        gkTM.gkTempoMergulho = 0;
                     }
                 }
             }
@@ -2671,13 +2692,21 @@ const Match = {
             this.golKickProntos = false;
             this.golKickEspera = 0;
             this.golKickAlvoEspera = 0; // Removida a espera (sem parada)
+            this.golKickPendente = true;
+            this.golKickAtrasoInicio = ESPERA_APOS_REPOSICAO;
 
             const gk = attackingPlayers.find(p => p.role === 'gk');
             this.setPieceTaker = gk || null;
 
             if (gk) {
                 gk.hasBall = false;
-                gk.gkEstado = 'tiro_meta';
+                /*
+                Fica quieto no ponto de arranque: o 'tiro_meta' (caminhada +
+                corrida + chute) só começa ESPERA_APOS_REPOSICAO segundos
+                depois de a bola assentar na quina da pequena área — ver
+                golKickPendente no update().
+                */
+                gk.gkEstado = 'tiro_meta_espera';
                 gk.gkTiroFase = 0;              // 0 = caminhar, 1 = corrida
                 gk.gkTempoMergulho = 0;
                 gk.gkKickAction = null;

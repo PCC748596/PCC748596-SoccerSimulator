@@ -428,7 +428,7 @@ class PlayerFSM {
                     lookPos.y = p.model.position.y;
                     lookAtBola(p.model, lookPos);
                 }
-                if (Match.setPieceTimer > 1.5) {
+                if (Match.setPieceTimer > ESPERA_APOS_REPOSICAO) {
                     if (Match.state === 'CORNER_KICK') {
                         const lado = Math.sign(Match.ball.position.x) || 1;
                         // Cruzamento visando o 1º pau e a entrada da pequena área onde convergem as jogadas ensaiadas

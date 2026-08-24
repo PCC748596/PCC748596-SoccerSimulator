@@ -274,6 +274,15 @@ const ActionAnimClips = {
 };
 
 /*
+Janela de mistura (segundos) entre a corrida de aproximação do tiro de meta e
+o primeiro keyframe do clip de chute do chão. Sem ela, a pose das pernas, a
+rotação/translação da bacia (o pivô no pé de apoio vale ~0.26 m de deslocação
+lateral logo no frame 1), a posição do corpo no ponto de apoio e a orientação
+mudavam todas no mesmo frame — lia-se como um corte entre duas animações.
+*/
+const GK_GROUND_KICK_BLEND = 0.14;
+
+/*
 =============================================================================
 GOALKEEPER_KICK_FORWARD_HIGH — chutão do guarda-redes, 12 keyframes
 =============================================================================
@@ -424,6 +433,18 @@ travar só quem corre.
     0.793881 -10% sobre o 0.88209 (pedido)
 */
 const GAME_SPEED = 0.793881;
+
+/*
+Pausa (segundos reais) entre o fim de uma reposição e o recomeço do jogo:
+pontapé de saída, tiro de meta, canto e qualquer resetPlay. Serve para o
+espectador ver o campo já arrumado antes de a jogada arrancar, e para as
+equipas acabarem de assentar nas posições novas.
+
+No tiro de meta a contagem só arranca quando a bola fica pousada na quina da
+pequena área (ver golKickBolaAlvo em match.js) — antes disso a reposição ainda
+não terminou.
+*/
+const ESPERA_APOS_REPOSICAO = 3.0;
 
 /*
 Duração e escala do relógio de jogo:

@@ -217,6 +217,7 @@ class FootballPlayer {
         this.gkKickAction = null;  // ActionState do chutão (estado 'chutando')
         this.gkKickNorm = 0;
         this.gkKickTipo = null;    // 'chao' no tiro de meta; null = das mãos
+        this.gkKickBlend = null;   // mistura corrida->chute do chão (ver iniciarBlendChuteChao)
         this.gkTiroFase = 0;       // 0 caminhar até à linha, 1 corrida
         this.gkTiroAlvo = null;    // ponto de arranque do tiro de meta
         this.gkReagiu = false;
@@ -281,6 +282,53 @@ class FootballPlayer {
             if (typeof v === 'number') return v;
         }
         return this.getSkill();
+    }
+
+    /*
+    Captura a pose e a pose de corpo com que a corrida de aproximação termina,
+    para o clip de chute do chão entrar por mistura em vez de corte seco.
+
+    Guarda-se: a pose das articulações que o clip escreve, a posição/rotação da
+    bacia (o clip translada-a para pivotar no pé de apoio), a posição planar do
+    corpo (que tem de deslizar até plantX/plantZ, não teleportar) e o
+    quaternião (a corrida olha para a bola, o chute olha campo adentro).
+    */
+    iniciarBlendChuteChao(gkCorpo, gkRig, plantX, plantZ) {
+        const chuteR = (GoalkeeperGroundKickClip.pernaChute === 'r');
+        const pernaC = chuteR ? gkRig.rLeg : gkRig.lLeg;
+        const joelhoC = chuteR ? gkRig.rKnee : gkRig.lKnee;
+        const pernaA = chuteR ? gkRig.lLeg : gkRig.rLeg;
+        const joelhoA = chuteR ? gkRig.lKnee : gkRig.rKnee;
+
+        this.gkKickBlend = {
+            t: 0,
+            w: 0,
+            dur: (typeof GK_GROUND_KICK_BLEND === 'number') ? GK_GROUND_KICK_BLEND : 0.14,
+            plantX, plantZ,
+            origemX: gkCorpo.position.x,
+            origemZ: gkCorpo.position.z,
+            quatOrigem: gkCorpo.quaternion.clone(),
+            quatAlvo: null,
+            pose: {
+                pelvisPx: gkRig.pelvis.position.x,
+                pelvisPy: gkRig.pelvis.position.y,
+                pelvisRx: gkRig.pelvis.rotation.x,
+                pelvisRz: gkRig.pelvis.rotation.z,
+                chest: gkRig.chest.rotation.x,
+                coxaC: pernaC.rotation.x,
+                coxaCz: pernaC.rotation.z,
+                joelhoC: joelhoC.rotation.x,
+                coxaA: pernaA.rotation.x,
+                joelhoA: joelhoA.rotation.x,
+                bracoLx: gkRig.lArm.rotation.x,
+                bracoLz: gkRig.lArm.rotation.z,
+                bracoRx: gkRig.rArm.rotation.x,
+                bracoRz: gkRig.rArm.rotation.z,
+                cotoveloL: gkRig.lElbow.rotation.x,
+                cotoveloR: gkRig.rElbow.rotation.x,
+                corpoY: gkCorpo.position.y
+            }
+        };
     }
 
     resetBonesToDefault() {
@@ -1121,7 +1169,7 @@ class FootballPlayer {
     */
     puntBall() {
         const gGrav = BallPhysics.gravidade;
-        const elev = THREE.MathUtils.degToRad((25 + Math.random() * 25) / 3);
+        const elev = THREE.MathUtils.degToRad(25 + Math.random() * 25);
         const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 20);
 
         // Alcance pretendido: chutão de meio-campo, com alguma variação. Aumentado em 20%.
@@ -2769,6 +2817,18 @@ class FootballPlayer {
                     this.gkTipoMergulho, this.gkDirMergulho);
             }
             GkDive.update(this, dt, gkCorpo, gkRig);
+        } else if (this.gkEstado === 'tiro_meta_espera') {
+            /*
+            Espera parada antes do tiro de meta (ESPERA_APOS_REPOSICAO). Fica
+            no ponto de arranque, de pé e virado para a bola.
+
+            O resetBonesToDefault é o essencial aqui: quem provocou o tiro de
+            meta foi quase sempre uma defesa, e sem isto o guarda-redes passava
+            estes segundos congelado na pose do mergulho.
+            */
+            this.resetBonesToDefault();
+            _v1.set(Match.ball.position.x, gkCorpo.position.y, Match.ball.position.z);
+            lookAtBola(gkCorpo, _v1);
         } else if (this.gkEstado === 'tiro_meta') {
             /*
             Tiro de meta em duas fases:
@@ -2848,9 +2908,11 @@ class FootballPlayer {
                     this.gkTempoMergulho = 0;
                 }
             } else if (distTM <= Math.max(0.35, passoTM * 1.5) || tTM > G.tiroMetaTimeout) {
-                // Chegada ao lado da bola: fixa o pé de apoio e inicia a animação do chute
-                gkCorpo.position.x = plantX;
-                gkCorpo.position.z = plantZ;
+                // Chegada ao lado da bola: inicia a animação do chute.
+                // O corpo NÃO salta para plantX/plantZ aqui — a fixação do pé
+                // de apoio, a pose e a orientação entram por mistura ao longo
+                // de GK_GROUND_KICK_BLEND (ver iniciarBlendChuteChao).
+                this.iniciarBlendChuteChao(gkCorpo, gkRig, plantX, plantZ);
                 this.gkEstado = 'chutando';
                 this.gkKickTipo = 'chao';
                 this.gkTempoMergulho = 0;
@@ -3187,48 +3249,76 @@ class FootballPlayer {
                 const cosL = Math.cos(leanZ);
                 const sinL = Math.sin(leanZ);
 
+                /*
+                MISTURA DE ENTRADA (corrida -> chute).
+                Durante os primeiros GK_GROUND_KICK_BLEND segundos, cada canal
+                sai da pose com que a corrida acabou e vai até ao valor do clip.
+                O peso usa smoothstep para não haver descontinuidade de
+                velocidade em nenhum dos extremos.
+                */
+                const B = this.gkKickBlend;
+                if (B) {
+                    B.t += dt;
+                    const u = Math.min(1, B.t / B.dur);
+                    B.w = u * u * (3 - 2 * u);
+                    if (u >= 1) this.gkKickBlend = null;
+                }
+                const wB = B ? B.w : 1;
+                const P0 = B ? B.pose : null;
+                const bl = (de, para) => (P0 ? de + (para - de) * wB : para);
+
+                /*
+                O pé de apoio também não teleporta para o lado da bola: o corpo
+                desliza da posição de chegada da corrida até plantX/plantZ ao
+                mesmo ritmo da mistura da pose.
+                */
+                if (B) {
+                    gkCorpo.position.x = B.origemX + (B.plantX - B.origemX) * wB;
+                    gkCorpo.position.z = B.origemZ + (B.plantZ - B.origemZ) * wB;
+                }
+
                 // Translação compensatória para ancorar o pé de apoio no solo:
-                gkRig.pelvis.position.x = pivotX * (1 - cosL) - 2.6 * sinL;
-                gkRig.pelvis.position.y = 2.6 * cosL - pivotX * sinL;
+                gkRig.pelvis.position.x = bl(P0 ? P0.pelvisPx : 0, pivotX * (1 - cosL) - 2.6 * sinL);
+                gkRig.pelvis.position.y = bl(P0 ? P0.pelvisPy : 2.6, 2.6 * cosL - pivotX * sinL);
                 gkRig.pelvis.position.z = 0;
 
                 // Rotação da bacia em bloco (inclinação lateral leanZ e anteroposterior pitchX):
-                gkRig.pelvis.rotation.z = leanZ;
-                gkRig.pelvis.rotation.x = K.pitchX || 0;
+                gkRig.pelvis.rotation.z = bl(P0 ? P0.pelvisRz : 0, leanZ);
+                gkRig.pelvis.rotation.x = bl(P0 ? P0.pelvisRx : 0, K.pitchX || 0);
                 gkRig.pelvis.rotation.y = 0;
 
                 // O tronco (chest) mantém-se alinhado com a bacia no eixo Z (sem dobrar de lado!):
-                gkRig.chest.rotation.x = K.chest;
+                gkRig.chest.rotation.x = bl(P0 ? P0.chest : 0, K.chest);
                 gkRig.chest.rotation.y = 0;
                 gkRig.chest.rotation.z = 0;
 
                 // Perna de apoio: desce alinhada com a bacia diretamente para o pé no solo
-                pernaA.rotation.x = K.coxaApoio;
+                pernaA.rotation.x = bl(P0 ? P0.coxaA : 0, K.coxaApoio);
                 pernaA.rotation.y = 0;
                 pernaA.rotation.z = 0;
-                joelhoA.rotation.x = K.joelhoApoio;
+                joelhoA.rotation.x = bl(P0 ? P0.joelhoA : 0, K.joelhoApoio);
                 joelhoA.rotation.y = 0;
                 joelhoA.rotation.z = 0;
 
                 // Perna de chute: articulação de remate em relação à bacia inclinada
-                pernaC.rotation.x = K.coxaChute;
+                pernaC.rotation.x = bl(P0 ? P0.coxaC : 0, K.coxaChute);
                 pernaC.rotation.y = 0;
-                pernaC.rotation.z = K.coxaChuteZ || 0;
-                joelhoC.rotation.x = K.joelhoChute;
+                pernaC.rotation.z = bl(P0 ? P0.coxaCz : 0, K.coxaChuteZ || 0);
+                joelhoC.rotation.x = bl(P0 ? P0.joelhoC : 0, K.joelhoChute);
                 joelhoC.rotation.y = 0;
                 joelhoC.rotation.z = 0;
 
                 // Membros superiores e equilíbrio
-                gkRig.lArm.rotation.x = K.bracoLx;
-                gkRig.lArm.rotation.z = K.bracoLz;
-                gkRig.rArm.rotation.x = K.bracoRx;
-                gkRig.rArm.rotation.z = K.bracoRz;
+                gkRig.lArm.rotation.x = bl(P0 ? P0.bracoLx : 0, K.bracoLx);
+                gkRig.lArm.rotation.z = bl(P0 ? P0.bracoLz : 0, K.bracoLz);
+                gkRig.rArm.rotation.x = bl(P0 ? P0.bracoRx : 0, K.bracoRx);
+                gkRig.rArm.rotation.z = bl(P0 ? P0.bracoRz : 0, K.bracoRz);
 
-                gkRig.lElbow.rotation.x = K.cotoveloL;
-                gkRig.rElbow.rotation.x = K.cotoveloR;
+                gkRig.lElbow.rotation.x = bl(P0 ? P0.cotoveloL : 0, K.cotoveloL);
+                gkRig.rElbow.rotation.x = bl(P0 ? P0.cotoveloR : 0, K.cotoveloR);
 
                 // Elevação vertical na finalização (Follow-through subindo na ponta do pé)
-                gkCorpo.position.y = ALTURA_BASE_Y + K.altura;
+                gkCorpo.position.y = bl(P0 ? P0.corpoY : ALTURA_BASE_Y, ALTURA_BASE_Y + K.altura);
             } else {
                 // CHUTÃO DAS MÃOS (Punt em jogo corrido)
                 const K = amostrarClipChuteGR(normK);
@@ -3276,8 +3366,21 @@ class FootballPlayer {
             _v1.set(gkCorpo.position.x, gkCorpo.position.y, gkCorpo.position.z + this.dirZ * 10);
             lookAtBola(gkCorpo, _v1);
 
+            /*
+            Na entrada do chute do chão a orientação também não muda de golpe:
+            a corrida acaba virada para a BOLA, o gesto quer o corpo virado
+            campo adentro. Slerp entre as duas com o mesmo peso da pose.
+            */
+            if (isGroundKick && this.gkKickBlend) {
+                const BQ = this.gkKickBlend;
+                if (!BQ.quatAlvo) BQ.quatAlvo = gkCorpo.quaternion.clone();
+                else BQ.quatAlvo.copy(gkCorpo.quaternion);
+                gkCorpo.quaternion.copy(BQ.quatOrigem).slerp(BQ.quatAlvo, BQ.w);
+            }
+
             if (!this.gkKickAction || this.gkKickAction.isDone()) {
                 this.gkKickAction = null;
+                this.gkKickBlend = null;
                 this.gkEstado = 'idle';
                 this.resetBonesToDefault();
             }
