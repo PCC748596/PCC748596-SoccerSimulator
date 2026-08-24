@@ -387,6 +387,48 @@ const GoalkeeperGroundKickClip = {
 
 const SetPieceGroundKickClip = GoalkeeperGroundKickClip;
 
+/*
+=============================================================================
+LATERAL (throw-in) — a pose de quem vai repor a bola
+=============================================================================
+Só a POSE de espera, com a bola nas duas mãos por cima e por trás da cabeça —
+a reposição em si (estado de jogo, alvo, força) ainda não existe neste
+simulador, ver Match.state.
+
+Convenção do rig (ver criarBraco/resetBonesToDefault em player.js): o braço
+pende para -Y, portanto `rotation.x` mais NEGATIVO levanta-o para a frente e
+por cima; a -π ficaria a apontar a direito para cima. -2.75 rad (~158°) deixa-o
+um pouco atrás da vertical, que é onde o braço está no lateral.
+
+`cotovelo` negativo dobra o antebraço para a frente do braço: com o braço já
+por cima, é isso que traz as mãos para cima da testa em vez de as deixar
+esticadas no ar.
+
+`bracoZ` fecha os dois braços para dentro, para as mãos se encontrarem na bola
+em vez de ficarem à largura dos ombros.
+=============================================================================
+*/
+const LateralPose = {
+    chest: -0.22,        // tronco em arco para trás, a armar o lançamento
+    pelvisX: -0.06,
+
+    bracoX: -2.75,       // os dois braços por cima, ligeiramente atrás
+    bracoZ: 0.22,        // fechados para dentro (sinal trocado no braço direito)
+    cotovelo: -0.55,     // antebraço a cair para a frente, mãos sobre a testa
+
+    coxaFrente: -0.18,   // pé da frente adiantado
+    joelhoFrente: 0.20,
+    coxaTras: 0.22,      // e o outro atrás, a apoiar
+    joelhoTras: 0.35,
+
+    // Onde a bola fica, em relação ao jogador: acima da testa e um pouco atrás.
+    bolaAltura: ALTURA_TESTA + 0.42,
+    bolaRecuo: 0.18,
+
+    // Qual o pé que vai à frente ('r' ou 'l').
+    peFrente: 'r'
+};
+
 const GoalkeeperThrowPower = 1.0;
 
 const GoalkeeperThrowClip = {
@@ -1613,6 +1655,23 @@ O deslocamento parte sempre do alvo corrente e NÃO acumula — sem isso a equip
 derivava devagar para fora da forma ao longo de minutos.
 =============================================================================
 */
+/*
+DISPUTA ANTES DA BATIDA (canto). Enquanto se espera pelo cruzamento, ninguém
+fica estátua: cada um dá um passo à frente, atrás ou para o lado à volta da
+sua âncora, procurando o meio metro de vantagem sobre o par. Como o marcador
+está a 1.5-2.5 m do homem (ver defenseSetup/attackSetup em match.js), estes
+passos cruzam-se e produzem os embates.
+
+`raio` é pequeno de propósito: é um passo, não um desmarque — o slot do canto
+foi desenhado ao metro e não pode ser desfeito à espera da bola.
+*/
+const SetPieceJostle = {
+    raio: 0.85,            // metros à volta da âncora
+    intervaloMin: 0.5,     // sorteados por jogador, para não pulsarem em sincronia
+    intervaloMax: 1.3,
+    velocidade: 1.7        // passo de quem se ajeita, não de quem corre
+};
+
 const RestlessModel = {
     raio: 2.0,             // metros à volta do alvo
     limiarChegada: 2.0,    // só mexe quem já lá chegou
@@ -1926,6 +1985,48 @@ const MarkingModel = {
     raioSetor: 12.0,     // procura a referência a esta distância do SLOT
 
     /*
+    CUSTO DE UM PAR no leilão (ver atribuirMarcacoes). O raio acima continua a
+    ser medido do SLOT — é isso que faz a marcação ser ZONAL: "este homem entrou
+    no meu sector". Mas a ESCOLHA entre candidatos elegíveis passa a pesar
+    também a distância REAL do marcador ao homem.
+
+    Porquê: antes o custo era só a distância do slot, e um central cujo POSTO
+    calhava perto de um extremo ganhava-o mesmo estando ele a 15 m dali, à
+    frente de um médio que estava a 3 m. O resultado era o pior dos dois
+    mundos — o extremo continuava livre (o central não lhe chegava) e o
+    avançado que o central devia estar a marcar ficava sozinho.
+
+    `pesoSlot` é quanto ainda conta a disciplina de forma: 0 seria "vai quem
+    está mais perto" (marcação puramente individual, desfaz o bloco), 1 seria o
+    comportamento antigo. A meio, quem está perto ganha sem que a forma deixe
+    de pesar.
+    */
+    pesoSlot: 0.5,
+
+    /*
+    Desconto de custo para o par NATURAL da posição (ver paresPorPosicao mais
+    abaixo). A tabela existia mas nunca era lida por ninguém — grep dava um
+    único resultado, a própria definição — e é por isso que se via o que o
+    comentário dela já previa: "um central a marcar um extremo porque calhou
+    estar mais perto".
+
+    O desconto divide-se pela ordem de preferência (1ª escolha leva o valor
+    inteiro, 2ª metade, 3ª um terço), portanto é uma inclinação e não uma
+    imposição: com o par natural do outro lado do campo, a distância real
+    continua a ganhar.
+    */
+    bonusPar: 6.0,
+
+    /*
+    Desconto, em metros de custo, para o homem que o marcador JÁ acompanha.
+    Trocar de homem tem de ser claramente melhor, não marginalmente melhor:
+    sem isto, dois pares quase empatados faziam os marcadores trocar de homem
+    de cada vez que a histerese expirava, e é nessas trocas que o atacante
+    fica sozinho.
+    */
+    bonusManter: 3.0,
+
+    /*
     Segundos a manter a decisão antes de reavaliar, nos dois sentidos: quem
     acompanha continua a acompanhar, quem está no slot fica no slot. Sem isto a
     referência trocava a cada frame com dois adversários a distância parecida, e
@@ -1996,6 +2097,11 @@ const MarkingModel = {
 
     Quem não encontrar par aqui — formações diferentes, jogador fora de
     posição, alguém já marcado — cai na pontuação de sempre.
+
+    LIDA por `atribuirMarcacoes`, como desconto de custo (MarkingModel.bonusPar):
+    inclina o leilão para o par natural sem o impor. Esteve aqui muito tempo sem
+    ninguém a ler — se voltares a mexer nisto, confirma com um grep que continua
+    a ser usada.
     */
     paresPorPosicao: {
         GK: [],
@@ -2052,6 +2158,43 @@ function atribuirMarcacoes(marcadores, adversarios, raio) {
 
     const tomados = new Set();
 
+    const pesoSlot = (typeof MarkingModel !== 'undefined' && typeof MarkingModel.pesoSlot === 'number')
+        ? MarkingModel.pesoSlot : 0.5;
+    const bonusManter = (typeof MarkingModel !== 'undefined' && typeof MarkingModel.bonusManter === 'number')
+        ? MarkingModel.bonusManter : 3.0;
+    const bonusPar = (typeof MarkingModel !== 'undefined' && typeof MarkingModel.bonusPar === 'number')
+        ? MarkingModel.bonusPar : 6.0;
+    const tabelaPares = (typeof MarkingModel !== 'undefined') ? MarkingModel.paresPorPosicao : null;
+
+    /*
+    Elegibilidade é ZONAL (distância do SLOT ao homem, contra `raio`); o custo
+    que ordena o leilão é a distância REAL do marcador ao homem, mais uma
+    fracção da distância do slot. `px`/`pz` são a posição actual de quem marca —
+    se não vierem, cai no slot e o comportamento é o antigo.
+    */
+    const medir = (m, o) => {
+        const dxs = o.model.position.x - m.x;
+        const dzs = o.model.position.z - m.z;
+        const dSlot = Math.hypot(dxs, dzs);
+
+        const px = (typeof m.px === 'number') ? m.px : m.x;
+        const pz = (typeof m.pz === 'number') ? m.pz : m.z;
+        const dReal = Math.hypot(o.model.position.x - px, o.model.position.z - pz);
+
+        let custo = dReal + dSlot * pesoSlot;
+        if (m.ref === o) custo -= bonusManter;
+
+        // Par natural da posição (CB<->CF, LB<->RM, ...), por ordem de
+        // preferência: 1ª leva o desconto inteiro, 2ª metade, e assim por diante.
+        const lista = (m.pos && tabelaPares) ? tabelaPares[m.pos] : null;
+        if (lista && o.pos) {
+            const idx = lista.indexOf(o.pos);
+            if (idx >= 0) custo -= bonusPar / (idx + 1);
+        }
+
+        return { dSlot: dSlot, custo: custo };
+    };
+
     // 1) Histerese primeiro: quem mantem o homem trava-o antes do leilao.
     for (let i = 0; i < n; i++) {
         const m = marcadores[i];
@@ -2062,7 +2205,7 @@ function atribuirMarcacoes(marcadores, adversarios, raio) {
         tomados.add(m.ref);
     }
 
-    // 2) Leilao guloso: todos os pares dentro do raio, do mais perto ao mais longe.
+    // 2) Leilao guloso: todos os pares elegiveis, do custo mais baixo ao mais alto.
     const pares = [];
     for (let i = 0; i < n; i++) {
         if (escolha[i]) continue;
@@ -2072,13 +2215,12 @@ function atribuirMarcacoes(marcadores, adversarios, raio) {
             // O guarda-redes nao se acompanha: fica na baliza dele.
             if (!o || o.role === 'gk' || !o.model) continue;
             if (tomados.has(o)) continue;
-            const dx = o.model.position.x - m.x;
-            const dz = o.model.position.z - m.z;
-            const d2 = dx * dx + dz * dz;
-            if (d2 < raio * raio) pares.push({ i: i, o: o, d2: d2 });
+            const med = medir(m, o);
+            if (med.dSlot >= raio) continue;
+            pares.push({ i: i, o: o, custo: med.custo });
         }
     }
-    pares.sort((a, b) => a.d2 - b.d2);
+    pares.sort((a, b) => a.custo - b.custo);
 
     for (const par of pares) {
         if (escolha[par.i] || tomados.has(par.o)) continue;

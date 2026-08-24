@@ -223,6 +223,8 @@
 
                 <button type="button" class="btn-sector" id="btn-playingstylebt" onclick="togglePlayingStyleBT()">PlayingStyleBT:
                     OFF</button>
+                <button type="button" class="btn-sector active" id="btn-minimapa"
+                    onclick="toggleMinimapa()">Minimapa: ON</button>
                 <button type="button" class="btn-sector" id="btn-passgrid"
                     onclick="toggleUsarPasseGrid()">PassGrid (decisão): OFF</button>
                 <button type="button" class="btn-sector" id="btn-touch-toggle"
@@ -290,6 +292,8 @@
         </div>
     </div>
 
+    <canvas id="minimapa"></canvas>
+
     <div id="placar">RED <span id="placar-a">0</span> x <span id="placar-b">0</span> BLUE | TIME: <span
             id="placar-tempo">00:00</span></div>
 
@@ -346,6 +350,7 @@
     <script src="js/player.js"></script>
     <script src="js/fsm.js"></script>
     <script src="js/simulate.js"></script>
+    <script src="js/minimap.js"></script>
 
     <!-- Depende de FootballPlayer (player.js) e Sim (simulate.js) já existirem -->
     <script src="js/bt/btDebug.js"></script>

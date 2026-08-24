@@ -404,11 +404,46 @@ class PlayerFSM {
 
         switch (this.currentState) {
             case 'SET_PIECE_WAIT':
-                p.velocity.set(0, 0, 0);
+                /*
+                No canto disputa-se a posição antes de a bola sair: passo à
+                frente, atrás ou para o lado à volta da âncora do slot (ver
+                SetPieceJostle). Nas outras bolas paradas continua parado.
+                */
+                if (Match.state === 'CORNER_KICK' && p.jostleAncora &&
+                    typeof SetPieceJostle !== 'undefined') {
+                    const J = SetPieceJostle;
+                    p.jostleTimer = (p.jostleTimer || 0) - dt;
+                    if (p.jostleTimer <= 0) {
+                        p.jostleAngulo = Math.random() * Math.PI * 2;
+                        p.jostleRaio = Math.random() * J.raio;
+                        p.jostleTimer = J.intervaloMin +
+                            Math.random() * (J.intervaloMax - J.intervaloMin);
+                    }
+                    const o = offsetInquietacao(p.jostleAngulo, p.jostleRaio || 0);
+                    _v1.set(p.jostleAncora.x + o.x, ALTURA_BASE_Y, p.jostleAncora.z + o.z);
+                    p.velocity = p.steerArrive(_v1, J.velocidade, 0);
+                } else {
+                    p.velocity.set(0, 0, 0);
+                }
                 if (Match.ball) {
                     let lookPos = Match.ball.position.clone();
                     lookPos.y = p.model.position.y;
                     lookAtBola(p.model, lookPos);
+                }
+                break;
+            /*
+            LATERAL: por agora só a POSE de quem vai repor — a reposição em si
+            (alvo, força, quem recebe) ainda não existe. Fica em estado próprio
+            para se poder afinar no ecrã e para a reposição ter onde encaixar.
+            */
+            case 'LATERAL':
+                p.velocity.set(0, 0, 0);
+                p.aplicarPoseLateral(true);
+                if (Match.ball) {
+                    // Vira-se para DENTRO do campo, não para a bola: a bola
+                    // está nas mãos dele.
+                    _v1.set(0, p.model.position.y, p.model.position.z);
+                    lookAtBola(p.model, _v1);
                 }
                 break;
             case 'SET_PIECE_TAKER':
@@ -456,6 +491,8 @@ class PlayerFSM {
                             if (pl.fsm.currentState === 'SET_PIECE_TAKER') {
                                 pl.fsm.changeState('WATCH_CORNER');
                             } else if (pl.fsm.currentState === 'SET_PIECE_WAIT') {
+                                // Bola no ar: acabou a disputa de posição.
+                                pl.jostleAncora = null;
                                 pl.fsm.changeState('MOVE_TO_POS');
                             }
                         });

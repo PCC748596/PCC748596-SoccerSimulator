@@ -334,6 +334,57 @@ class FootballPlayer {
         };
     }
 
+    /*
+    Pose do LATERAL: bola nas duas mãos, por cima e por trás da cabeça.
+
+    Escrita directa (`=`, não lerp), como as outras poses de bola parada: é uma
+    posição de espera, não um gesto — quem a quiser suavizar à entrada faz o
+    mesmo que o chute do chão do GR (ver iniciarBlendChuteChao).
+
+    `segurarBola` põe a bola nas mãos; passa-se false para posar o jogador sem
+    lhe dar a bola (por exemplo, para afinar a pose no ecrã).
+    */
+    aplicarPoseLateral(segurarBola = true) {
+        const rig = this.rig;
+        if (!rig || typeof LateralPose === 'undefined') return;
+        const L = LateralPose;
+
+        rig.pelvis.position.set(0, 2.6, 0);
+        rig.pelvis.rotation.set(L.pelvisX, 0, 0);
+        rig.chest.rotation.set(L.chest, 0, 0);
+
+        rig.lArm.rotation.set(L.bracoX, 0, L.bracoZ);
+        rig.rArm.rotation.set(L.bracoX, 0, -L.bracoZ);
+        rig.lElbow.rotation.set(L.cotovelo, 0, 0);
+        rig.rElbow.rotation.set(L.cotovelo, 0, 0);
+
+        const frenteR = (L.peFrente === 'r');
+        const pernaF = frenteR ? rig.rLeg : rig.lLeg;
+        const joelhoF = frenteR ? rig.rKnee : rig.lKnee;
+        const pernaT = frenteR ? rig.lLeg : rig.rLeg;
+        const joelhoT = frenteR ? rig.lKnee : rig.rKnee;
+
+        pernaF.rotation.set(L.coxaFrente, 0, 0);
+        joelhoF.rotation.set(L.joelhoFrente, 0, 0);
+        pernaT.rotation.set(L.coxaTras, 0, 0);
+        joelhoT.rotation.set(L.joelhoTras, 0, 0);
+
+        rig.lFoot.rotation.set(0, Math.PI / 16, 0);
+        rig.rFoot.rotation.set(0, -Math.PI / 16, 0);
+
+        this.model.position.y = ALTURA_BASE_Y;
+
+        if (segurarBola && typeof Match !== 'undefined' && Match.ball) {
+            // Atrás da cabeça = contra a frente do corpo, por isso -Z local.
+            _v1.set(0, 0, -L.bolaRecuo).applyQuaternion(this.model.quaternion);
+            Match.ball.position.set(
+                this.model.position.x + _v1.x,
+                this.model.position.y + L.bolaAltura,
+                this.model.position.z + _v1.z);
+            Match.ballVel.set(0, 0, 0);
+        }
+    }
+
     resetBonesToDefault() {
         let rig = this.rig;
         if (!rig) return;
@@ -1618,7 +1669,10 @@ class FootballPlayer {
             this.discoTatico.position.set(this.model.position.x, 0.04, this.model.position.z);
         }
 
-        if (this.role === 'gk' && Match.state !== 'CORNER_KICK') {
+        // LATERAL escreve a pose inteira na FSM — o animateBones por cima
+        // devolvia os braços ao lado do corpo no mesmo frame.
+        if ((this.role === 'gk' && Match.state !== 'CORNER_KICK') ||
+            this.fsm.currentState === 'LATERAL') {
         } else {
             this.animateBones(dt);
             // Camada da matada no peito: só a cintura para trás e os braços

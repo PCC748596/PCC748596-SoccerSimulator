@@ -1132,6 +1132,7 @@ const Match = {
         this.chaserB = null;
         this.setPieceTaker = null;
         this.setPieceTimer = 0;
+        [...this.players, ...this.opponents].forEach(p => { p.jostleAncora = null; });
         this.counterAttackTeam = null;
         this.counterAttackTimer = 0;
         this.goalSequenceStage = undefined;
@@ -2628,6 +2629,9 @@ const Match = {
                 p.model.position.set(initX, ALTURA_BASE_Y, initZ);
                 p.dynamicTarget.set(tgtX, ALTURA_BASE_Y, tgtZ);
                 p.setPieceTarget = new THREE.Vector3().copy(p.model.position);
+                // Âncora da disputa antes da batida (ver SET_PIECE_WAIT na FSM).
+                p.jostleAncora = { x: initX, z: initZ };
+                p.jostleTimer = Math.random() * SetPieceJostle.intervaloMax;
                 p.fsm.changeState('SET_PIECE_WAIT');
                 lookAtBola(p.model, this.ball.position);
             });
@@ -2686,8 +2690,16 @@ const Match = {
 
                 p.model.position.set(initX, ALTURA_BASE_Y, initZ);
                 p.dynamicTarget.set(tgtX, ALTURA_BASE_Y, tgtZ);
+                p.jostleAncora = { x: initX, z: initZ };
+                p.jostleTimer = Math.random() * SetPieceJostle.intervaloMax;
                 p.fsm.changeState('SET_PIECE_WAIT');
                 lookAtBola(p.model, this.ball.position);
+            });
+
+            // O guarda-redes não disputa posição: fica na linha.
+            [defendingPlayers, attackingPlayers].forEach(lista => {
+                const g = lista.find(p => p.role === 'gk');
+                if (g) g.jostleAncora = null;
             });
 
             let defGK = defendingPlayers.find(p => p.role === 'gk');

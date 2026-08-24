@@ -471,6 +471,32 @@ button.btn-action:active {
 }
 
 
+/*
+Minimapa: canto inferior esquerdo, por cima da cena e fora do caminho do rato
+(o orbit control da câmara apanha o canvas todo — `pointer-events: none` deixa
+arrastar a câmara mesmo por cima dele).
+*/
+#minimapa {
+    position: absolute;
+    /* A regra genérica `canvas` (a do renderer) põe top/left a 0 e 100vw/100vh.
+       Sem anular o `top` aqui, ele ganha ao `bottom` e o minimapa colava-se ao
+       topo do ecrã. As medidas em si vêm inline, do Minimap.init. */
+    top: auto;
+    right: auto;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    /* A mesma regra genérica pinta o canvas de azul-céu (fundo do renderer).
+       Aqui tem de ser transparente, senão a relva a 30% fica por cima de um
+       fundo opaco e o minimapa sai azulado em vez de deixar ver o jogo. */
+    background-color: transparent;
+    pointer-events: none;
+    border-radius: 6px;
+    border: 1px solid rgba(236, 240, 241, 0.35);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.45);
+}
+
 #placar {
     position: absolute;
     top: 20px;
@@ -701,6 +727,14 @@ button.btn-action:active {
         top: 10px;
         padding: 6px 14px;
         font-size: 13px;
+    }
+
+    /* No telemóvel o minimapa sobe acima do HUD do jogador, e encolhe —
+       a translação de -50% tem de vir ANTES da escala para o centro se
+       manter depois de encolher. */
+    #minimapa {
+        bottom: 140px;
+        transform: translateX(-50%) scale(0.8);
     }
 
     #hud-jogador-esq, #hud-jogador-dir {

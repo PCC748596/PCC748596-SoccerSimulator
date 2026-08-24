@@ -177,6 +177,32 @@ function togglePlayingStyleBT() {
     }
 }
 
+/*
+Atalho de consola para afinar a pose do lateral: `testarLateral()` põe o
+jogador 9 do TeamA na linha lateral com a bola nas mãos. Mexer nos valores de
+LateralPose (config.js) e voltar a chamar mostra o resultado logo.
+*/
+function testarLateral(idx = 8, equipa = 'TeamA') {
+    const lista = (equipa === 'TeamA') ? Match.players : Match.opponents;
+    const p = lista[idx];
+    if (!p) return;
+    p.model.position.set(CAMPO_LARG / 2, ALTURA_BASE_Y, 0);
+    p.hasBall = false;
+    Match.ballCarrier = null;
+    p.fsm.changeState('LATERAL');
+    return p;
+}
+
+function toggleMinimapa() {
+    if (typeof Minimap === 'undefined') return;
+    Minimap.setVisivel(!Minimap.visivel);
+    const b = document.getElementById('btn-minimapa');
+    if (b) {
+        b.innerText = 'Minimapa: ' + (Minimap.visivel ? 'ON' : 'OFF');
+        b.classList.toggle('active', Minimap.visivel);
+    }
+}
+
 function toggleUsarPasseGrid() {
     window.usarPasseGrid = !window.usarPasseGrid;
     document.getElementById('btn-passgrid').innerText = 'PassGrid (decisão): ' + (window.usarPasseGrid ? 'ON' : 'OFF');
@@ -495,6 +521,10 @@ function animate(time) {
         updateHudJogadores();
     }
 
+    // Minimapa a cada frame: são 23 pontos num canvas 2D, custa menos que
+    // qualquer um dos overlays do debug que desenhavam texto por célula.
+    if (typeof Minimap !== 'undefined') Minimap.update();
+
     rendererCore.render(scene, cameraCore);
 }
 
@@ -540,6 +570,7 @@ document.addEventListener("DOMContentLoaded", () => {
         scene.add(ambientLight);
 
         Match.init(scene);
+        if (typeof Minimap !== 'undefined') Minimap.init();
         Tatics.updateSkills();
         popularPainelJogadores();
         requestAnimationFrame(animate);

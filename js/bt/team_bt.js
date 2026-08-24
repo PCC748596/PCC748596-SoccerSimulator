@@ -619,7 +619,9 @@ CÁLCULO DO BLOCO / RETÂNGULO TÁTICO
 1. Os retângulos acompanham as coordenadas da bola (X e Z).
 2. Os retângulos ficam limitados nos limites do campo.
 3. Os retângulos ficam limitados à linha da pequena área.
-4. Na T.Ataque, Ataque, T.Defesa e Defesa o centro fica 5 metros à frente da linha da bola (+5m).
+4. O centro fica 5 metros À FRENTE da linha da bola, e "à frente" depende da
+   fase: com bola (T.Ataque/Ataque) é entre a bola e a baliza ATACADA (+5);
+   sem bola (T.Defesa/Defesa) é entre a bola e a baliza DEFENDIDA (-5).
 */
 function computeBlock(bb) {
     const B = BlockShape;
@@ -633,7 +635,7 @@ function computeBlock(bb) {
     const profundidade = CAMPO_COMP * B.profundidade[compacLength];
 
     /* --- centro em Z (Regra 1 e Regra 4) -------------------------------
-       NA T.ATAQUE, ATAQUE, T.DEFESA E DEFESA: CENTRO 5 METROS À FRENTE DA LINHA DA BOLA (+5m)
+       CENTRO 5 METROS À FRENTE DA LINHA DA BOLA, com o sinal a depender da fase
        No referencial de ataque da equipa (bb.dir):
        - + é em direção ao ataque (à frente)
        - - é em direção à defesa (atrás)
@@ -641,11 +643,26 @@ function computeBlock(bb) {
     const dtMatch = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
     const reposta = (typeof Match !== 'undefined' && Match.state !== 'PLAY');
 
-    const targetOffsetZ = 5.0;
+    /*
+    O centro do bloco fica 5 m À FRENTE da linha da bola — e "à frente" muda de
+    sentido com a fase:
+
+        T.Offensive / Offensive   entre a bola e a baliza ATACADA   -> +5
+        T.Defensive / Defensive   entre a bola e a baliza DEFENDIDA -> -5
+
+    Estava fixo em +5.0 para as quatro fases, ou seja a defender o bloco era
+    empurrado 5 m na direcção da baliza adversária — para trás da bola em vez
+    de entre ela e a nossa baliza. Tudo isto no referencial de ataque (bb.dir),
+    onde + é o sentido do ataque da equipa.
+    */
+    const targetOffsetZ = bb.isAttacking ? 5.0 : -5.0;
 
     if (bb.blocoZSuave === undefined) {
         bb.blocoZSuave = targetOffsetZ;
     } else {
+        // Nota: na troca de posse o alvo salta de +5 para -5 (ou o inverso). O
+        // seguirBola faz a travessia desses 10 m em rampa, que é o que se quer:
+        // o bloco reorganiza-se, não teleporta.
         bb.blocoZSuave = seguirBola(bb.blocoZSuave, targetOffsetZ, BlockShape.seguimentoBola, dtMatch, reposta);
     }
 
@@ -1267,6 +1284,11 @@ function atribuirMarcacoesDaEquipa(lista, bb) {
         marcadores.push({
             x: p.postoBase.x,
             z: p.postoBase.z,
+            // Posição REAL: o leilão precisa dela para não dar o homem a quem
+            // tem o posto perto mas está longe (ver medir() em atribuirMarcacoes).
+            px: p.model.position.x,
+            pz: p.model.position.z,
+            pos: p.pos,          // par natural da posição (paresPorPosicao)
             manter: p.marcTimer < M.histerese,
             ref: p.marcRef
         });
