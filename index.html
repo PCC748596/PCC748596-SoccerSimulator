@@ -22,9 +22,13 @@
         </div>
 
         <div id="painel-conteudo">
-            <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+            <div style="display: flex; gap: 4px; margin-bottom: 4px;">
                 <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.resetPlay()">Reset KickOff</button>
                 <button class="btn-action" style="flex: 1; margin-top: 0;" id="btn-pause" onclick="Match.togglePause()">Continue</button>
+            </div>
+            <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerGoalKick()">Tiro de Meta</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerCornerKick()">Corner</button>
             </div>
 
             <label>Formation Team A</label>
@@ -77,9 +81,9 @@
 
             <label>Length Compactness</label>
             <select id="t-length-compactness" onchange="Tatics.update()">
-                <option value="large">Large (40m)</option>
-                <option value="median" selected>Medium (30m)</option>
-                <option value="short">Small (20m)</option>
+                <option value="large">Large (50m)</option>
+                <option value="median" selected>Medium (40m)</option>
+                <option value="short">Small (30m)</option>
             </select>
 
             <label>Defensive Pressure</label>

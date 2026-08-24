@@ -598,8 +598,7 @@ CÁLCULO DO BLOCO / RETÂNGULO TÁTICO
 1. Os retângulos acompanham as coordenadas da bola (X e Z).
 2. Os retângulos ficam limitados nos limites do campo.
 3. Os retângulos ficam limitados à linha da pequena área.
-4. Na T.Ataque e Ataque o centro fica 5 metros à frente da linha da bola (+5m).
-   Na T.Defesa e Defesa o centro fica 5 metros atrás da linha da bola (-5m).
+4. Na T.Ataque, Ataque, T.Defesa e Defesa o centro fica 5 metros à frente da linha da bola (+5m).
 */
 function computeBlock(bb) {
     const B = BlockShape;
@@ -613,8 +612,7 @@ function computeBlock(bb) {
     const profundidade = CAMPO_COMP * B.profundidade[compacLength];
 
     /* --- centro em Z (Regra 1 e Regra 4) -------------------------------
-       NA T.ATAQUE E ATAQUE: CENTRO 5 METROS A FRENTE DA LINHA DA BOLA (+5m)
-       NA T.DEFESA E DEFESA: CENTRO 5 METROS ATRAS DA LINHA DA BOLA (-5m)
+       NA T.ATAQUE, ATAQUE, T.DEFESA E DEFESA: CENTRO 5 METROS À FRENTE DA LINHA DA BOLA (+5m)
        No referencial de ataque da equipa (bb.dir):
        - + é em direção ao ataque (à frente)
        - - é em direção à defesa (atrás)
@@ -622,8 +620,7 @@ function computeBlock(bb) {
     const dtMatch = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
     const reposta = (typeof Match !== 'undefined' && Match.state !== 'PLAY');
 
-    const isAtaque = (bb.state === TeamState.TRANSITION_OFFENSIVE || bb.state === TeamState.OFFENSIVE || bb.isAttacking);
-    const targetOffsetZ = isAtaque ? 5.0 : -5.0;
+    const targetOffsetZ = 5.0;
 
     if (bb.blocoZSuave === undefined) {
         bb.blocoZSuave = targetOffsetZ;

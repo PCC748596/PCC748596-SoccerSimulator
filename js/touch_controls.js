@@ -56,23 +56,29 @@ const TouchControls = {
                     <span class="touch-label" id="touch-speed-label">1.0x</span>
                 </button>
 
+                <button type="button" id="btn-touch-frame" class="touch-btn" title="Avançar 1 Frame">
+                    <span class="touch-icon">⏭️</span>
+                    <span class="touch-label">Frame</span>
+                </button>
+
                 <button type="button" id="btn-touch-camera" class="touch-btn" title="Mudar Câmera">
                     <span class="touch-icon">📹</span>
                     <span class="touch-label" id="touch-cam-label">TV Centro</span>
                 </button>
 
-                <div class="touch-btn-group">
-                    <button type="button" id="btn-touch-zoom-out" class="touch-btn touch-btn-small" title="Diminuir Zoom">
-                        <span class="touch-icon">🔍-</span>
-                    </button>
-                    <button type="button" id="btn-touch-zoom-in" class="touch-btn touch-btn-small" title="Aumentar Zoom">
-                        <span class="touch-icon">🔍+</span>
-                    </button>
-                </div>
-
                 <button type="button" id="btn-touch-reset" class="touch-btn" title="Reiniciar Kickoff">
                     <span class="touch-icon">🔄</span>
                     <span class="touch-label">Kickoff</span>
+                </button>
+
+                <button type="button" id="btn-touch-goalkick" class="touch-btn" title="Tiro de Meta">
+                    <span class="touch-icon">🥅</span>
+                    <span class="touch-label">Tiro Meta</span>
+                </button>
+
+                <button type="button" id="btn-touch-corner" class="touch-btn" title="Cobrança de Corner / Escanteio">
+                    <span class="touch-icon">🚩</span>
+                    <span class="touch-label">Corner</span>
                 </button>
 
                 <button type="button" id="btn-touch-panels" class="touch-btn" title="Ocultar / Exibir Painéis">
@@ -126,17 +132,28 @@ const TouchControls = {
             });
         }
 
-        // Botão Speed
+        // Botão Speed (alterna entre 0.7x, 1.0x e 1.2x)
         const btnSpeed = document.getElementById('btn-touch-speed');
         if (btnSpeed) {
             btnSpeed.addEventListener('click', () => {
-                const speeds = ['frame', 0.7, 1.0, 1.2];
-                const current = window.speedMultiplier || 1.0;
+                const speeds = [0.7, 1.0, 1.2];
+                const current = typeof window.speedMultiplier === 'number' ? window.speedMultiplier : 1.0;
                 let nextIdx = (speeds.indexOf(current) + 1) % speeds.length;
-                if (nextIdx < 0) nextIdx = 2; // Default to 1.0x if not found
+                if (nextIdx < 0) nextIdx = 1; // Default to 1.0x
                 const nextSpeed = speeds[nextIdx];
                 if (typeof Match !== 'undefined') {
                     Match.setSpeed(nextSpeed);
+                    this.updateButtonsState();
+                }
+            });
+        }
+
+        // Botão Frame separado (avança 1 quadro por toque)
+        const btnFrame = document.getElementById('btn-touch-frame');
+        if (btnFrame) {
+            btnFrame.addEventListener('click', () => {
+                if (typeof Match !== 'undefined') {
+                    Match.setSpeed('frame');
                     this.updateButtonsState();
                 }
             });
@@ -189,16 +206,32 @@ const TouchControls = {
             }
         });
 
-        // Zoom Controles (com suporte a toque rápido e toque contínuo / hold)
-        this.setupHoldButton('btn-touch-zoom-in', () => this.applyZoom(-0.06));
-        this.setupHoldButton('btn-touch-zoom-out', () => this.applyZoom(0.06));
-
         // Reset Kickoff
         const btnReset = document.getElementById('btn-touch-reset');
         if (btnReset) {
             btnReset.addEventListener('click', () => {
                 if (typeof Match !== 'undefined') {
                     Match.resetPlay();
+                }
+            });
+        }
+
+        // Tiro de Meta
+        const btnGoalKick = document.getElementById('btn-touch-goalkick');
+        if (btnGoalKick) {
+            btnGoalKick.addEventListener('click', () => {
+                if (typeof Match !== 'undefined') {
+                    Match.triggerGoalKick();
+                }
+            });
+        }
+
+        // Corner / Escanteio
+        const btnCorner = document.getElementById('btn-touch-corner');
+        if (btnCorner) {
+            btnCorner.addEventListener('click', () => {
+                if (typeof Match !== 'undefined') {
+                    Match.triggerCornerKick();
                 }
             });
         }
@@ -309,12 +342,14 @@ const TouchControls = {
         // Atualiza botão de Speed
         const speedLabel = document.getElementById('touch-speed-label');
         if (speedLabel) {
-            const spd = window.speedMultiplier || 1.0;
-            if (spd === 'frame') {
-                speedLabel.textContent = 'Frame';
-            } else {
-                speedLabel.textContent = spd.toFixed(1) + 'x';
-            }
+            const spd = typeof window.speedMultiplier === 'number' ? window.speedMultiplier : 1.0;
+            speedLabel.textContent = spd.toFixed(1) + 'x';
+        }
+
+        // Atualiza botão de Frame
+        const btnFrame = document.getElementById('btn-touch-frame');
+        if (btnFrame) {
+            btnFrame.classList.toggle('active', window.speedMultiplier === 'frame');
         }
 
         // Atualiza nome da câmera

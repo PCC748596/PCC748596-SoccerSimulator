@@ -2439,6 +2439,29 @@ const Match = {
         }
     },
 
+    triggerGoalKick: function (forceTeam = null) {
+        let team = forceTeam;
+        if (!team) {
+            team = (this.ball && this.ball.position.z > 0) ? 'TeamB' : 'TeamA';
+        }
+        this.setupSetPiece('GOAL_KICK', team);
+        if (this.golKickBolaAlvo) {
+            this.ball.position.set(this.golKickBolaAlvo.x, BallPhysics.raio, this.golKickBolaAlvo.z);
+            this.ballVel.set(0, 0, 0);
+            this.golKickAguardaChao = false;
+            this.golKickBolaAtraso = 0;
+            this.golKickBolaAlvo = null;
+        }
+    },
+
+    triggerCornerKick: function (forceTeam = null) {
+        let team = forceTeam;
+        if (!team) {
+            team = (this.ball && this.ball.position.z >= 0) ? 'TeamA' : 'TeamB';
+        }
+        this.setupSetPiece('CORNER_KICK', team);
+    },
+
     setupSetPiece: function (type, team) {
         this.state = type;
         this.setPieceTeam = team;
@@ -2514,47 +2537,106 @@ const Match = {
             lookAtBola(taker.model, this.cornerAlvo);
             taker.fsm.changeState('SET_PIECE_TAKER');
 
-            let attackersInBox = attackingPlayers.filter(p => p !== taker && p.role !== 'gk');
-            let boxPositions = [
-                { x: -5, z: flagZ - attDir * 8 },
-                { x: 5, z: flagZ - attDir * 8 },
-                { x: 0, z: flagZ - attDir * 12 },
-                { x: -8, z: flagZ - attDir * 14 },
-                { x: 8, z: flagZ - attDir * 14 },
-                { x: -2, z: flagZ - attDir * 5 },
-                { x: 2, z: flagZ - attDir * 5 },
-                { x: -12, z: flagZ - attDir * 18 },
-                { x: 12, z: flagZ - attDir * 18 },
-                { x: 0, z: flagZ - attDir * 20 }
+            const lado = Math.sign(this.ball.position.x) || 1;
+            const linhaZ = attDir * (CAMPO_COMP / 2);
+
+            // ==========================================
+            // POSICIONAMENTO DO ATAQUE (9 jogadores de linha + batedor + GR)
+            // ==========================================
+            const attackSetup = [
+                // 1. Pequena área (segundo pau / lado oposto)
+                { initial: { relX: -2.5, dist: 2.5 }, target: { relX: -2.5, dist: 3.5 } },
+                // 2. Pequena área (primeiro pau - com corrida em direção ao primeiro poste/flanco)
+                { initial: { relX: 2.0, dist: 2.5 }, target: { relX: 8.0, dist: 2.0 } },
+                // 3. Marca do pênalti (com infiltração diagonal em direção à entrada da pequena área / 1º pau)
+                { initial: { relX: -1.0, dist: 11.5 }, target: { relX: 1.5, dist: 6.0 } },
+                // 4. Centro da área (lado direito da marca do pênalti)
+                { initial: { relX: 2.0, dist: 12.0 }, target: { relX: 1.5, dist: 8.5 } },
+                // 5. Entrada da área à direita (segundo escalão)
+                { initial: { relX: 5.0, dist: 12.0 }, target: { relX: 4.0, dist: 8.0 } },
+                // 6. Borda da área à direita (com corrida longa de arranque para dentro da área)
+                { initial: { relX: 6.5, dist: 19.5 }, target: { relX: 4.5, dist: 8.5 } },
+                // 7. Sobra / Rebote à esquerda (fora da meia-lua)
+                { initial: { relX: -4.5, dist: 21.0 }, target: { relX: -3.5, dist: 19.0 } },
+                // 8. Sobra / Rebote central (fora da meia-lua)
+                { initial: { relX: 0.5, dist: 23.0 }, target: { relX: 0.5, dist: 20.0 } },
+                // 9. Último homem / Segurança defensiva (meio-campo/intermediária)
+                { initial: { relX: 0.5, dist: 36.0 }, target: { relX: 0.5, dist: 34.0 } }
             ];
 
-            attackersInBox.forEach((p, idx) => {
-                let pos = boxPositions[idx] || { x: 0, z: flagZ - attDir * 15 };
-                p.model.position.set(pos.x + (Math.random() - 0.5) * 2, ALTURA_BASE_Y, pos.z + (Math.random() - 0.5) * 2);
-                p.fsm.changeState('SET_PIECE_WAIT');
-                p.setPieceTarget = new THREE.Vector3().copy(p.model.position);
+            let attackersInBox = attackingPlayers.filter(p => p !== taker && p.role !== 'gk');
+            // Ordena atacantes de modo que atacantes/médios ofensivos/zagueiros altos fiquem na área e laterais/volantes na sobra/segurança
+            attackersInBox.sort((a, b) => {
+                const roleOrder = { 'ata': 1, 'mid': 2, 'def': 3 };
+                return (roleOrder[a.role] || 2) - (roleOrder[b.role] || 2);
             });
+
+            attackersInBox.forEach((p, idx) => {
+                const cfg = attackSetup[idx] || attackSetup[attackSetup.length - 1];
+                const initX = lado * cfg.initial.relX;
+                const initZ = linhaZ - attDir * cfg.initial.dist;
+                const tgtX = lado * cfg.target.relX;
+                const tgtZ = linhaZ - attDir * cfg.target.dist;
+
+                p.model.position.set(initX, ALTURA_BASE_Y, initZ);
+                p.dynamicTarget.set(tgtX, ALTURA_BASE_Y, tgtZ);
+                p.setPieceTarget = new THREE.Vector3().copy(p.model.position);
+                p.fsm.changeState('SET_PIECE_WAIT');
+                lookAtBola(p.model, this.ball.position);
+            });
+
+            // ==========================================
+            // POSICIONAMENTO DA DEFESA (10 jogadores de linha + GR)
+            // ==========================================
+            const defenseSetup = [
+                // 1. Pequena área (segundo pau / lado oposto)
+                { relX: -4.5, dist: 3.0, tgt: { relX: -4.5, dist: 3.0 } },
+                // 2. Pequena área (primeiro pau / lado do batedor)
+                { relX: 4.5, dist: 3.0, tgt: { relX: 4.5, dist: 3.0 } },
+                // 3. Linha da pequena área (lado esquerdo / segundo pau)
+                { relX: -3.0, dist: 6.0, tgt: { relX: -2.5, dist: 5.5 } },
+                // 4. Linha da pequena área (centro)
+                { relX: 0.5, dist: 6.0, tgt: { relX: 0.5, dist: 5.5 } },
+                // 5. Linha da pequena área (lado direito / primeiro pau)
+                { relX: 4.0, dist: 6.0, tgt: { relX: 3.5, dist: 5.5 } },
+                // 6. Marcação no miolo da área (centro-esquerda)
+                { relX: -2.5, dist: 9.5, tgt: { relX: -2.0, dist: 8.5 } },
+                // 7. Marcação no miolo da área (centro / pênalti)
+                { relX: 0.5, dist: 10.0, tgt: { relX: 0.5, dist: 9.0 } },
+                // 8. Bloqueio / Cobertura lateral do corner curto (com seta roxa para a direita)
+                { relX: 5.5, dist: 10.5, tgt: { relX: 8.5, dist: 9.0 } },
+                // 9. Entrada da área / Meia-lua (lado esquerdo)
+                { relX: -1.0, dist: 17.0, tgt: { relX: -1.0, dist: 16.0 } },
+                // 10. Entrada da área / Meia-lua (lado direito)
+                { relX: 3.5, dist: 18.0, tgt: { relX: 3.5, dist: 17.0 } }
+            ];
 
             let defendersInBox = defendingPlayers.filter(p => p.role !== 'gk');
             defendersInBox.forEach((p, idx) => {
-                let attToMark = attackersInBox[idx % attackersInBox.length];
-                if (attToMark) {
-                    p.model.position.set(attToMark.model.position.x, ALTURA_BASE_Y, attToMark.model.position.z + defDir * 1.5);
-                    p.fsm.changeState('SET_PIECE_WAIT');
-                    p.dynamicTarget.copy(p.model.position);
-                }
+                const cfg = defenseSetup[idx] || defenseSetup[defenseSetup.length - 1];
+                const initX = lado * cfg.relX;
+                const initZ = linhaZ - attDir * cfg.dist;
+                const tgtX = lado * cfg.tgt.relX;
+                const tgtZ = linhaZ - attDir * cfg.tgt.dist;
+
+                p.model.position.set(initX, ALTURA_BASE_Y, initZ);
+                p.dynamicTarget.set(tgtX, ALTURA_BASE_Y, tgtZ);
+                p.fsm.changeState('SET_PIECE_WAIT');
+                lookAtBola(p.model, this.ball.position);
             });
 
             let defGK = defendingPlayers.find(p => p.role === 'gk');
             if (defGK) {
-                defGK.model.position.set(0, ALTURA_BASE_Y, flagZ);
+                defGK.model.position.set(0, ALTURA_BASE_Y, linhaZ - attDir * 1.5);
+                defGK.dynamicTarget.set(0, ALTURA_BASE_Y, linhaZ - attDir * 2.0);
                 lookAtBola(defGK.model, this.ball.position);
                 defGK.fsm.changeState('SET_PIECE_WAIT');
             }
 
             let attGK = attackingPlayers.find(p => p.role === 'gk');
             if (attGK) {
-                attGK.model.position.set(0, ALTURA_BASE_Y, -flagZ);
+                attGK.model.position.set(0, ALTURA_BASE_Y, -linhaZ + attDir * 2.0);
+                attGK.dynamicTarget.set(0, ALTURA_BASE_Y, -linhaZ + attDir * 2.0);
                 lookAtBola(attGK.model, this.ball.position);
                 attGK.fsm.changeState('SET_PIECE_WAIT');
             }
@@ -2599,15 +2681,15 @@ const Match = {
                 gk.gkTiroFase = 0;              // 0 = caminhar, 1 = corrida
                 gk.gkTempoMergulho = 0;
                 gk.gkKickAction = null;
-                /*
-                Distância exata para correr e chutar "no frame 20" (0.33s).
-                A 5.5 m/s, são ~1.83 metros atrás da bola. Sem parada.
-                */
-                const atkDir = gk.team === 'TeamA' ? -1 : 1;
+                const recuo = G.tiroMetaRecuo || 3.8;
+                // Posição de arranque atrás da bola à esquerda do alinhamento da bola
                 gk.gkTiroAlvo = {
-                    x: bolaX + ladoX * 0.5,
-                    z: bolaZ - atkDir * 1.83
+                    x: bolaX + gk.dirZ * 0.70,
+                    z: bolaZ - gk.dirZ * recuo
                 };
+                // Posiciona o goleiro no ponto de partida do tiro de meta virado para a bola
+                gk.model.position.set(gk.gkTiroAlvo.x, ALTURA_BASE_Y, gk.gkTiroAlvo.z);
+                lookAtBola(gk.model, { x: bolaX, y: ALTURA_BASE_Y, z: bolaZ });
             }
 
             /*

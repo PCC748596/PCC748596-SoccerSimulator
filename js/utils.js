@@ -1167,3 +1167,32 @@ function seguirBola(actual, alvo, k, dt, reposta) {
     const passo = 1 - Math.exp(-k * dt);
     return actual + (alvo - actual) * passo;
 }
+
+/*
+Verifica se não há marcação a maxDist (10 metros) à frente do jogador
+num cone de maxAngleDeg (20 graus) para cada lado.
+*/
+function semMarcacaoAFrente(p, opps, maxDist = 10.0, maxAngleDeg = 20.0) {
+    if (!p) return false;
+    const maxAngleRad = (maxAngleDeg * Math.PI) / 180.0;
+    const oppList = opps || ((typeof Match !== 'undefined') ? (p.team === 'TeamA' ? Match.opponents : Match.players) : []);
+    const pPos = p.model ? p.model.position : p.position;
+    if (!pPos) return true;
+
+    for (const opp of oppList) {
+        if (opp.role === 'gk') continue;
+        const oPos = opp.model ? opp.model.position : opp.position;
+        if (!oPos) continue;
+        const dx = oPos.x - pPos.x;
+        const dz = (oPos.z - pPos.z) * p.dirZ;
+        if (dz <= 0) continue; // atrás da linha do jogador
+        const dist = Math.hypot(dx, dz);
+        if (dist > maxDist) continue;
+        const angle = Math.atan2(Math.abs(dx), dz);
+        if (angle <= maxAngleRad) {
+            // Adversário marcando no cone frontal
+            return false;
+        }
+    }
+    return true;
+}

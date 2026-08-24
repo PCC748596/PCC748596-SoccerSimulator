@@ -23,6 +23,37 @@ function amostrarClipChuteGR(norm) {
     };
 }
 
+/*
+Amostra o clip do chute de bola parada / tiro de meta (GoalkeeperGroundKickClip),
+fiel às fases das Figuras Biomecânicas com pivô no pé de apoio.
+*/
+function amostrarClipChuteChaoGR(norm) {
+    const fr = GoalkeeperGroundKickClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => (a[k] !== undefined && b[k] !== undefined) ? a[k] + (b[k] - a[k]) * u : 0;
+    return {
+        leanZ: mix('leanZ'),
+        pitchX: mix('pitchX'),
+        chest: mix('chest'),
+        coxaChute: mix('coxaChute'),
+        joelhoChute: mix('joelhoChute'),
+        coxaChuteZ: mix('coxaChuteZ'),
+        coxaApoio: mix('coxaApoio'),
+        joelhoApoio: mix('joelhoApoio'),
+        bracoLx: mix('bracoLx'),
+        bracoLz: mix('bracoLz'),
+        bracoRx: mix('bracoRx'),
+        bracoRz: mix('bracoRz'),
+        cotoveloL: mix('cotoveloL'),
+        cotoveloR: mix('cotoveloR'),
+        altura: mix('altura')
+    };
+}
+
 function amostrarClipLancamentoGR(norm) {
     const fr = GoalkeeperThrowClip.frames;
     const n = fr.length;
@@ -255,6 +286,7 @@ class FootballPlayer {
     resetBonesToDefault() {
         let rig = this.rig;
         if (!rig) return;
+        rig.pelvis.position.set(0, 2.6, 0);
         rig.pelvis.rotation.set(0, 0, 0);
         rig.chest.rotation.set(0, 0, 0);
         
@@ -868,11 +900,16 @@ class FootballPlayer {
                 score += 200;
             }
 
-            // Bônus explícito para passes laterais e para trás (Aumento de 20%)
+            // Bônus explícito para passes laterais e para trás
+            const livreAFrente = (typeof semMarcacaoAFrente === 'function') ? semMarcacaoAFrente(this, opponents, 10.0, 20.0) : false;
             if (progression <= 2.0 && relX > 5.0) {
                 score *= 1.25; // Lado
             } else if (progression < -2.0) {
-                score *= 1.20; // Trás
+                if (!livreAFrente) {
+                    score *= 1.20; // Trás sob pressão / caminho fechado
+                } else {
+                    score -= 150; // Penaliza recuo se tem 10m livres à frente para conduzir
+                }
             }
 
             // Virada
@@ -1066,19 +1103,8 @@ class FootballPlayer {
             this.passInertiaZDir = this.model.position.z * this.dirZ;
         }
 
-        // Ativar Overlap / Tabelinha para jogadores de campo (não guarda-redes nem centrais puros)
-        if (this.role !== 'gk' && this.pos !== 'CB' && !this.isThroughBall && !this.isCross) {
-            let shouldOverlap = true;
-            if (this.role === 'def') {
-                // Laterais só fazem overlap se estiverem no meio-campo ofensivo, para não quebrarem a linha de defesa na saída de bola
-                const isOffensiveHalf = (this.model.position.z * this.dirZ) > 0;
-                if (!isOffensiveHalf) shouldOverlap = false;
-            }
-            if (shouldOverlap) {
-                // 3.5 segundos de sprint para a frente para dar opção de passe logo após tocar a bola
-                this.overlapTimer = 3.5;
-            }
-        }
+        // Disparadas / Overlap pós-passe desativadas
+        this.overlapTimer = 0;
 
         this.fsm.changeState('PASS');
     }
@@ -2745,32 +2771,31 @@ class FootballPlayer {
             GkDive.update(this, dt, gkCorpo, gkRig);
         } else if (this.gkEstado === 'tiro_meta') {
             /*
-            Tiro de meta, em duas fases antes do gesto do chuto:
-
-                fase 0  caminha até à linha de fundo, atrás da bola
-                fase 1  corre para a bola e, ao chegar, dispara o gesto
-
-            A bola está no chão (quina da pequena área) — o gesto é o mesmo
-            GOALKEEPER_KICK_FORWARD_HIGH da reposição com as mãos, mas com
-            `gkKickTipo = 'chao'`, que é o que impede a bola de ser agarrada
-            à altura do peito durante a animação e manda chutá-la de onde
-            está.
+            Tiro de meta em duas fases:
+                fase 0  posiciona-se atrás e à esquerda da bola para a corrida
+                fase 1  corre para a bola (Figura 1) e planta o pé de apoio (Figura 2)
             */
             this.gkTempoMergulho += dt;
             const tTM = this.gkTempoMergulho;
             const bolaTM = Match.ball.position;
             const G = GoalkeeperPose;
 
+            // Posição exata de apoio do pé esquerdo ao lado da bola:
+            // ~0.32m à esquerda do alinhamento da bola e ~0.10m atrás da bola
+            const plantX = bolaTM.x + this.dirZ * 0.32;
+            const plantZ = bolaTM.z - this.dirZ * 0.10;
+
             let alvoTMx, alvoTMz, velTM;
             if (this.gkTiroFase === 0) {
-                alvoTMx = this.gkTiroAlvo ? this.gkTiroAlvo.x : bolaTM.x;
-                alvoTMz = this.gkTiroAlvo ? this.gkTiroAlvo.z : this.ownGoalZ;
+                const recuo = G.tiroMetaRecuo || 3.8;
+                alvoTMx = this.gkTiroAlvo ? this.gkTiroAlvo.x : (bolaTM.x + this.dirZ * 0.70);
+                alvoTMz = this.gkTiroAlvo ? this.gkTiroAlvo.z : (bolaTM.z - this.dirZ * recuo);
                 velTM = G.tiroMetaAndar;
             } else {
-                // Corre PARA a bola — o chuto sai do movimento, não parado.
-                alvoTMx = bolaTM.x;
-                alvoTMz = bolaTM.z;
-                velTM = G.tiroMetaCorrer;
+                // Corre diretamente para a posição de apoio ao lado da bola
+                alvoTMx = plantX;
+                alvoTMz = plantZ;
+                velTM = G.tiroMetaCorrer || 5.2;
             }
 
             const dxTM = alvoTMx - gkCorpo.position.x;
@@ -2787,52 +2812,45 @@ class FootballPlayer {
             gkCorpo.position.x += sxTM;
             gkCorpo.position.z += szTM;
 
-            // Vira-se para a bola a caminhar, e para o campo na corrida.
-            if (this.gkTiroFase === 0) {
-                _v1.set(bolaTM.x, gkCorpo.position.y, bolaTM.z);
-            } else {
-                _v1.set(gkCorpo.position.x, gkCorpo.position.y, gkCorpo.position.z + this.dirZ * 10);
-            }
+            // Vira-se para a frente / bola durante a preparação e corrida
+            _v1.set(bolaTM.x, gkCorpo.position.y, bolaTM.z);
             lookAtBola(gkCorpo, _v1);
 
-            // Ciclo de passada, reaproveitando a pose de andar do GR.
+            // Ciclo de passada da corrida de aproximação (Figura 1)
             {
                 const P = G.andar;
                 const velPlanarTM = dt > 0.0001 ? Math.hypot(sxTM, szTM) / dt : 0;
-                this.animTimer += (velPlanarTM * dt) / 3.0;
+                const speedScale = (this.gkTiroFase === 0) ? 3.0 : 1.55;
+                this.animTimer += (velPlanarTM * dt) / speedScale;
                 const tt = ((this.animTimer % 1.0) + 1.0) % 1.0;
                 const pose = getRunPose(tt);
-                const amp = (this.gkTiroFase === 0) ? P.passada : 1.0;
+                const amp = (this.gkTiroFase === 0) ? P.passada : 1.25;
 
-                gkRig.lLeg.rotation.x = lerpTo(gkRig.lLeg.rotation.x, pose.lHip * amp, 0.4);
-                gkRig.rLeg.rotation.x = lerpTo(gkRig.rLeg.rotation.x, pose.rHip * amp, 0.4);
-                gkRig.lKnee.rotation.x = lerpTo(gkRig.lKnee.rotation.x, P.kneeBase + pose.lKnee * amp, 0.4);
-                gkRig.rKnee.rotation.x = lerpTo(gkRig.rKnee.rotation.x, P.kneeBase + pose.rKnee * amp, 0.4);
-                gkRig.lArm.rotation.x = lerpTo(gkRig.lArm.rotation.x, pose.lArm * 0.6, 0.3);
-                gkRig.rArm.rotation.x = lerpTo(gkRig.rArm.rotation.x, pose.rArm * 0.6, 0.3);
+                gkRig.lLeg.rotation.x = lerpTo(gkRig.lLeg.rotation.x, pose.lHip * amp, 0.45);
+                gkRig.rLeg.rotation.x = lerpTo(gkRig.rLeg.rotation.x, pose.rHip * amp, 0.45);
+                gkRig.lKnee.rotation.x = lerpTo(gkRig.lKnee.rotation.x, P.kneeBase + pose.lKnee * amp, 0.45);
+                gkRig.rKnee.rotation.x = lerpTo(gkRig.rKnee.rotation.x, P.kneeBase + pose.rKnee * amp, 0.45);
+                gkRig.lArm.rotation.x = lerpTo(gkRig.lArm.rotation.x, pose.lArm * (this.gkTiroFase === 0 ? 0.6 : 1.0), 0.35);
+                gkRig.rArm.rotation.x = lerpTo(gkRig.rArm.rotation.x, pose.rArm * (this.gkTiroFase === 0 ? 0.6 : 1.0), 0.35);
                 gkRig.lArm.rotation.z = lerpTo(gkRig.lArm.rotation.z, P.bracos, 0.2);
                 gkRig.rArm.rotation.z = lerpTo(gkRig.rArm.rotation.z, -P.bracos, 0.2);
                 gkRig.chest.rotation.x = lerpTo(gkRig.chest.rotation.x, P.chest, 0.2);
+                gkRig.chest.rotation.z = lerpTo(gkRig.chest.rotation.z, 0, 0.2);
+                gkRig.pelvis.position.set(0, 2.6, 0);
+                gkRig.pelvis.rotation.set(0, 0, 0);
                 gkCorpo.position.y = lerpTo(gkCorpo.position.y, ALTURA_BASE_Y, 0.3);
             }
 
-            /*
-            A cobrança em si (fase 1: correr e chutar) só arranca depois de
-            quem bate estar posicionado E terem passado 3-6s — ver
-            updateGoalKickWait em match.js. Até lá o GR já chegou à linha de
-            fundo (distTM<0.4) mas fica ali, à espera, em vez de correr logo
-            para a bola. `tiroMetaTimeout` continua como rede de segurança
-            absoluta, para nunca travar o jogo indefinidamente.
-            */
-            // Sem parada: ignora o Match.golKickProntos, arranca assim que estiver na marcação
-            const podeCobrar = true;
             if (this.gkTiroFase === 0) {
-                if ((distTM < 0.4 && podeCobrar) || tTM > G.tiroMetaTimeout) {
+                // Arranca a corrida após posicionar-se no ponto de recuo
+                if (distTM < 0.35 || tTM > 0.6) {
                     this.gkTiroFase = 1;
                     this.gkTempoMergulho = 0;
                 }
-            } else if (distTM < G.tiroMetaDistChuto || tTM > G.tiroMetaTimeout) {
-                // Chegou à bola: entra no gesto do chuto, agora a partir do chão.
+            } else if (distTM <= Math.max(0.35, passoTM * 1.5) || tTM > G.tiroMetaTimeout) {
+                // Chegada ao lado da bola: fixa o pé de apoio e inicia a animação do chute
+                gkCorpo.position.x = plantX;
+                gkCorpo.position.z = plantZ;
                 this.gkEstado = 'chutando';
                 this.gkKickTipo = 'chao';
                 this.gkTempoMergulho = 0;
@@ -3115,83 +3133,146 @@ class FootballPlayer {
             const lancarCedo = gkPodeLancar(t, this.gkTemLinha);
 
             if (lancarCedo || t >= (this.gkSegurarDur ?? GoalkeeperPose.segurarDur)) {
-                
-                this.gkReleaseTarget = this.chooseReleaseTarget();
-                const dist = this.gkReleaseTarget ? this.model.position.distanceTo(this.gkReleaseTarget.model.position) : Infinity;
-
-                if (dist < 30) {
-                    this.gkEstado = 'lancando';
-                    this.gkTempoMergulho = 0;
-                    this.gkKickNorm = 0;
-                    this.gkKickAction = new ActionState('gkThrow', {
-                        onContact: () => {
-                            this.executeRelease(this.gkReleaseTarget);
-                            if (typeof EventBus !== 'undefined') EventBus.emit('GK_RELEASE_BALL', { team: this.team, gk: this });
-                        }
-                    });
-                } else {
-                    this.gkEstado = 'chutando';
-                    this.gkTempoMergulho = 0;
-                    this.gkKickNorm = 0;
-                    this.gkKickAction = new ActionState('gkPunt', {
-                        onContact: () => {
-                            this.executeRelease(this.gkReleaseTarget);
-                            if (typeof EventBus !== 'undefined') EventBus.emit('GK_RELEASE_BALL', { team: this.team, gk: this });
-                        }
-                    });
-                }
+                this.gkEstado = 'chutando';
+                this.gkTempoMergulho = 0;
+                this.gkKickNorm = 0;
+                this.gkKickAction = new ActionState('gkPunt', {
+                    onContact: () => {
+                        this.puntBall();
+                    }
+                });
             }
         } else if (this.gkEstado === 'chutando' || this.gkEstado === 'lancando') {
             const isThrow = (this.gkEstado === 'lancando');
+            const isGroundKick = (!isThrow && this.gkKickTipo === 'chao');
             const normK = this.gkKickAction ? this.gkKickAction.update(dt, this) : 1;
             this.gkKickNorm = normK;
-            
-            let K;
+
             if (isThrow) {
-                K = amostrarClipLancamentoGR(normK);
+                const K = amostrarClipLancamentoGR(normK);
                 gkRig.chest.rotation.x = K.chest;
+                gkRig.chest.rotation.z = 0;
+                gkRig.pelvis.rotation.x = 0;
+                gkRig.pelvis.rotation.z = 0;
+
                 gkRig.lLeg.rotation.x = K.coxaL;
                 gkRig.lKnee.rotation.x = K.joelhoL;
                 gkRig.rLeg.rotation.x = K.coxaR;
                 gkRig.rKnee.rotation.x = K.joelhoR;
-                
+
                 gkRig.lArm.rotation.x = K.bracoLx;
                 gkRig.lArm.rotation.z = K.bracoLz;
                 gkRig.rArm.rotation.x = K.bracoRx;
                 gkRig.rArm.rotation.z = K.bracoRz;
-                
+
                 gkRig.lElbow.rotation.x = K.cotoveloL;
                 gkRig.rElbow.rotation.x = K.cotoveloR;
+
+                gkCorpo.position.y = ALTURA_BASE_Y + K.altura;
+            } else if (isGroundKick) {
+                // TIRO DE META / BOLA PARADA DO CHÃO (12 frames com pivô no pé de apoio)
+                const K = amostrarClipChuteChaoGR(normK);
+                const chuteR = (GoalkeeperGroundKickClip.pernaChute === 'r');
+                const pernaC = chuteR ? gkRig.rLeg : gkRig.lLeg;
+                const joelhoC = chuteR ? gkRig.rKnee : gkRig.lKnee;
+                const pernaA = chuteR ? gkRig.lLeg : gkRig.rLeg;
+                const joelhoA = chuteR ? gkRig.lKnee : gkRig.rKnee;
+
+                // PIVÔ NO PÉ DE APOIO:
+                // O pé de apoio (esquerdo) localiza-se em x = +0.4 (espaço local da pelvis).
+                // A inclinação lateral (leanZ) roda o corpo inteiro em bloco como uma unidade rígida
+                // em torno do pé esquerdo cravado na relva, sem quebrar a cintura ou dobrar a coluna de lado.
+                const pivotX = chuteR ? 0.4 : -0.4;
+                const leanZ = K.leanZ;
+                const cosL = Math.cos(leanZ);
+                const sinL = Math.sin(leanZ);
+
+                // Translação compensatória para ancorar o pé de apoio no solo:
+                gkRig.pelvis.position.x = pivotX * (1 - cosL) - 2.6 * sinL;
+                gkRig.pelvis.position.y = 2.6 * cosL - pivotX * sinL;
+                gkRig.pelvis.position.z = 0;
+
+                // Rotação da bacia em bloco (inclinação lateral leanZ e anteroposterior pitchX):
+                gkRig.pelvis.rotation.z = leanZ;
+                gkRig.pelvis.rotation.x = K.pitchX || 0;
+                gkRig.pelvis.rotation.y = 0;
+
+                // O tronco (chest) mantém-se alinhado com a bacia no eixo Z (sem dobrar de lado!):
+                gkRig.chest.rotation.x = K.chest;
+                gkRig.chest.rotation.y = 0;
+                gkRig.chest.rotation.z = 0;
+
+                // Perna de apoio: desce alinhada com a bacia diretamente para o pé no solo
+                pernaA.rotation.x = K.coxaApoio;
+                pernaA.rotation.y = 0;
+                pernaA.rotation.z = 0;
+                joelhoA.rotation.x = K.joelhoApoio;
+                joelhoA.rotation.y = 0;
+                joelhoA.rotation.z = 0;
+
+                // Perna de chute: articulação de remate em relação à bacia inclinada
+                pernaC.rotation.x = K.coxaChute;
+                pernaC.rotation.y = 0;
+                pernaC.rotation.z = K.coxaChuteZ || 0;
+                joelhoC.rotation.x = K.joelhoChute;
+                joelhoC.rotation.y = 0;
+                joelhoC.rotation.z = 0;
+
+                // Membros superiores e equilíbrio
+                gkRig.lArm.rotation.x = K.bracoLx;
+                gkRig.lArm.rotation.z = K.bracoLz;
+                gkRig.rArm.rotation.x = K.bracoRx;
+                gkRig.rArm.rotation.z = K.bracoRz;
+
+                gkRig.lElbow.rotation.x = K.cotoveloL;
+                gkRig.rElbow.rotation.x = K.cotoveloR;
+
+                // Elevação vertical na finalização (Follow-through subindo na ponta do pé)
+                gkCorpo.position.y = ALTURA_BASE_Y + K.altura;
             } else {
-                K = amostrarClipChuteGR(normK);
+                // CHUTÃO DAS MÃOS (Punt em jogo corrido)
+                const K = amostrarClipChuteGR(normK);
                 const chuteR = (GoalkeeperKickClip.pernaChute === 'r');
                 const pernaC = chuteR ? gkRig.rLeg : gkRig.lLeg;
                 const joelhoC = chuteR ? gkRig.rKnee : gkRig.lKnee;
                 const pernaA = chuteR ? gkRig.lLeg : gkRig.rLeg;
                 const joelhoA = chuteR ? gkRig.lKnee : gkRig.rKnee;
+
                 pernaC.rotation.x = K.coxaChute;
-                joelhoC.rotation.x = K.joelhoChute;
-                pernaA.rotation.x = K.coxaApoio;
-                joelhoA.rotation.x = K.joelhoApoio;
+                pernaC.rotation.y = 0;
                 pernaC.rotation.z = 0;
+                joelhoC.rotation.x = K.joelhoChute;
+                joelhoC.rotation.y = 0;
+                joelhoC.rotation.z = 0;
+
+                pernaA.rotation.x = K.coxaApoio;
+                pernaA.rotation.y = 0;
                 pernaA.rotation.z = 0;
+                joelhoA.rotation.x = K.joelhoApoio;
+                joelhoA.rotation.y = 0;
+                joelhoA.rotation.z = 0;
+
                 gkRig.chest.rotation.x = K.chest;
+                gkRig.chest.rotation.y = 0;
+                gkRig.chest.rotation.z = 0;
+
+                gkRig.pelvis.rotation.x = 0;
+                gkRig.pelvis.rotation.y = 0;
+                gkRig.pelvis.rotation.z = 0;
+
                 gkRig.lArm.rotation.x = K.bracoX;
                 gkRig.rArm.rotation.x = K.bracoX;
                 gkRig.lElbow.rotation.x = K.cotovelo;
                 gkRig.rElbow.rotation.x = K.cotovelo;
-                // Braços vão abrindo do fecho na bola (bracoZ 0.05) para o
-                // equilíbrio, à medida que o gesto avança.
+
                 const abreBraco = 0.05 + 0.45 * normK;
                 gkRig.lArm.rotation.z = abreBraco;
                 gkRig.rArm.rotation.z = -abreBraco;
+
+                gkCorpo.position.y = ALTURA_BASE_Y + K.altura;
             }
 
-            gkRig.pelvis.rotation.x = 0;
-            gkRig.pelvis.rotation.z = 0;
-            gkCorpo.position.y = ALTURA_BASE_Y + K.altura;
-
-            // Continua virado para o campo durante todo o gesto.
+            // Continua virado para o campo durante todo o gesto
             _v1.set(gkCorpo.position.x, gkCorpo.position.y, gkCorpo.position.z + this.dirZ * 10);
             lookAtBola(gkCorpo, _v1);
 
@@ -3281,87 +3362,11 @@ class FootballPlayer {
     puntBall(), com elevação e direcção sorteadas lá dentro.
     */
     chooseReleaseTarget() {
-        const teamStyle = (typeof Tatics !== 'undefined' && Tatics.teamPlayStyle) ? Tatics.teamPlayStyle : 'positional';
-        const myTeam = (this.team === 'TeamA') ? Match.players : Match.opponents;
-        
-        let rand = Math.random();
-        let targetPlayer = null;
-
-        const getCandidates = (posList, filterFn = null) => {
-            const c = myTeam.filter(p => p !== this && posList.includes(p.pos) && (!filterFn || filterFn(p)));
-            return c.length > 0 ? c : null;
-        };
-
-        const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-        if (teamStyle === 'positional' || teamStyle === 'possession') {
-            if (rand < 0.4) {
-                let c = getCandidates(['LB', 'LWB', 'CB']);
-                if (c) targetPlayer = pickRandom(c);
-            } else if (rand < 0.8) {
-                let c = getCandidates(['RB', 'RWB', 'CB']);
-                if (c) targetPlayer = pickRandom(c);
-            } else {
-                let c = getCandidates(['CB']);
-                if (c) targetPlayer = pickRandom(c);
-            }
-        } else if (teamStyle === 'direct') {
-            if (rand < 0.4) {
-                let c = getCandidates(['LM', 'LW']);
-                if (c) targetPlayer = pickRandom(c);
-            } else if (rand < 0.8) {
-                let c = getCandidates(['RM', 'RW']);
-                if (c) targetPlayer = pickRandom(c);
-            }
-        } else if (teamStyle === 'counter_attack') {
-            if (rand < 0.8) {
-                let c = getCandidates(['CM', 'DM', 'AM', 'LM', 'RM']);
-                if (c) targetPlayer = pickRandom(c);
-            } else {
-                let c = getCandidates(['CF', 'ST', 'LW', 'RW']);
-                if (c) targetPlayer = pickRandom(c);
-            }
-        } else if (teamStyle === 'wing_play') {
-            // 50% esquerdo, 50% direito. Esquerda = x * dirZ > 0
-            let side = (rand < 0.5) ? 1 : -1;
-            let c = getCandidates(['LM', 'RM', 'CM', 'AM'], p => (p.baseTarget.x * p.dirZ * side > 0));
-            if (!c) c = getCandidates(['LM', 'RM', 'CM', 'AM'], p => (p.model.position.x * p.dirZ * side > 0));
-            if (c) targetPlayer = pickRandom(c);
-        }
-
-        if (!targetPlayer) {
-            const anyone = myTeam.filter(p => p !== this);
-            if (anyone.length > 0) targetPlayer = pickRandom(anyone);
-        }
-        return targetPlayer;
+        return null;
     }
 
     executeRelease(targetPlayer) {
-        if (!targetPlayer) {
-            this.puntBall();
-            return;
-        }
-
-        this.passTarget = targetPlayer;
-        this.passTargetPos = targetPlayer.model.position.clone();
-        
-        const dist = this.model.position.distanceTo(targetPlayer.model.position);
-        if (dist > 30) {
-            this.isThroughBall = true;
-            this.throughBallTarget = targetPlayer.model.position.clone();
-            this.throughBallAlto = true;
-        } else {
-            this.isThroughBall = false;
-            this.isCross = false;
-        }
-
-        if (typeof executePassGameplay !== 'undefined') {
-            executePassGameplay(this);
-        } else {
-            this.puntBall();
-        }
-        
-        if (typeof EventBus !== 'undefined') EventBus.emit('GK_RELEASE_BALL', { team: this.team, gk: this });
+        this.puntBall();
     }
 
     /*
@@ -3374,11 +3379,13 @@ class FootballPlayer {
     */
     kickFromGround() {
         const gGrav = BallPhysics.gravidade;
-        const elev = THREE.MathUtils.degToRad((25 + Math.random() * 25) / 3);
-        const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 20);
+        // Ângulo ajustado entre 25 e 35 graus
+        const anguloGraus = 25 + Math.random() * 10;
+        const elev = THREE.MathUtils.degToRad(anguloGraus);
+        const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 15);
 
-        const alcance = 38 + Math.random() * 16;
-        const v = Math.min(42, Math.sqrt((alcance * gGrav) / Math.sin(2 * elev)));
+        const alcance = 42 + Math.random() * 18;
+        const v = Math.min(45, Math.sqrt((alcance * gGrav) / Math.sin(2 * elev)));
         const horiz = v * Math.cos(elev);
 
         _v2.set(0, 0, this.dirZ).applyAxisAngle(_vUp, desvio);

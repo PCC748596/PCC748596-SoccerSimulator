@@ -430,15 +430,15 @@ class PlayerFSM {
                 }
                 if (Match.setPieceTimer > 1.5) {
                     if (Match.state === 'CORNER_KICK') {
-                        // Quadrado imaginário: profundidade entre a pequena área (5.5m) e a grande área (16.5m)
-                        // Largura correspondente (11m) centrada no penalty: X entre -5.5 e +5.5
-                        let zDepth = 5.5 + Math.random() * 11.0; 
+                        const lado = Math.sign(Match.ball.position.x) || 1;
+                        // Cruzamento visando o 1º pau e a entrada da pequena área onde convergem as jogadas ensaiadas
+                        let zDepth = 6.0 + Math.random() * 4.0; 
                         let targetZ = p.ownGoalZ * -1.0 - p.dirZ * zDepth;
-                        let targetX = (Math.random() - 0.5) * 11.0;
+                        let targetX = lado * (1.0 + Math.random() * 3.5);
                         _v1.set(targetX, 0, targetZ);
                         _v2.subVectors(_v1, Match.ball.position).normalize();
-                        Match.ballVel.copy(_v2).multiplyScalar(24.5); // Força um pouco maior (antes 21)
-                        Match.ballVel.y = 9.8; // Ângulo um pouco maior (antes 9.0)
+                        Match.ballVel.copy(_v2).multiplyScalar(24.0);
+                        Match.ballVel.y = 9.6;
                         Match.state = 'PLAY';
                         Match.ballCarrier = null;
                         Match.possessionTeam = p.team;
@@ -702,8 +702,7 @@ class PlayerFSM {
                         p.dynamicTarget.z = Math.max(minZ, Math.min(maxZ, p.dynamicTarget.z));
                         p.dynamicTarget.x = Math.max(-18, Math.min(18, p.dynamicTarget.x));
                         if ((p.model.position.z - p.ownGoalZ) * p.dirZ >= 13) {
-                            let clearTarget = p.findPassTarget();
-                            if (clearTarget) p.initiatePass(clearTarget);
+                            p.puntBall();
                         }
                     }
                     p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult * 0.95, 0);

@@ -146,9 +146,13 @@ class PlayerContext {
         if (this.underPressure) return false;
         const naDefesa = (this.p.model.position.z * this.p.dirZ < 0) || this.p.role === 'def';
         const espacoReq = naDefesa ? (CarryModel.espacoLivreDefesa || 24.0) : CarryModel.espacoLivre;
-        if (this.espacoAFrente < espacoReq) return false;
+        if (this.espacoAFrente < espacoReq && !this.livreAFrente10m20g) return false;
         const maxDist = naDefesa ? (CarryModel.distanciaMaxDefesa || 6.0) : CarryModel.distanciaMax;
-        return (this.p.carryDist || 0) < maxDist;
+        return (this.p.carryDist || 0) < maxDist || this.livreAFrente10m20g;
+    }
+
+    get livreAFrente10m20g() {
+        return semMarcacaoAFrente(this.p, this.opponents, 10.0, 20.0);
     }
 
     get opponents() { return (this.p.team === 'TeamA') ? Match.opponents : Match.players; }
@@ -448,8 +452,7 @@ uma dúzia de frames alguma das faces já tinha saído — o resultado real seri
 é limpa quando ele deixa de ter a bola (ver limparSaidaGK).
 */
 function decidirSaidaGK(p) {
-    if (p.gkSaida) return p.gkSaida;
-    p.gkSaida = (Math.random() < GoalkeeperDistribution.laterais) ? 'laterais' : 'chuteFrente';
+    p.gkSaida = 'chuteFrente';
     return p.gkSaida;
 }
 
@@ -1051,24 +1054,7 @@ tudo isto para arrancar:
 Ver RunIntoSpaceModel em config.js.
 */
 function podeCorrerNoEspaco(ctx) {
-    const p = ctx.p;
-    if (typeof RunIntoSpaceModel === 'undefined') return false;
-    if ((p.runTimer || 0) > 0) return true;          // ja vai a caminho
-
-    if (p.role === 'gk' || p.role === 'def') return false;
-    if ((p.runCooldown || 0) > 0) return false;
-
-    const bb = ctx.bb;
-    if (!bb || !bb.isAttacking) return false;
-
-    const portador = Match.ballCarrier;
-    if (!portador || portador === p || portador.team !== p.team) return false;
-
-    const R = RunIntoSpaceModel;
-    const dist = p.model.position.distanceTo(portador.model.position);
-    if (dist < R.distMin || dist > R.distMax) return false;
-
-    return escolherDestinoDeCorrida(p, bb) !== null;
+    return false;
 }
 
 /*
@@ -1354,11 +1340,7 @@ function tratarGuardaRedes(ctx) {
         return;
     }
 
-    const saida = decidirSaidaGK(p);
-    const lateral = (saida === 'laterais') ? acharLateralParaSaida(ctx) : null;
-
-    if (lateral) actPassParaAlvo(ctx, lateral);
-    else if (p.decisionTimer > (saida === 'chuteFrente' ? 0.6 : 1.2)) p.puntBall();
+    if (p.decisionTimer > 0.4) p.puntBall();
     else actCarry(ctx);
 }
 
@@ -1457,10 +1439,14 @@ const PlayerBT = sel('PlayerRoot',
                 act('correrParaBola', actCarry)
             ),
             cond('CalculaDebug', (ctx) => {
+                let carryPts = 0;
+                if (ctx.campoAberto) carryPts += 100;
+                if (ctx.livreAFrente10m20g) carryPts += 150;
+                ctx.carryScore = carryPts;
                 if (window.showPlayerPoints) {
                     ctx.p.debugPoints = ctx.p.debugPoints || {};
                     ctx.p.debugPoints['Shot'] = emZonaDeRemate(ctx) ? 'SIM' : 'NAO';
-                    ctx.p.debugPoints['Carry'] = ctx.campoAberto ? 'SIM' : 'NAO';
+                    ctx.p.debugPoints['Carry'] = carryPts;
                     let cr = findCross(ctx);
                     if (cr) ctx.p.debugPoints['Cross'] = Math.round(cr.chance);
                     let tb = findThroughBall(ctx);
@@ -1544,13 +1530,19 @@ const PlayerBT = sel('PlayerRoot',
                 act('cruzar', actCross)
             ),
 
+            // 3. Conduzir em espaço aberto (+150 pontos se sem marcação a 10m em 20 graus)
+            seq('ConduzirEmEspaco',
+                cond('campoAberto', (ctx) => ctx.p.role !== 'gk' && (ctx.campoAberto || ctx.livreAFrente10m20g)),
+                act('atacarOEspaco', actCarry)
+            ),
+
             /*
-            3. Caminho fechado / Circulação: se há adversário à frente no corredor
-            (especialmente na defesa), prioriza o passe antes sequer de tentar driblar.
+            4. Caminho fechado / Circulação: se há adversário à frente no corredor
+            e não tem espaço para conduzir, prioriza o passe antes sequer de tentar driblar.
             */
             seq('CaminhoFechado',
                 cond('doisPelaFrente', (ctx) => {
-                    if (!caminhoFechadoAFrente(ctx)) return false;
+                    if (ctx.livreAFrente10m20g || !caminhoFechadoAFrente(ctx)) return false;
                     const saida = findBestPassAnywhere(ctx) || findPassSide(ctx) || findPassBack(ctx);
                     if (!saida) return false;
                     ctx.passType = saida.type;
@@ -1568,11 +1560,12 @@ const PlayerBT = sel('PlayerRoot',
             ),
 
             /*
-            3b. Circulação na defesa: se o jogador está na sua metade defensiva ou é defesa,
-            procura sempre passar/circular a bola em vez de conduzir.
+            4b. Circulação na defesa: se o jogador está na sua metade defensiva ou é defesa
+            e não tem espaço livre para conduzir à frente, circula a bola.
             */
             seq('CircularNaDefesa',
                 cond('circulacaoDefensiva', (ctx) => {
+                    if (ctx.livreAFrente10m20g || ctx.campoAberto) return false;
                     const naDefesa = (ctx.p.model.position.z * ctx.p.dirZ < 0) || ctx.p.role === 'def';
                     if (!naDefesa) return false;
                     const passChoice = findBestPassAnywhere(ctx);
@@ -1589,12 +1582,6 @@ const PlayerBT = sel('PlayerRoot',
                         actPass(ctx);
                     }
                 })
-            ),
-
-            // 4. Verificar se tem espaço livre à frente - carry (conduzir)
-            seq('ConduzirEmEspaco',
-                cond('campoAberto', (ctx) => ctx.p.role !== 'gk' && ctx.campoAberto),
-                act('atacarOEspaco', actCarry)
             ),
 
             // 5. Adversário próximo, espaço atrás do adversário, técnica >= 75 - Driblar
@@ -1766,47 +1753,6 @@ const PlayerBT = sel('PlayerRoot',
                     const p = ctx.p;
                     p.dynamicTarget.copy(p.setPieceTarget);
                     p.speedMult = 4.0;
-                    p.fsm.changeState('MOVE_TO_POS');
-                })
-            ),
-
-            /*
-            Overlap / Tabelinha (Triangulação):
-            Jogador acabou de soltar a bola num passe e arranca para a frente para
-            oferecer uma linha de passe imediata ou fazer sobreposição (overlap).
-            */
-            seq('OverlapPass',
-                cond('fezPasseRecente', (ctx) => {
-                    const p = ctx.p;
-                    // Só ataca o espaço se a equipa ainda tem a bola
-                    const bbEquipa = (typeof TeamAI !== 'undefined') ? TeamAI.get(p.team) : null;
-                    const emAtaque = !!(bbEquipa && bbEquipa.isAttacking);
-                    return emAtaque && p.overlapTimer > 0;
-                }),
-                act('sprintarParaFrente', (ctx) => {
-                    const p = ctx.p;
-                    const bbEquipa = (typeof TeamAI !== 'undefined') ? TeamAI.get(p.team) : null;
-                    // Corre diretamente para a frente (direção do ataque)
-                    let targetX = p.model.position.x;
-                    // Alvo bem lá na frente para manter o sprint ativo
-                    let targetZ = p.model.position.z + (20.0 * p.dirZ);
-                    
-                    if (bbEquipa && bbEquipa.offsideLimitDir !== undefined && bbEquipa.offsideLimitDir !== null) {
-                        const limitZ = bbEquipa.offsideLimitDir - (1.0 * p.dirZ); // margem de 1 metro
-                        if (p.dirZ > 0 && targetZ > limitZ) targetZ = limitZ;
-                        if (p.dirZ < 0 && targetZ < limitZ) targetZ = limitZ;
-                    }
-                    
-                    // Clamps simples para não sair do campo
-                    const maxX = (CAMPO_LARG / 2) - 1.0;
-                    const maxZ = (CAMPO_COMP / 2) - 1.0;
-                    targetX = Math.max(-maxX, Math.min(maxX, targetX));
-                    targetZ = Math.max(-maxZ, Math.min(maxZ, targetZ));
-                    
-                    p.dynamicTarget.set(targetX, ALTURA_BASE_Y, targetZ);
-                    
-                    // Sprint máximo para passar nas costas/frente rapidamente
-                    p.speedMult = (5.5 + ((ctx.skillSpeed - 50) / 50) * 1.2) * 1.25; 
                     p.fsm.changeState('MOVE_TO_POS');
                 })
             ),
