@@ -125,6 +125,52 @@ console.log(String.fromCharCode(10) + '1 — a gravidade da falta');
             `(${F.limiarVermelho}) — nunca haveria vermelho directo`);
     } else ok('o pior lance chega a vermelho directo');
 
+    /*
+    O JOGADOR conta, não só o lance: marcação alivia, força agrava.
+
+    Isto é o que separa um defensor que entra com o tempo certo de um que
+    entra com o corpo: no MESMO lance, o de marcação alta leva mais bola do
+    que perna. Sem isto, dois jogadores muito diferentes cometiam faltas
+    exactamente iguais.
+    */
+    const mesmoLance = { tipo: 'carrinho', velocidade: vCarrinho, angulo: Math.PI, travouAtaque: true };
+    const medio = g(mesmoLance);
+    const bomMarcador = g(Object.assign({}, mesmoLance, { marcacao: 95 }));
+    const forte = g(Object.assign({}, mesmoLance, { forca: 95 }));
+    console.log(`  mesmo lance — médio ${medio.toFixed(2)}, ` +
+        `marcação 95 ${bomMarcador.toFixed(2)}, força 95 ${forte.toFixed(2)}`);
+
+    if (!(bomMarcador < medio)) {
+        erro(`marcação alta devia BAIXAR a gravidade (${medio.toFixed(2)} -> ${bomMarcador.toFixed(2)})`);
+    } else ok('marcação alta baixa a gravidade da mesma falta');
+
+    if (!(forte > medio)) {
+        erro(`força alta devia SUBIR a gravidade (${medio.toFixed(2)} -> ${forte.toFixed(2)})`);
+    } else ok('força alta sobe a gravidade da mesma falta');
+
+    // A skill média (50) não pode mexer em nada, senão as contas do
+    // cabeçalho do officials.js deixavam de bater certo.
+    const explicito = g(Object.assign({}, mesmoLance, { marcacao: 50, forca: 50 }));
+    if (Math.abs(explicito - medio) > 1e-9) {
+        erro('skills a 50 deviam dar exactamente o mesmo que omiti-las');
+    } else ok('skills médias (50) não mexem no resultado');
+
+    // Nem o melhor defensor do mundo comete uma falta de gravidade negativa.
+    const santo = g({ tipo: 'contacto', velocidade: 0, angulo: 0, marcacao: 100, forca: 0 });
+    if (santo < 0) erro(`gravidade negativa (${santo.toFixed(2)})`);
+    else ok('a gravidade nunca é negativa');
+
+    // E o defensor não pode escapar ao vermelho só por ser bom marcador,
+    // quando o lance é mesmo violento.
+    const brutoBomMarcador = g({
+        tipo: 'carrinho', velocidade: vPior, angulo: Math.PI,
+        travouAtaque: true, marcacao: 95, forca: 50
+    });
+    if (brutoBomMarcador < F.limiarAmarelo) {
+        erro(`um carrinho brutal de um bom marcador dá ${brutoBomMarcador.toFixed(2)}: ` +
+            'nem amarelo — a skill não pode absolver o lance');
+    } else ok('a marcação alivia, mas não absolve um lance brutal');
+
     // E o vermelho directo tem de ser RARO: o lance típico a travar um ataque
     // fica em amarelo, não em vermelho.
     const travou = g({ tipo: 'carrinho', velocidade: vCarrinho, angulo: Math.PI, travouAtaque: true });

@@ -123,7 +123,22 @@ const RefereeModel = {
             base: { carrinho: 0.35, desarme: 0.14, contacto: 0.10 },
             pesoVelocidade: 0.020,   // por m/s do contacto
             pesoAngulo: 0.30,        // × (angulo / π)
-            travarAtaque: 0.25
+            travarAtaque: 0.25,
+
+            /*
+            O JOGADOR também conta, não só o lance.
+
+            `pesoMarcacao` DESCE a gravidade: quem marca bem entra com o tempo
+            certo e leva mais bola do que perna, portanto a falta que comete
+            é mais limpa. `pesoForca` SOBE-a: no mesmo lance, um jogador forte
+            magoa mais.
+
+            Os dois entram normalizados a partir de 50 — a skill média — e
+            saturam nos extremos: um defensor de marcação 100 tira
+            `pesoMarcacao` inteiro à gravidade, um de 0 soma-o.
+            */
+            pesoMarcacao: 0.14,
+            pesoForca: 0.12
         },
 
         /*
@@ -506,6 +521,9 @@ const Officials = {
     `angulo`: radianos entre a frente da vítima e o infractor — 0 de frente,
               π pelas costas
     `travouAtaque`: falta táctica sobre quem ia em progressão
+    `marcacao`, `forca`: skills do INFRACTOR, 0..100. Omitidas valem 50 (a
+              média), portanto não mexem no resultado — é o que mantém as
+              contas do cabeçalho válidas para um jogador mediano.
     */
     gravidadeDaFalta: function (o) {
         const G = RefereeModel.faltas.gravidade;
@@ -519,7 +537,16 @@ const Officials = {
         g += Math.max(0, o.velocidade || 0) * G.pesoVelocidade;
         g += (Math.abs(o.angulo || 0) / Math.PI) * G.pesoAngulo;
         if (o.travouAtaque) g += G.travarAtaque;
-        return g;
+
+        // O jogador: marcação alivia, força agrava. 50 é a média e não mexe.
+        const marcacao = (typeof o.marcacao === 'number') ? o.marcacao : 50;
+        const forca = (typeof o.forca === 'number') ? o.forca : 50;
+        g -= ((marcacao - 50) / 50) * G.pesoMarcacao;
+        g += ((forca - 50) / 50) * G.pesoForca;
+
+        // Uma falta nunca é de gravidade negativa, por muito bom que o
+        // defensor seja: continua a ser uma falta.
+        return Math.max(0, g);
     },
 
     /*
@@ -679,12 +706,12 @@ const Officials = {
         const prob = (tipo === 'carrinho' ? F.probCarrinhoFalhado : F.probDesarmeFalhado) * F.escala;
         if (Math.random() >= prob) return;
 
-        this.marcarFalta(defensor, portador, {
+        this.marcarFalta(defensor, portador, Object.assign({
             tipo: tipo,
             velocidade: defensor.velocity ? defensor.velocity.length() : 0,
             angulo: this._anguloDeAtaque(defensor, portador),
             travouAtaque: this._ehAtaqueEmProgressao(portador)
-        });
+        }, this._skillsDe(defensor)));
     },
 
     /*
@@ -731,12 +758,12 @@ const Officials = {
                 const vitima = (infractor === a) ? b : a;
 
                 this._arrefecimento.set(chave, C.arrefecimento);
-                this.marcarFalta(infractor, vitima, {
+                this.marcarFalta(infractor, vitima, Object.assign({
                     tipo: 'contacto',
                     velocidade: vRel,
                     angulo: this._anguloDeAtaque(infractor, vitima),
                     travouAtaque: this._ehAtaqueEmProgressao(vitima)
-                });
+                }, this._skillsDe(infractor)));
                 return;   // uma falta por frame chega
             }
         }
@@ -759,6 +786,16 @@ const Officials = {
         const d = Math.sqrt(dx * dx + dz * dz) || 1;
         dx /= d; dz /= d;
         return Math.acos(THREE.MathUtils.clamp(fx * dx + fz * dz, -1, 1));
+    },
+
+    /*
+    Skills do infractor que pesam na gravidade. Se o jogador não tiver
+    `skillFor` — os árbitros não têm, e um Match de teste pode não ter —
+    devolve vazio, e a gravidade usa a média.
+    */
+    _skillsDe: function (p) {
+        if (!p || typeof p.skillFor !== 'function') return {};
+        return { marcacao: p.skillFor('MARKING'), forca: p.skillFor('STRENGTH') };
     },
 
     // Falta táctica: a vítima ia em progressão para a baliza adversária.
