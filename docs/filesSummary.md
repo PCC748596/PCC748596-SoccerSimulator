@@ -42,6 +42,122 @@ Página separada, com o boneco, linha do tempo dos keyframes e um slider por can
 - **Pés e cabeça** ganharam canais (`peLx/peLy/peRx/peRy`, `cabecaX/cabecaY`), **opcionais**: os pés estavam fixos em ±π/16 e a cabeça nunca era tocada. Um keyframe sem eles comporta-se como antes, portanto nenhuma animação existente mudou.
 - **O exportador reescreve os NÚMEROS dentro do texto do `config.js`**, mantendo comentários e formatação. Os clips têm um cabeçalho com as fases do gesto e um comentário por keyframe: um exportador de JSON destruía isso ao colar. É função pura, com teste sobre o config real — 36 comentários preservados nos cinco clips, 13 no `GaitModel`, saída que faz parse, e **`null` em vez de uma versão a fingir** quando não consegue.
 
+#### Onde a calibração está (medido em 20 jogos × 15 min, normalizado ×6)
+
+| Estatística | Por 90 min | Alvo real | |
+|---|---|---|---|
+| Faltas | 27,3 | 27,6 | no sítio |
+| Cartões | 4,5 | 5,22 | perto |
+| **Gols** | **14,1** | 2,52 | 5,6× a mais |
+| **Finalizações** | **122** | 26,1 | 4,7× a mais |
+| **Escanteios** | **0,9** | 9,92 | 11× a menos |
+| Penáltis | 0,6 | ~0,27 | 2,2× a mais |
+| Impedimentos | — | 3,2 | não existem |
+
+A normalização ×6 é optimista (15 minutos são quase todos "início de jogo"),
+mas a ordem de grandeza aguenta.
+
+**Os três desvios grandes são provavelmente UM problema, não três.** Com 122
+remates por jogo deviam sair dezenas de cantos, e saem 0,9: a bola quase nunca
+sai pela linha de fundo depois de um remate. Isso aponta para os remates irem
+quase todos para dentro da baliza ou para as mãos do guarda-redes — o que liga
+directamente aos 14 golos. Atacar a frequência de remate e a eficácia do
+guarda-redes deve arrumar os três de uma vez.
+
+**Mandante e visitante não existem**: as duas equipas são simétricas, mesmo
+código e mesmas skills. O 1,20 contra 1,15 medido é ruído, não vantagem
+caseira.
+
+#### O vigia de jogo encravado, e o que ele apanhou
+
+Num lote de 5 jogos, um passou ~33 minutos com a bola parada: 47 passes contra
+~200 dos outros, 61 km percorridos contra 160 km. O relatório dava o SINTOMA e
+não o momento — as três explicações óbvias (timeout do `FREE_KICK`, do
+`PENALTY`, excepção a abortar o lote) foram todas descartadas por leitura.
+
+Em vez de adivinhar, instrumentou-se: o `criarVigia`/`vigiarEncrave`
+(js/simulate.js) regista UMA vez por jogo o retrato de uma bola imóvel durante
+25 s — estado do Match, portador, posse, `setPieceTimer`, batedor, quantos em
+campo, e o que a FSM de cada um dos 22 está a fazer. Sai no relatório em
+`encraves`.
+
+**No lote seguinte apanhou quatro casos, e o padrão era imediato**: bola
+encostada às linhas, sem portador, e nem um único jogador a perseguir.
+
+- **A causa: duas guardas do `pickChaser` que desligavam AS DUAS EQUIPAS.**
+  Bola SOLTA no terço ofensivo do TeamA, posse nominal do TeamB: o TeamB não
+  perseguia porque "está a atacar" — mas não tinha portador nenhum, a bola
+  estava parada no chão; e o TeamA não perseguia porque a bola estava no seu
+  campo de ataque, e sem pressão alta não se avança para lá. Cada guarda é
+  sensata sozinha; juntas deixavam a bola no chão.
+- **Com a bola solta, nenhuma das duas se aplica** — bola sem dono, vai-se
+  buscar, esteja onde estiver. As guardas continuam a valer com portador, que é
+  o caso para que foram escritas. A decisão saiu para `deveMandarChaser`,
+  função pura, com `tests/chaser_bola_solta.test.js` — que **varre o campo
+  inteiro** a verificar que não há um único ponto onde nenhuma das duas equipas
+  queira ir à bola.
+- **Bug encontrado pelo caminho** (introduzido nesta sessão): o desvio do
+  jogador advertido mandava-o para `actTackle`, que lê
+  `Match.ballCarrier.model.position` SEM guarda — mas essa folha também corre
+  com a bola solta. Uma excepção ali rebenta o BT a meio e leva o frame atrás.
+- **Por explicar**: o quarto encrave tinha portador em `IDLE` com a bola no
+  meio-campo. É outro problema.
+
+#### `tacticknow` — a leitura de jogo (peça 2, em curso)
+
+Skill nova nos `player_skills`, 50-100: quanto o jogador ocupa MESMO a posição
+que o plano colectivo lhe pede. **É a única skill que descreve a cabeça do
+jogador** — as outras oito são corpo e técnica.
+
+Serve o impedimento sem o inventar: em vez de uma probabilidade à sorte, o
+fora-de-jogo passa a ser consequência de quem o jogador é. Médios e centrais
+leem melhor (~85 de média), avançados jogam no instinto (~78) e são os que mais
+caem em fora-de-jogo.
+
+**Dois erros que não davam mensagem nenhuma, e foram apanhados a tempo:**
+
+- O gerador consome uma sequência com semente, portanto acrescentar uma chamada
+  por jogador **deslocava tudo o que vinha a seguir** — mudavam 201 das 286
+  skills já geradas, e o `RB Blue` passava de `speed 85` para `72`. Isso
+  invalidaria a comparação com todos os relatórios anteriores. O `tacticknow`
+  tem gerador com semente própria e as outras oito ficam byte a byte iguais.
+- **A chave é `tacticknow`, tudo minúsculo.** O `skillFor` do player.js faz
+  `toLowerCase()` na procura: um `tacticKnow` em camelCase nunca seria
+  encontrado, devolvia o valor por omissão, e o skill parecia estar a funcionar
+  sem estar.
+
+O modal de Player Skills lista os campos um a um, escritos à mão, portanto uma
+skill nova nos dados não aparece sozinha — teve de se acrescentar lá
+("Leitura de jogo").
+
+**Por implementar**: o erro de posicionamento que sai deste skill (dois senos
+lentos com frequências incomensuráveis, amplitude `2.5 × (100−tk)/50`, sem
+efeito com a bola nos pés, em bola parada ou no GR) e a marcação do
+impedimento.
+
+#### Remate segundo a prancha de biomecânica
+
+O `ShotClip` passou a seguir uma prancha das três fases (*toma de impulso*,
+*fase principal*, *fase final*). Três coisas vieram de lá e não estavam no clip:
+
+- o **braço contrário abre quase à horizontal** na armação (`bracoLz` 1.85 no
+  frame 4, era 1.35) — é o gesto mais visível da referência, e é o que
+  contrabalança a perna que vai atrás;
+- na fase final o **tronco inclina para TRÁS** (`chest` negativo nos frames 10
+  e 11). O clip punha-o a prumo, e o remate acabava com o corpo direito como
+  quem pára de andar;
+- a **inclinação lateral mantém-se até ao fim** (`leanZ` -0.14 no frame 10, era
+  -0.06).
+
+#### Camisola com nome e número
+
+As costas já tinham o número, com a POSIÇÃO por cima. Passa a ter o nome do
+jogador (`skills.nome`) e os dois ganham **contorno** — que não é enfeite: o
+número é branco no TeamB e preto no TeamA, e sem uma linha da cor contrária
+desaparece contra a camisola quando as duas cores se aproximam. O nome ENCOLHE
+até caber nos 430 px úteis: os nomes vêm dos dados, não têm limite de
+comprimento, e uma textura não avisa quando corta.
+
 #### Simulação em lote e som
 
 - **O botão do lote passou a ter caixas de jogos e minutos** (`index.html`, `main.js`), com aviso do que o lote cobre e do tempo real estimado, e progresso no botão enquanto corre. **São minutos do RELÓGIO DO JOGO**, não de espera. O `calibrarEstilos` liga-se sozinho a partir de **11 jogos**, que é o mínimo para cobrir os 21 playing styles: cada jogo usa uma formação e o gargalo é o LW, que só existe no 433 e tem quatro estilos à espera dele.
@@ -1853,6 +1969,9 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | A pose de um clip escrita no esqueleto | `pose.js` → `aplicarPose*` (o jogo e o editor usam as MESMAS) |
 | O corpo do jogador (geometria, rig, materiais) | `pose.js` → `construirCorpo()` |
 | Quando há falta, cartão ou expulsão | `officials.js` → `RefereeModel.faltas` e `marcarFalta()` |
+| Leitura de jogo de um jogador (e o erro que ela gera) | `data/player_skills.js` → `tacticknow`; gerado em `tools/gen_player_skills.js` |
+| Quem vai à bola (e porque às vezes ninguém ia) | `bt/team_bt.js` → `deveMandarChaser()` |
+| Jogo encravado num lote: o retrato do momento | `simulate.js` → `vigiarEncrave()`, campo `encraves` do relatório |
 | Quantas faltas por jogo (sem mudar o equilíbrio das fontes) | `officials.js` → `RefereeModel.faltas.escala` |
 | Volume e reacção do som do estádio | `ambiente_sonoro.js` |
 | Quantos jogos e minutos a simulação em lote corre | painel → Simulação em lote (11 jogos cobre os estilos) |
