@@ -147,6 +147,36 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     corpo.scale.set((1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9); return { corpo, rig, backMat };
 }
 
+
+/*
+PÉS E CABEÇA — canais OPCIONAIS, comuns a todos os clips.
+
+Os pés estavam fixos em ±PI/16 e a cabeça nunca era tocada: nenhum dos cinco
+clips tinha canais para eles. Agora tem, mas só se o keyframe os trouxer — um
+keyframe sem eles comporta-se exactamente como antes, portanto acrescentar
+isto não mexeu em nenhuma animação existente.
+
+Canais: `peLx`, `peLy`, `peRx`, `peRy`, `cabecaX`, `cabecaY`.
+*/
+function aplicarPesECabeca(rig, K) {
+    if (!rig || !K) return;
+    const n = (v) => typeof v === 'number';
+
+    if (rig.lFoot) {
+        rig.lFoot.rotation.set(n(K.peLx) ? K.peLx : rig.lFoot.rotation.x,
+            n(K.peLy) ? K.peLy : rig.lFoot.rotation.y, 0);
+    }
+    if (rig.rFoot) {
+        rig.rFoot.rotation.set(n(K.peRx) ? K.peRx : rig.rFoot.rotation.x,
+            n(K.peRy) ? K.peRy : rig.rFoot.rotation.y, 0);
+    }
+    // A cabeça pendura no pescoço; é ele que roda.
+    if (rig.neck && (n(K.cabecaX) || n(K.cabecaY))) {
+        rig.neck.rotation.set(n(K.cabecaX) ? K.cabecaX : 0,
+            n(K.cabecaY) ? K.cabecaY : 0, 0);
+    }
+}
+
 /*
 POSE DO ARREMESSO LATERAL — um keyframe do ThrowInClip escrito no rig.
 
@@ -195,6 +225,8 @@ function aplicarPoseLateral(rig, K, giroAlvo) {
 
     rig.lFoot.rotation.set(0, Math.PI / 16, 0);
     rig.rFoot.rotation.set(0, -Math.PI / 16, 0);
+
+    aplicarPesECabeca(rig, K);
 }
 
 /*
@@ -236,6 +268,8 @@ function aplicarPoseRemate(rig, K) {
 
     rig.lFoot.rotation.set(0, Math.PI / 16, 0);
     rig.rFoot.rotation.set(0, -Math.PI / 16, 0);
+
+    aplicarPesECabeca(rig, K);
 }
 
 /*
@@ -260,6 +294,8 @@ function aplicarPoseLancamentoGR(rig, K) {
 
     rig.lElbow.rotation.x = K.cotoveloL;
     rig.rElbow.rotation.x = K.cotoveloR;
+
+    aplicarPesECabeca(rig, K);
 }
 
 /*
@@ -292,6 +328,8 @@ function aplicarPoseChutaoGR(rig, K, norm) {
     const abreBraco = 0.05 + 0.45 * (norm || 0);
     rig.lArm.rotation.z = abreBraco;
     rig.rArm.rotation.z = -abreBraco;
+
+    aplicarPesECabeca(rig, K);
 }
 
 /*
@@ -359,6 +397,8 @@ function aplicarPoseChuteChaoGR(rig, K, corpo, opts) {
 
     rig.lElbow.rotation.x = bl(P0 ? P0.cotoveloL : 0, K.cotoveloL);
     rig.rElbow.rotation.x = bl(P0 ? P0.cotoveloR : 0, K.cotoveloR);
+
+    aplicarPesECabeca(rig, K);
 
     if (corpo) {
         corpo.position.y = bl(P0 ? P0.corpoY : ALTURA_BASE_Y, ALTURA_BASE_Y + K.altura);

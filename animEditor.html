@@ -118,7 +118,10 @@
 
 <body>
     <div id="cena">
-        <div id="dica">arrastar: rodar &nbsp;·&nbsp; roda: aproximar &nbsp;·&nbsp; botão direito: deslocar</div>
+        <div id="dica">
+            clicar num membro: seleccionar &nbsp;·&nbsp; arrastar os anéis: rodar a junta<br>
+            arrastar o fundo: orbitar &nbsp;·&nbsp; roda: aproximar &nbsp;·&nbsp; Ctrl+Z: desfazer
+        </div>
     </div>
 
     <div id="painel">
@@ -174,6 +177,7 @@
         <div class="seccao">
             <div class="linha-botoes">
                 <button id="btn-copiar">Copiar clip</button>
+                <button id="btn-undo" disabled>↶ desfazer</button>
                 <button id="btn-repor">Repor</button>
             </div>
             <textarea id="saida" spellcheck="false"></textarea>
@@ -182,6 +186,12 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!--
+    Gizmo de rotação, para se poder agarrar num membro em vez de procurar o
+    slider. É o TransformControls da MESMA versão do three (r128) — misturar
+    versões dá erros que só aparecem ao arrastar.
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
     <!-- Só isto: os clips e as poses. Nada do jogo. -->
     <script src="js/config.js"></script>
     <!-- getGaitPose e lerpTo: o ciclo da passada vive aqui. -->

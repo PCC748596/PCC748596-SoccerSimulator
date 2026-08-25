@@ -113,13 +113,32 @@ const LEGENDAS = {
     cotoveloL: '> 0 cotovelo esquerdo dobra',
     cotoveloR: '> 0 cotovelo direito dobra',
     giro: 'fracção do giro da cintura: < 0 carrega, > 0 chicoteia',
+    peLx: '> 0 ponta do pé esquerdo desce',
+    peLy: 'abre o pé esquerdo para fora',
+    peRx: '> 0 ponta do pé direito desce',
+    peRy: 'abre o pé direito para fora',
+    cabecaX: '> 0 queixo desce (olha para o chão)',
+    cabecaY: 'roda a cabeça para o lado',
     altura: 'metros: sobe (> 0) ou baixa (< 0) o corpo todo'
 };
 
 // Amplitude dos sliders. `altura` é em metros e não em radianos, portanto tem
 // escala própria — um slider de ±3.2 para um canal que anda nos centímetros
 // era inutilizável.
-const AMPLITUDE = { altura: 0.5, giro: 1.2 };
+const AMPLITUDE = {
+    altura: 0.5, giro: 1.2,
+    // Pés e cabeça andam em ângulos pequenos; um slider de ±3.2 tornava-os
+    // impossíveis de afinar.
+    peLx: 1.0, peLy: 1.0, peRx: 1.0, peRy: 1.0, cabecaX: 1.2, cabecaY: 1.6
+};
+
+/*
+CANAIS OPCIONAIS: os pés e a cabeça não existem nos keyframes escritos até
+hoje. Aparecem no painel na mesma, a zero, e só passam a existir no clip
+quando se lhes mexe — é o que deixa controlá-los sem reescrever os cinco
+clips à mão.
+*/
+const CANAIS_OPCIONAIS = ['peLx', 'peLy', 'peRx', 'peRy', 'cabecaX', 'cabecaY'];
 const AMPLITUDE_OMISSAO = 3.2;
 
 // Quebra de linha, escrita assim para nao haver escapes a partir-se nos
@@ -258,6 +277,16 @@ const Editor = {
         this.montarCena();
         this.montarSelector();
         this.montarAbas();
+        this.montarGizmo();
+        this.actualizarUndo();
+
+        document.getElementById('btn-undo').addEventListener('click', () => this.desfazer());
+        window.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                this.desfazer();
+            }
+        });
         this.carregarFonte();
         this.mudarClip('ShotClip');
         this.animar();
@@ -337,6 +366,9 @@ const Editor = {
         };
 
         div.addEventListener('mousedown', ev => {
+            // Com o gizmo agarrado, a câmara fica quieta: senão o modelo roda
+            // debaixo da mão e não se percebe o que se está a fazer.
+            if (this.arrastarGizmo) return;
             arrastar = { x: ev.clientX, y: ev.clientY, botao: ev.button };
             ev.preventDefault();
         });
@@ -376,7 +408,11 @@ const Editor = {
     def() { return CLIPS[this.nomeClip]; },
     clip() { return this.def().clip(); },
     frames() { return this.clip().frames; },
-    canais() { return Object.keys(this.frames()[0]); },
+    canais() {
+        // Os do keyframe, mais os opcionais que ainda lá não estão.
+        const presentes = Object.keys(this.frames()[0]);
+        return presentes.concat(CANAIS_OPCIONAIS.filter(c => presentes.indexOf(c) === -1));
+    },
 
     montarSelector() {
         const sel = document.getElementById('sel-clip');
@@ -446,7 +482,7 @@ const Editor = {
         for (const canal of this.canais()) {
             const amp = AMPLITUDE[canal] || AMPLITUDE_OMISSAO;
             const bloco = document.createElement('div');
-            bloco.className = 'canal' + (K[canal] !== orig[canal] ? ' mudado' : '');
+            bloco.className = 'canal' + ((K[canal] || 0) !== (orig[canal] || 0) ? ' mudado' : '');
 
             const topo = document.createElement('div');
             topo.className = 'canal-topo';
@@ -457,14 +493,14 @@ const Editor = {
             caixa.className = 'canal-valor';
             caixa.type = 'number';
             caixa.step = '0.01';
-            caixa.value = (+K[canal]).toFixed(2);
+            caixa.value = (+(K[canal] || 0)).toFixed(2);
             topo.appendChild(nome);
             topo.appendChild(caixa);
 
             const slider = document.createElement('input');
             slider.type = 'range';
             slider.min = -amp; slider.max = amp; slider.step = 0.01;
-            slider.value = K[canal];
+            slider.value = K[canal] || 0;
 
             const legenda = document.createElement('div');
             legenda.className = 'canal-legenda';
@@ -475,11 +511,14 @@ const Editor = {
                 K[canal] = v;
                 caixa.value = (+v).toFixed(2);
                 slider.value = v;
-                bloco.classList.toggle('mudado', v !== orig[canal]);
+                bloco.classList.toggle('mudado', v !== (orig[canal] || 0));
                 this.desenhar();
             };
+            // Um instantâneo por ARRASTO, não por evento: um slider emite
+            // dezenas de `input` e encheria o histórico de passos iguais.
+            slider.addEventListener('pointerdown', () => this.instantaneo());
             slider.addEventListener('input', () => escrever(parseFloat(slider.value)));
-            caixa.addEventListener('change', () => escrever(parseFloat(caixa.value)));
+            caixa.addEventListener('change', () => { this.instantaneo(); escrever(parseFloat(caixa.value)); });
 
             bloco.appendChild(topo);
             bloco.appendChild(slider);
@@ -704,6 +743,240 @@ const Editor = {
 
         aplicarPosePassada(this.rig, P, this.faseCiclo);
         this.corpo.position.y = P.ressalto;
+    },
+
+
+    /* ------------------------------------------------------------------ */
+    /* Undo                                                                */
+    /* ------------------------------------------------------------------ */
+
+    /*
+    Pilha de instantâneos do clip inteiro. Guardar o clip todo e não o valor
+    que mudou é grosseiro, mas um clip são 12 keyframes de 15 números — uns
+    kilobytes — e evita ter de saber desfazer cada tipo de alteração.
+
+    O instantâneo é tirado ANTES de cada mudança, e só quando ela começa: um
+    slider arrastado emite dezenas de eventos e não pode encher a pilha com
+    dezenas de passos.
+    */
+    historico: [],
+    limiteHistorico: 60,
+
+    instantaneo() {
+        this.historico.push({
+            clip: this.nomeClip,
+            frames: JSON.parse(JSON.stringify(this.frames()))
+        });
+        if (this.historico.length > this.limiteHistorico) this.historico.shift();
+        this.actualizarUndo();
+    },
+
+    desfazer() {
+        const passo = this.historico.pop();
+        if (!passo) return;
+        // Se o passo é de outro clip, volta-se a esse clip primeiro — senão o
+        // undo escrevia keyframes de um gesto por cima de outro.
+        if (passo.clip !== this.nomeClip) this.mudarClip(passo.clip);
+        CLIPS[passo.clip].clip().frames = passo.frames;
+        this.montarCanais();
+        this.desenhar();
+        this.actualizarUndo();
+    },
+
+    actualizarUndo() {
+        const b = document.getElementById('btn-undo');
+        if (!b) return;
+        b.disabled = this.historico.length === 0;
+        b.textContent = this.historico.length
+            ? `↶ desfazer (${this.historico.length})`
+            : '↶ desfazer';
+    },
+
+    /* ------------------------------------------------------------------ */
+    /* Manipulação directa: clicar num membro e rodá-lo                    */
+    /* ------------------------------------------------------------------ */
+
+    /*
+    QUE CANAL É QUE CADA JUNTA ESCREVE.
+
+    É este mapa que faz o gizmo servir para alguma coisa: rodar o joelho no
+    ecrã tem de ir parar ao canal certo do keyframe, senão a rotação vive só
+    no editor e desaparece ao exportar.
+
+    Por clip, porque o mesmo osso tem nomes diferentes conforme o gesto — no
+    remate a perna de chute é `coxaChute`, no lateral é `coxaFrente` ou
+    `coxaTras` conforme o pé da frente.
+
+    `null` significa: esta junta não tem canal neste clip, portanto não é
+    seleccionável. Mais vale não deixar mexer do que deixar mexer e perder.
+    */
+    canaisDaJunta(nomeJunta) {
+        const c = this.nomeClip;
+        const chuteR = (this.clip().pernaChute || 'r') === 'r';
+        const frenteR = (typeof LateralPose !== 'undefined' && LateralPose.peFrente === 'r');
+
+        const perna = (lado) => {
+            if (c === 'ShotClip' || c === 'GoalkeeperGroundKickClip' || c === 'GoalkeeperKickClip') {
+                const ehChute = (lado === 'r') === chuteR;
+                return ehChute
+                    ? { x: 'coxaChute', z: (c === 'GoalkeeperGroundKickClip' ? 'coxaChuteZ' : null) }
+                    : { x: 'coxaApoio' };
+            }
+            if (c === 'ThrowInClip') {
+                return ((lado === 'r') === frenteR) ? { x: 'coxaFrente' } : { x: 'coxaTras' };
+            }
+            if (c === 'GoalkeeperThrowClip') return { x: lado === 'l' ? 'coxaL' : 'coxaR' };
+            return null;
+        };
+        const joelho = (lado) => {
+            if (c === 'ShotClip' || c === 'GoalkeeperGroundKickClip' || c === 'GoalkeeperKickClip') {
+                return ((lado === 'r') === chuteR) ? { x: 'joelhoChute' } : { x: 'joelhoApoio' };
+            }
+            if (c === 'ThrowInClip') {
+                return ((lado === 'r') === frenteR) ? { x: 'joelhoFrente' } : { x: 'joelhoTras' };
+            }
+            if (c === 'GoalkeeperThrowClip') return { x: lado === 'l' ? 'joelhoL' : 'joelhoR' };
+            return null;
+        };
+        const braco = (lado) => {
+            if (c === 'GoalkeeperKickClip') return { x: 'bracoX' };
+            if (c === 'ThrowInClip') return { x: 'bracoX', z: 'bracoZ' };
+            return lado === 'l' ? { x: 'bracoLx', z: 'bracoLz' } : { x: 'bracoRx', z: 'bracoRz' };
+        };
+        const cotovelo = (lado) => {
+            if (c === 'GoalkeeperKickClip' || c === 'ThrowInClip') return { x: 'cotovelo' };
+            return lado === 'l' ? { x: 'cotoveloL' } : { x: 'cotoveloR' };
+        };
+
+        switch (nomeJunta) {
+            case 'pelvis':
+                if (c === 'ShotClip') return { y: 'pelvisY', z: 'leanZ', posY: 'altura' };
+                if (c === 'GoalkeeperGroundKickClip') return { x: 'pitchX', z: 'leanZ', posY: 'altura' };
+                if (c === 'ThrowInClip') return { x: 'pelvisX', posY: 'altura' };
+                return { posY: 'altura' };
+            case 'chest':
+                return (c === 'ShotClip') ? { x: 'chest', y: 'chestY' } : { x: 'chest' };
+            case 'neck': return { x: 'cabecaX', y: 'cabecaY' };
+            case 'lLeg': return perna('l');
+            case 'rLeg': return perna('r');
+            case 'lKnee': return joelho('l');
+            case 'rKnee': return joelho('r');
+            case 'lArm': return braco('l');
+            case 'rArm': return braco('r');
+            case 'lElbow': return cotovelo('l');
+            case 'rElbow': return cotovelo('r');
+            case 'lFoot': return { x: 'peLx', y: 'peLy' };
+            case 'rFoot': return { x: 'peRx', y: 'peRy' };
+            default: return null;
+        }
+    },
+
+    montarGizmo() {
+        if (typeof THREE.TransformControls === 'undefined') {
+            document.getElementById('estado').textContent =
+                'TransformControls não carregou — o gizmo fica de fora, os sliders funcionam.';
+            return;
+        }
+        this.gizmo = new THREE.TransformControls(this.camera, this.renderer.domElement);
+        this.gizmo.setMode('rotate');
+        this.gizmo.setSize(0.6);
+        this.scene.add(this.gizmo);
+
+        // Enquanto se arrasta o gizmo, a órbita da câmara fica quieta.
+        this.gizmo.addEventListener('dragging-changed', (e) => {
+            this.arrastarGizmo = e.value;
+            if (e.value) this.instantaneo();
+            else this.lerDoGizmo();
+        });
+        this.gizmo.addEventListener('objectChange', () => this.lerDoGizmo(true));
+
+        this.raycaster = new THREE.Raycaster();
+        this.renderer.domElement.addEventListener('pointerdown', (ev) => {
+            if (this.arrastarGizmo || this.aba !== 'clips') return;
+            this.seleccionarEm(ev);
+        });
+    },
+
+    /*
+    Selecção por raycast. Do objecto atingido sobe-se a hierarquia até dar
+    numa junta do rig — as peças do corpo são filhas das juntas, e é a junta
+    que roda.
+    */
+    seleccionarEm(ev) {
+        const r = this.renderer.domElement.getBoundingClientRect();
+        const rato = new THREE.Vector2(
+            ((ev.clientX - r.left) / r.width) * 2 - 1,
+            -((ev.clientY - r.top) / r.height) * 2 + 1);
+        this.raycaster.setFromCamera(rato, this.camera);
+
+        const bate = this.raycaster.intersectObject(this.corpo, true);
+        if (!bate.length) { this.seleccionar(null); return; }
+
+        let no = bate[0].object;
+        while (no) {
+            const nome = Object.keys(this.rig).find(k => this.rig[k] === no);
+            if (nome && this.canaisDaJunta(nome)) { this.seleccionar(nome); return; }
+            no = no.parent;
+        }
+        this.seleccionar(null);
+    },
+
+    seleccionar(nomeJunta) {
+        this.juntaSel = nomeJunta;
+        if (!this.gizmo) return;
+
+        if (!nomeJunta) {
+            this.gizmo.detach();
+            document.getElementById('estado').textContent = 'Nada seleccionado.';
+            return;
+        }
+
+        const canais = this.canaisDaJunta(nomeJunta);
+        this.gizmo.attach(this.rig[nomeJunta]);
+        /*
+        SÓ ROTAÇÃO nas juntas; a bacia leva também translação, porque essa o
+        clip guarda mesmo (o canal `altura`). Arrastar a posição de um joelho
+        esticava o osso — e os clips só têm ângulos, portanto isso perder-se-ia
+        ao exportar.
+        */
+        this.gizmo.setMode('rotate');
+        this.gizmo.showX = !!canais.x;
+        this.gizmo.showY = !!canais.y;
+        this.gizmo.showZ = !!canais.z;
+
+        const eixos = ['x', 'y', 'z'].filter(e => canais[e]).map(e => `${e}: ${canais[e]}`);
+        document.getElementById('estado').textContent = eixos.length
+            ? `${nomeJunta} — ${eixos.join(', ')}`
+            : `${nomeJunta} — sem canais neste clip`;
+    },
+
+    // Escreve no keyframe o que o gizmo pôs no rig.
+    lerDoGizmo(aoVivo) {
+        if (!this.juntaSel) return;
+        const canais = this.canaisDaJunta(this.juntaSel);
+        const K = this.frames()[this.frame];
+        const no = this.rig[this.juntaSel];
+        let mudou = false;
+
+        for (const eixo of ['x', 'y', 'z']) {
+            if (!canais[eixo]) continue;
+            const v = no.rotation[eixo];
+            if (K[canais[eixo]] !== v) { K[canais[eixo]] = v; mudou = true; }
+        }
+        if (mudou && !aoVivo) this.montarCanais();
+        if (mudou && aoVivo) this.actualizarValores();
+    },
+
+    // Actualiza só os números dos sliders, sem reconstruir o painel: a meio de
+    // um arrasto, reconstruir apaga o elemento que está a ser arrastado.
+    actualizarValores() {
+        const K = this.frames()[this.frame];
+        document.querySelectorAll('#canais .canal').forEach(bloco => {
+            const nome = bloco.querySelector('.canal-nome').textContent;
+            if (!(nome in K)) return;
+            bloco.querySelector('.canal-valor').value = (+K[nome]).toFixed(2);
+            bloco.querySelector('input[type=range]').value = K[nome];
+        });
     },
 
     /* ------------------------------------------------------------------ */

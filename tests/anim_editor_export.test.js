@@ -227,6 +227,81 @@ console.log(String.fromCharCode(10) + '5 — o exportador do GaitModel');
     }
 }
 
+/*
+6 — O MAPA JUNTA -> CANAL do gizmo.
+
+Rodar o joelho no ecrã tem de escrever no canal certo do keyframe. Se o mapa
+apontar a um canal que aquele clip não tem, a rotação vive só no editor e
+desaparece ao exportar — em silêncio, que é o pior modo de falha possível numa
+ferramenta de afinação.
+
+Corre o `canaisDaJunta` de verdade, com um Editor de mentira por baixo, contra
+os canais reais de cada clip.
+*/
+console.log(String.fromCharCode(10) + '6 — o mapa junta -> canal');
+{
+    const iniM = srcEditor.indexOf('    canaisDaJunta(nomeJunta) {');
+    if (iniM < 0) {
+        erro('canaisDaJunta não encontrada no js/animEditor.js');
+    } else {
+        const fimM = srcEditor.indexOf(LF + '    },', iniM) + 7;
+        const corpo = srcEditor.slice(iniM, fimM).replace('canaisDaJunta(nomeJunta) {', 'function canaisDaJunta(nomeJunta) {').replace(/,$/, '');
+
+        // O LateralPose real, que o mapa lê para saber qual é o pé da frente.
+        const LateralPose = new Function(
+            `${fonte.slice(fonte.indexOf('const LateralPose = {'),
+                fonte.indexOf(LF + '};', fonte.indexOf('const LateralPose = {')) + 3)}
+             return LateralPose;`)();
+
+        const OPCIONAIS = ['peLx', 'peLy', 'peRx', 'peRy', 'cabecaX', 'cabecaY'];
+        const JUNTAS = ['pelvis', 'chest', 'neck', 'lLeg', 'rLeg', 'lKnee', 'rKnee',
+            'lArm', 'rArm', 'lElbow', 'rElbow', 'lFoot', 'rFoot'];
+
+        let mausCanais = 0, semCanal = 0, comCanal = 0;
+
+        for (const nomeClip of CLIPS) {
+            const frames = framesDoConfig(nomeClip);
+            const canaisReais = Object.keys(frames[0]);
+            const clipObj = new Function(
+                `${fonte.slice(fonte.indexOf(`const ${nomeClip} = {`),
+                    fonte.indexOf(LF + '};', fonte.indexOf(`const ${nomeClip} = {`)) + 3)}
+                 return ${nomeClip};`)();
+
+            const falso = {
+                nomeClip: nomeClip,
+                clip: () => clipObj,
+                canaisDaJunta: new Function('LateralPose',
+                    `${corpo}; return canaisDaJunta;`)(LateralPose)
+            };
+            // O corpo usa `this.nomeClip` e `this.clip()`.
+            const chamar = (j) => falso.canaisDaJunta.call(falso, j);
+
+            for (const junta of JUNTAS) {
+                const c = chamar(junta);
+                if (!c) { semCanal++; continue; }
+                comCanal++;
+                for (const eixo of ['x', 'y', 'z']) {
+                    const canal = c[eixo];
+                    if (!canal) continue;
+                    if (canaisReais.indexOf(canal) === -1 && OPCIONAIS.indexOf(canal) === -1) {
+                        erro(`${nomeClip}/${junta}.${eixo} aponta a \`${canal}\`, ` +
+                            'que este clip não tem');
+                        mausCanais++;
+                    }
+                }
+            }
+        }
+
+        if (!mausCanais) {
+            ok(`${comCanal} juntas mapeadas nos ${CLIPS.length} clips, ` +
+                'todas para canais que existem');
+        }
+        if (semCanal) {
+            ok(`${semCanal} juntas sem canal (não seleccionáveis, como deve ser)`);
+        }
+    }
+}
+
 console.log('');
 if (falhas) {
     console.error(`FALHOU: ${falhas} problema(s).`);
