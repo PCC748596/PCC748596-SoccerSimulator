@@ -2971,120 +2971,20 @@ class FootballPlayer {
         }
     }
 
+    /*
+    O corpo mudou-se para o `construirCorpo` do js/pose.js: o editor de
+    animação (animEditor.html) precisa de montar o mesmo boneco sem instanciar
+    um jogador, e duas cópias do modelo divergiam à primeira alteração.
+
+    O `backMat` era escrito aqui em `this`; agora vem devolvido, porque a
+    função não tem instância nenhuma para lhe tocar.
+    */
     buildBody(corCamisa, corCalcao) {
-        // Pele e juntas seguem o tom do jogador; as juntas ficam um pouco mais
-        // escuras que a pele, para o contorno das articulações não desaparecer.
-        const ap = this.aparencia || escolherAparencia(0, 11, 0);
-        const corPele = ap.pele;
-        const corJunta = new THREE.Color(corPele).multiplyScalar(0.72).getHex();
-        const blockMat = new THREE.MeshStandardMaterial({ color: corPele, roughness: 0.8 }); const jointMat = new THREE.MeshStandardMaterial({ color: corJunta, roughness: 0.6 });
-        const shirtMat = new THREE.MeshStandardMaterial({ color: corCamisa, roughness: 0.9 }); const shortMat = new THREE.MeshStandardMaterial({ color: corCalcao, roughness: 0.9 });
-        const bootMat = new THREE.MeshStandardMaterial({ color: ap.corChuteira, roughness: 0.5 }); const studMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
-        const hairMat = new THREE.MeshStandardMaterial({ color: ap.cabelo, roughness: 0.9 });
-        const edgeMat = new THREE.LineBasicMaterial({ color: 0x2f3640, linewidth: 2 }); const lineMat = new THREE.LineBasicMaterial({ color: 0x2f3640 });
-
-        const cvsV = document.createElement('canvas'); cvsV.width = 512; cvsV.height = 512; const ctxV = cvsV.getContext('2d');
-        ctxV.fillStyle = corCamisa; ctxV.fillRect(0, 0, 512, 512); ctxV.fillStyle = '#dcdde1'; ctxV.beginPath(); ctxV.moveTo(136, 0); ctxV.lineTo(376, 0); ctxV.lineTo(256, 280); ctxV.fill(); ctxV.strokeStyle = '#2f3640'; ctxV.lineWidth = 12; ctxV.stroke();
-
-        this.backMat = new THREE.MeshStandardMaterial({ color: corCamisa, roughness: 0.9 });
-        const chestMats = [shirtMat, shirtMat, shirtMat, shirtMat, new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(cvsV) }), this.backMat];
-
-        const cvsS = document.createElement('canvas'); cvsS.width = 256; cvsS.height = 256; const ctxS = cvsS.getContext('2d');
-        ctxS.fillStyle = corCamisa; ctxS.fillRect(0, 0, 256, 256); ctxS.fillStyle = '#ffffff'; ctxS.fillRect(0, 20, 256, 30); ctxS.fillRect(0, 70, 256, 15); ctxS.strokeStyle = '#2f3640'; ctxS.lineWidth = 4; ctxS.strokeRect(0, 0, 256, 256);
-        const sockTex = new THREE.CanvasTexture(cvsS);
-        const sockMats = [new THREE.MeshStandardMaterial({ map: sockTex }), new THREE.MeshStandardMaterial({ map: sockTex }), new THREE.MeshStandardMaterial({ color: corCamisa }), new THREE.MeshStandardMaterial({ color: corCamisa }), new THREE.MeshStandardMaterial({ map: sockTex }), new THREE.MeshStandardMaterial({ map: sockTex })];
-
-        const u = 1.0; const corpo = new THREE.Group();
-        const rig = { pelvis: null, chest: null, neck: null, lArm: null, rArm: null, lElbow: null, rElbow: null, lHand: null, rHand: null, lLeg: null, rLeg: null, lKnee: null, rKnee: null, lFoot: null, rFoot: null, olhoEsq: null, olhoDir: null };
-
-        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 850);
-        function criarPeca(geo, mat, castShadow = false) { 
-            const m = new THREE.Mesh(geo, mat); 
-            m.castShadow = isTouchDevice ? false : castShadow; 
-            m.receiveShadow = true; 
-            return m; 
-        }
-
-        const pelvis = criarPeca(new THREE.BoxGeometry(u * 1.3, u * 0.6, u * 0.8), blockMat, true); pelvis.position.y = 2.6; pelvis.add(criarPeca(new THREE.BoxGeometry(u * 1.35, u * 0.65, u * 0.85), shortMat)); corpo.add(pelvis); rig.pelvis = pelvis;
-        /*
-        TRONCO — uma peça só (pedido).
-
-        Eram três caixas empilhadas: pelvis (1.30 de largura), belly (1.10) e
-        chest (1.40). Como a do meio era a mais ESTREITA das três, o tronco
-        fazia uma cintura em degrau — dois vincos visíveis de perfil, que é o
-        que se via na captura.
-
-        Agora belly e chest são a mesma caixa: vai de onde começava a barriga
-        (y 0.30 no espaço da pelvis) até ao topo do peito (y 1.75), logo
-        1.45 de altura, centrada em 1.025. Os filhos do peito (pescoço,
-        braços) levam +0.225 para compensar a origem ter descido de 1.25
-        para 1.025 — a pose fica idêntica à de antes.
-        */
-        const chest = criarPeca(new THREE.BoxGeometry(u * 1.4, u * 1.45, u * 0.75), blockMat);
-        chest.position.y = 1.025;
-        chest.add(criarPeca(new THREE.BoxGeometry(u * 1.45, u * 1.5, u * 0.8), chestMats));
-        pelvis.add(chest); rig.chest = chest;
-        const neck = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.15, u * 0.35), blockMat); neck.position.y = 0.8; chest.add(neck); rig.neck = neck;
-        const head = criarPeca(new THREE.BoxGeometry(u * 0.8, u * 1.0, u * 0.85), blockMat); head.position.y = 0.575;
-
-        const faceGrp = new THREE.Group(); const faceZ = u * 0.426;
-        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x2f3640 });
-        rig.olhoEsq = new THREE.Mesh(new THREE.PlaneGeometry(u * 0.08, u * 0.14), eyeMat); rig.olhoEsq.position.set(-u * 0.16, u * 0.15, faceZ);
-        rig.olhoDir = new THREE.Mesh(new THREE.PlaneGeometry(u * 0.08, u * 0.14), eyeMat); rig.olhoDir.position.set(u * 0.16, u * 0.15, faceZ);
-        const nariz = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, u * 0.05, faceZ), new THREE.Vector3(0, -u * 0.08, faceZ), new THREE.Vector3(u * 0.06, -u * 0.08, faceZ)]), lineMat);
-        const boca = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-u * 0.12, -u * 0.22, faceZ), new THREE.Vector3(u * 0.12, -u * 0.22, faceZ)]), lineMat);
-        faceGrp.add(rig.olhoEsq, rig.olhoDir, nariz, boca); head.add(faceGrp);
-
-        const hairGrp = new THREE.Group();
-        const hT = criarPeca(new THREE.BoxGeometry(u * 0.88, u * 0.25, u * 0.9), hairMat); hT.position.set(0, u * 0.5, 0);
-        const hB = criarPeca(new THREE.BoxGeometry(u * 0.88, u * 0.7, u * 0.25), hairMat); hB.position.set(0, u * 0.15, -u * 0.35);
-        const hL = criarPeca(new THREE.BoxGeometry(u * 0.15, u * 0.6, u * 0.65), hairMat); hL.position.set(-u * 0.4, u * 0.2, -u * 0.1);
-        const hR = criarPeca(new THREE.BoxGeometry(u * 0.15, u * 0.6, u * 0.65), hairMat); hR.position.set(u * 0.4, u * 0.2, -u * 0.1);
-        const hF = criarPeca(new THREE.BoxGeometry(u * 0.88, u * 0.15, u * 0.2), hairMat); hF.position.set(0, u * 0.45, u * 0.38);
-        hairGrp.add(hT, hB, hL, hR, hF); head.add(hairGrp); neck.add(head);
-
-        const jointGeo = new THREE.SphereGeometry(u * 0.2, 16, 16); const smallJointGeo = new THREE.SphereGeometry(u * 0.15, 16, 16);
-
-        function criarBraco(x) {
-            // 0.525 = 0.30 de antes + 0.225 da nova origem do tronco.
-            const grp = new THREE.Group(); grp.position.set(x, 0.525, 0);
-            const up = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 1.0, u * 0.35), blockMat); up.position.y = -0.5;
-            const manga = criarPeca(new THREE.BoxGeometry(u * 0.4, u * 0.5, u * 0.4), shirtMat); manga.position.y = 0.25; up.add(manga); grp.add(up);
-            const elb = new THREE.Group(); elb.position.y = -1.0; grp.add(elb); elb.add(criarPeca(smallJointGeo, jointMat));
-            const low = criarPeca(new THREE.BoxGeometry(u * 0.3, u * 0.8, u * 0.3), blockMat); low.position.y = -0.4; elb.add(low);
-            const handG = new THREE.Group(); handG.position.y = -0.8; elb.add(handG);
-            const mao = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.4, u * 0.2), blockMat); mao.position.y = -0.2; mao.rotation.y = Math.PI / 2; handG.add(mao);
-            grp.rotation.z = x < 0 ? -Math.PI / 16 : Math.PI / 16; chest.add(grp); return { raiz: grp, cotovelo: elb, mao: handG };
-        }
-
-        function criarPerna(x) {
-            const grp = new THREE.Group(); grp.position.set(x, -0.3, 0); grp.add(criarPeca(jointGeo, jointMat));
-            const coxa = criarPeca(new THREE.BoxGeometry(u * 0.45, u * 1.0, u * 0.45), blockMat); coxa.position.y = -0.5;
-            const shortL = criarPeca(new THREE.BoxGeometry(u * 0.5, u * 0.5, u * 0.5), shortMat); shortL.position.y = 0.25; coxa.add(shortL); grp.add(coxa);
-            const joelho = new THREE.Group(); joelho.position.y = -1.0; grp.add(joelho); joelho.add(criarPeca(smallJointGeo, jointMat));
-            const canela = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.9, u * 0.35), blockMat); canela.position.y = -0.45;
-            const meiao = criarPeca(new THREE.BoxGeometry(u * 0.4, u * 0.85, u * 0.4), sockMats); meiao.position.y = 0.0; canela.add(meiao); joelho.add(canela);
-            const peG = new THREE.Group(); peG.position.y = -0.9; joelho.add(peG);
-
-            const footGeo = new THREE.BoxGeometry(u * 0.45, u * 0.4, u * 1.0); const p = footGeo.attributes.position; for (let i = 0; i < p.count; i++) { if (p.getZ(i) > 0 && p.getY(i) > 0) p.setY(i, p.getY(i) - u * 0.25); } footGeo.computeVertexNormals();
-            const chuteira = criarPeca(footGeo, bootMat); chuteira.position.set(0, -0.2, u * 0.25); peG.add(chuteira);
-
-            const studGeo = new THREE.CylinderGeometry(u * 0.03, u * 0.02, u * 0.04, 8);
-            const posTravas = [[-u * 0.12, u * 0.25], [u * 0.12, u * 0.25], [-u * 0.12, 0], [u * 0.12, 0], [-u * 0.12, -u * 0.3], [u * 0.12, -u * 0.3]];
-            posTravas.forEach(pos => { const t = criarPeca(studGeo, studMat); t.position.set(pos[0], -0.22, pos[1]); chuteira.add(t); });
-
-            grp.rotation.z = x < 0 ? -Math.PI / 32 : Math.PI / 32; peG.rotation.y = x < 0 ? -Math.PI / 16 : Math.PI / 16; pelvis.add(grp); return { raiz: grp, joelho: joelho, pe: peG };
-        }
-
-        // As mãos entram no rig: o IK precisa da ponta da cadeia, e o teste
-        // de defesa lê a posição REAL dela no mundo (ver js/gk_dive.js).
-        const bracoEsq = criarBraco(0.8); rig.lArm = bracoEsq.raiz; rig.lElbow = bracoEsq.cotovelo; rig.lHand = bracoEsq.mao;
-        const bracoDir = criarBraco(-0.8); rig.rArm = bracoDir.raiz; rig.rElbow = bracoDir.cotovelo; rig.rHand = bracoDir.mao;
-        const pernaEsq = criarPerna(0.4); rig.lLeg = pernaEsq.raiz; rig.lKnee = pernaEsq.joelho; rig.lFoot = pernaEsq.pe;
-        const pernaDir = criarPerna(-0.4); rig.rLeg = pernaDir.raiz; rig.rKnee = pernaDir.joelho; rig.rFoot = pernaDir.pe;
-
-        corpo.scale.set((1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9); return { corpo, rig };
+        const { corpo, rig, backMat } = construirCorpo(corCamisa, corCalcao, this.aparencia);
+        this.backMat = backMat;
+        return { corpo, rig };
     }
+
 
     updateShirt(num, pos) {
         /*
