@@ -210,6 +210,73 @@ console.log('\ntremor com o alvo estabilizado');
     }
 }
 
+/*
+=============================================================================
+OS SOLAVANCOS DO ASSISTENTE
+=============================================================================
+A correcção do tremor trouxe um defeito novo. A zona morta com histerese
+esteve em 0.25/0.60 m, e o alvo de um assistente NÃO ESTÁ PARADO: corre ao
+longo da linha atrás da bola, portanto afasta-se sempre. Com 60 cm de folga o
+boneco esperava, acumulava distância e arrancava de repente para a recuperar
+— parar e disparar, em ciclo, que foi o que se viu no ecrã.
+
+A medida é a variação de velocidade entre frames. Um oficial a acompanhar um
+alvo que se desloca a ritmo constante tem de andar a ritmo aproximadamente
+constante: se a velocidade salta de zero para o máximo e volta a zero, são
+solavancos.
+=============================================================================
+*/
+console.log(String.fromCharCode(10) + 'solavancos com o alvo em fuga contínua');
+{
+    const dt = 1 / 60;
+    const o = novoOficial(0, 0);
+
+    // O alvo desliza ao longo da linha a 3 m/s — o caso do assistente a
+    // acompanhar uma jogada, bem abaixo da velocidade máxima dele.
+    const velAlvo = 3.0;
+    let alvoZ = 0;
+
+    // Deixa arrancar antes de medir.
+    for (let i = 0; i < 120; i++) {
+        alvoZ += velAlvo * dt;
+        mover(o, 0, alvoZ, RefereeModel.velocidadeAssistente, dt, { x: 20, z: alvoZ });
+    }
+
+    let zAnt = o.model.position.z;
+    let paradoFrames = 0, maxSalto = 0, vAnt = null;
+    const N = 600;
+    for (let i = 0; i < N; i++) {
+        alvoZ += velAlvo * dt;
+        mover(o, 0, alvoZ, RefereeModel.velocidadeAssistente, dt, { x: 20, z: alvoZ });
+
+        const v = Math.abs(o.model.position.z - zAnt) / dt;
+        zAnt = o.model.position.z;
+        if (v < 0.05) paradoFrames++;
+        if (vAnt !== null) maxSalto = Math.max(maxSalto, Math.abs(v - vAnt));
+        vAnt = v;
+    }
+
+    const pctParado = 100 * paradoFrames / N;
+    console.log(`  alvo a ${velAlvo} m/s: ${pctParado.toFixed(0)}% dos frames parado, ` +
+        `maior salto de velocidade ${maxSalto.toFixed(2)} m/s`);
+
+    /*
+    Acompanhar um alvo mais lento do que ele não pode implicar paragens: se
+    para em mais de um quinto dos frames, é stop-and-go.
+    */
+    if (pctParado > 20) {
+        console.error(`  X fica parado ${pctParado.toFixed(0)}% do tempo a seguir um alvo contínuo — são os solavancos`);
+        falhas++;
+    } else console.log(`  . segue o alvo sem parar (${pctParado.toFixed(0)}% dos frames parado)`);
+
+    // E sem arranques bruscos: o alvo anda a 3 m/s, portanto saltos muito
+    // acima disso num único frame são o boneco a disparar para recuperar.
+    if (maxSalto > velAlvo) {
+        console.error(`  X salto de ${maxSalto.toFixed(2)} m/s num frame — arranca de repente`);
+        falhas++;
+    } else console.log(`  . sem arranques bruscos (máximo ${maxSalto.toFixed(2)} m/s por frame)`);
+}
+
 if (falhas > 0) {
     console.error(`\nFALHOU: ${falhas} problema(s) no movimento do árbitro.`);
     process.exit(1);

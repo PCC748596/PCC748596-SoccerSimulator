@@ -341,6 +341,43 @@ das coordenadas do canto.
 
 Devolve o angulo inicial em radianos; o comprimento e sempre PI/2.
 */
+/*
+MOLA DE COESAO A BOLA.
+
+O PROBLEMA. Quando as molas de coesao foram apagadas (ver o comentario no
+match.js), o unico laco que sobrou foi a coesao a FORMA: cada jogador vai para
+o seu slot no bloco e mais nada. Com o portador longe do slot dos companheiros
+— um central que subiu pela ala, por exemplo — eles CORREM PARA LONGE DA
+JOGADA. Nao estao a fugir da bola: estao a ir para a forma, e o modelo so
+conhece esse laco.
+
+O apoio de circulacao nao resolve porque tem um corte por desenho: um jogador
+so pode ser apoio se o ponto estiver a menos de `desvioMax` (8 m) do slot dele
+— "nao arranca ninguem do outro lado do campo". Quem esta longe nunca chega a
+ser candidato.
+
+O QUE ISTO FAZ. Puxa o alvo de cada um na direccao da bola, e so o EXCESSO
+acima de `distMin`: quem ja esta perto nao e tocado, quem esta longe encolhe a
+distancia. Como todos sao puxados na mesma direccao, a FORMA mantem-se — o que
+muda e que ela se comprime para o lado da bola, que e o que um bloco faz.
+
+O `puxaoMax` e o que impede isto de virar um imã: sem tecto, os onze acabavam
+todos em cima da bola e a formacao deixava de existir.
+
+Pura: sem Match, sem THREE. Devolve { x, z }.
+*/
+function molaParaABola(alvoX, alvoZ, bolaX, bolaZ, forca, distMin, puxaoMax) {
+    if (!(forca > 0)) return { x: alvoX, z: alvoZ };
+
+    const dx = bolaX - alvoX, dz = bolaZ - alvoZ;
+    const d = Math.hypot(dx, dz);
+    if (!(d > distMin)) return { x: alvoX, z: alvoZ };
+
+    const puxao = Math.min((d - distMin) * forca, puxaoMax);
+    const k = puxao / d;
+    return { x: alvoX + dx * k, z: alvoZ + dz * k };
+}
+
 function arcoDeCanto(sx, sz) {
     if (sx > 0) return (sz > 0) ? Math.PI / 2 : Math.PI;
     return (sz > 0) ? 0 : -Math.PI / 2;

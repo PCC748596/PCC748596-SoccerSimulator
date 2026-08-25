@@ -3758,6 +3758,33 @@ internos (`defesa`/`balanceado`/`ataque`) não mudaram, só o rótulo na UI.
               frame e os onze alvos saltavam com ele.
 =============================================================================
 */
+/*
+=============================================================================
+MOLA DE COESAO A BOLA
+=============================================================================
+Reabilita, com um proposito so, o que o `relaxConstraints` fazia antes de ser
+apagado. Ver molaParaABola em utils.js para o mecanismo e a razao.
+
+    forcaComBola   fraccao do EXCESSO de distancia que se encolhe, com posse
+    forcaSemBola   e sem ela. Menor de proposito: a defender ja ha o bloco a
+                   seguir a bola e a marcacao a puxar cada um ao seu homem —
+                   somar uma mola forte por cima disso fecha os onze na bola
+    distMin        abaixo disto ninguem e puxado; e a distancia a que ja se
+                   esta na jogada
+    puxaoMax       tecto do deslocamento, em metros. E ISTO que separa uma
+                   mola de um ima: sem tecto, a equipa inteira acaba em cima
+                   da bola e a formacao deixa de existir
+
+O guarda-redes fica de fora: a posicao dele sai do gkAnchor e nao do bloco.
+=============================================================================
+*/
+const MolaDeCoesao = {
+    forcaComBola: 0.20,
+    forcaSemBola: 0.10,
+    distMin: 12.0,
+    puxaoMax: 9.0
+};
+
 const MentalidadeModel = {
     /*
     `tectoBloco` JÁ NÃO É LIDO pelo computeBlock: corria no fim e desfazia o

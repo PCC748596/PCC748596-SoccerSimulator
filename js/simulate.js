@@ -468,6 +468,27 @@ function vigiarEncrave(v, jogo, tempoDeJogo, dt) {
         bola: { x: +b.x.toFixed(1), y: +b.y.toFixed(2), z: +b.z.toFixed(1) },
         bolaVel: +Math.hypot(Match.ballVel.x, Match.ballVel.y, Match.ballVel.z).toFixed(2),
         portador: Match.ballCarrier ? `${Match.ballCarrier.team} ${Match.ballCarrier.pos}` : null,
+        /*
+        O PORTADOR QUE NÃO DECIDE NADA.
+
+        Encraves medidos: um jogador com a bola aos pés, parado em IDLE, 843 s
+        seguidos — o jogo inteiro. O ramo `ComBola` do player_bt.js acaba num
+        `act('conduzir', actCarry)` sem condição, portanto quem lá chega nunca
+        pode ficar em IDLE: se ficou, é porque a árvore nem entrou no ramo.
+
+        A porta é `temBola`, que lê `hasBall || carryTouchGrace > 0` — enquanto
+        os OUTROS vinte e um leem `Match.ballCarrier`. Se os dois divergirem, o
+        portador não decide (para ele não tem a bola) e mais ninguém a persegue
+        (para eles a bola tem dono). Estes campos dizem qual dos dois é.
+        */
+        estadoDoPortador: Match.ballCarrier ? {
+            fsm: Match.ballCarrier.fsm ? Match.ballCarrier.fsm.currentState : '?',
+            hasBall: !!Match.ballCarrier.hasBall,
+            carryTouchGrace: +(Match.ballCarrier.carryTouchGrace || 0).toFixed(2),
+            touchLock: +(Match.ballCarrier.touchLock || 0).toFixed(2),
+            decisionTimer: +(Match.ballCarrier.decisionTimer || 0).toFixed(1),
+            distanciaABola: +Match.ballCarrier.model.position.distanceTo(b).toFixed(2)
+        } : null,
         posse: Match.possessionTeam,
         setPieceTimer: +(Match.setPieceTimer || 0).toFixed(1),
         setPieceTaker: Match.setPieceTaker

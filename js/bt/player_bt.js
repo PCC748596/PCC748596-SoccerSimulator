@@ -2237,15 +2237,34 @@ const PlayerAI = {
         const bbEquipa = (typeof TeamAI !== 'undefined') ? TeamAI.get(player.team) : null;
         const emAtaque = !!(bbEquipa && bbEquipa.isAttacking);
 
+        /*
+        QUEM TEM A BOLA CHEGA SEMPRE AO PlayerBT.
+
+        Estas duas árvores correm primeiro e, devolvendo SUCCESS, cortavam o
+        PlayerBT — que é onde vive o ramo `ComBola`. Um estilo que ACTIVA e não
+        faz nada deixava o portador a "posicionar-se" com a bola nos pés, para
+        sempre: medido, um CB em MOVE_TO_POS com `hasBall: true` e o
+        `decisionTimer` em 662 SEGUNDOS, e o jogo inteiro parado à volta dele.
+
+        O estilo era o `extra_frontman`, que o próprio relatório de calibração
+        marca `semEfeito: true` — activa 1067 vezes e não desloca nada. Mas o
+        problema não é esse estilo: é qualquer folha destas duas árvores poder
+        engolir a decisão de quem tem a bola, e o número de folhas só cresce.
+
+        Continuam a correr — precisam de escrever alvos e são a identidade do
+        jogador. O que deixam de poder fazer é IMPEDIR a decisão com bola.
+        */
+        const comBola = !!player.hasBall || (player.carryTouchGrace || 0) > 0;
+
         if (emAtaque && player.playingStyle && player.styleAtivo && PlayingStyleBTs[player.playingStyle]) {
             const res = PlayingStyleBTs[player.playingStyle].tick(ctx);
-            if (res === SUCCESS) return;
+            if (res === SUCCESS && !comBola) return;
         }
 
         // 2. Prioridade: BT específico da Posição (se registado)
         if (player.pos && PositionBTs[player.pos]) {
             const res = PositionBTs[player.pos].tick(ctx);
-            if (res === SUCCESS) return;
+            if (res === SUCCESS && !comBola) return;
         }
 
         // 3. BT Base Unificado

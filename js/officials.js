@@ -73,11 +73,28 @@ const RefereeModel = {
     tem de se afastar para valer a pena voltar a andar. Serem DIFERENTES e o
     ponto: com um so limiar volta o mesmo tremor, mais fino.
 
-    `suavizacaoVel` filtra a velocidade que a animacao ve, para o ciclo de
-    passada nao ligar de golpe num passo curto.
+    MAS A FOLGA TEM DE SER PEQUENA. Esteve em 0.25/0.60 e trocou o tremor por
+    SOLAVANCOS nos assistentes: o alvo deles corre ao longo da linha atras da
+    bola, portanto afasta-se SEMPRE — com 60 cm de folga o boneco esperava,
+    acumulava distancia e arrancava de repente para a recuperar, em ciclo.
+    Quem tem um alvo em movimento continuo precisa de sair logo atras dele.
+
+    O tremor nao volta porque quem o resolve nao e esta folga: e o
+    `suavizacaoVel`, que filtra a velocidade vista pela ANIMACAO. Era ela que
+    saltava entre 0 e ~3 m/s num passo curto e ligava e desligava o ciclo de
+    passada a cada frame. A zona morta so evita os micro-passos.
+
+    A MARGEM E ESTREITA, e esta medida (tests/arbitro_passada.test.js):
+
+        0.25 / 0.60   sem tremor, mas 3.0 m/s de solavanco
+        0.10 / 0.18   sem tremor, ainda 3.0 m/s de solavanco
+        0.06 / 0.10   sem tremor, sem solavanco     <- aqui
+        0.04 / 0.07   volta o tremor
+
+    Mexer nestes dois numeros sem correr o teste e reintroduzir um dos dois.
     */
-    paragemMax: 0.25,
-    arranqueMin: 0.60,
+    paragemMax: 0.06,
+    arranqueMin: 0.10,
     suavizacaoVel: 0.20,
 
     /*
@@ -122,9 +139,23 @@ const RefereeModel = {
     equilíbrio entre elas.
     */
     faltas: {
-        // Multiplicador global das duas fontes. Sobe ou desce o total de
-        // faltas por jogo sem mudar a proporção entre desarme e contacto.
-        escala: 1.0,
+        /*
+        Multiplicador global das duas fontes. Sobe ou desce o total de faltas
+        por jogo sem mudar a proporcao entre desarme e contacto.
+
+        HISTORICO DA AFINACAO (medido em lotes de 20 jogos de 90 min, com
+        1080 s de fisica por jogo — ver GAME_SPEED e MatchDuration):
+
+            1.0   dava 4,65 faltas por jogo
+            4.3   pedidas 20 por jogo
+
+        O salto e grande porque o raio de accionamento do chaser
+        (MarkingModel.raioDeAccionamento) cortou a perseguicao constante, e com
+        ela os duelos de onde saem as faltas. Menos rush, menos contacto: o
+        numero de faltas e o preco directo dessa mudanca, e este multiplicador
+        e onde se paga.
+        */
+        escala: 4.3,
 
         /*
         FONTE A — o duelo perdido. O desfecho já existe (venceuDuelo, em

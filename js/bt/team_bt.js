@@ -1720,6 +1720,32 @@ const PosicionamentoAI = {
             }
         }
 
+        /*
+        MOLA DE COESAO A BOLA — ver molaParaABola (utils.js) e MolaDeCoesao
+        (config.js).
+
+        AQUI e nao noutro sitio: depois do tecto do estilo e da inercia (que
+        dizem onde o jogador QUER estar) e ANTES do corte de fora-de-jogo e do
+        clamp do campo. Se corresse depois, a mola podia empurrar alguem para
+        posicao irregular ou para fora das linhas, e nenhum dos dois cortes
+        voltava a falar.
+
+        O guarda-redes fica de fora: a posicao dele vem do gkAnchor.
+        */
+        let molaX = comInquietacao.x;
+        if (p.role !== 'gk' && typeof MolaDeCoesao !== 'undefined' &&
+            typeof molaParaABola === 'function' &&
+            typeof Match !== 'undefined' && Match.ball) {
+            const M = MolaDeCoesao;
+            const forca = (bb && bb.isAttacking) ? M.forcaComBola : M.forcaSemBola;
+            const puxado = molaParaABola(
+                molaX, finalZ,
+                Match.ball.position.x, Match.ball.position.z,
+                forca, M.distMin, M.puxaoMax);
+            molaX = puxado.x;
+            finalZ = puxado.z;
+        }
+
         // Respeito ao limite legal de fora-de-jogo (offside) mesmo com inércia
         if (bb && bb.isAttacking && bb.offsideLimitDir !== undefined && bb.offsideLimitDir !== null) {
             const maxLegalZDir = bb.offsideLimitDir - 0.5;
@@ -1728,7 +1754,7 @@ const PosicionamentoAI = {
             }
         }
 
-        const tx = THREE.MathUtils.clamp(comInquietacao.x, -34, 34);
+        const tx = THREE.MathUtils.clamp(molaX, -34, 34);
         const tz = THREE.MathUtils.clamp(finalZ, -50, 50);
 
         const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
