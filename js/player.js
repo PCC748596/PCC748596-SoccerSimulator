@@ -2937,23 +2937,60 @@ class FootballPlayer {
             this.btTargetGroup.children[1].material.map.needsUpdate = true;
         }
 
-        if (this.num === num && this.pos === pos && this.backMat.map) return;
+        /*
+        COSTAS DA CAMISOLA: nome em cima, número grande por baixo, os dois com
+        CONTORNO — o desenho de uma camisola a sério.
+
+        O contorno não é enfeite: o número é branco no TeamB e preto no TeamA,
+        e sem uma linha da cor contrária desaparecia contra a camisola quando
+        as duas cores se aproximam (e a bancada, o relvado e as sombras mudam
+        o contraste a toda a hora).
+
+        O nome vem de `skills.nome` (data/player_skills.js). Sem skills — um
+        jogador criado à mão, um teste — cai na POSIÇÃO, que é o que estava
+        aqui antes.
+        */
+        const nome = (this.skills && this.skills.nome) ? this.skills.nome : pos;
+        if (this.num === num && this.pos === pos && this.nomeCamisola === nome && this.backMat.map) return;
         this.num = num;
         this.pos = pos;
+        this.nomeCamisola = nome;
+
         const cvsBack = document.createElement('canvas'); cvsBack.width = 512; cvsBack.height = 512; const ctxBack = cvsBack.getContext('2d');
         ctxBack.fillStyle = this.corCamisa; ctxBack.fillRect(0, 0, 512, 512);
 
-        if (this.team === 'TeamA') {
-            ctxBack.fillStyle = '#000000'; 
-        } else {
-            ctxBack.fillStyle = '#ffffff'; 
+        const claro = (this.team !== 'TeamA');
+        const corTexto = claro ? '#ffffff' : '#000000';
+        const corContorno = claro ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
+
+        ctxBack.textAlign = 'center';
+        ctxBack.textBaseline = 'middle';
+        ctxBack.lineJoin = 'round';   // sem isto os cantos do contorno espetam
+
+        const escrever = (texto, y, tamanho, espessura) => {
+            ctxBack.font = `bold ${tamanho}px "Segoe UI", Arial, sans-serif`;
+            ctxBack.lineWidth = espessura;
+            ctxBack.strokeStyle = corContorno;
+            ctxBack.strokeText(texto, 256, y);
+            ctxBack.fillStyle = corTexto;
+            ctxBack.fillText(texto, 256, y);
+        };
+
+        /*
+        O NOME ENCOLHE ATÉ CABER. Os nomes vêm dos dados e não têm limite de
+        tamanho; a 72px, um "GK Blue" cabe e um nome longo saía pelas costuras
+        da textura sem ninguém dar por isso — a textura não avisa, só corta.
+        */
+        const NOME = nome.toString().toUpperCase();
+        let tamanhoNome = 72;
+        ctxBack.font = `bold ${tamanhoNome}px "Segoe UI", Arial, sans-serif`;
+        while (tamanhoNome > 28 && ctxBack.measureText(NOME).width > 430) {
+            tamanhoNome -= 4;
+            ctxBack.font = `bold ${tamanhoNome}px "Segoe UI", Arial, sans-serif`;
         }
+        escrever(NOME, 108, tamanhoNome, 10);
 
-        ctxBack.font = 'bold 260px "Segoe UI"'; ctxBack.textAlign = 'center'; ctxBack.textBaseline = 'middle';
-        ctxBack.fillText(this.num.toString(), 256, 280);
-
-        ctxBack.font = 'bold 80px "Segoe UI"';
-        ctxBack.fillText(this.pos, 256, 100);
+        escrever(this.num.toString(), 300, 260, 16);
 
         if (this.backMat.map) this.backMat.map.dispose();
         this.backMat.map = new THREE.CanvasTexture(cvsBack);
