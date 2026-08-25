@@ -1,0 +1,557 @@
+/*
+=============================================================================
+EDITOR DE ANIMAÇÃO — a lógica do animEditor.html
+=============================================================================
+Spec em docs/superpowers/specs/2026-08-25-editor-de-animacao-design.md.
+
+Não conhece o jogo: fala com os clips do `js/config.js` e com as poses do
+`js/pose.js`, e é tudo. As poses são as MESMAS que o `js/player.js` chama, e é
+isso que impede o editor de mostrar um gesto que o jogo não faz.
+=============================================================================
+*/
+
+/*
+OS CLIPS que o editor abre, e como cada um se desenha.
+
+`aplicar` é a ponte para o js/pose.js. As assinaturas diferem porque os gestos
+diferem — o lateral precisa do ângulo do giro da cintura, o chutão precisa do
+tempo normalizado para abrir os braços — e é preferível que isso apareça aqui,
+à vista, do que uniformizá-las e perder o que cada uma precisa.
+*/
+const CLIPS = {
+    ShotClip: {
+        rotulo: 'Remate',
+        clip: () => ShotClip,
+        duracao: () => ActionAnimClips.shot.duration,
+        aplicar: (rig, corpo, K) => {
+            aplicarPoseRemate(rig, K);
+            corpo.position.y = K.altura || 0;
+        },
+        amostrar: (t) => amostrarClipRemate(t)
+    },
+    GoalkeeperKickClip: {
+        rotulo: 'Chutão do guarda-redes',
+        clip: () => GoalkeeperKickClip,
+        duracao: () => ActionAnimClips.gkPunt.duration,
+        aplicar: (rig, corpo, K, t) => {
+            aplicarPoseChutaoGR(rig, K, t);
+            corpo.position.y = K.altura || 0;
+        },
+        amostrar: (t) => amostrarClipChuteGR(t)
+    },
+    GoalkeeperGroundKickClip: {
+        rotulo: 'Tiro de meta (bola no chão)',
+        clip: () => GoalkeeperGroundKickClip,
+        duracao: () => ActionAnimClips.gkPuntChao.duration,
+        // Sem `poseAnterior`: no editor não há corrida de onde misturar, o que
+        // é o mesmo que uma mistura já terminada.
+        aplicar: (rig, corpo, K) => aplicarPoseChuteChaoGR(rig, K, corpo, {}),
+        amostrar: (t) => amostrarClipChuteChaoGR(t)
+    },
+    GoalkeeperThrowClip: {
+        rotulo: 'Lançamento com as mãos (GR)',
+        clip: () => GoalkeeperThrowClip,
+        duracao: () => ActionAnimClips.gkThrow.duration,
+        aplicar: (rig, corpo, K) => {
+            aplicarPoseLancamentoGR(rig, K);
+            corpo.position.y = K.altura || 0;
+        },
+        amostrar: (t) => amostrarClipLancamentoGR(t)
+    },
+    ThrowInClip: {
+        rotulo: 'Arremesso lateral',
+        clip: () => ThrowInClip,
+        duracao: () => ActionAnimClips.throwIn.duration,
+        /*
+        O giro da cintura é fracção de um ângulo que, no jogo, aponta ao colega
+        a quem se atira. Aqui não há ninguém: usa-se um valor fixo só para o
+        gesto não sair todo de frente e o canal `giro` se ver a mexer.
+        */
+        aplicar: (rig, corpo, K) => {
+            aplicarPoseLateral(rig, K, LateralPose.giroMax || 0.6);
+            corpo.position.y = K.altura || 0;
+        },
+        amostrar: (t) => amostrarClipLateral(t)
+    }
+};
+
+/*
+A LEGENDA DO SINAL de cada canal.
+
+É a parte do editor que responde a "não percebo os números": o que cada
+radiano faz, e para que lado. Sai da documentação que já estava escrita nos
+cabeçalhos dos clips do config.js — aqui fica debaixo do controlo que mexe,
+que é onde serve.
+*/
+const LEGENDAS = {
+    leanZ: '> 0 inclina para o lado do pé de apoio',
+    pitchX: '> 0 bacia roda para a frente',
+    pelvisX: '> 0 bacia roda para a frente',
+    pelvisY: '> 0 bacia abre para o lado do chute',
+    chest: '> 0 tronco para a FRENTE',
+    chestY: '> 0 ombros rodam para o lado do chute',
+    coxaChute: '> 0 perna de chute para TRÁS (< 0 para a frente)',
+    joelhoChute: '> 0 joelho dobra, calcanhar sobe',
+    coxaChuteZ: '> 0 perna de chute abre para fora',
+    coxaApoio: '> 0 perna de apoio para trás',
+    joelhoApoio: '> 0 joelho de apoio dobra',
+    coxaFrente: '> 0 perna da frente para trás',
+    joelhoFrente: '> 0 joelho da frente dobra',
+    coxaTras: '> 0 perna de trás recua',
+    joelhoTras: '> 0 joelho de trás dobra',
+    coxaL: '> 0 coxa esquerda recua',
+    joelhoL: '> 0 joelho esquerdo dobra',
+    coxaR: '> 0 coxa direita recua',
+    joelhoR: '> 0 joelho direito dobra',
+    bracoX: '> 0 braços recuam (ambos)',
+    bracoZ: '> 0 braços abrem para fora',
+    bracoLx: '> 0 braço esquerdo recua',
+    bracoLz: '> 0 braço esquerdo abre',
+    bracoRx: '> 0 braço direito recua',
+    bracoRz: '< 0 braço direito abre',
+    cotovelo: '> 0 cotovelos dobram',
+    cotoveloL: '> 0 cotovelo esquerdo dobra',
+    cotoveloR: '> 0 cotovelo direito dobra',
+    giro: 'fracção do giro da cintura: < 0 carrega, > 0 chicoteia',
+    altura: 'metros: sobe (> 0) ou baixa (< 0) o corpo todo'
+};
+
+// Amplitude dos sliders. `altura` é em metros e não em radianos, portanto tem
+// escala própria — um slider de ±3.2 para um canal que anda nos centímetros
+// era inutilizável.
+const AMPLITUDE = { altura: 0.5, giro: 1.2 };
+const AMPLITUDE_OMISSAO = 3.2;
+
+/*
+Reescreve os números dos keyframes de um clip DENTRO do texto do config.js,
+linha a linha, mantendo comentários, indentação e tudo o resto.
+
+Função pura de propósito: é a única parte do editor que produz código para
+alguém colar por cima de um ficheiro do projecto, e portanto a única que pode
+destruir trabalho. Vive fora do objecto para ter teste
+(tests/anim_editor_export.test.js).
+
+Devolve `null` — e não uma versão a fingir — se não conseguir: sem o texto, sem
+encontrar o clip, ou se o número de linhas de keyframe não bater certo com o
+número de keyframes. Quem chama avisa e exporta sem comentários.
+*/
+function reescreverClipNoTexto(fonte, nomeClip, frames) {
+    if (!fonte || !frames || !frames.length) return null;
+
+    const ini = fonte.indexOf('const ' + nomeClip + ' = {');
+    if (ini < 0) return null;
+    const fecho = fonte.indexOf('\n};', ini);
+    if (fecho < 0) return null;
+
+    const bloco = fonte.slice(ini, fecho + 3);
+    let i = 0;
+    const novo = bloco.split('\n').map(linha => {
+        // Só as linhas que SÃO um keyframe: abrem e fecham chaveta na própria
+        // linha. Um comentário, ou a linha do `frames: [`, não são tocados.
+        if (!/^\s*\{.*\},?\s*$/.test(linha)) return linha;
+        const K = frames[i++];
+        if (!K) return linha;
+        const indent = linha.match(/^\s*/)[0];
+        const fim = linha.trimEnd().endsWith(',') ? ',' : '';
+        const corpo = Object.keys(K).map(c => c + ': ' + (+K[c]).toFixed(2)).join(', ');
+        return indent + '{ ' + corpo + ' }' + fim;
+    }).join('\n');
+
+    return (i === frames.length) ? novo : null;
+}
+
+const Editor = {
+    nomeClip: 'ShotClip',
+    frame: 0,
+    aCorrer: false,
+    tempo: 0,
+    loop: true,
+    fantasma: true,
+
+    // Cópia dos clips como estavam ao abrir a página, para o "Repor" e para o
+    // boneco fantasma.
+    originais: {},
+    // Texto do config.js, se der para o ler — ver `exportar`.
+    fonteConfig: null,
+
+    iniciar() {
+        this.originais = {};
+        for (const nome in CLIPS) {
+            this.originais[nome] = JSON.parse(JSON.stringify(CLIPS[nome].clip().frames));
+        }
+        this.montarCena();
+        this.montarSelector();
+        this.carregarFonte();
+        this.mudarClip('ShotClip');
+        this.animar();
+    },
+
+    /* ------------------------------------------------------------------ */
+    /* Cena                                                                */
+    /* ------------------------------------------------------------------ */
+    montarCena() {
+        const div = document.getElementById('cena');
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x14161a);
+
+        this.camera = new THREE.PerspectiveCamera(40, 1, 0.05, 100);
+        this.camera.position.set(2.6, 1.5, 3.2);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        div.appendChild(this.renderer.domElement);
+
+        this.scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x2a2f38, 0.9));
+        const sol = new THREE.DirectionalLight(0xffffff, 0.8);
+        sol.position.set(3, 6, 4);
+        this.scene.add(sol);
+
+        // Chão e grelha: sem uma referência do solo não se vê se o boneco está
+        // a flutuar, e o canal `altura` mexe exactamente nisso.
+        const chao = new THREE.Mesh(
+            new THREE.CircleGeometry(4, 48),
+            new THREE.MeshStandardMaterial({ color: 0x1e2a20, roughness: 1 })
+        );
+        chao.rotation.x = -Math.PI / 2;
+        this.scene.add(chao);
+        const grelha = new THREE.GridHelper(8, 16, 0x3a4250, 0x252b34);
+        this.scene.add(grelha);
+
+        // O boneco a editar e o fantasma com o clip como está no ficheiro.
+        const feito = construirCorpo('#3498db', '#34495e');
+        this.corpo = feito.corpo;
+        this.rig = feito.rig;
+        this.scene.add(this.corpo);
+
+        const ghost = construirCorpo('#8fa6bd', '#8fa6bd');
+        this.corpoFantasma = ghost.corpo;
+        this.rigFantasma = ghost.rig;
+        this.corpoFantasma.traverse(o => {
+            if (o.isMesh) {
+                o.material = new THREE.MeshBasicMaterial({
+                    color: 0x7f8fa6, transparent: true, opacity: 0.22, depthWrite: false
+                });
+            }
+        });
+        this.scene.add(this.corpoFantasma);
+
+        this.alvoCamera = new THREE.Vector3(0, 0.9, 0);
+        this.ligarOrbita(div);
+        this.redimensionar();
+        window.addEventListener('resize', () => this.redimensionar());
+    },
+
+    // Órbita à mão: o OrbitControls não vem no build do THREE que o projecto
+    // usa, e são três eventos.
+    ligarOrbita(div) {
+        let a = Math.atan2(this.camera.position.x, this.camera.position.z);
+        let e = Math.asin(this.camera.position.y / this.camera.position.length());
+        let r = this.camera.position.length();
+        let arrastar = null;
+
+        const colocar = () => {
+            e = Math.max(-1.2, Math.min(1.35, e));
+            r = Math.max(1.2, Math.min(12, r));
+            this.camera.position.set(
+                this.alvoCamera.x + r * Math.cos(e) * Math.sin(a),
+                this.alvoCamera.y + r * Math.sin(e),
+                this.alvoCamera.z + r * Math.cos(e) * Math.cos(a));
+            this.camera.lookAt(this.alvoCamera);
+        };
+
+        div.addEventListener('mousedown', ev => {
+            arrastar = { x: ev.clientX, y: ev.clientY, botao: ev.button };
+            ev.preventDefault();
+        });
+        window.addEventListener('mouseup', () => { arrastar = null; });
+        window.addEventListener('mousemove', ev => {
+            if (!arrastar) return;
+            const dx = ev.clientX - arrastar.x, dy = ev.clientY - arrastar.y;
+            arrastar.x = ev.clientX; arrastar.y = ev.clientY;
+            if (arrastar.botao === 2) {
+                this.alvoCamera.y = Math.max(0, this.alvoCamera.y + dy * 0.004);
+            } else {
+                a -= dx * 0.008;
+                e += dy * 0.006;
+            }
+            colocar();
+        });
+        div.addEventListener('wheel', ev => {
+            r *= (1 + Math.sign(ev.deltaY) * 0.09);
+            colocar();
+            ev.preventDefault();
+        }, { passive: false });
+        div.addEventListener('contextmenu', ev => ev.preventDefault());
+        colocar();
+    },
+
+    redimensionar() {
+        const div = document.getElementById('cena');
+        const l = div.clientWidth, a = div.clientHeight;
+        this.renderer.setSize(l, a);
+        this.camera.aspect = l / Math.max(1, a);
+        this.camera.updateProjectionMatrix();
+    },
+
+    /* ------------------------------------------------------------------ */
+    /* Clip actual                                                         */
+    /* ------------------------------------------------------------------ */
+    def() { return CLIPS[this.nomeClip]; },
+    clip() { return this.def().clip(); },
+    frames() { return this.clip().frames; },
+    canais() { return Object.keys(this.frames()[0]); },
+
+    montarSelector() {
+        const sel = document.getElementById('sel-clip');
+        sel.innerHTML = '';
+        for (const nome in CLIPS) {
+            const op = document.createElement('option');
+            op.value = nome;
+            op.textContent = `${CLIPS[nome].rotulo}  (${nome})`;
+            sel.appendChild(op);
+        }
+        sel.addEventListener('change', () => this.mudarClip(sel.value));
+
+        document.getElementById('btn-play').addEventListener('click', () => this.play());
+        document.getElementById('btn-loop').addEventListener('click', (e) => {
+            this.loop = !this.loop;
+            e.target.classList.toggle('activo', this.loop);
+        });
+        document.getElementById('btn-fantasma').addEventListener('click', (e) => {
+            this.fantasma = !this.fantasma;
+            this.corpoFantasma.visible = this.fantasma;
+            e.target.classList.toggle('activo', this.fantasma);
+        });
+        document.getElementById('btn-copiar').addEventListener('click', () => this.exportar());
+        document.getElementById('btn-repor').addEventListener('click', () => this.repor());
+    },
+
+    mudarClip(nome) {
+        this.nomeClip = nome;
+        this.frame = 0;
+        this.aCorrer = false;
+        document.getElementById('sel-clip').value = nome;
+        this.montarFrames();
+        this.montarCanais();
+        this.desenhar();
+    },
+
+    montarFrames() {
+        const div = document.getElementById('frames');
+        div.innerHTML = '';
+        const contacto = this.clip().contactFrame;
+        this.frames().forEach((_, i) => {
+            const b = document.createElement('div');
+            b.className = 'frame' + (i === this.frame ? ' actual' : '') +
+                (contacto === i + 1 ? ' contacto' : '');
+            b.textContent = i + 1;
+            b.title = (contacto === i + 1) ? 'CONTACTO — a bola sai aqui' : `keyframe ${i + 1}`;
+            b.addEventListener('click', () => {
+                this.aCorrer = false;
+                this.frame = i;
+                this.montarFrames();
+                this.montarCanais();
+                this.desenhar();
+            });
+            div.appendChild(b);
+        });
+    },
+
+    montarCanais() {
+        const div = document.getElementById('canais');
+        div.innerHTML = '';
+        const K = this.frames()[this.frame];
+        const orig = this.originais[this.nomeClip][this.frame];
+
+        document.getElementById('titulo-canais').textContent =
+            `Canais — keyframe ${this.frame + 1} de ${this.frames().length}`;
+
+        for (const canal of this.canais()) {
+            const amp = AMPLITUDE[canal] || AMPLITUDE_OMISSAO;
+            const bloco = document.createElement('div');
+            bloco.className = 'canal' + (K[canal] !== orig[canal] ? ' mudado' : '');
+
+            const topo = document.createElement('div');
+            topo.className = 'canal-topo';
+            const nome = document.createElement('span');
+            nome.className = 'canal-nome';
+            nome.textContent = canal;
+            const caixa = document.createElement('input');
+            caixa.className = 'canal-valor';
+            caixa.type = 'number';
+            caixa.step = '0.01';
+            caixa.value = (+K[canal]).toFixed(2);
+            topo.appendChild(nome);
+            topo.appendChild(caixa);
+
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = -amp; slider.max = amp; slider.step = 0.01;
+            slider.value = K[canal];
+
+            const legenda = document.createElement('div');
+            legenda.className = 'canal-legenda';
+            legenda.textContent = LEGENDAS[canal] || '';
+
+            const escrever = (v) => {
+                if (!isFinite(v)) return;
+                K[canal] = v;
+                caixa.value = (+v).toFixed(2);
+                slider.value = v;
+                bloco.classList.toggle('mudado', v !== orig[canal]);
+                this.desenhar();
+            };
+            slider.addEventListener('input', () => escrever(parseFloat(slider.value)));
+            caixa.addEventListener('change', () => escrever(parseFloat(caixa.value)));
+
+            bloco.appendChild(topo);
+            bloco.appendChild(slider);
+            bloco.appendChild(legenda);
+            div.appendChild(bloco);
+        }
+    },
+
+    /* ------------------------------------------------------------------ */
+    /* Desenho                                                             */
+    /* ------------------------------------------------------------------ */
+
+    // Pose parada no keyframe escolhido, ou o clip a correr se estiver em play.
+    desenhar() {
+        const d = this.def();
+        const n = this.frames().length;
+        const t = this.aCorrer ? this.tempo : (n > 1 ? this.frame / (n - 1) : 0);
+
+        d.aplicar(this.rig, this.corpo, d.amostrar(t), t);
+
+        if (this.fantasma) {
+            // O fantasma corre o MESMO amostrador sobre os keyframes originais:
+            // troca-se o conteúdo do clip, amostra-se, e repõe-se. Assim não há
+            // uma segunda implementação da interpolação a divergir desta.
+            const vivos = this.clip().frames;
+            this.clip().frames = this.originais[this.nomeClip];
+            d.aplicar(this.rigFantasma, this.corpoFantasma, d.amostrar(t), t);
+            this.clip().frames = vivos;
+        }
+        this.estado();
+    },
+
+    animar() {
+        requestAnimationFrame(() => this.animar());
+        if (this.aCorrer) {
+            const dur = this.def().duracao() || 0.5;
+            this.tempo += (1 / 60) / dur;
+            if (this.tempo >= 1) {
+                if (this.loop) this.tempo = 0;
+                else { this.tempo = 1; this.aCorrer = false; this.actualizarPlay(); }
+            }
+            this.desenhar();
+        }
+        this.renderer.render(this.scene, this.camera);
+    },
+
+    play() {
+        this.aCorrer = !this.aCorrer;
+        if (this.aCorrer) this.tempo = 0;
+        this.actualizarPlay();
+    },
+
+    actualizarPlay() {
+        const b = document.getElementById('btn-play');
+        b.textContent = this.aCorrer ? '❚❚ parar' : '▶ play';
+        b.classList.toggle('activo', this.aCorrer);
+    },
+
+    estado() {
+        const el = document.getElementById('estado');
+        const dur = this.def().duracao();
+        const contacto = this.clip().contactFrame;
+        const mudados = this.contarMudados();
+        el.textContent =
+            `${this.frames().length} keyframes · ${dur.toFixed(2)} s` +
+            (contacto ? ` · contacto no ${contacto}` : '') +
+            (mudados ? ` · ${mudados} valor(es) alterado(s)` : ' · sem alterações');
+    },
+
+    contarMudados() {
+        let n = 0;
+        const orig = this.originais[this.nomeClip];
+        this.frames().forEach((f, i) => {
+            for (const c in f) if (f[c] !== orig[i][c]) n++;
+        });
+        return n;
+    },
+
+    repor() {
+        const orig = this.originais[this.nomeClip];
+        this.clip().frames = JSON.parse(JSON.stringify(orig));
+        this.montarCanais();
+        this.desenhar();
+    },
+
+    /* ------------------------------------------------------------------ */
+    /* Exportar                                                            */
+    /* ------------------------------------------------------------------ */
+
+    /*
+    Lê o próprio config.js como TEXTO, para o exportador poder reescrever só os
+    números e deixar tudo o resto onde está.
+
+    PORQUÊ: os clips não são só números. Têm um cabeçalho que descreve as fases
+    do gesto e um comentário por keyframe (`// 4 armação máxima`,
+    `// 8 CONTACTO`). Um exportador que cuspisse JSON destruía tudo isso ao
+    colar — e é metade do valor do ficheiro.
+
+    Aberta a página por file://, o fetch falha. Nesse caso o editor avisa e
+    exporta sem os comentários, em vez de os apagar em silêncio.
+    */
+    carregarFonte() {
+        fetch('js/config.js')
+            .then(r => r.ok ? r.text() : Promise.reject(r.status))
+            .then(t => { this.fonteConfig = t; })
+            .catch(() => { this.fonteConfig = null; });
+    },
+
+    /*
+    Reescreve os números de cada keyframe no texto original do clip, linha a
+    linha, mantendo comentários e formatação. Devolve `null` se não conseguir —
+    e não uma versão a fingir.
+    */
+    reescreverNoTexto() {
+        return reescreverClipNoTexto(this.fonteConfig, this.nomeClip, this.frames());
+    },
+
+    exportar() {
+        const area = document.getElementById('saida');
+        const comComentarios = this.reescreverNoTexto();
+
+        let texto;
+        if (comComentarios) {
+            texto = comComentarios;
+        } else {
+            const c = this.clip();
+            const linhas = this.frames().map((K, i) =>
+                `        // ${i + 1}\n        { ` +
+                Object.keys(K).map(k => `${k}: ${(+K[k]).toFixed(2)}`).join(', ') + ' },');
+            texto =
+                `// ATENÇÃO: exportado SEM os comentários originais do config.js.\n` +
+                `// (não consegui ler o ficheiro — a página está aberta por file://?\n` +
+                `//  com o servidor de desenvolvimento, npm run dev, os comentários\n` +
+                `//  são preservados). Compara antes de colar.\n` +
+                `const ${this.nomeClip} = {\n` +
+                (c.pernaChute ? `    pernaChute: '${c.pernaChute}',\n` : '') +
+                (c.contactFrame ? `    contactFrame: ${c.contactFrame},\n` : '') +
+                `    frames: [\n${linhas.join('\n')}\n    ]\n};`;
+        }
+
+        area.style.display = 'block';
+        area.value = texto;
+        area.select();
+        try { document.execCommand('copy'); } catch (e) { /* o utilizador copia à mão */ }
+
+        document.getElementById('estado').textContent = comComentarios
+            ? 'Copiado, com os comentários do config.js preservados. Cola por cima do bloco antigo.'
+            : 'Copiado SEM comentários — ver o aviso no texto. Cola com cuidado.';
+    }
+};
+
+window.addEventListener('DOMContentLoaded', () => Editor.iniciar());

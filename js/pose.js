@@ -364,3 +364,150 @@ function aplicarPoseChuteChaoGR(rig, K, corpo, opts) {
         corpo.position.y = bl(P0 ? P0.corpoY : ALTURA_BASE_Y, ALTURA_BASE_Y + K.altura);
     }
 }
+
+/*
+=============================================================================
+AMOSTRAGEM DOS CLIPS
+=============================================================================
+Cada uma lê um clip do config.js num tempo normalizado 0..1 e devolve um
+keyframe interpolado — o que depois se dá às `aplicarPose*` acima.
+
+Vieram do topo do js/player.js. Estão aqui porque amostrar e aplicar são as
+duas metades do mesmo gesto, e o editor de animação precisa das duas sem
+carregar o jogo inteiro.
+
+A interpolação é LINEAR entre keyframes vizinhos, de propósito: os clips são
+escritos à mão frame a frame, e uma curva suave por cima deles mudava poses
+que já foram afinadas a olho.
+=============================================================================
+*/
+/*
+Amostra o clip do chutão do guarda-redes (GoalkeeperKickClip) num tempo
+normalizado 0..1, interpolando linearmente entre os dois keyframes vizinhos.
+Devolve um objecto com os mesmos campos de um keyframe.
+*/
+function amostrarClipChuteGR(norm) {
+    const fr = GoalkeeperKickClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => a[k] + (b[k] - a[k]) * u;
+    return {
+        chest: mix('chest'),
+        coxaChute: mix('coxaChute'),
+        joelhoChute: mix('joelhoChute'),
+        coxaApoio: mix('coxaApoio'),
+        joelhoApoio: mix('joelhoApoio'),
+        bracoX: mix('bracoX'),
+        cotovelo: mix('cotovelo'),
+        altura: mix('altura')
+    };
+}
+
+/*
+Amostra o clip do chute de bola parada / tiro de meta (GoalkeeperGroundKickClip),
+fiel às fases das Figuras Biomecânicas com pivô no pé de apoio.
+*/
+function amostrarClipChuteChaoGR(norm) {
+    const fr = GoalkeeperGroundKickClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => (a[k] !== undefined && b[k] !== undefined) ? a[k] + (b[k] - a[k]) * u : 0;
+    return {
+        leanZ: mix('leanZ'),
+        pitchX: mix('pitchX'),
+        chest: mix('chest'),
+        coxaChute: mix('coxaChute'),
+        joelhoChute: mix('joelhoChute'),
+        coxaChuteZ: mix('coxaChuteZ'),
+        coxaApoio: mix('coxaApoio'),
+        joelhoApoio: mix('joelhoApoio'),
+        bracoLx: mix('bracoLx'),
+        bracoLz: mix('bracoLz'),
+        bracoRx: mix('bracoRx'),
+        bracoRz: mix('bracoRz'),
+        cotoveloL: mix('cotoveloL'),
+        cotoveloR: mix('cotoveloR'),
+        altura: mix('altura')
+    };
+}
+
+/*
+Amostra o clip do remate (ShotClip) num tempo normalizado 0..1.
+*/
+function amostrarClipRemate(norm) {
+    const fr = ShotClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => a[k] + (b[k] - a[k]) * u;
+    return {
+        leanZ: mix('leanZ'), pelvisY: mix('pelvisY'),
+        chest: mix('chest'), chestY: mix('chestY'),
+        coxaChute: mix('coxaChute'), joelhoChute: mix('joelhoChute'),
+        coxaApoio: mix('coxaApoio'), joelhoApoio: mix('joelhoApoio'),
+        bracoLx: mix('bracoLx'), bracoLz: mix('bracoLz'),
+        bracoRx: mix('bracoRx'), bracoRz: mix('bracoRz'),
+        cotoveloL: mix('cotoveloL'), cotoveloR: mix('cotoveloR'),
+        altura: mix('altura')
+    };
+}
+
+/*
+Amostra o clip do arremesso lateral (ThrowInClip) num tempo normalizado 0..1.
+*/
+function amostrarClipLateral(norm) {
+    const fr = ThrowInClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => a[k] + (b[k] - a[k]) * u;
+    return {
+        chest: mix('chest'),
+        pelvisX: mix('pelvisX'),
+        bracoX: mix('bracoX'),
+        bracoZ: mix('bracoZ'),
+        cotovelo: mix('cotovelo'),
+        // Fracção do giro da cintura neste ponto do gesto (ver
+        // prepararGiroLateral): negativa na armação, positiva no chicote.
+        giro: mix('giro'),
+        coxaFrente: mix('coxaFrente'),
+        joelhoFrente: mix('joelhoFrente'),
+        coxaTras: mix('coxaTras'),
+        joelhoTras: mix('joelhoTras'),
+        altura: mix('altura')
+    };
+}
+
+function amostrarClipLancamentoGR(norm) {
+    const fr = GoalkeeperThrowClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => a[k] + (b[k] - a[k]) * u;
+    return {
+        chest: mix('chest'),
+        coxaL: mix('coxaL'),
+        joelhoL: mix('joelhoL'),
+        coxaR: mix('coxaR'),
+        joelhoR: mix('joelhoR'),
+        bracoLx: mix('bracoLx'),
+        bracoLz: mix('bracoLz'),
+        bracoRx: mix('bracoRx'),
+        bracoRz: mix('bracoRz'),
+        cotoveloL: mix('cotoveloL'),
+        cotoveloR: mix('cotoveloR'),
+        altura: mix('altura')
+    };
+}

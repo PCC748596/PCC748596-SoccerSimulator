@@ -35,8 +35,14 @@ const LateralPose = extrairObjecto(srcConfig, 'LateralPose', 'js/config.js');
 const ThrowInClip = extrairObjecto(srcConfig, 'ThrowInClip', 'js/config.js');
 
 const THREE = { MathUtils: { clamp: (v, a, b) => Math.max(a, Math.min(b, v)) } };
+/*
+O amostrador mudou-se do js/player.js para o js/pose.js, onde vive com as
+poses que o consomem — e onde o editor de animação lhe chega sem carregar o
+jogo. Ver o spec do editor.
+*/
+const srcPose = semCR(fs.readFileSync(path.join(raiz, 'js', 'pose.js'), 'utf8'));
 const amostrarClipLateral = new Function('ThrowInClip', 'THREE',
-    `${extrairFuncao(srcPlayer, 'amostrarClipLateral', 'js/player.js')}; return amostrarClipLateral;`
+    `${extrairFuncao(srcPose, 'amostrarClipLateral', 'js/pose.js')}; return amostrarClipLateral;`
 )(ThrowInClip, THREE);
 
 let falhas = 0;
