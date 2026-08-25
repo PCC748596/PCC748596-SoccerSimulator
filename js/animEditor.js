@@ -258,7 +258,16 @@ const Editor = {
     aCorrer: false,
     tempo: 0,
     loop: true,
-    fantasma: true,
+    /*
+    MODOS DO FANTASMA. São duas perguntas diferentes e por isso não cabem num
+    interruptor:
+
+      'original'  como estava o clip no ficheiro — "o que é que eu mudei?"
+      'anterior'  o keyframe ANTES deste — "de onde é que este vem?", que é o
+                  que mostra se a progressão do gesto é contínua ou salta
+      'off'       sem fantasma
+    */
+    fantasma: 'original',
 
     // Cópia dos clips como estavam ao abrir a página, para o "Repor" e para o
     // boneco fantasma.
@@ -431,10 +440,14 @@ const Editor = {
             e.target.classList.toggle('activo', this.loop);
         });
         document.getElementById('btn-fantasma').addEventListener('click', (e) => {
-            this.fantasma = !this.fantasma;
-            this.corpoFantasma.visible = this.fantasma;
-            e.target.classList.toggle('activo', this.fantasma);
+            const ordem = ['original', 'anterior', 'off'];
+            this.fantasma = ordem[(ordem.indexOf(this.fantasma) + 1) % ordem.length];
+            e.target.textContent = 'fantasma: ' + this.fantasma;
+            e.target.classList.toggle('activo', this.fantasma !== 'off');
+            this.corpoFantasma.visible = (this.fantasma !== 'off') && this.aba === 'clips';
+            this.desenhar();
         });
+        document.getElementById('btn-fantasma').textContent = 'fantasma: ' + this.fantasma;
         document.getElementById('btn-copiar').addEventListener('click', () => this.exportar());
         document.getElementById('btn-repor').addEventListener('click', () => this.repor());
     },
@@ -539,16 +552,51 @@ const Editor = {
 
         d.aplicar(this.rig, this.corpo, d.amostrar(t), t);
 
-        if (this.fantasma) {
-            // O fantasma corre o MESMO amostrador sobre os keyframes originais:
-            // troca-se o conteúdo do clip, amostra-se, e repõe-se. Assim não há
-            // uma segunda implementação da interpolação a divergir desta.
+        this.desenharFantasma(d, t, n);
+        this.estado();
+    },
+
+    /*
+    O fantasma, conforme o modo.
+
+    Em 'original' corre o MESMO amostrador sobre os keyframes do ficheiro:
+    troca-se o conteúdo do clip, amostra-se, repõe-se. Assim não há uma
+    segunda implementação da interpolação a divergir desta.
+
+    Em 'anterior' salta a interpolação e aplica o keyframe anterior tal e
+    qual: é a pose de onde este vem, e o que interessa ver é a diferença
+    entre as duas, não um ponto a meio delas.
+    */
+    desenharFantasma(d, t, n) {
+        const modo = this.fantasma;
+        if (modo === 'off' || this.aba !== 'clips') {
+            this.corpoFantasma.visible = false;
+            return;
+        }
+
+        if (modo === 'original') {
             const vivos = this.clip().frames;
             this.clip().frames = this.originais[this.nomeClip];
             d.aplicar(this.rigFantasma, this.corpoFantasma, d.amostrar(t), t);
             this.clip().frames = vivos;
+            this.corpoFantasma.visible = true;
+            return;
         }
-        this.estado();
+
+        // 'anterior': o keyframe imediatamente antes do ponto onde estamos.
+        // A correr, é o anterior ao instante actual; parado, é o frame-1.
+        const idx = this.aCorrer
+            ? Math.floor(t * (n - 1))
+            : this.frame - 1;
+
+        if (idx < 0) {
+            // No primeiro keyframe não há anterior — e um fantasma colado por
+            // cima do boneco só confundia.
+            this.corpoFantasma.visible = false;
+            return;
+        }
+        d.aplicar(this.rigFantasma, this.corpoFantasma, this.frames()[idx], idx / (n - 1));
+        this.corpoFantasma.visible = true;
     },
 
     animar() {
@@ -652,7 +700,7 @@ const Editor = {
             document.getElementById('painel-clips').style.display = qual === 'clips' ? '' : 'none';
             document.getElementById('painel-passada').style.display = qual === 'passada' ? '' : 'none';
             // O fantasma é a pose original de um CLIP; na passada não faz sentido.
-            this.corpoFantasma.visible = (qual === 'clips') && this.fantasma;
+            this.corpoFantasma.visible = (qual === 'clips') && this.fantasma !== 'off';
             if (qual === 'passada') this.montarCanaisPassada();
             else { this.montarCanais(); this.desenhar(); }
         };
