@@ -5,6 +5,296 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 25 de Agosto de 2026 (tarde) — a escala do lote, encraves, coesão
+
+Testes novos: `tests/permanencia_estado.test.js`, `tests/lateral_giro_corpo.test.js`,
+`tests/recuo_gr_e_bola_presa.test.js`, `tests/pressao_e_bloco.test.js`,
+`tests/peito_pingpong.test.js`, `tests/painel_sombras.test.js`,
+`tests/cantos_campo.test.js`, `tests/portador_decide.test.js`,
+`tests/mola_coesao.test.js`. Suite: 31 ficheiros.
+
+#### O ERRO QUE INVALIDAVA TODA A CALIBRAÇÃO ANTERIOR
+
+**Os números "por 90 min" das secções abaixo estavam 4,5× inflacionados**, e a
+conclusão que deles saía tinha o sinal trocado.
+
+O lote corre `duracaoSeg / dt` passos de FÍSICA, mas o relógio do jogo avança
+`dt * MatchDuration.timeScale` por passo. Com `gameSecondsPerRealSecond: 4.5`,
+os "15 minutos" do painel eram 900 s de física — **67,5 minutos de relógio**, e
+não 15. A normalização ×6 que estava escrita multiplicava um número que já vinha
+4,5× maior.
+
+Com a escala corrigida, o jogo tinha **menos** golos e remates do que o real, e
+não mais. Os "122 remates, 5,6× o alvo" nunca existiram.
+
+**A CONTA CERTA, e a maneira de não voltar a errar:** um jogo completo de 90
+minutos são `90*60 / timeScale` segundos de física. Com `GAME_SPEED = 0.9` o
+`timeScale` é 5,0, logo **1 080 s** — que é o que se põe no painel para os
+números saírem já por 90 minutos, sem normalização nenhuma. Se o `GAME_SPEED`
+mudar, este número muda com ele.
+
+O rótulo do painel também mente: diz minutos de relógio de jogo e são minutos de
+física.
+
+#### Onde a calibração está mesmo (20 jogos × 1080 s, sem normalização)
+
+| Estatística | Medido | Alvo real | |
+|---|---|---|---|
+| Golos | 1,9 | 2,52 | perto |
+| Finalizações | 12,3 | 26,1 | metade |
+| Faltas | 4,9 | 27,6 | escala posta a 4.3 no fim da sessão |
+| Cartões | ~1,0 | 5,22 | sobe com as faltas |
+| Escanteios | 0,2 | 9,92 | por resolver |
+| **Pontapés de baliza** | **0** | ~8 | **o furo mais antigo** |
+
+`pontapesBaliza: 0` em todos os registos de todos os lotes: a bola não sai pela
+linha de fundo. É a mesma causa dos escanteios a zero, e continua por explicar.
+
+#### `permanencia` — a medição que faltava no relatório do lote
+
+O contador de frames por estado (`desvios`) diz o tempo TOTAL e não distingue
+dois casos opostos: mil entradas curtas ou uma entrada presa. Foi essa
+ambiguidade que travou o diagnóstico do `CHEST_CONTROL` durante três lotes.
+
+`registarPermanencia` (js/simulate.js) mede cada EPISÓDIO contínuo: quantos
+houve, duração média, duração máxima e quem. É a primeira tabela a olhar quando
+alguma coisa encrava.
+
+- **O guarda-redes fica de fora**, e não por desinteresse: a FSM dele só corre
+  com a bola nas mãos (ver `updateGK`), o resto do tempo o `currentState` fica
+  congelado. Medido junto com os outros dava um episódio de 900 s em
+  `MOVE_TO_POS` que tapava sempre o maior episódio verdadeiro.
+
+#### Ping-pong da matada no peito (o encrave que matava jogos inteiros)
+
+Dois jogadores devolviam a bola ao peito um do outro indefinidamente. O retrato
+do vigia: **bola parada NO AR a 1,35 m** — o próprio `peitoYMax` — com velocidade
+zero, entre dois jogadores a 1,2 m dela.
+
+O `colarBolaAoPeito` prende a bola e zera-lhe a velocidade; ao largar, ela sai a
+`peitoVelYBoa`, que à TEC dos jogadores reais é **−0,19 m/s**: cai tão devagar
+que leva 84 ms a sair da faixa `peitoYMin`..`peitoYMax`, e o jogador ao lado
+apanha-a antes disso. Enquanto o gesto dura, o BT trata os dois como ocupados —
+ninguém vai à bola.
+
+O anti ping-pong aéreo já existia para a CABEÇA (`HeaderModel.maxHeadersSeguidos`)
+e **não contava peitos**. Agora `BallControl.maxPeitosSeguidos: 2` fecha a
+sequência.
+
+- **O contador tem de zerar quando a bola toca o relvado**, no mesmo sítio onde o
+  dos cabeceios zera. Sem isso esgotava-se uma vez e a matada no peito
+  desaparecia do resto do jogo — pior do que o encrave, e silencioso.
+- Resultado: 10 552 episódios num lote passaram a **68**.
+
+**Erro de diagnóstico a registar:** esta hipótese foi descartada um lote antes
+por se olhar ao SINAL do `vy` (era negativo, logo "a bola cai") em vez do VALOR.
+O que importava era a velocidade, não o sinal.
+
+#### O portador que não decidia — 662 segundos com a bola nos pés
+
+Um central com a bola, parado em `MOVE_TO_POS`, com o `decisionTimer` em **662
+segundos** e o jogo inteiro parado à volta dele.
+
+A causa está na ordem das árvores em `PlayerAI.tick` (js/bt/player_bt.js):
+
+```
+1. PlayingStyleBT  ->  if (res === SUCCESS) return;
+2. PositionBT      ->  if (res === SUCCESS) return;
+3. PlayerBT        <-  é aqui que vive o ramo ComBola
+```
+
+As duas primeiras cortavam a terceira. O estilo do CB é o `extra_frontman`, que o
+relatório de calibração marca `semEfeito: true` — **activa 1067 vezes e não
+desloca nada**. Activava, devolvia `SUCCESS`, e a decisão com bola nunca
+acontecia.
+
+**Quem tem a bola chega agora sempre ao `PlayerBT`.** As outras duas continuam a
+correr — escrevem alvos e são a identidade do jogador — mas deixam de poder
+IMPEDIR a decisão. O problema não era aquele estilo: é qualquer folha destas
+árvores poder engolir a decisão do portador, e o número de folhas só cresce.
+
+#### Mola de coesão à bola (js/utils.js → `molaParaABola`)
+
+Reabilita, com um propósito só, o que o `relaxConstraints` fazia antes de ser
+apagado. **As molas de coesão, a `separarAlvos` e a malha de Delaunay estão
+apagadas** — ver o comentário no `match.js`; o `team_bt.js` diz que compactar e
+segurar a linha "vão ser refeitos sobre triangulação de Delaunay", que é um plano
+por executar e não código a correr.
+
+O que se via no ecrã: um central com a bola junto à linha de fundo adversária e os
+companheiros a CORREREM PARA LONGE. Não fugiam da bola — iam para o slot no
+bloco, porque a coesão à FORMA era o único laço que restava. E o apoio de
+circulação não os apanha: `SupportModel.circulacao.desvioMax` (8 m) corta quem
+está longe do próprio slot, por desenho ("não arranca ninguém do outro lado do
+campo").
+
+A mola puxa o alvo na direcção da bola, só o EXCESSO acima de `distMin`, com tecto
+em `puxaoMax`. Medido: a 40 m aproxima 5,6 m; uma linha de quatro defesas comprime
+de 40 m para 35,2 m mantendo a ordem dos jogadores.
+
+- **O `puxaoMax` é o que separa uma mola de um íman.** Sem tecto os onze acabam em
+  cima da bola e a formação deixa de existir — é a primeira coisa que o teste
+  trava, e a razão provável de as molas antigas terem sido apagadas.
+- **Corre entre a inércia pós-passe e o corte de fora-de-jogo.** Depois disso, a
+  mola podia empurrar alguém para posição irregular ou para fora das linhas, e
+  nenhum dos dois cortes voltava a falar.
+- A defender puxa metade (`forcaSemBola`): já há o bloco a seguir a bola e a
+  marcação a puxar cada um ao seu homem.
+
+#### Pressão defensiva: o fim do rush, e o seu preço
+
+O `deveMandarChaser` decidia só ONDE se perseguia (que metade do campo) e nunca SE
+valia a pena — com a bola do lado certo mandava-se um caçador em todos os frames,
+sem condição de distância. Era o "rush" constante.
+
+`MarkingModel.raioDeAccionamento` (low 9 m, balanced 15 m, high sem limite),
+medido do jogador mais próximo ao PORTADOR e não à bola — são coisas diferentes
+enquanto ele a conduz.
+
+- **`tercoDeEmergencia`:** no próprio terço defensivo persegue-se sempre, seja
+  qual for a pressão. Sem esta excepção trocava-se um defeito por outro pior — o
+  portador entrava na área a conduzir sem ninguém lhe sair ao caminho.
+- **O raio não passa à frente da bola solta.** Uma bola sem dono continua a ser
+  perseguida a qualquer distância; era esse o encrave de 25 s que o
+  `chaser_bola_solta.test.js` fixa, e teria sido fácil reintroduzi-lo.
+- **O PREÇO: as faltas caíram de ~28 para 4,9 por jogo.** Menos perseguição são
+  menos duelos. `RefereeModel.faltas.escala` passou de 1.0 para **4.3** para as
+  repor nas 20 pedidas — é esse o botão, e escala as duas fontes sem mudar a
+  proporção entre elas.
+
+#### O passador corria atrás da própria bola
+
+Assimetria entre duas eleições que deviam concordar: o `pickIntercetor` tinha a
+guarda do passe em curso e o `pickChaser` não. No instante em que o passe sai,
+`Match.ballCarrier` fica null — a bola conta como solta — e o passador é, por
+construção, quem está mais perto dela. Agora, com passe em curso, o chaser é o
+DESTINATÁRIO. Serve também a condução, onde o toque à frente põe
+`intendedReceiver` no próprio condutor.
+
+#### Corrida ao espaço: estava desligada
+
+```js
+function podeCorrerNoEspaco(ctx) { return false; }
+```
+
+Toda a maquinaria existia e afinada (`escolherDestinoDeCorrida`, o estado
+`RUN_INTO_SPACE`, o `RunIntoSpaceModel`, o arrefecimento) e ligada à árvore. Só a
+porta estava fechada. Religada, mais duas correcções sem as quais não dava o
+efeito pedido:
+
+- **os laterais estavam barrados** — a versão original excluía `role === 'def'`
+  inteiro. Passam LB e RB; os centrais continuam de fora;
+- **quem passa não podia arrancar, por construção:** a condição exigia
+  `Match.ballCarrier`, e durante o voo do passe não há portador nenhum — que é
+  exactamente o instante em que o passador tem de partir. `referenciaDaBola()` é o
+  portador OU o destinatário do passe em curso, usada pela condição E pelo destino
+  (numa só, a corrida morria entre as duas).
+
+Ao passar, o `runCooldown` do passador é zerado: é o "toca e segue".
+
+**Por resolver:** o `RUN_INTO_SPACE` aborta em 0,41 s de média, contra os 4,0 s de
+`duracao` do modelo. Arranca e desiste quase logo.
+
+#### Regras novas
+
+- **Recuo para o guarda-redes** (`maosProibidasNoRecuo`, js/utils.js). Um passe
+  deliberado e COM O PÉ de um companheiro não pode ser agarrado com as mãos. A
+  distinção já estava no código sem ninguém a usar: `executePassGameplay` é o
+  caminho do pé — a cabeçada e o peito têm caminhos próprios. A guarda vive DENTRO
+  do `grabBall` e não em quem chama, porque são cinco os sítios que agarram. O
+  ramo `apanhar` do `updateGK` ganhou saída para `idle`: sem ela ficava a tentar
+  agarrar frame após frame com a bola parada aos pés.
+- **Bola pousada em cima da baliza** (`destravarBolaEmCimaDaBaliza`, js/match.js).
+  O pano de cima da rede devolve a bola com `v.y = -v.y * restituicao` e ela
+  ressalta cada vez menos até ficar lá pousada; a detecção de bola fora exige que
+  `|z| - raio` PASSE a linha de fundo, e uma bola assente no travessão está
+  praticamente em cima dela. Empurra-se o `z` para a detecção existente decidir
+  entre canto e pontapé de baliza. **Só com a bola lenta** — uma bola a voar por
+  cima do travessão não pode ser interrompida a meio.
+- **Falta no ataque com gente na área** (`FreeKickModel.slotsArea`/`slotsMarcacao`).
+  O setup punha o batedor e a barreira, e os outros nove ficavam onde estavam:
+  cruzava-se para uma área vazia. Mesmo desenho do canto, com cinco e não nove —
+  numa falta a bola tanto pode sair em cruzamento como em remate directo. Os
+  marcadores são os defensores que SOBRAM da barreira, que é obrigação.
+  `zonaDeArea` é medido do MEIO-CAMPO (como o `barreiraZonaZ`), não da linha de
+  fundo.
+
+#### Lançamento lateral
+
+- **O corpo vira para onde atira** (`giroDoCorpoNoLateral`, js/utils.js). O `case
+  LATERAL` chamava `lookAtBola` para o ponto (0, z) em TODOS os frames; só a
+  cintura acompanhava, com tecto em `giroMax` (32°). Agora a cintura torce até ao
+  tecto e o corpo dá só o que sobra — num lançamento a 150° são 118°. Dentro do
+  alcance da cintura o corpo não roda nada, portanto os lançamentos curtos ficam
+  idênticos.
+- **Alcance por STRENGTH** (`alcanceMaximoDoLateral`). Era `alcanceMax * (1 ±
+  25%)`, que dava 22,5 m ao mais forte. Agora os extremos estão escritos:
+  `alcanceMaxFraco: 12` (STRENGTH 0) e `alcanceMaxForte: 20` (STRENGTH 100).
+- **Os companheiros aproximam-se** (`alvoDeApoioNoLateral` + `aproximarNoLateral`).
+  Ficavam nos slots do bloco, a vinte e tal metros. Os `apoioQuantos` (3) mais
+  próximos são puxados para a faixa 5–10 m. Movem-se AO LONGO da linha que já os
+  liga ao batedor, não para slots fixos: assim cada um continua no seu corredor e
+  só a distância muda. Escrito no nível 3, porque o nível 2 reescreve o
+  `dynamicTarget` todos os frames.
+
+#### Árbitros
+
+- **O tremor ao parar.** O passo de um frame é `min(d, velMax*amp*dt)`, portanto
+  perto do alvo o passo é o próprio `d` e a velocidade que alimenta a animação é
+  `d/dt` — a 1/60, seis centímetros dão 3,6 m/s. O movimento parava em `d <= 0.05`
+  e o ciclo de passada ligava em `vel > 0.1`: a velocidade saltava entre 0 e
+  vários m/s sem nada pelo meio.
+- **E os solavancos que a primeira correcção trouxe.** A zona morta esteve em
+  0.25/0.60 m e o alvo de um assistente NÃO está parado — corre ao longo da linha
+  atrás da bola. Com 60 cm de folga o boneco esperava, acumulava distância e
+  disparava para a recuperar. A margem é estreita e está medida no teste:
+
+  | paragemMax / arranqueMin | Tremor | Solavanco |
+  |---|---|---|
+  | 0,25 / 0,60 | não | 3,0 m/s |
+  | 0,10 / 0,18 | não | 3,0 m/s |
+  | **0,06 / 0,10** | **não** | **não** |
+  | 0,04 / 0,07 | sim | não |
+
+  Quem resolve o tremor não é a zona morta: é o `suavizacaoVel`, que filtra a
+  velocidade vista pela ANIMAÇÃO. A zona morta só evita micro-passos.
+- **Discos na câmara táctica** (`Officials.criarDisco`). Preto com duas linhas
+  amarelas, `R` e `A`, do mesmo raio dos jogadores — de cima, um disco mais
+  pequeno lê-se como estando mais longe. `atualizarVista` corre todos os frames: o
+  `cameraMode` é uma global que qualquer botão muda sem avisar ninguém.
+
+#### Campo, público e apresentação
+
+- **Quartos de círculo e bandeirinhas nos cantos** (`CornerFlag`, `arcoDeCanto`).
+  O `RingGeometry` é desenhado no plano XY e deitado com `rotation.x = -PI/2`, o
+  que INVERTE o z: um `thetaStart` errado desenha o quarto virado para fora do
+  campo. A conta saiu para `utils.js` e o teste verifica-a gerando os pontos do
+  arco e confirmando que caem dentro das linhas — não comparando com uma tabela.
+- **Sombras a sério.** Das 24 peças do corpo só a BACIA tinha `castShadow`: a
+  sombra era uma manchinha do tamanho da anca. Agora projectam as peças
+  estruturais (tronco, cabeça, braços, coxas, canelas, chuteiras); as decorativas
+  ficam de fora porque estão dentro de uma peça que já projecta. Nitidez de 6,4
+  para **14,6 texels/m** (`mapSize` 1024→2048, `d` 80→70), com o `bias` reduzido e
+  `normalBias` acrescentado — com o dobro dos texels o valor antigo descolava a
+  sombra dos pés.
+- **Botão Sombras ON/OFF** no painel da direita. `shadowMap.enabled = false` NÃO
+  chega: o Three deixa de actualizar o mapa mas não o limpa, e as sombras ficam
+  CONGELADAS no relvado. É preciso tirar o `castShadow` à LUZ e marcar os
+  materiais da cena para recompilar.
+- **Torcidas invertidas** e **10% da bancada a saltar sempre**
+  (`CrowdModel.fraccaoSaltoSempre`). Os ultras saem do mesmo limiar por adepto,
+  passado por um `fract(x * 7.3)` — descorrelacionar é o ponto: sem isso seriam
+  exactamente os de limiar mais baixo, isto é, os primeiros a levantar-se, e
+  ficavam amontoados numa zona só. Custa um uniform, nenhum attribute.
+  **A bancada quase não reagia porque a bola passa 1,7% do tempo no terço
+  ofensivo** — o gatilho quase nunca ocorre. Não era afinação do `CrowdModel`.
+- **Bauhaus 93 nos números da camisola** (`CamisolaTipografia`). Sem `bold`: a
+  fonte já é pesada e pedir negro a quem não o tem faz o browser sintetizá-lo.
+- **Furadas de remate instrumentadas** (`remates.furados`). Quem AUTORIZA o remate
+  aceita a graça de condução (`temBola`), quem o EXECUTA exige a bola no pé — e
+  entre a decisão e o contacto passam 0,318 s. Medido: **3,7% dos remates**,
+  portanto raro e realista; a incoerência fica registada mas não compensa mexer.
+
 ### Sessão de 25 de Agosto de 2026 — faltas e cartões, editor de animação, som
 
 Specs em [docs/superpowers/specs/2026-08-25-faltas-e-cartoes-design.md](superpowers/specs/2026-08-25-faltas-e-cartoes-design.md) e [docs/superpowers/specs/2026-08-25-editor-de-animacao-design.md](superpowers/specs/2026-08-25-editor-de-animacao-design.md). Testes: `tests/faltas_cartoes.test.js`, `tests/pose_partilhada.test.js`, `tests/anim_editor_export.test.js`.
@@ -42,9 +332,16 @@ Página separada, com o boneco, linha do tempo dos keyframes e um slider por can
 - **Pés e cabeça** ganharam canais (`peLx/peLy/peRx/peRy`, `cabecaX/cabecaY`), **opcionais**: os pés estavam fixos em ±π/16 e a cabeça nunca era tocada. Um keyframe sem eles comporta-se como antes, portanto nenhuma animação existente mudou.
 - **O exportador reescreve os NÚMEROS dentro do texto do `config.js`**, mantendo comentários e formatação. Os clips têm um cabeçalho com as fases do gesto e um comentário por keyframe: um exportador de JSON destruía isso ao colar. É função pura, com teste sobre o config real — 36 comentários preservados nos cinco clips, 13 no `GaitModel`, saída que faz parse, e **`null` em vez de uma versão a fingir** quando não consegue.
 
-#### Onde a calibração está (medido em 20 jogos × 15 min, normalizado ×6)
+#### ~~Onde a calibração está~~ — TABELA INVÁLIDA, ver a sessão da tarde
 
-| Estatística | Por 90 min | Alvo real | |
+> **NÃO USAR ESTES NÚMEROS.** A normalização ×6 está errada por 4,5×: os "15
+> minutos" do painel são 900 s de FÍSICA, que a `MatchDuration.timeScale`
+> converte em 67,5 minutos de relógio. Com a escala certa o jogo tinha MENOS
+> golos e remates do que o real, e não mais — a conclusão desta tabela tem o
+> sinal trocado. Fica aqui só como registo do erro. Os números medidos estão em
+> "Onde a calibração está mesmo", na sessão da tarde.
+
+| Estatística | Por 90 min (ERRADO, ×4,5) | Alvo real | |
 |---|---|---|---|
 | Faltas | 27,3 | 27,6 | no sítio |
 | Cartões | 4,5 | 5,22 | perto |
@@ -54,15 +351,13 @@ Página separada, com o boneco, linha do tempo dos keyframes e um slider por can
 | Penáltis | 0,6 | ~0,27 | 2,2× a mais |
 | Impedimentos | — | 3,2 | não existem |
 
-A normalização ×6 é optimista (15 minutos são quase todos "início de jogo"),
-mas a ordem de grandeza aguenta.
+~~A normalização ×6 é optimista mas a ordem de grandeza aguenta.~~ Não
+aguentava: estava 4,5× acima.
 
-**Os três desvios grandes são provavelmente UM problema, não três.** Com 122
-remates por jogo deviam sair dezenas de cantos, e saem 0,9: a bola quase nunca
-sai pela linha de fundo depois de um remate. Isso aponta para os remates irem
-quase todos para dentro da baliza ou para as mãos do guarda-redes — o que liga
-directamente aos 14 golos. Atacar a frequência de remate e a eficácia do
-guarda-redes deve arrumar os três de uma vez.
+**O que sobreviveu desta análise**, e continua verdadeiro com a escala certa: os
+escanteios quase a zero e os `pontapesBaliza` a zero são o mesmo problema — a
+bola não sai pela linha de fundo. O que caiu foi a explicação: não é que haja
+remates a mais, é que a bola passa 1,7% do tempo no terço ofensivo.
 
 **Mandante e visitante não existem**: as duas equipas são simétricas, mesmo
 código e mesmas skills. O 1,20 contra 1,15 medido é ruído, não vantagem
@@ -419,6 +714,23 @@ Spec em [docs/superpowers/specs/2026-08-24-reach-animacao-procedural-design.md](
 
 Coisas medidas e por resolver, para não se voltarem a descobrir por acaso:
 
+- **`pontapesBaliza` é 0 em TODOS os registos de todos os lotes**, e os
+  escanteios ficam em 0,2 por jogo (alvo 9,92). A bola não sai pela linha de
+  fundo. É o furo mais antigo por explicar e o de maior retorno: arruma os
+  cantos, os pontapés de baliza e parte dos remates em falta de uma vez.
+- **A bola passa 1,7% do tempo no terço ofensivo** (`tercoSegundos.atk`, ~18 s
+  num jogo de 1080 s). Explica os cantos, os pontapés de baliza, a bancada
+  parada e as finalizações a metade do alvo.
+- **`RUN_INTO_SPACE` aborta em 0,41 s de média**, contra os 4,0 s de `duracao`
+  do `RunIntoSpaceModel`. A corrida ao espaço arranca e desiste quase logo,
+  portanto a tabelinha ainda não acontece a sério.
+- **O rótulo do lote mente:** diz minutos de relógio de jogo e são minutos de
+  física. Ver a conta em "O ERRO QUE INVALIDAVA TODA A CALIBRAÇÃO".
+- **`trocasMarcacao` continua 0** em todos os registos, apesar de instrumentado.
+- **`extra_frontman` (CB) e `target_man` (CF) continuam `semEfeito: true`:**
+  activam e não deslocam nada. Já não prendem o portador (ver a guarda `comBola`
+  no `PlayerAI.tick`), mas continuam a ser estilos que não fazem o que dizem.
+
 - **Metade dos passes não chega ao receptor pretendido, mesmo com o erro de execução desligado** (52.5 ± 7.9%, 10 sementes × 2 corridas). Alguma outra coisa — escolha de alvo, lead/tempo de voo, recepção acima do `easySpeed`, interceptação — domina o resultado do passe por uma ordem de grandeza. É o próximo alvo óbvio, à frente de qualquer afinação do erro de execução. A medição que o isolaria: o **desvio lateral da bola em relação à linha passador→alvo**, medido à distância do alvo, que com o erro desligado tem de dar exactamente zero.
 - **Lançamento rasteiro acima dos ~28 m é cortado em silêncio.** O `velocidadeRasteiraPara` é usado também nos lançamentos (`ehLancamento && !lancamentoAlto`) e o `findThroughBall` não está limitado em distância. Com o tecto de 18.5 m/s a bola fica pelos ~29.8 m e cai curta, sem cair para o ramo aéreo.
 - **`isCovering` é código morto:** lido em `player_bt.js` para o estado `BLOCKING`, atribuído só a `false` no construtor e na limpeza por frame. Nada o activa — não há 2º defensor (cobertura). O `markingTarget` está na mesma situação.
@@ -483,23 +795,36 @@ DOMContentLoaded (main.js)
        └─ renderer.render()
 ```
 
-## A arquitectura de decisão: 3 níveis de BT + FSM
+## A arquitectura de decisão: BT + FSM
 
 **O BT decide, a FSM executa.** Um nó de BT nunca deve conter lógica que dure
 vários frames — muda o estado da FSM e devolve `SUCCESS`. A duração (um carrinho
 que leva 1.5 s, um passe em curso) vive sempre na `PlayerFSM`.
 
-| Nível | Onde | Frequência | Pergunta que responde | Escreve em |
-|---|---|---|---|---|
-| 1 · Team | [js/bt/team_bt.js](js/bt/team_bt.js) | 1×/equipa/frame | Que plano colectivo? | `TeamBlackboard` + marcações |
-| 2 · Position | [js/bt/position_bt.js](js/bt/position_bt.js) | 1×/jogador de campo/frame | Onde me coloco? | `p.dynamicTarget` |
-| 3 · Individual | [js/bt/player_bt.js](js/bt/player_bt.js) | 1×/jogador/frame | Que faço agora? | `p.fsm.changeState(...)` |
+> **ATENÇÃO: O NÍVEL 2 JÁ NÃO EXISTE.** O `js/bt/position_bt.js` foi apagado, e
+> com ele a marcação (`atribuirMarcacao`/cobertura), o `TacklingAI` e a malha de
+> passe de Delaunay (`TriangulacaoAI`). Ver o cabeçalho "ONDE CADA JOGADOR SE
+> POE" em `js/bt/team_bt.js`, que é onde o posicionamento vive agora. As
+> referências a `bt/position_bt.js` espalhadas por este documento são
+> HISTÓRICAS — o ficheiro não está no repositório.
 
-Ordem obrigatória por frame: **1 → 2 → 3**. O nível 2 lê o blackboard do nível 1;
-o nível 3 lê o alvo posicional do nível 2. `Match.runTeamAI()` é só o orquestrador
-que garante essa ordem — já não decide nada por si.
+| Onde | Frequência | Pergunta que responde | Escreve em |
+|---|---|---|---|
+| [js/bt/team_bt.js](js/bt/team_bt.js) | 1×/equipa/frame | Que plano colectivo? | `TeamBlackboard` |
+| [js/bt/team_bt.js](js/bt/team_bt.js) → posicionamento | 1×/jogador/frame | Onde me coloco? | `p.dynamicTarget` |
+| [js/bt/player_bt.js](js/bt/player_bt.js) | 1×/jogador/frame | Que faço agora? | `p.fsm.changeState(...)` |
 
-> **Os três níveis estão implementados como Behavior Trees.**
+O posicionamento é o slot no bloco, inclinado pelo estilo, puxado pela **mola de
+coesão à bola**, cortado pelo fora-de-jogo e pelos limites do campo, e
+suavizado. `Match.runTeamAI()` garante a ordem — já não decide nada por si.
+
+**Dentro do `PlayerAI.tick` correm TRÊS árvores por esta ordem:** o
+`PlayingStyleBT` (só em ataque), o `PositionBT` da posição, e o `PlayerBT` base.
+As duas primeiras podem cortar a terceira com `SUCCESS` — **excepto quando o
+jogador tem a bola**. Essa excepção existe porque um estilo sem efeito
+(`extra_frontman`) engolia a decisão do portador e deixava-o parado 662 s com a
+bola nos pés; ver `tests/portador_decide.test.js`.
+
 > `FootballPlayer.runBehaviorTree()` é hoje só a porta de entrada que delega em
 > `PlayerAI.tick()`, para o resto do código continuar a chamá-la como sempre.
 
@@ -1974,6 +2299,26 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Jogo encravado num lote: o retrato do momento | `simulate.js` → `vigiarEncrave()`, campo `encraves` do relatório |
 | Quantas faltas por jogo (sem mudar o equilíbrio das fontes) | `officials.js` → `RefereeModel.faltas.escala` |
 | Volume e reacção do som do estádio | `ambiente_sonoro.js` |
+| Equipa esticada / longe da jogada com bola | `config.js` → `MolaDeCoesao` (`puxaoMax` limita o pior caso) |
+| Quando a equipa sai à bola (rush) | `config.js` → `MarkingModel.raioDeAccionamento` |
+| Quantas faltas por jogo | `officials.js` → `RefereeModel.faltas.escala` |
+| Portador parado a não decidir nada | `bt/player_bt.js` → `PlayerAI.tick`, a guarda `comBola` |
+| Um estado da FSM que fica preso | relatório do lote → tabela `permanencia` (episódios, não frames) |
+| Quantos minutos pôr no lote para dar 90 min | `90*60 / MatchDuration.timeScale` — hoje 1080 s |
+| Recuo com o pé para o guarda-redes | `utils.js` → `maosProibidasNoRecuo`; marca em `fsm.js` |
+| Bola presa em cima da baliza | `match.js` → `destravarBolaEmCimaDaBaliza()` |
+| Gente na área numa falta ofensiva | `config.js` → `FreeKickModel.slotsArea` / `slotsMarcacao` |
+| Corpo do batedor de lateral virado para o alvo | `utils.js` → `giroDoCorpoNoLateral` |
+| Alcance do lançamento lateral por força | `config.js` → `ThrowInModel.alcanceMaxFraco/Forte` |
+| Companheiros longe do batedor do lateral | `config.js` → `ThrowInModel.apoio*` |
+| Árbitro a tremer ou aos solavancos | `officials.js` → `paragemMax`/`arranqueMin`/`suavizacaoVel` |
+| Ligar/desligar sombras | painel direito → Sombras; `main.js` → `toggleSombras()` |
+| Nitidez das sombras | `main.js` → `dirLight.shadow.mapSize` e o `d` da shadow camera |
+| Quem projecta sombra no corpo | `pose.js` → `criarPeca(..., true)` |
+| Bandeirinhas e arco dos cantos | `config.js` → `CornerFlag`; `utils.js` → `arcoDeCanto` |
+| Fatia da bancada que salta sempre | `crowd.js` → `CrowdModel.fraccaoSaltoSempre` |
+| Fonte dos números da camisola | `config.js` → `CamisolaTipografia` |
+| Matadas no peito em ciclo (ping-pong) | `config.js` → `BallControl.maxPeitosSeguidos` |
 | Quantos jogos e minutos a simulação em lote corre | painel → Simulação em lote (11 jogos cobre os estilos) |
 | Quando a bancada se levanta / festeja | `crowd.js` → `CrowdTrigger.avaliar()` |
 | Fracções de pé, poses e ritmos do público | `crowd.js` → `CrowdModel.poses` e `fraccao*` |
