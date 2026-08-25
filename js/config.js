@@ -329,6 +329,22 @@ inclinação lateral e muito mais ROTAÇÃO — a bacia abre na armação e fech
 impacto, e é daí que vem a força. O braço contrário à perna de remate abre para
 fora a contrabalançar (é o gesto mais visível na referência).
 
+A REFERÊNCIA são as três fases clássicas do remate, lidas da direita para a
+esquerda numa prancha de biomecânica: *toma de impulso* (a corrida), *fase
+principal* (armação e contacto) e *fase final* (o acompanhamento).
+
+Três coisas vieram de lá e não estavam no clip:
+
+  - o BRAÇO CONTRÁRIO abre quase à horizontal na armação (`bracoLz` 1.85 no
+    frame 4, era 1.35). É o gesto mais visível da prancha, e é o que
+    contrabalança a perna que vai atrás;
+  - na FASE FINAL o TRONCO INCLINA PARA TRÁS (`chest` negativo nos frames 10 e
+    11). O clip punha-o a prumo, e o remate acabava com o corpo direito como
+    quem pára de andar;
+  - a INCLINAÇÃO LATERAL mantém-se até ao fim (`leanZ` -0.14 no frame 10, era
+    -0.06): na prancha o corpo ainda está claramente inclinado sobre o pé de
+    apoio depois de a bola sair.
+
      1  perna de remate começa a recuar, apoio a descer
      2  pé de apoio planta ao lado da bola, tronco inclina
      3  armação: joelho a ~100°, bacia abre
@@ -347,29 +363,29 @@ const ShotClip = {
     pernaChute: 'r',
     contactFrame: 8,
     frames: [
-        // 1
-        { leanZ: -0.04, pelvisY: 0.10, chest: 0.18, chestY: -0.10, coxaChute: 0.30, joelhoChute: 0.70, coxaApoio: -0.20, joelhoApoio: 0.30, bracoLx: -0.35, bracoLz: 0.55, bracoRx: 0.25, bracoRz: -0.30, cotoveloL: -0.60, cotoveloR: -0.70, altura: 0.00 },
-        // 2
-        { leanZ: -0.10, pelvisY: 0.18, chest: 0.26, chestY: -0.18, coxaChute: 0.62, joelhoChute: 1.25, coxaApoio: -0.10, joelhoApoio: 0.34, bracoLx: -0.55, bracoLz: 0.85, bracoRx: 0.40, bracoRz: -0.36, cotoveloL: -0.45, cotoveloR: -0.80, altura: -0.01 },
-        // 3
-        { leanZ: -0.16, pelvisY: 0.26, chest: 0.30, chestY: -0.26, coxaChute: 0.88, joelhoChute: 1.75, coxaApoio: 0.00, joelhoApoio: 0.38, bracoLx: -0.70, bracoLz: 1.10, bracoRx: 0.52, bracoRz: -0.42, cotoveloL: -0.30, cotoveloR: -0.85, altura: -0.02 },
-        // 4  armação máxima
-        { leanZ: -0.20, pelvisY: 0.32, chest: 0.32, chestY: -0.32, coxaChute: 1.00, joelhoChute: 2.00, coxaApoio: 0.04, joelhoApoio: 0.40, bracoLx: -0.80, bracoLz: 1.35, bracoRx: 0.58, bracoRz: -0.46, cotoveloL: -0.20, cotoveloR: -0.90, altura: -0.03 },
-        // 5
-        { leanZ: -0.20, pelvisY: 0.22, chest: 0.30, chestY: -0.22, coxaChute: 0.72, joelhoChute: 1.90, coxaApoio: 0.05, joelhoApoio: 0.38, bracoLx: -0.72, bracoLz: 1.28, bracoRx: 0.46, bracoRz: -0.50, cotoveloL: -0.22, cotoveloR: -0.82, altura: -0.02 },
-        // 6  chicote
-        { leanZ: -0.18, pelvisY: 0.08, chest: 0.26, chestY: -0.10, coxaChute: 0.22, joelhoChute: 1.55, coxaApoio: 0.05, joelhoApoio: 0.34, bracoLx: -0.50, bracoLz: 1.15, bracoRx: 0.24, bracoRz: -0.56, cotoveloL: -0.26, cotoveloR: -0.68, altura: -0.01 },
-        // 7
-        { leanZ: -0.14, pelvisY: -0.06, chest: 0.20, chestY: 0.04, coxaChute: -0.35, joelhoChute: 0.75, coxaApoio: 0.06, joelhoApoio: 0.28, bracoLx: -0.20, bracoLz: 1.00, bracoRx: -0.05, bracoRz: -0.60, cotoveloL: -0.28, cotoveloR: -0.52, altura: 0.00 },
-        // 8  CONTACTO
-        { leanZ: -0.12, pelvisY: -0.16, chest: 0.14, chestY: 0.14, coxaChute: -0.72, joelhoChute: 0.10, coxaApoio: 0.06, joelhoApoio: 0.24, bracoLx: 0.05, bracoLz: 0.92, bracoRx: -0.28, bracoRz: -0.62, cotoveloL: -0.28, cotoveloR: -0.42, altura: 0.02 },
-        // 9
-        { leanZ: -0.10, pelvisY: -0.24, chest: 0.08, chestY: 0.22, coxaChute: -1.20, joelhoChute: 0.08, coxaApoio: 0.07, joelhoApoio: 0.18, bracoLx: 0.22, bracoLz: 0.85, bracoRx: 0.05, bracoRz: -0.66, cotoveloL: -0.26, cotoveloR: -0.36, altura: 0.07 },
-        // 10 follow-through alto
-        { leanZ: -0.06, pelvisY: -0.30, chest: 0.04, chestY: 0.28, coxaChute: -1.55, joelhoChute: 0.05, coxaApoio: 0.09, joelhoApoio: 0.14, bracoLx: 0.36, bracoLz: 0.78, bracoRx: 0.34, bracoRz: -0.70, cotoveloL: -0.22, cotoveloR: -0.28, altura: 0.13 },
-        // 11
-        { leanZ: -0.02, pelvisY: -0.18, chest: 0.10, chestY: 0.16, coxaChute: -0.80, joelhoChute: 0.22, coxaApoio: 0.05, joelhoApoio: 0.18, bracoLx: 0.20, bracoLz: 0.50, bracoRx: 0.18, bracoRz: -0.44, cotoveloL: -0.16, cotoveloR: -0.18, altura: 0.05 },
-        // 12 recuperação
+        // 1  TOMA DE IMPULSO: a corrida ainda manda, a perna começa a recuar
+        { leanZ: -0.05, pelvisY: 0.12, chest: 0.20, chestY: -0.12, coxaChute: 0.45, joelhoChute: 0.85, coxaApoio: -0.25, joelhoApoio: 0.32, bracoLx: -0.42, bracoLz: 0.70, bracoRx: 0.30, bracoRz: -0.35, cotoveloL: -0.55, cotoveloR: -0.70, altura: 0.00 },
+        // 2  pé de apoio planta ao lado da bola, tronco inclina
+        { leanZ: -0.11, pelvisY: 0.20, chest: 0.28, chestY: -0.20, coxaChute: 0.72, joelhoChute: 1.35, coxaApoio: -0.12, joelhoApoio: 0.36, bracoLx: -0.62, bracoLz: 1.05, bracoRx: 0.44, bracoRz: -0.42, cotoveloL: -0.42, cotoveloR: -0.80, altura: -0.01 },
+        // 3  FASE PRINCIPAL: joelho a ~100°, bacia abre, braço contrário sobe
+        { leanZ: -0.18, pelvisY: 0.28, chest: 0.34, chestY: -0.28, coxaChute: 0.92, joelhoChute: 1.80, coxaApoio: 0.00, joelhoApoio: 0.40, bracoLx: -0.78, bracoLz: 1.45, bracoRx: 0.54, bracoRz: -0.52, cotoveloL: -0.28, cotoveloR: -0.86, altura: -0.02 },
+        // 4  armação máxima — braço contrário quase à HORIZONTAL (referência)
+        { leanZ: -0.24, pelvisY: 0.34, chest: 0.36, chestY: -0.34, coxaChute: 1.05, joelhoChute: 2.05, coxaApoio: 0.04, joelhoApoio: 0.42, bracoLx: -0.88, bracoLz: 1.85, bracoRx: 0.62, bracoRz: -0.60, cotoveloL: -0.18, cotoveloR: -0.92, altura: -0.03 },
+        // 5  a bacia inicia a rotação para a frente
+        { leanZ: -0.24, pelvisY: 0.24, chest: 0.33, chestY: -0.24, coxaChute: 0.75, joelhoChute: 1.92, coxaApoio: 0.05, joelhoApoio: 0.40, bracoLx: -0.80, bracoLz: 1.72, bracoRx: 0.50, bracoRz: -0.58, cotoveloL: -0.20, cotoveloR: -0.84, altura: -0.02 },
+        // 6  chicote: a coxa acelera, o joelho ainda flectido
+        { leanZ: -0.22, pelvisY: 0.08, chest: 0.28, chestY: -0.10, coxaChute: 0.22, joelhoChute: 1.55, coxaApoio: 0.05, joelhoApoio: 0.34, bracoLx: -0.55, bracoLz: 1.45, bracoRx: 0.26, bracoRz: -0.62, cotoveloL: -0.24, cotoveloR: -0.70, altura: -0.01 },
+        // 7  extensão rápida da tíbia, pé quase na bola
+        { leanZ: -0.18, pelvisY: -0.06, chest: 0.20, chestY: 0.04, coxaChute: -0.35, joelhoChute: 0.75, coxaApoio: 0.06, joelhoApoio: 0.28, bracoLx: -0.22, bracoLz: 1.20, bracoRx: -0.05, bracoRz: -0.64, cotoveloL: -0.26, cotoveloR: -0.52, altura: 0.00 },
+        // 8  CONTACTO — perna esticada, tornozelo travado, corpo por cima da bola
+        { leanZ: -0.16, pelvisY: -0.16, chest: 0.12, chestY: 0.14, coxaChute: -0.72, joelhoChute: 0.10, coxaApoio: 0.06, joelhoApoio: 0.24, bracoLx: 0.05, bracoLz: 1.10, bracoRx: -0.28, bracoRz: -0.66, cotoveloL: -0.26, cotoveloR: -0.42, altura: 0.02 },
+        // 9  pós-impacto, a perna continua pela inércia e o tronco começa a abrir
+        { leanZ: -0.15, pelvisY: -0.24, chest: 0.00, chestY: 0.22, coxaChute: -1.30, joelhoChute: 0.08, coxaApoio: 0.07, joelhoApoio: 0.18, bracoLx: 0.24, bracoLz: 1.00, bracoRx: 0.06, bracoRz: -0.70, cotoveloL: -0.24, cotoveloR: -0.34, altura: 0.08 },
+        // 10 FASE FINAL: perna alta e TRONCO PARA TRÁS (chest < 0), ainda inclinado
+        { leanZ: -0.14, pelvisY: -0.30, chest: -0.12, chestY: 0.28, coxaChute: -1.85, joelhoChute: 0.05, coxaApoio: 0.09, joelhoApoio: 0.14, bracoLx: 0.40, bracoLz: 0.95, bracoRx: 0.36, bracoRz: -0.74, cotoveloL: -0.20, cotoveloR: -0.26, altura: 0.15 },
+        // 11 desaceleração, o pé desce e o tronco volta ao prumo
+        { leanZ: -0.08, pelvisY: -0.18, chest: -0.04, chestY: 0.16, coxaChute: -0.95, joelhoChute: 0.22, coxaApoio: 0.05, joelhoApoio: 0.18, bracoLx: 0.22, bracoLz: 0.60, bracoRx: 0.18, bracoRz: -0.48, cotoveloL: -0.15, cotoveloR: -0.18, altura: 0.06 },
+        // 12 recuperação, de novo em postura de jogo
         { leanZ: 0.00, pelvisY: 0.00, chest: 0.00, chestY: 0.00, coxaChute: 0.00, joelhoChute: 0.10, coxaApoio: 0.00, joelhoApoio: 0.10, bracoLx: 0.00, bracoLz: Math.PI / 16, bracoRx: 0.00, bracoRz: -Math.PI / 16, cotoveloL: 0.00, cotoveloR: 0.00, altura: 0.00 }
     ]
 };
