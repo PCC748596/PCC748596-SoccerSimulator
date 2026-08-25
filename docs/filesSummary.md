@@ -5,6 +5,125 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 25 de Agosto de 2026 (noite) — a árvore de decisão
+
+Testes novos: `tests/passa_antes_de_conduzir.test.js`, `tests/arvore_sem_bola.test.js`,
+`tests/btstats_ramos.test.js`. Suite: 34 ficheiros.
+
+#### `BTStats` — que ramo da árvore é que decide (js/bt/core.js)
+
+**A ferramenta que faltava, e que se pagou no lote em que não existia.** Uma
+alteração ao ramo `ConduzirEmEspaco`, feita para reduzir as conduções, não mudou
+nada: 7 309 conduções passaram a 6 930, dentro do ruído. Custou um lote inteiro
+descobrir que a condução **nem vinha desse ramo** — há pelo menos três `actCarry`
+na árvore (`atacarOEspaco`, o `proteger` do `Dominar`, e o fallback final sem
+condição nenhuma).
+
+Deduzir qual ramo decide a partir da ORDEM da árvore não funciona: catorze ramos
+com condições que se cruzam, e o que ganha depende do estado do jogo.
+
+Cada execução de uma `Action` é uma decisão tomada. Contam-se **duas** coisas,
+porque respondem a perguntas diferentes:
+
+    frames    quanto TEMPO aquela folha mandou. Uma condução de 3 s conta 180.
+    entradas  quantas VEZES a decisão foi tomada de novo. A mesma conta 1.
+
+É a mesma lição da tabela `permanencia`: o total de frames não distingue mil
+decisões curtas de uma decisão longa, e as duas pedem correcções opostas. A
+tabela sai ordenada por **entradas** — uma condução longa não pode encabeçá-la só
+por ter durado.
+
+- **As entradas são por JOGADOR** (o último ramo fica guardado nele). Um contador
+  global não distinguiria onze jogadores a alternar entre dois ramos de uma
+  pessoa a mudar onze vezes.
+- **Desligado por omissão.** Só o lote o liga, e desliga-o no fim: no jogo normal
+  seriam 22 jogadores × 60 fps a escrever num objecto que ninguém lê.
+- Sai no JSON do lote, campo `ramos`.
+
+#### O passe antes da condução (`CarryModel.conduzirSoAcimaDe`)
+
+O que se via: "os jogadores quando dominam a bola sempre giram para a frente e
+saem a correr; nunca tocam para o lado nem para trás". A causa **não eram pesos**
+— era a ordem da árvore:
+
+     8. ConduzirEmEspaco   <- conduz se houver campo aberto
+     9. CaminhoFechado     <- só passa com 2 adversários à frente
+    10. CircularNaDefesa   <- só na defesa E sem campo aberto
+    11. Driblar
+    12. ProcurarPasse      <- o passe genérico era o PENÚLTIMO
+    14. act('conduzir')    <- e o fallback é conduzir
+
+Conduzir era a opção por omissão e passar a excepção. Medido: 7 309 conduções
+contra 5 604 passes, quase um para um.
+
+`conduzirSoAcimaDe: 17.0` — havendo passe bom, só se conduz a partir do último
+terço. Sem passe nenhum disponível conduz-se onde quer que se esteja: o ramo
+falha e a árvore segue para baixo, como antes. A fronteira é a mesma do
+`zonaLivre` do orçamento de condução, não uma segunda inventada para a mesma
+ideia.
+
+**MEDIDO NO LOTE SEGUINTE: NÃO FUNCIONOU.** O rácio ficou em 1,33 (era 1,30). Foi
+esta falha que motivou o `BTStats` — a condução vem de outro ramo, e é preciso
+saber qual antes de voltar a mexer.
+
+A escolha de passe é reaproveitada pelo `ProcurarPasse` no MESMO frame (o
+`findBestPassAnywhere` percorre todos os companheiros e todas as linhas), mas
+**morre no fim do frame**: o `ctx` sobrevive entre frames e uma escolha obsoleta
+faria o passe sair para onde o companheiro ESTAVA.
+
+#### A decisão sem bola, dividida por fase
+
+A lista era de onze ramos com as duas fases INTERCALADAS. `CorrerNoEspaco`
+aparecia ABAIXO de `Marcar` sem que isso quisesse dizer nada — são de momentos
+diferentes do jogo e nunca competem.
+
+Não produzia decisões erradas (cada folha tem a sua guarda), mas tornava
+impossível responder a "o que é importante quando temos a bola?" sem abrir as
+onze condições, e obrigava quem acrescentasse um ramo a adivinhar a posição numa
+lista onde metade dos vizinhos era da outra fase.
+
+```
+DecisaoSemBola
+├─ Desarme, Intercetar, IrABola, Receber, GuardaRedes   <- ramos de BOLA
+├─ SemBolaDefendendo   (!isAttacking)  → Marcar
+├─ EsperarNaArea       (canto)
+├─ SemBolaAtacando     (isAttacking)   → ApoioDeCirculacao, CorrerNoEspaco, AtacarArea
+└─ ocuparPosicao       (fallback)
+```
+
+- **Os cinco ramos de bola ficam FORA das duas fases**, e não por preguiça: valem
+  mesmo nas duas. Uma bola solta persegue-se com posse nominal ou sem ela, e o
+  guarda-redes posiciona-se sempre. Metê-los dentro de uma fase tirava-os da
+  outra em silêncio.
+- **A ordem das folhas é exactamente a de antes.** Reagrupar não pode alterar uma
+  única decisão, e a única forma de o garantir é comparar a sequência — o teste
+  tem as 11 folhas escritas e falha se alguma mudar de sítio.
+
+#### Onde a calibração está (20 jogos × 1080 s, sem normalização)
+
+| Estatística | Medido | Alvo | |
+|---|---|---|---|
+| **Faltas** | **21,8** | 20 (pedido) | conseguido, `escala: 4.3` |
+| Cartões | 3,15 | 5,22 | perto |
+| **Golos** | **0,95** | 2,52 | **caiu de 1,9 — regressão** |
+| Finalizações | 12,5 | 26,1 | metade |
+| Escanteios | ~0,15 | 9,92 | por resolver |
+| **Pontapés de baliza** | **0** | ~8 | o furo mais antigo |
+
+**Os golos caíram para metade com os mesmos remates** — a eficácia baixou. O
+suspeito é a mola de coesão: puxar toda a gente para a bola enche a área de
+defensores. Consistente com o `INTERCEPT` a triplicar (966 → 3 136 episódios) e
+com o `SET_PIECE_WAIT` a triplicar também (2 154 → 8 706).
+
+**Os encraves melhoraram muito mas não acabaram.** O `decisionTimer` do portador
+caiu de 662 s para 25–33 s (a guarda `comBola` funcionou), mas dois jogos em vinte
+ainda congelam. O padrão é sempre o mesmo, e aponta para o lixo de estado
+identificado no início da sessão e classificado então como inócuo — não era:
+
+    portador TeamA CM   hasBall: true   decisionTimer: 25-33   dist 0.61
+    setPieceTimer: 3    setPieceTaker: "TeamA CB"
+    fsm: SET_PIECE_WAIT | IDLE | MOVE_TO_POS   com Match.state === 'PLAY'
+
 ### Sessão de 25 de Agosto de 2026 (tarde) — a escala do lote, encraves, coesão
 
 Testes novos: `tests/permanencia_estado.test.js`, `tests/lateral_giro_corpo.test.js`,
@@ -36,7 +155,7 @@ mudar, este número muda com ele.
 O rótulo do painel também mente: diz minutos de relógio de jogo e são minutos de
 física.
 
-#### Onde a calibração está mesmo (20 jogos × 1080 s, sem normalização)
+#### Onde a calibração estava a meio da tarde (superada — ver a secção da noite)
 
 | Estatística | Medido | Alvo real | |
 |---|---|---|---|
@@ -736,6 +855,19 @@ Spec em [docs/superpowers/specs/2026-08-24-reach-animacao-procedural-design.md](
 
 Coisas medidas e por resolver, para não se voltarem a descobrir por acaso:
 
+- **Conduz-se quase tanto como se passa:** 6 930 episódios de `CARRY` contra
+  5 198 de `PASS` num lote de 20 jogos. Travar o `ConduzirEmEspaco` não mexeu no
+  rácio, portanto a condução vem de outro dos três `actCarry` da árvore — o
+  `proteger` do `Dominar` ou o fallback final, que não tem condição nenhuma. A
+  tabela `ramos` do relatório (BTStats) diz qual, e é por aí que se começa.
+- **Os golos caíram de 1,9 para 0,95 por jogo com os mesmos ~12,5 remates.**
+  Coincide com a entrada da mola de coesão e com o `INTERCEPT` a triplicar
+  (966 → 3 136 episódios): puxar toda a gente para a bola enche a área de
+  defensores. Se se confirmar, o botão é o `MolaDeCoesao.puxaoMax`.
+- **O `SET_PIECE_WAIT` triplicou** (2 154 → 8 706 episódios, 35 315 s) e aparece
+  nos encraves com `Match.state === 'PLAY'` — um jogador à espera de uma bola
+  parada que já foi batida. Liga ao `setPieceTaker`/`setPieceTimer` que nenhuma
+  saída normal para `PLAY` limpa.
 - **`pontapesBaliza` é 0 em TODOS os registos de todos os lotes**, e os
   escanteios ficam em 0,2 por jogo (alvo 9,92). A bola não sai pela linha de
   fundo. É o furo mais antigo por explicar e o de maior retorno: arruma os
@@ -2324,6 +2456,9 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Equipa esticada / longe da jogada com bola | `config.js` → `MolaDeCoesao` (`puxaoMax` limita o pior caso) |
 | Quando a equipa sai à bola (rush) | `config.js` → `MarkingModel.raioDeAccionamento` |
 | Quantas faltas por jogo | `officials.js` → `RefereeModel.faltas.escala` |
+| Saber QUE RAMO da árvore decide | relatório do lote → tabela `ramos` (BTStats, `bt/core.js`) |
+| Conduz-se de mais / passa-se de menos | `config.js` → `CarryModel.conduzirSoAcimaDe` |
+| O que é importante com/sem posse | `bt/player_bt.js` → `SemBolaAtacando` / `SemBolaDefendendo` |
 | Portador parado a não decidir nada | `bt/player_bt.js` → `PlayerAI.tick`, a guarda `comBola` |
 | Um estado da FSM que fica preso | relatório do lote → tabela `permanencia` (episódios, não frames) |
 | Quantos minutos pôr no lote para dar 90 min | `90*60 / MatchDuration.timeScale` — hoje 1080 s |
