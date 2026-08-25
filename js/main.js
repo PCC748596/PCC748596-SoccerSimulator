@@ -368,7 +368,10 @@ function abrirModalSkills(p) {
         ['Velocidade', skills.speed],
         ['Força', skills.strength],
         ['Passe', skills.pass],
-        ['Interceptação', skills.intercept]
+        ['Interceptação', skills.intercept],
+        // Leitura de jogo (ver tools/gen_player_skills.js): quanto o jogador
+        // ocupa mesmo a posição que o plano colectivo lhe pede.
+        ['Leitura de jogo', skills.tacticknow]
     ];
 
     corpo.innerHTML = campos.map(([nome, val]) =>
