@@ -401,6 +401,14 @@ const Sim = {
             const totalPassos = Math.round(duracaoSeg / dt);
             let passosFeitos = 0;
 
+            /*
+            PROGRESSO. Um jogo de 25 minutos leva ~30 s reais e nao dizia nada
+            ate acabar: o botao ficava em "A simular..." e a consola em
+            silencio, o que se le como bloqueado. `opts.aoProgresso` recebe o
+            jogo, o total e a fraccao feita deste jogo.
+            */
+            const aoProgresso = opts.aoProgresso;
+
             while (passosFeitos < totalPassos) {
                 const lote = Math.min(passosPorLote, totalPassos - passosFeitos);
                 for (let i = 0; i < lote; i++) {
@@ -426,6 +434,7 @@ const Sim = {
                     }
                 }
                 passosFeitos += lote;
+                if (aoProgresso) aoProgresso(jogo + 1, nJogos, passosFeitos / totalPassos);
                 await cederAoBrowser();
             }
 

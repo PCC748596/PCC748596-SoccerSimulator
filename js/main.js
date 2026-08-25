@@ -463,7 +463,12 @@ function runFastSim() {
     */
     const calibrarEstilos = jogos >= SIM_JOGOS_PARA_COBERTURA;
 
-    Sim.run({ jogos, duracaoSeg, calibrarEstilos }).then(() => {
+    Sim.run({
+        jogos, duracaoSeg, calibrarEstilos,
+        aoProgresso: (jogo, total, fraccao) => {
+            if (btn) btn.innerText = `Jogo ${jogo}/${total} — ${Math.round(fraccao * 100)}%`;
+        }
+    }).then(() => {
         if (btn) { btn.innerText = 'Simular lote'; btn.disabled = false; }
     });
 }
