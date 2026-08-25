@@ -165,6 +165,68 @@ console.log(String.fromCharCode(10) + '4 — devolve null em vez de inventar');
     ok('os quatro casos impossíveis devolvem null');
 }
 
+/*
+5 — O EXPORTADOR DO GAITMODEL.
+
+Mesma história do outro, com um agravante: quase TODAS as linhas do GaitModel
+têm comentário (`anca: 0.40,  // amplitude da coxa (rad)`). Perdê-los seria
+perder a explicação do modelo de locomoção inteiro.
+*/
+console.log(String.fromCharCode(10) + '5 — o exportador do GaitModel');
+{
+    const iniG = srcEditor.indexOf('function reescreverGaitNoTexto');
+    if (iniG < 0) {
+        erro('reescreverGaitNoTexto não encontrada no js/animEditor.js');
+    } else {
+        const fimG = srcEditor.indexOf(LF + '}', iniG) + 2;
+        const reescreverGait = new Function(
+            `${srcEditor.slice(iniG, fimG)}; return reescreverGaitNoTexto;`)();
+
+        // Lê o GaitModel real do config.
+        const gait = new Function(
+            `${fonte.slice(fonte.indexOf('const GaitModel = {'),
+                fonte.indexOf(LF + '};', fonte.indexOf('const GaitModel = {')) + 3)}
+             return GaitModel;`)();
+
+        gait.trote.anca = 0.812;
+        const saida = reescreverGait(fonte, gait);
+
+        if (!saida) {
+            erro('o exportador do GaitModel devolveu null');
+        } else {
+            // Comentários preservados
+            const i = fonte.indexOf('const GaitModel = {');
+            const bloco = fonte.slice(i, fonte.indexOf(LF + '};', i));
+            const comentarios = bloco.split(LF).map(l => {
+                const m = l.match(/\/\/.*$/);
+                return m ? m[0].trim() : null;
+            }).filter(Boolean);
+            const perdidos = comentarios.filter(c => saida.indexOf(c) === -1);
+            if (perdidos.length) {
+                erro(`${perdidos.length} comentário(s) do GaitModel perdidos, ex.: "${perdidos[0]}"`);
+            } else ok(`${comentarios.length} comentários do GaitModel preservados`);
+
+            // Faz parse e traz o valor editado
+            try {
+                const lido = new Function(`${saida} return GaitModel;`)();
+                if (Math.abs(lido.trote.anca - 0.812) > 1e-9) {
+                    erro(`o valor editado não chegou: trote.anca = ${lido.trote.anca}`);
+                } else ok('o valor editado chega à saída');
+
+                if (Math.abs(lido.andar.anca - gait.andar.anca) > 1e-9 ||
+                    Math.abs(lido.correr.passada - gait.correr.passada) > 1e-9) {
+                    erro('outros andamentos foram alterados');
+                } else ok('os outros andamentos ficam intactos');
+            } catch (e) {
+                erro(`a saída do GaitModel não faz parse — ${e.message}`);
+            }
+        }
+
+        if (reescreverGait(null, {}) !== null) erro('sem texto, devia devolver null');
+        else ok('sem o texto do config, devolve null');
+    }
+}
+
 console.log('');
 if (falhas) {
     console.error(`FALHOU: ${falhas} problema(s).`);

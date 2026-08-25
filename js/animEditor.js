@@ -122,6 +122,36 @@ const LEGENDAS = {
 const AMPLITUDE = { altura: 0.5, giro: 1.2 };
 const AMPLITUDE_OMISSAO = 3.2;
 
+// Quebra de linha, escrita assim para nao haver escapes a partir-se nos
+// blocos de texto que o editor gera.
+const LF = String.fromCharCode(10);
+
+/*
+A PASSADA: legendas e amplitudes das constantes do GaitModel.
+
+`vel` e `passada` estão em m/s e metros; as outras em radianos. Todas são
+positivas — uma amplitude negativa punha o ciclo ao contrário — por isso os
+sliders começam em zero e não em -amp.
+*/
+const LEGENDAS_GAIT = {
+    vel: 'm/s típicos deste andamento (define onde ele entra na mistura)',
+    passada: 'metros por ciclo completo — mexe na CADÊNCIA, não na pose',
+    anca: 'amplitude da coxa (rad): quanto a perna vai à frente e atrás',
+    joelhoBase: 'flexão mínima, mesmo na perna de apoio',
+    joelhoOscila: 'flexão adicional na fase de balanço',
+    pe: 'oscilação do tornozelo',
+    braco: 'amplitude do braço (a andar quase não se mexe)',
+    cotovelo: 'flexão do cotovelo (negativo estica)',
+    tronco: 'inclinação para a frente: a prumo a andar, deitado a correr',
+    ressalto: 'meia-amplitude da subida e descida da anca (m)'
+};
+
+const AMPLITUDE_GAIT = {
+    vel: 10, passada: 5, ressalto: 0.12,
+    anca: 1.6, joelhoBase: 0.6, joelhoOscila: 2.4, pe: 1.0,
+    braco: 1.6, cotovelo: 2.0, tronco: 0.8
+};
+
 /*
 Reescreve os números dos keyframes de um clip DENTRO do texto do config.js,
 linha a linha, mantendo comentários, indentação e tudo o resto.
@@ -160,6 +190,49 @@ function reescreverClipNoTexto(fonte, nomeClip, frames) {
     return (i === frames.length) ? novo : null;
 }
 
+
+/*
+O mesmo para o GaitModel: reescreve os números das constantes dentro do texto
+do config.js, mantendo os comentários de cada linha — e ali quase todas as
+linhas TÊM comentário (`anca: 0.40,  // amplitude da coxa (rad)`), portanto
+perdê-los seria perder a explicação do modelo inteiro.
+
+`gait` é o objecto com os três andamentos. Devolve `null` se não conseguir.
+*/
+function reescreverGaitNoTexto(fonte, gait) {
+    if (!fonte || !gait) return null;
+
+    const ini = fonte.indexOf('const GaitModel = {');
+    if (ini < 0) return null;
+    const fecho = fonte.indexOf('\n};', ini);
+    if (fecho < 0) return null;
+
+    let andamento = null;
+    let escritos = 0;
+
+    const novo = fonte.slice(ini, fecho + 3).split('\n').map(linha => {
+        // Abertura de um andamento: `andar: {`
+        const abre = linha.match(/^\s*(andar|trote|correr):\s*\{/);
+        if (abre) { andamento = abre[1]; return linha; }
+        if (/^\s*\},?\s*$/.test(linha)) { andamento = null; return linha; }
+        if (!andamento) return linha;
+
+        // `    anca: 0.40,           // amplitude da coxa (rad)`
+        const m = linha.match(/^(\s*)([a-zA-Z]+):\s*(-?[\d.]+)(,?)(\s*\/\/.*)?$/);
+        if (!m) return linha;
+        const [, indent, chave, , virgula, comentario] = m;
+        const g = gait[andamento];
+        if (!g || typeof g[chave] !== 'number') return linha;
+
+        escritos++;
+        // O alinhamento dos comentários é preservado pelo espaçamento original
+        // do comentário capturado, que vem com os seus espaços à frente.
+        return `${indent}${chave}: ${g[chave]}${virgula}${comentario || ''}`;
+    }).join('\n');
+
+    return escritos > 0 ? novo : null;
+}
+
 const Editor = {
     nomeClip: 'ShotClip',
     frame: 0,
@@ -179,8 +252,12 @@ const Editor = {
         for (const nome in CLIPS) {
             this.originais[nome] = JSON.parse(JSON.stringify(CLIPS[nome].clip().frames));
         }
+        // O GaitModel também é editável, e também precisa de um original para
+        // se saber o que mudou e para o "Repor".
+        this.gaitOriginal = JSON.parse(JSON.stringify(GaitModel));
         this.montarCena();
         this.montarSelector();
+        this.montarAbas();
         this.carregarFonte();
         this.mudarClip('ShotClip');
         this.animar();
@@ -437,6 +514,15 @@ const Editor = {
 
     animar() {
         requestAnimationFrame(() => this.animar());
+
+        // A passada corre SEMPRE que a aba está aberta: é um ciclo contínuo,
+        // não um gesto com princípio e fim.
+        if (this.aba === 'passada') {
+            this.desenharPassada(1 / 60);
+            this.renderer.render(this.scene, this.camera);
+            return;
+        }
+
         if (this.aCorrer) {
             const dur = this.def().duracao() || 0.5;
             this.tempo += (1 / 60) / dur;
@@ -482,10 +568,142 @@ const Editor = {
     },
 
     repor() {
+        if (this.aba === 'passada') {
+            const nome = this.andamentoDe(this.velocidade);
+            Object.assign(GaitModel[nome], this.gaitOriginal[nome]);
+            this.montarCanaisPassada();
+            return;
+        }
         const orig = this.originais[this.nomeClip];
         this.clip().frames = JSON.parse(JSON.stringify(orig));
         this.montarCanais();
         this.desenhar();
+    },
+
+
+    /* ------------------------------------------------------------------ */
+    /* Aba da passada                                                      */
+    /* ------------------------------------------------------------------ */
+
+    /*
+    A PASSADA NÃO É UM CLIP e o painel reflecte isso: em vez de keyframes, os
+    sliders são as constantes do `GaitModel` do andamento activo, e o boneco
+    anda em ciclo contínuo enquanto se mexe neles.
+
+    O andamento sai da VELOCIDADE: o `misturarAndamento` (js/utils.js)
+    interpola entre andar, trote e correr conforme os m/s. Por isso o painel
+    mostra as constantes do andamento mais próximo — mexer no `trote` a 7 m/s
+    não mostrava nada, e era assim que se perdia meia hora à procura do erro.
+    */
+    aba: 'clips',
+    velocidade: 4.5,
+    faseCiclo: 0,
+
+    andamentoDe(vel) {
+        if (vel <= GaitModel.andar.vel) return 'andar';
+        if (vel <= GaitModel.trote.vel) return 'trote';
+        return 'correr';
+    },
+
+    montarAbas() {
+        const trocar = (qual) => {
+            this.aba = qual;
+            document.getElementById('aba-clips').classList.toggle('activo', qual === 'clips');
+            document.getElementById('aba-passada').classList.toggle('activo', qual === 'passada');
+            document.getElementById('painel-clips').style.display = qual === 'clips' ? '' : 'none';
+            document.getElementById('painel-passada').style.display = qual === 'passada' ? '' : 'none';
+            // O fantasma é a pose original de um CLIP; na passada não faz sentido.
+            this.corpoFantasma.visible = (qual === 'clips') && this.fantasma;
+            if (qual === 'passada') this.montarCanaisPassada();
+            else { this.montarCanais(); this.desenhar(); }
+        };
+        document.getElementById('aba-clips').addEventListener('click', () => trocar('clips'));
+        document.getElementById('aba-passada').addEventListener('click', () => trocar('passada'));
+
+        const slider = document.getElementById('vel-slider');
+        const caixa = document.getElementById('vel-valor');
+        const mudarVel = (v) => {
+            if (!isFinite(v)) return;
+            this.velocidade = Math.max(0, Math.min(9, v));
+            slider.value = this.velocidade;
+            caixa.value = this.velocidade.toFixed(1);
+            this.montarCanaisPassada();
+        };
+        slider.addEventListener('input', () => mudarVel(parseFloat(slider.value)));
+        caixa.addEventListener('change', () => mudarVel(parseFloat(caixa.value)));
+        document.querySelectorAll('#painel-passada [data-vel]').forEach(b => {
+            b.addEventListener('click', () => mudarVel(parseFloat(b.dataset.vel)));
+        });
+    },
+
+    montarCanaisPassada() {
+        const div = document.getElementById('canais');
+        div.innerHTML = '';
+        const nome = this.andamentoDe(this.velocidade);
+        const G = GaitModel[nome];
+        const orig = this.gaitOriginal[nome];
+
+        document.getElementById('titulo-canais').textContent =
+            `GaitModel.${nome} — a ${this.velocidade.toFixed(1)} m/s`;
+
+        for (const canal of Object.keys(G)) {
+            const amp = AMPLITUDE_GAIT[canal] || 2.0;
+            const bloco = document.createElement('div');
+            bloco.className = 'canal' + (G[canal] !== orig[canal] ? ' mudado' : '');
+
+            const topo = document.createElement('div');
+            topo.className = 'canal-topo';
+            const et = document.createElement('span');
+            et.className = 'canal-nome';
+            et.textContent = canal;
+            const caixa = document.createElement('input');
+            caixa.className = 'canal-valor';
+            caixa.type = 'number'; caixa.step = '0.01';
+            caixa.value = (+G[canal]).toFixed(3);
+            topo.appendChild(et); topo.appendChild(caixa);
+
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = 0; slider.max = amp; slider.step = 0.005;
+            slider.value = G[canal];
+
+            const legenda = document.createElement('div');
+            legenda.className = 'canal-legenda';
+            legenda.textContent = LEGENDAS_GAIT[canal] || '';
+
+            const escrever = (v) => {
+                if (!isFinite(v)) return;
+                G[canal] = v;
+                caixa.value = (+v).toFixed(3);
+                slider.value = v;
+                bloco.classList.toggle('mudado', v !== orig[canal]);
+            };
+            slider.addEventListener('input', () => escrever(parseFloat(slider.value)));
+            caixa.addEventListener('change', () => escrever(parseFloat(caixa.value)));
+
+            bloco.appendChild(topo); bloco.appendChild(slider); bloco.appendChild(legenda);
+            div.appendChild(bloco);
+        }
+
+        document.getElementById('estado').textContent =
+            `Andamento ${nome}. O ciclo corre sempre — mexe nos valores e vê no boneco.`;
+    },
+
+    // Um passo do ciclo, chamado por frame enquanto a aba da passada está aberta.
+    desenharPassada(dt) {
+        const P = getGaitPose(this.faseCiclo, this.velocidade);
+
+        /*
+        O ciclo avança com a DISTÂNCIA percorrida, não com o tempo: são
+        `velocidade / passada` ciclos por segundo, a mesma conta que o jogo faz.
+        Só com o tempo, mexer na `passada` não mudava nada no ecrã — e a
+        passada é precisamente uma das constantes que se quer afinar.
+        */
+        const ciclosPorSeg = P.passada > 0 ? (this.velocidade / P.passada) : 0;
+        this.faseCiclo = (this.faseCiclo + dt * ciclosPorSeg) % 1;
+
+        aplicarPosePassada(this.rig, P, this.faseCiclo);
+        this.corpo.position.y = P.ressalto;
     },
 
     /* ------------------------------------------------------------------ */
@@ -522,6 +740,7 @@ const Editor = {
 
     exportar() {
         const area = document.getElementById('saida');
+        if (this.aba === 'passada') return this.exportarGait();
         const comComentarios = this.reescreverNoTexto();
 
         let texto;
@@ -551,6 +770,36 @@ const Editor = {
         document.getElementById('estado').textContent = comComentarios
             ? 'Copiado, com os comentários do config.js preservados. Cola por cima do bloco antigo.'
             : 'Copiado SEM comentários — ver o aviso no texto. Cola com cuidado.';
+    },
+
+    /*
+    Exporta o GaitModel inteiro — os três andamentos de uma vez, e não só o
+    que está no painel: eles interpolam entre si (misturarAndamento), portanto
+    colar um sem os outros deixa o config num estado que não corresponde ao
+    que se viu no ecrã.
+    */
+    exportarGait() {
+        const area = document.getElementById('saida');
+        const texto = reescreverGaitNoTexto(this.fonteConfig, GaitModel);
+        const estado = document.getElementById('estado');
+
+        if (!texto) {
+            area.style.display = 'block';
+            area.value =
+                '// Nao consegui ler o js/config.js para preservar os comentarios.' + LF +
+                '// A pagina esta aberta por file://? Com o servidor (npm run dev)' + LF +
+                '// isto funciona. Valores actuais, para copiares a mao:' + LF +
+                JSON.stringify(GaitModel, null, 4);
+            estado.textContent = 'Exportado SEM comentários — ver o aviso no texto.';
+            return;
+        }
+
+        area.style.display = 'block';
+        area.value = texto;
+        area.select();
+        try { document.execCommand('copy'); } catch (e) { /* copia-se à mão */ }
+        estado.textContent = 'GaitModel copiado (os três andamentos), com os ' +
+            'comentários preservados. Cola por cima do bloco no config.js.';
     }
 };
 

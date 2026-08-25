@@ -2755,37 +2755,19 @@ class FootballPlayer {
             const amp = 1 - lateralidade *
                 ((typeof LateralGait !== 'undefined') ? LateralGait.reducaoPassada : 0);
 
-            rig.lLeg.rotation.x = P.lHip * amp; rig.lKnee.rotation.x = P.lKnee * amp; rig.lFoot.rotation.x = P.lFoot * amp;
-            rig.rLeg.rotation.x = P.rHip * amp; rig.rKnee.rotation.x = P.rKnee * amp; rig.rFoot.rotation.x = P.rFoot * amp;
-            rig.lArm.rotation.x = P.lArm * amp; rig.rArm.rotation.x = P.rArm * amp;
-
-            // O cotovelo abre a andar e fecha a correr — era fixo em -1.2, que
-            // é postura de sprint aplicada também a quem está a passear.
-            rig.lElbow.rotation.x = P.cotovelo; rig.rElbow.rotation.x = P.cotovelo;
-
             /*
-            Abdução das ancas no passo lateral: as pernas abrem e fecham em
-            oposição de fase, e o par inteiro pende para o lado do movimento.
-            Dentro do limite anatómico da anca (JointLimits.hip.z, +45°/-30°) —
-            `LateralGait.abertura` é 0.30 rad (~17°), com folga de sobra.
+            A escrita da passada no rig mudou-se para o `aplicarPosePassada`
+            do js/pose.js, partilhado com o editor de animação. O que fica
+            aqui é o que depende do jogador: para onde olha e a altura do
+            corpo com o ressalto do ciclo.
             */
-            if (lateralidade > 0.001) {
-                const A = LateralGait.abertura * lateralidade;
-                const osc = Math.sin(t * Math.PI * 2) * A;
-                rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, ladoMov * A * 0.5 + osc, 0.35);
-                rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, ladoMov * A * 0.5 - osc, 0.35);
-            } else {
-                rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, 0); rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, 0);
-            }
-            rig.lArm.rotation.z = lerpTo(rig.lArm.rotation.z, Math.PI / 16); rig.rArm.rotation.z = lerpTo(rig.rArm.rotation.z, -Math.PI / 16);
-
-            // Tronco: a prumo a andar, inclinado a correr. Era 0.3 rad sempre.
-            // De lado o tronco também não vai inclinado como numa corrida.
-            const inclinacao = (movingBackwards ? P.tronco * 0.4 : P.tronco) * amp;
-            rig.chest.rotation.x = inclinacao + Math.sin(t * Math.PI * 2) * 0.04;
-            // Mesma cintura a acompanhar a cabeça também a correr/andar — sem
-            // isto ficava só parado a olhar de lado com o tronco reto.
-            rig.chest.rotation.y = lerpTo(rig.chest.rotation.y, this.cinturaAlvoY || 0);
+            aplicarPosePassada(rig, P, t, {
+                amp: amp,
+                lateralidade: lateralidade,
+                ladoMov: ladoMov,
+                paraTras: movingBackwards,
+                cintura: this.cinturaAlvoY || 0
+            });
 
             this.model.position.y = ALTURA_BASE_Y + P.ressalto;
         }
