@@ -396,22 +396,75 @@ function fecharModalSkills() {
     if (modal) modal.classList.add('oculto');
 }
 
-// Dispara a simulação em lote a partir do botão do painel — parâmetros
-// modestos por omissão para não prender a página por muito tempo; para
-// lotes maiores, usar Sim.run({...}) directamente na consola.
+/*
+Simulação em lote a partir do painel, com o número de jogos e os minutos de
+cada um lidos das duas caixas.
+
+JOGOS NECESSÁRIOS PARA A COBERTURA DE ESTILOS: 11. Cada jogo usa UMA formação
+(o ciclo 442/433/4231 do simulate.js) e drena um estilo por slot daquela
+posição; o gargalo é o LW, que só existe no 433 e tem quatro estilos à espera
+dele — logo só esvazia no 11.º jogo. Abaixo disso o `calibrarEstilos` fica
+desligado, porque uma cobertura a meio troca a formação escolhida no painel
+sem chegar a medir os estilos todos.
+*/
+const SIM_JOGOS_PARA_COBERTURA = 11;
+
+function lerParametrosDoLote() {
+    const elJogos = document.getElementById('sim-jogos');
+    const elMin = document.getElementById('sim-minutos');
+    const limitar = (el, omissao, min, max) => {
+        const v = el ? parseInt(el.value, 10) : NaN;
+        if (!isFinite(v)) return omissao;
+        return Math.max(min, Math.min(max, v));
+    };
+    const jogos = limitar(elJogos, 2, 1, 50);
+    const minutos = limitar(elMin, 25, 1, 90);
+    return { jogos, minutos, duracaoSeg: minutos * 60 };
+}
+
+/*
+Aviso por baixo das caixas: diz o que este lote vai (ou não vai) cobrir e
+quanto tempo real deve levar, antes de a pessoa carregar no botão.
+
+O tempo real sai da medição: um jogo de 150 s simulados levou 3,8 s reais, ou
+seja cerca de 0,025 s reais por segundo simulado. É uma estimativa grosseira e
+está escrita como tal — muda com a máquina e com o que a página tem aberto.
+*/
+const SIM_SEG_REAIS_POR_SEG_SIMULADO = 0.025;
+
+function actualizarAvisoDoLote() {
+    const el = document.getElementById('sim-aviso-cobertura');
+    if (!el) return;
+    const { jogos, minutos, duracaoSeg } = lerParametrosDoLote();
+    const segundos = jogos * duracaoSeg * SIM_SEG_REAIS_POR_SEG_SIMULADO;
+    const tempo = segundos < 90
+        ? `~${Math.round(segundos)} s`
+        : `~${Math.round(segundos / 60)} min`;
+    const cobre = jogos >= SIM_JOGOS_PARA_COBERTURA;
+    el.innerHTML = `${jogos} × ${minutos} min, ${tempo} reais (estimativa).<br>` +
+        (cobre
+            ? 'Cobre os 21 playing styles.'
+            : `Estilos NÃO cobertos (precisa de ${SIM_JOGOS_PARA_COBERTURA} jogos).`);
+}
+
 function runFastSim() {
     if (typeof Sim === 'undefined') return;
     if (Sim.running) { console.warn('Sim já está a correr.'); return; }
 
+    const { jogos, duracaoSeg } = lerParametrosDoLote();
     const btn = document.getElementById('btn-fastsim');
     if (btn) { btn.innerText = 'A simular...'; btn.disabled = true; }
 
-    // calibrarEstilos desligado aqui de propósito: com só 2 jogos não dá pra
-    // esvaziar as filas de cobertura (ver simulate.js), e a rotação de
-    // formação ia trocar a formação escolhida no painel sem aviso. Pra
-    // calibrar os 21 estilos, usar Sim.run({jogos:15,...}) na consola.
-    Sim.run({ jogos: 2, duracaoSeg: 1500, calibrarEstilos: false }).then(() => {
-        if (btn) { btn.innerText = 'Simulação rápida (2×25min)'; btn.disabled = false; }
+    /*
+    O `calibrarEstilos` liga-se sozinho quando o lote é grande que chegue para
+    esvaziar as filas de cobertura. Ligá-lo num lote pequeno tem um custo
+    escondido: a rotação de formações troca a formação escolhida no painel e
+    mede metade dos estilos — o pior dos dois mundos.
+    */
+    const calibrarEstilos = jogos >= SIM_JOGOS_PARA_COBERTURA;
+
+    Sim.run({ jogos, duracaoSeg, calibrarEstilos }).then(() => {
+        if (btn) { btn.innerText = 'Simular lote'; btn.disabled = false; }
     });
 }
 
@@ -558,6 +611,9 @@ function animate(time) {
 
 document.addEventListener("DOMContentLoaded", () => {
     try {
+        // Preenche o aviso do lote com os valores por omissão das caixas.
+        actualizarAvisoDoLote();
+
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
 
