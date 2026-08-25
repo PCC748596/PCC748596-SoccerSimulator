@@ -95,8 +95,8 @@ const RefereeModel = {
         acontece no jogo: o corpo vai no chão, em movimento, e quem falha a
         bola acerta na perna.
         */
-        probCarrinhoFalhado: 0.42,
-        probDesarmeFalhado: 0.11,
+        probCarrinhoFalhado: 0.15,
+        probDesarmeFalhado: 0.030,
 
         /*
         FONTE B — o contacto sem tentativa de desarme: empurrões e choques.
@@ -109,7 +109,7 @@ const RefereeModel = {
         contacto: {
             raio: 1.0,
             velRelMin: 4.5,
-            prob: 0.06,
+            prob: 0.035,
             arrefecimento: 3.0
         },
 
@@ -120,22 +120,35 @@ const RefereeModel = {
         carrinho pelas costas. `travouAtaque` é a falta táctica.
         */
         gravidade: {
-            base: { carrinho: 0.42, desarme: 0.16, contacto: 0.12 },
-            pesoVelocidade: 0.035,   // por m/s do contacto
-            pesoAngulo: 0.22,        // × (angulo / π)
-            travarAtaque: 0.22
+            base: { carrinho: 0.35, desarme: 0.14, contacto: 0.10 },
+            pesoVelocidade: 0.020,   // por m/s do contacto
+            pesoAngulo: 0.30,        // × (angulo / π)
+            travarAtaque: 0.25
         },
 
         /*
-        LIMIARES. Calibrados para ~19% das faltas darem cartão (5,22 em
-        27,63): um desarme banal fica muito abaixo, um carrinho por trás em
-        velocidade passa.
+        LIMIARES, calibrados contra uma corrida de 2 jogos de 25 minutos.
 
-        O vermelho DIRECTO é quase inalcançável de propósito — quase todos os
-        vermelhos reais saem do segundo amarelo.
+        A PRIMEIRA CALIBRAÇÃO FALHOU, e vale a pena saber porquê: dava ~12,6
+        vermelhos e ~34 amarelos por 90 minutos, contra 0,08 e 5,22. O erro
+        foi tratar o carrinho por trás como caso excepcional quando ele é o
+        caso COMUM — o fsm.js garante que um carrinho por trás nunca rouba a
+        bola, portanto falha sempre, portanto vira falta sempre. Com o
+        `pesoAngulo` a somar e o limiar de vermelho em 1.05, davam-se
+        vermelhos DIRECTOS a eito (uma equipa fez 0 amarelos e 3 vermelhos).
+
+        Agora, com o carrinho a deslizar a 9 m/s (SlideTackleModel):
+
+            carrinho de frente      0.35 + 0.18          = 0.53   nada
+            carrinho por trás       0.35 + 0.18 + 0.30   = 0.83   nada
+            por trás a travar       0.83 + 0.25          = 1.08   AMARELO
+            idem, a 12 m/s          0.35+0.24+0.30+0.25  = 1.14   VERMELHO
+
+        O vermelho DIRECTO fica assim quase inalcançável — como deve ser:
+        quase todos os vermelhos reais saem do segundo amarelo.
         */
-        limiarAmarelo: 0.55,
-        limiarVermelho: 1.05
+        limiarAmarelo: 0.85,
+        limiarVermelho: 1.10
     }
 };
 

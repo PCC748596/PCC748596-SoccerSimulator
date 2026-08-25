@@ -43,7 +43,7 @@ const mod = new Function(...Object.keys(amb),
      let Match = null;
      ${ler('js/officials.js')}
      ${corpoRepor}
-     return { Officials, RefereeModel, CAMPO_COMP, AREA_GRANDE_PROF,
+     return { Officials, RefereeModel, CAMPO_COMP, AREA_GRANDE_PROF, SlideTackleModel,
               instalarMatch: (m) => { Match = m; },
               MatchReporExpulsos: reporExpulsosExtraido };`)(...Object.values(amb));
 const { Officials, RefereeModel, CAMPO_COMP, AREA_GRANDE_PROF } = mod;
@@ -65,10 +65,33 @@ console.log(String.fromCharCode(10) + '1 — a gravidade da falta');
 {
     const g = o => Officials.gravidadeDaFalta(o);
 
+    /*
+    As velocidades são as do jogo, não números redondos: o carrinho desliza a
+    `SlideTackleModel.velocidade` (9 m/s), e o pior caso é um lançado com
+    balanço, que se toma como 1.3× isso. Foi por usar aqui um 7 inventado que
+    a primeira calibração passou no teste e falhou no jogo.
+    */
+    const vCarrinho = mod.SlideTackleModel.velocidade;
+    const vPior = vCarrinho * 1.3;
+
     const leve = g({ tipo: 'desarme', velocidade: 0, angulo: 0, travouAtaque: false });
-    const grave = g({ tipo: 'carrinho', velocidade: 7, angulo: Math.PI, travouAtaque: true });
+    const tipico = g({ tipo: 'carrinho', velocidade: vCarrinho, angulo: Math.PI, travouAtaque: false });
+    const grave = g({ tipo: 'carrinho', velocidade: vPior, angulo: Math.PI, travouAtaque: true });
     console.log(`  desarme de frente parado: ${leve.toFixed(2)}`);
-    console.log(`  carrinho por trás a 7 m/s a travar ataque: ${grave.toFixed(2)}`);
+    console.log(`  carrinho por trás a ${vCarrinho} m/s, sem travar ataque: ${tipico.toFixed(2)}`);
+    console.log(`  carrinho por trás a ${vPior.toFixed(1)} m/s a travar ataque: ${grave.toFixed(2)}`);
+
+    /*
+    O CARRINHO POR TRÁS É O CASO COMUM, não o excepcional: o fsm.js garante
+    que um carrinho por trás nunca rouba a bola, logo falha sempre, logo dá
+    falta sempre. Se ele sozinho chegasse a amarelo, quase toda a falta de
+    carrinho daria cartão — foi exactamente isso que pôs os amarelos em ~34
+    por jogo na primeira calibração.
+    */
+    if (tipico >= F.limiarAmarelo) {
+        erro(`um carrinho por trás banal dá ${tipico.toFixed(2)}, já em amarelo ` +
+            `(limiar ${F.limiarAmarelo}) — e esse é o caso COMUM, não o excepcional`);
+    } else ok('um carrinho por trás, por si só, não dá cartão');
 
     if (!(grave > leve)) erro('o carrinho por trás devia ser mais grave que o desarme parado');
     else ok('carrinho por trás em velocidade é mais grave que desarme de frente parado');
@@ -101,6 +124,16 @@ console.log(String.fromCharCode(10) + '1 — a gravidade da falta');
         erro(`o pior lance dá ${grave.toFixed(2)}, abaixo do limiar de vermelho ` +
             `(${F.limiarVermelho}) — nunca haveria vermelho directo`);
     } else ok('o pior lance chega a vermelho directo');
+
+    // E o vermelho directo tem de ser RARO: o lance típico a travar um ataque
+    // fica em amarelo, não em vermelho.
+    const travou = g({ tipo: 'carrinho', velocidade: vCarrinho, angulo: Math.PI, travouAtaque: true });
+    if (travou >= F.limiarVermelho) {
+        erro(`carrinho típico a travar ataque dá ${travou.toFixed(2)}: vermelho directo ` +
+            'num lance corriqueiro');
+    } else if (travou < F.limiarAmarelo) {
+        erro(`carrinho por trás a travar ataque dá ${travou.toFixed(2)}: nem amarelo`);
+    } else ok('carrinho por trás a travar ataque: amarelo, e não vermelho');
 }
 
 /*
