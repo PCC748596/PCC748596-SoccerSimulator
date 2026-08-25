@@ -182,15 +182,21 @@ let meshes;
     });
 
     const pct = conta.map(c => 100 * c.A / Math.max(1, c.A + c.B));
-    if (pct[0] < 90) erro(`a primeira faixa devia ser quase toda da claque A, é ${pct[0].toFixed(0)}%`);
-    if (pct[faixas - 1] > 10) erro(`a última faixa devia ser quase toda da B, tem ${pct[faixas - 1].toFixed(0)}% de A`);
+    /*
+    QUE PONTA É DE QUEM. `t = 0` (primeira faixa) é o z mais negativo, onde
+    está a baliza do TeamA — e lá senta-se a claque **B**: cada claque fica
+    atrás da baliza que a sua equipa ATACA. A claque A ocupa a última faixa.
+    A percentagem de A tem portanto de SUBIR ao longo do estádio.
+    */
+    if (pct[0] > 10) erro(`a primeira faixa devia ser quase toda da claque B, tem ${pct[0].toFixed(0)}% de A`);
+    if (pct[faixas - 1] < 90) erro(`a última faixa devia ser quase toda da claque A, é ${pct[faixas - 1].toFixed(0)}%`);
     const meio = pct[Math.floor(faixas / 2)];
     if (meio < 15 || meio > 85) {
         erro(`a faixa do meio devia estar mesclada, tem ${meio.toFixed(0)}% de A`);
     }
-    // E tem de descer sempre: sem transição via-se uma fronteira a direito.
+    // E tem de subir sempre: sem transição via-se uma fronteira a direito.
     for (let i = 1; i < faixas; i++) {
-        if (pct[i] > pct[i - 1] + 1) erro('a mescla não é monótona ao longo do estádio');
+        if (pct[i] < pct[i - 1] - 1) erro('a mescla não é monótona ao longo do estádio');
     }
 }
 

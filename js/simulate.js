@@ -90,6 +90,87 @@ function registarDesvios(stats, lista) {
     }
 }
 
+/*
+PERMANÊNCIA NUM ESTADO DA FSM — quanto tempo SEGUIDO cada jogador lá fica.
+
+O contador de frames por estado (registarDesvios) diz o tempo TOTAL e não
+distingue dois casos opostos: mil entradas curtas ou uma entrada presa. Foi
+essa ambiguidade que travou a leitura do CHEST_CONTROL, com 1 006 032 frames
+num lote de 20 jogos — que tanto pode ser a bola a repicar sem parar na faixa
+do peito como dois jogadores congelados no gesto.
+
+Aqui mede-se cada episódio: quantos houve, quanto durou o médio e quanto durou
+o mais longo. Um estado com duração máxima muito acima da duração do gesto que
+o define (peitoDur = 0.55 s no caso do peito) está preso, e a média perto dessa
+duração diz que a saída normal funciona.
+
+Não leva o gate de `nivel2Activo()` que o desvio leva: é justamente com o jogo
+parado que interessa ver quem não sai do sítio.
+*/
+function criarPermanenciaStats() {
+    return { abertos: new Map(), porEstado: {} };
+}
+
+function fecharEpisodio(stats, ep) {
+    let st = stats.porEstado[ep.estado];
+    if (!st) st = stats.porEstado[ep.estado] = { n: 0, soma: 0, max: 0, posDoMax: null };
+    st.n++;
+    st.soma += ep.tempo;
+    if (ep.tempo > st.max) { st.max = ep.tempo; st.posDoMax = ep.pos; }
+}
+
+function registarPermanencia(stats, lista, dt) {
+    for (const p of lista) {
+        if (!p || !p.fsm) continue;
+        /*
+        O GUARDA-REDES FICA DE FORA, e não por desinteresse: a FSM dele só
+        corre quando tem a bola nas mãos (ver updateGK, js/player.js) — o resto
+        do tempo é o `gkEstado` que manda e o `currentState` fica congelado no
+        último valor que teve. Medi-lo aqui dava um episódio do tamanho do jogo
+        inteiro (900 s em MOVE_TO_POS) que não é um jogador parado, é um campo
+        que ninguém escreve. Contado junto com os outros, esse falso positivo
+        tapava sempre o maior episódio verdadeiro.
+        */
+        if (p.role === 'gk') continue;
+        const estado = p.fsm.currentState;
+        let ep = stats.abertos.get(p);
+        if (!ep || ep.estado !== estado) {
+            if (ep) fecharEpisodio(stats, ep);
+            ep = { estado: estado, tempo: 0, pos: `${p.team} ${p.pos}` };
+            stats.abertos.set(p, ep);
+        }
+        ep.tempo += dt;
+    }
+}
+
+/*
+Fecha os episódios ainda a decorrer. Tem de correr no fim de cada jogo: o
+episódio aberto é precisamente o candidato a estar preso, e deixá-lo de fora
+apagava o caso que se quer ver.
+*/
+function fecharPermanencias(stats) {
+    for (const ep of stats.abertos.values()) fecharEpisodio(stats, ep);
+    stats.abertos.clear();
+}
+
+function resumirPermanencia(stats) {
+    const linhas = [];
+    for (const estado in stats.porEstado) {
+        const st = stats.porEstado[estado];
+        if (!st.n) continue;
+        linhas.push({
+            estado: estado,
+            episodios: st.n,
+            duracaoMediaS: +(st.soma / st.n).toFixed(2),
+            duracaoMaxS: +st.max.toFixed(1),
+            tempoTotalS: +st.soma.toFixed(0),
+            posicaoDoMax: st.posDoMax
+        });
+    }
+    linhas.sort((a, b) => b.duracaoMaxS - a.duracaoMaxS);
+    return linhas;
+}
+
 function resumirDesvios(stats) {
     const linhas = [];
     for (const estado in stats) {
@@ -378,14 +459,54 @@ function vigiarEncrave(v, jogo, tempoDeJogo, dt) {
         jogo: jogo,
         aosSegundos: Math.round(tempoDeJogo),
         estadoDoMatch: Match.state,
-        bola: { x: +b.x.toFixed(1), z: +b.z.toFixed(1) },
+        /*
+        O `y` distingue duas explicações opostas para a mesma bola imóvel: no
+        chão (y ~ BallPhysics.raio) ninguém a foi buscar; à altura do peito
+        (BallControl.peitoAltura, 1.20) ela está COLADA a alguém que não larga
+        o gesto, e a deriva lenta é o corpo dele a andar.
+        */
+        bola: { x: +b.x.toFixed(1), y: +b.y.toFixed(2), z: +b.z.toFixed(1) },
+        bolaVel: +Math.hypot(Match.ballVel.x, Match.ballVel.y, Match.ballVel.z).toFixed(2),
         portador: Match.ballCarrier ? `${Match.ballCarrier.team} ${Match.ballCarrier.pos}` : null,
         posse: Match.possessionTeam,
         setPieceTimer: +(Match.setPieceTimer || 0).toFixed(1),
         setPieceTaker: Match.setPieceTaker
             ? `${Match.setPieceTaker.team} ${Match.setPieceTaker.pos}` : null,
         emCampo: { TeamA: Match.players.length, TeamB: Match.opponents.length },
-        estadosFSM: porEstado
+        estadosFSM: porEstado,
+        /*
+        QUEM ESTÁ A MATAR NO PEITO NESTE INSTANTE, e com que números.
+
+        O gesto NÃO fica preso: medido em 20 jogos, 10 552 episódios de
+        CHEST_CONTROL com duração máxima de 0,5 s, dentro da `peitoDur`. O que
+        não acaba é a SEQUÊNCIA — nos jogos encravados há sempre dois
+        jogadores em CHEST_CONTROL, gesto atrás de gesto, e a bola nunca chega
+        a ser dominada.
+
+        Enquanto o gesto dura, o ramo `AccaoEmCurso` do player_bt.js trata-o
+        como acção em curso e o jogador não decide mais nada — é por isso que
+        estes encraves aparecem com ninguém a ir à bola.
+
+        `distanciaABola` e o `y` da bola dizem se ela está a ser devolvida à
+        faixa do peito (peitoYMin 1.15 a peitoYMax 1.35) do jogador seguinte.
+        */
+        /*
+        O contador anti ping-pong que JÁ EXISTE, e só conta cabeças: o
+        resolveBallContact limita cabeceios seguidos a HeaderModel.
+        maxHeadersSeguidos, mas não limita matadas no peito — e é uma
+        sequência de peitos que aparece nestes encraves. Ver se ele está a
+        zero diz se a sequência passa por ele ou o contorna.
+        */
+        aerialHeaderCount: Match.aerialHeaderCount,
+        peitosNoGesto: [...Match.players, ...Match.opponents]
+            .filter(p => p.fsm && p.fsm.currentState === 'CHEST_CONTROL')
+            .map(p => ({
+                quem: `${p.team} ${p.pos}`,
+                peitoTimer: Number.isFinite(p.peitoTimer) ? +p.peitoTimer.toFixed(2) : String(p.peitoTimer),
+                peitoCola: Number.isFinite(p.peitoCola) ? +p.peitoCola.toFixed(2) : String(p.peitoCola),
+                touchLock: Number.isFinite(p.touchLock) ? +p.touchLock.toFixed(2) : String(p.touchLock),
+                distanciaABola: +p.model.position.distanceTo(b).toFixed(1)
+            }))
     };
     v.registos.push(reg);
     console.warn(`Sim: JOGO ENCRAVADO — bola parada ${v.segundos}s ` +
@@ -440,6 +561,7 @@ const Sim = {
         }
 
         const desvioStats = criarDesvioStats();
+        const permanenciaStats = criarPermanenciaStats();
         const vigia = criarVigia();
         const estiloStats = calibrarEstilos ? criarEstiloStats() : null;
         const estilosAnteriores = calibrarEstilos ? forcarEstilosLigados() : null;
@@ -506,11 +628,15 @@ const Sim = {
                         registarDesvios(desvioStats, Match.players);
                         registarDesvios(desvioStats, Match.opponents);
                     }
+                    registarPermanencia(permanenciaStats, Match.players, dt);
+                    registarPermanencia(permanenciaStats, Match.opponents, dt);
                 }
                 passosFeitos += lote;
                 if (aoProgresso) aoProgresso(jogo + 1, nJogos, passosFeitos / totalPassos);
                 await cederAoBrowser();
             }
+
+            fecharPermanencias(permanenciaStats);
 
             const resumo = MatchStats.resumo();
             this.resultados.push({ jogo: jogo + 1, TeamA: resumo.TeamA, TeamB: resumo.TeamB });
@@ -540,6 +666,12 @@ const Sim = {
         if (relatorioDesvios.length) {
             console.log('Sim: desvio do alvo (dynamicTarget) ao slot do bloco, por estado');
             console.table(relatorioDesvios);
+        }
+
+        const relatorioPermanencia = resumirPermanencia(permanenciaStats);
+        if (relatorioPermanencia.length) {
+            console.log('Sim: permanência contínua por estado da FSM (episódios, não frames)');
+            console.table(relatorioPermanencia);
         }
 
         const relatorioPasses = (typeof MatchStats !== 'undefined') ? MatchStats.resumoPasses() : null;
@@ -573,6 +705,7 @@ const Sim = {
             estilos: relatorioEstilos,
             passes: relatorioPasses,
             desvios: relatorioDesvios,
+            permanencia: relatorioPermanencia,
             /*
             Amostras cruas só a pedido (`opts.exportarAmostras`): são
             milhares, e enchiam o JSON exportado sem que a tabela resumo

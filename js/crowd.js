@@ -166,6 +166,24 @@ const CrowdModel = {
     fraccaoGolo: 1.00,
 
     /*
+    OS ULTRAS — a fatia que salta SEMPRE, jogo parado ou não.
+
+    As três fracções acima descrevem uma bancada que reage ao lance, e o lance
+    quase nunca chega ao terço ofensivo (1,7% do tempo, medido): sem isto a
+    bancada passa o jogo inteiro quieta, que é o que se via no ecrã.
+
+    Estes não esperam por nada. Saem do MESMO limiar por adepto que decide
+    quem se levanta, passado por um `fract(x * 7.3)` — descorrelacionar é o
+    ponto: sem isso os saltadores seriam exactamente os de limiar mais baixo,
+    isto é, os primeiros a levantar-se, e ficariam todos amontoados na mesma
+    zona da bancada em vez de espalhados por ela.
+
+    Não custa attribute nenhum (o orçamento está em 13 de 16) nem escrita por
+    frame: é mais um uniform, comparado no shader.
+    */
+    fraccaoSaltoSempre: 0.10,
+
+    /*
     GATILHO DO ATAQUE. A claque levanta-se quando a equipa tem a posse e a bola
     entrou no terço ofensivo dela. `tercoZ` é a fronteira desse terço: o campo
     tem 106 m, portanto o terço final começa a 106/6 do meio-campo.
@@ -452,14 +470,19 @@ const Crowd = {
 
     `t` é 0 numa ponta do estádio e 1 na outra. As pontas são puras; no meio a
     probabilidade transita, e é aí que as duas claques se misturam.
+
+    QUE LADO É DE QUEM: `t = 0` é o z mais negativo, que é onde está a baliza
+    do TeamA (`ownGoalZ = -(CAMPO_COMP/2) * dirZ`, com dirZ +1 para o TeamA).
+    Lá fica a claque **B** — cada claque senta-se atrás da baliza que a sua
+    equipa ATACA, e não atrás da que defende, que é o que se vê no ecrã.
     */
     claqueEm(t, rnd) {
         const f = CrowdModel.fracaoPura;
-        if (t <= f) return 'A';
-        if (t >= 1 - f) return 'B';
-        // Faixa do meio: transição linear de A para B.
+        if (t <= f) return 'B';
+        if (t >= 1 - f) return 'A';
+        // Faixa do meio: transição linear de B para A.
         const k = (t - f) / Math.max(1e-6, 1 - 2 * f);
-        return (rnd() < k) ? 'B' : 'A';
+        return (rnd() < k) ? 'A' : 'B';
     },
 
     /*
@@ -478,6 +501,7 @@ const Crowd = {
             uBobDePe: { value: CrowdModel.bobDePe },
             uSalto: { value: CrowdModel.salto },
             uRitmoSalto: { value: CrowdModel.ritmoSalto },
+            uFracSalto: { value: CrowdModel.fraccaoSaltoSempre },
             uFracAnt: { value: new THREE.Vector2(0, 0) },
             uFracNova: { value: new THREE.Vector2(0, 0) },
             uTempoTroca: { value: new THREE.Vector2(-99, -99) },
@@ -529,6 +553,7 @@ uniform float uRitmoIdle;
 uniform float uBobDePe;
 uniform float uSalto;
 uniform float uRitmoSalto;
+uniform float uFracSalto;
 uniform vec2 uFracAnt;
 uniform vec2 uFracNova;
 uniform vec2 uTempoTroca;
@@ -551,6 +576,14 @@ void crowdPesos(out float dePe, out float w1, out float w2,
     float depois = step(aAdepto.x, fNova);
     float k = clamp((uTempo - tTroca) / max(uDurTransicao, 0.0001), 0.0, 1.0);
     dePe = mix(antes, depois, smoothstep(0.0, 1.0, k));
+
+    // OS ULTRAS: saltam sempre, sem esperar pelo lance. O limiar passa por um
+    // fract para nao serem os mesmos que se levantam primeiro: senao ficavam
+    // amontoados numa zona so. Estao de pe por definicao: nao se salta
+    // sentado.
+    float ultra = step(fract(aAdepto.x * 7.3), uFracSalto);
+    dePe = max(dePe, ultra);
+    festa = max(festa, ultra);
 
     // s em 0..2: 0 sentado, 1 de pe, 2 a festejar.
     float s = dePe * (1.0 + festa);
