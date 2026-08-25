@@ -5,6 +5,21 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 24 de Agosto de 2026 — torcida viva e bancada vermelha e branca
+
+Spec em [docs/superpowers/specs/2026-08-24-torcida-viva-design.md](superpowers/specs/2026-08-24-torcida-viva-design.md). Testes: `tests/crowd_vida.test.js` (o `tests/crowd.test.js` continua a passar sem alteração).
+
+- **O público deixou de ser uma fotografia** (js/crowd.js). As poses são assadas na geometria e não há rig por adepto, portanto animar do lado da CPU custava 60 000 `setMatrixAt` por frame (15 000 adeptos × 4 InstancedMesh). **Todo o movimento passou para o vertex shader.** A mesma função de construção — agora `Crowd._pecas(pose)`, antes `_pecasSentadas()` — é chamada QUATRO vezes com quatro dicionários de ângulos (`CrowdModel.poses`: `sentado`, `idle`, `dePe`, `festa`). Como são as mesmas caixas pela mesma ordem, os vértices correspondem 1:1 e servem de morph target: a geometria leva `position` (sentado) mais `aPosIdle`/`aPosDePe`/`aPosFesta` e as normais, e o shader interpola. Continua a ser **uma geometria e 4 draw calls**, e as matrizes de instância continuam `StaticDrawUsage` — nenhum frame reescreve uma.
+- **A INVARIANTE: as quatro poses têm de dar exactamente o mesmo número de vértices por canal.** Se divergirem, o morph lê fora do sítio e os adeptos explodem em picos. O `Crowd.geometrias()` verifica e atira excepção; o teste cobre-o.
+- **Quem está de pé sai de uma comparação no shader, não de um valor guardado por instância.** Cada adepto tem um `aLimiar` fixo em 0..1 (sorteado uma vez, com a semente que já tornava a multidão reprodutível) e levanta-se se `aLimiar < fracção` da sua claque. Mudar a bancada inteira custa **dois uniforms**, não 15 000 escritas — era isto ou não haver funcionalidade nenhuma. `aFase` e `aRitmo` dessincronizam: sem eles 7 500 pessoas saltavam ao mesmo tempo, que lê como um objecto único a pulsar.
+- **Repouso, expectativa e golo são o MESMO mecanismo com três valores de fracção** (`CrowdModel.fraccaoRepouso` 0.08, `fraccaoAtaque` 0.50, `fraccaoGolo` 1.00). Não há casos especiais no shader. A fracção de repouso **não é zero de propósito**: num estádio a sério há sempre gente de pé, e a zero a bancada lia-se como uma plateia de teatro. Por cima disso corre sempre uma oscilação de repouso (morph para a pose `idle`), portanto ninguém fica alguma vez imóvel.
+- **`CrowdTrigger` (js/crowd.js) — as regras, em função pura, sem Three.js lá dentro.** Golo: quem marcou vai a 1.00 com festa (braços acima da cabeça e salto), quem sofreu vai a 0 — e o golo salta a histerese, porque esperar 0.4 s para uma bancada reagir a um golo não faz sentido. Ataque: posse da equipa **e** bola no terço ofensivo dela (`tercoZ = 106/6`; o TeamA ataca para z positivo, que é o lado oposto à sua baliza). Quem defende não se levanta.
+- **A histerese existe porque a bola atravessa a linha do terço para trás e para a frente numa disputa** e sem ela a bancada piscava: entrar exige 0.4 s, sair 1.5 s, e uma vez de pé fica-se 2.0 s no mínimo. O teste mede-o — 60 frames com a bola a saltar a linha dão **zero** mudanças de fracção.
+- **`frustumCulled = false` nas quatro malhas.** A caixa envolvente é calculada da pose sentada e mente assim que alguém se levanta; sem isto bancadas inteiras desapareciam quando a câmara se afastava.
+- **O patch do shader falha ruidosamente.** O `onBeforeCompile` procura os chunks `begin_vertex` e `beginnormal_vertex` do THREE por string; se um dia mudarem de nome a substituição falhava em silêncio e o público voltava a ser estático sem nada a dizer porquê. Agora confirma que pegou e, se não, `console.warn`.
+- **`Match.updateCrowd` chama o `Crowd.update(dt)`** (js/match.js). O único uniform escrito por frame é o tempo. O resto do `updateCrowd` é o boneco simplificado antigo, desligado desde que o Crowd passou ao modelo dos jogadores.
+- **As cadeiras da bancada passaram a vermelho e branco, em padrão desenhado** (`getSeatColor`, js/match.js). Sorteavam uma de quatro cores com `Math.random`, o que de longe lê como chão salpicado e não como bancada — um estádio real pinta os assentos num padrão. A cor sai agora da FILA e da COLUNA, portanto é determinística: filas 0-1, 8-9, 18-19 e 28-29 brancas (contorno do campo, duas faixas e o remate do topo), o resto vermelho, e as filas 2, 10 e 20 levam dentes brancos de 3 colunas a cada 12, deslocados por fila. Sem os dentes as faixas eram quatro linhas a direito e o conjunto lia-se como código de barras. A variação de tom por cadeira vem de um hash de (fila, coluna), não de `Math.random`.
+
 ### Sessão de 24 de Agosto de 2026 (lateral com alvo em altura, matada no peito, árbitro)
 
 Spec em [docs/superpowers/specs/2026-08-24-lateral-e-matada-no-peito-design.md](superpowers/specs/2026-08-24-lateral-e-matada-no-peito-design.md). Testes: `tests/lateral_peito.test.js`.
@@ -1784,6 +1799,9 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Placar / cronómetro no ecrã | `match.js` → `updatePlacar()`, `#placar` no `index.html` |
 | Ver a árvore/condições activas de um jogador em tempo real | `main.js` → painel "PlayerBT Debug" (`updatePainelPlayerBT`) |
 | Guarda-redes de costas para a bola/campo | `utils.js` → `lookAtBola()` — **problema em aberto**, ver a nota na secção do `player.js` |
+| Quando a bancada se levanta / festeja | `crowd.js` → `CrowdTrigger.avaliar()` |
+| Fracções de pé, poses e ritmos do público | `crowd.js` → `CrowdModel.poses` e `fraccao*` |
+| Cores e padrão das cadeiras da bancada | `match.js` → `getSeatColor()` em `createField` |
 | Peso/tamanho/arrasto da bola | `config.js` → `BallPhysics` (valores reais; `escalaVisual` só aumenta a malha) |
 | Bónus tácticos por zona do campo | `spatial_grid.js` → `SpatialGrid.LAYERS` |
 | Fazer sistemas reagirem a algo sem `if` espalhado | `event_bus.js` |

@@ -1734,6 +1734,16 @@ const Match = {
 
     updateCrowd: function (dt) {
         if (typeof Config !== 'undefined' && Config.enableCrowd === false) return;
+
+        /*
+        O público a sério (js/crowd.js): decide sozinho o que a bancada faz, a
+        partir do estado que este Match já tem. Escreve um uniform por frame e
+        mais nada — o movimento todo é no vertex shader.
+        */
+        if (typeof Crowd !== 'undefined') Crowd.update(dt);
+
+        // Daqui para baixo é o boneco simplificado antigo, desligado desde que
+        // o Crowd passou a usar o modelo dos jogadores (ver createField).
         if (!this.specMesh || !this.specMesh.material.userData.time) return;
         
         this.crowdTimer += dt;
