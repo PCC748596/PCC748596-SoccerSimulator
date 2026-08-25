@@ -480,6 +480,31 @@ class PlayerFSM {
         if (this.currentState === 'SLIDE_TACKLE' || this.currentState === 'TACKLE' || this.currentState === 'SHOOT' || this.currentState === 'PASS') {
             this.p.resetBonesToDefault();
         }
+        /*
+        O `actionState` MORRE COM O ESTADO QUE O USA.
+
+        Ele so era limpo dentro dos `case 'PASS'` e `case 'SHOOT'`, que sao os
+        unicos que o consomem. Se alguem mudar o estado DE FORA — e o
+        `tratarBolaParada` faz isso, `changeState('SET_PIECE_WAIT')` assim que o
+        jogo para — esses cases nunca mais correm, e o `actionState` fica
+        pendurado para sempre.
+
+        O custo disso e total: a primeira linha do `PlayerAI.tick` e
+        `if (player.actionState || ...) return`. O jogador NUNCA MAIS DECIDE
+        NADA. Medido num lote de 20 jogos: sete encraves, todos com o portador
+        em SET_PIECE_WAIT, `hasBall: true` e o jogo em PLAY — com a bola nos pes
+        e o `decisionTimer` a subir sem ninguem a ir busca-la.
+
+        Limpar aqui e o unico sitio que apanha TODAS as saidas, incluindo as que
+        vierem a ser escritas. Os estados que o consomem ficam de fora da
+        limpeza: o `initiatePass`/`initiateShoot` criam o ActionState ANTES de
+        chamar o changeState, e limpa-lo aqui apagava-o no mesmo instante.
+        */
+        if (this.p.actionState &&
+            newState !== 'PASS' && newState !== 'SHOOT' && newState !== 'CROSS') {
+            this.p.actionState = null;
+        }
+
         this.currentState = newState; this.timer = 0;
         if (newState === 'CARRY') this.p.showActionBanner('CARRY');
         if (newState === 'DRIBBLE') this.p.showActionBanner('DRIBBLE');

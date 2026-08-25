@@ -8,7 +8,8 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 ### Sessão de 25 de Agosto de 2026 (noite) — a árvore de decisão
 
 Testes novos: `tests/passa_antes_de_conduzir.test.js`, `tests/arvore_sem_bola.test.js`,
-`tests/btstats_ramos.test.js`. Suite: 34 ficheiros.
+`tests/btstats_ramos.test.js`, `tests/actionstate_pendurado.test.js`.
+Suite: 35 ficheiros.
 
 #### `BTStats` — que ramo da árvore é que decide (js/bt/core.js)
 
@@ -39,6 +40,82 @@ por ter durado.
 - **Desligado por omissão.** Só o lote o liga, e desliga-o no fim: no jogo normal
   seriam 22 jogadores × 60 fps a escrever num objecto que ninguém lê.
 - Sai no JSON do lote, campo `ramos`.
+
+#### O QUE A TABELA `ramos` RESPONDEU (e desmentiu)
+
+Primeiro lote com o `BTStats` ligado, 20 jogos. **Duas hipóteses minhas caíram
+de uma vez:**
+
+```
+proteger            7 179 entradas   <- Dominar -> actCarry
+correrParaBola      2 657            <- RecuperarControlo -> actCarry
+atacarOEspaco          51            <- ConduzirEmEspaco -> actCarry
+conduzir          (ausente)          <- o fallback NUNCA corre
+```
+
+- **O `conduzir` não aparece na tabela.** O fallback final da árvore, que eu
+  suspeitava ser a fonte da condução, **nunca é alcançado**.
+- **O `ConduzirEmEspaco` tem 51 entradas em 20 jogos.** Foi o ramo que passei
+  meia sessão a travar (`conduzirSoAcimaDe`). Praticamente não existe.
+
+**A CONDUÇÃO VEM TODA DO `Dominar` → `act('proteger', actCarry)`**, que está
+acima de tudo na árvore, logo a seguir ao `RecuperarControlo`.
+
+Somando os quatro ramos de passe:
+
+| ramo | entradas |
+|---|---|
+| `executarPasseDefesa` | 2 200 |
+| `executarPasse` | 1 406 |
+| `passarLadoOuTras` | 1 095 |
+| `passarAosDefesas` | 26 |
+| **total de passes** | **4 727** |
+| **`proteger` sozinho** | **7 179** |
+
+Um único ramo de condução decide mais vezes do que os quatro ramos de passe
+juntos — e está acima de todos eles. **Nenhuma afinação de prioridade lá em
+baixo podia ter efeito**, e é essa a explicação de o `conduzirSoAcimaDe` não ter
+mudado nada.
+
+**POR ATACAR:** o `proteger` tem 7 179 entradas mas apenas **0,7% do tempo** —
+decide muitas vezes e dura pouco (25 ms em média). Isso cheira a condição mal
+calibrada (`aindaADominar`) e não a desenho errado. É o próximo alvo, e é o que
+o utilizador descreve desde o início: "dominam a bola e saem a correr".
+
+**O `correrNoEspaco` explica-se pelo mesmo:** 26 541 entradas mas 1,3% do tempo,
+0,21 s por decisão. Não é a corrida que desiste — é a árvore que lha tira no
+frame seguinte.
+
+#### O `actionState` pendurado — o encrave que parava o jogador para sempre
+
+Sete encraves no mesmo lote, todos com a mesma assinatura:
+
+    portador "TeamA LB"   fsm: "SET_PIECE_WAIT"   hasBall: true
+    decisionTimer: ~25    Match.state: "PLAY"
+
+Um jogador com a bola nos pés, em estado de bola parada, com o jogo a correr.
+
+**A causa:** o `actionState` só era limpo DENTRO dos `case 'PASS'` e
+`case 'SHOOT'` da FSM — os únicos que o consomem. Se alguém mudar o estado de
+fora, e o `tratarBolaParada` faz exactamente isso (`changeState('SET_PIECE_WAIT')`
+assim que o jogo pára), esses cases nunca mais correm e o `actionState` fica
+pendurado.
+
+O custo é total, porque a primeira linha do `PlayerAI.tick` é:
+
+```js
+if (player.actionState || s === "PASS" || ...) return;
+```
+
+**O jogador nunca mais decide nada.** Nem conduzir, nem passar, nem largar a
+bola. Fica com ela até alguém lha tirar — e ninguém lha tira, porque para os
+outros a bola tem dono.
+
+A limpeza passou para o `changeState`: é o único sítio por onde TODAS as saídas
+passam, incluindo as que vierem a ser escritas. Os estados que o consomem
+(PASS, SHOOT, CROSS) ficam de fora, porque o `initiatePass`/`initiateShoot`
+criam o ActionState ANTES de chamar o `changeState` — limpá-lo na entrada
+apagava-o no mesmo instante e trocava um encrave por um remate que nunca sai.
 
 #### O passe antes da condução (`CarryModel.conduzirSoAcimaDe`)
 
@@ -855,11 +932,16 @@ Spec em [docs/superpowers/specs/2026-08-24-reach-animacao-procedural-design.md](
 
 Coisas medidas e por resolver, para não se voltarem a descobrir por acaso:
 
-- **Conduz-se quase tanto como se passa:** 6 930 episódios de `CARRY` contra
-  5 198 de `PASS` num lote de 20 jogos. Travar o `ConduzirEmEspaco` não mexeu no
-  rácio, portanto a condução vem de outro dos três `actCarry` da árvore — o
-  `proteger` do `Dominar` ou o fallback final, que não tem condição nenhuma. A
-  tabela `ramos` do relatório (BTStats) diz qual, e é por aí que se começa.
+- **A CONDUÇÃO VEM TODA DO `Dominar` → `proteger`** (7 179 entradas contra
+  4 727 de todos os passes juntos), e esse ramo está ACIMA de todos os de passe
+  na árvore. O `ConduzirEmEspaco` tem 51 entradas em 20 jogos e o fallback
+  `conduzir` nunca corre — travá-los não podia ter efeito nenhum, e não teve.
+  **É o próximo alvo.** O sintoma é 0,7% do tempo em 7 179 entradas: 25 ms por
+  decisão, o que aponta para a condição `aindaADominar` mal calibrada e não para
+  desenho errado.
+- **O `correrNoEspaco` tem 26 541 entradas e 1,3% do tempo** (0,21 s por
+  decisão). Não é a corrida ao espaço que desiste — é a árvore que lha tira no
+  frame seguinte.
 - **Os golos caíram de 1,9 para 0,95 por jogo com os mesmos ~12,5 remates.**
   Coincide com a entrada da mola de coesão e com o `INTERCEPT` a triplicar
   (966 → 3 136 episódios): puxar toda a gente para a bola enche a área de
@@ -2457,6 +2539,8 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Quando a equipa sai à bola (rush) | `config.js` → `MarkingModel.raioDeAccionamento` |
 | Quantas faltas por jogo | `officials.js` → `RefereeModel.faltas.escala` |
 | Saber QUE RAMO da árvore decide | relatório do lote → tabela `ramos` (BTStats, `bt/core.js`) |
+| Jogador com a bola parado sem decidir nada | `fsm.js` → `changeState` limpa o `actionState` |
+| De onde vem a condução | `bt/player_bt.js` → `Dominar` → `act('proteger')` (não é o fallback) |
 | Conduz-se de mais / passa-se de menos | `config.js` → `CarryModel.conduzirSoAcimaDe` |
 | O que é importante com/sem posse | `bt/player_bt.js` → `SemBolaAtacando` / `SemBolaDefendendo` |
 | Portador parado a não decidir nada | `bt/player_bt.js` → `PlayerAI.tick`, a guarda `comBola` |
