@@ -441,7 +441,7 @@ function actualizarAvisoDoLote() {
         ? `~${Math.round(segundos)} s`
         : `~${Math.round(segundos / 60)} min`;
     const cobre = jogos >= SIM_JOGOS_PARA_COBERTURA;
-    el.innerHTML = `${jogos} × ${minutos} min, ${tempo} reais (estimativa).<br>` +
+    el.innerHTML = `${jogos} × ${minutos} min de jogo — ${tempo} reais de espera (estimativa).<br>` +
         (cobre
             ? 'Cobre os 21 playing styles.'
             : `Estilos NÃO cobertos (precisa de ${SIM_JOGOS_PARA_COBERTURA} jogos).`);

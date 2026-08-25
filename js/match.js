@@ -1218,6 +1218,16 @@ const Match = {
     resetPlay: function (forcingKickoffTeam = null) {
         this.state = 'PLAY'; this.ballVel.set(0, 0, 0);
 
+        /*
+        Disciplina zerada e expulsos de volta ao plantel. O `Sim` chama isto
+        entre jogos do lote (js/simulate.js), e sem esta reposicao as
+        expulsoes acumulavam-se de jogo para jogo ate as equipas ficarem sem
+        gente.
+        */
+        this.reporExpulsos();
+        [...this.players, ...this.opponents].forEach(p => { p.temAmarelo = false; });
+        if (typeof Officials !== 'undefined') Officials.resetFaltas();
+
         this.intendedReceiver = null;
         this.passTargetPos = null;
         this.chaserA = null;
@@ -2758,6 +2768,29 @@ const Match = {
             this.golKickBolaAtraso = 0;
             this.golKickBolaAlvo = null;
         }
+    },
+
+    /*
+    Devolve ao plantel quem foi expulso, na ordem em que sairam.
+
+    A ORDEM IMPORTA: ha codigo que indexa `Match.players` por POSICAO NA
+    LISTA — a cobertura de estilos do js/simulate.js e o exemplo — portanto
+    reinserir no fim deixava o jogador com o indice trocado e a calibracao
+    passava a atribuir estilos ao jogador errado, sem se queixar. Cada um
+    volta ao indice que tinha.
+    */
+    reporExpulsos: function () {
+        if (!this.expulsos || !this.expulsos.length) return;
+        for (const p of this.expulsos) {
+            p.expulso = false;
+            p.temAmarelo = false;
+            if (p.model) p.model.visible = true;
+            const lista = (p.team === 'TeamA') ? this.players : this.opponents;
+            const idx = (typeof p.indiceNaFormacao === 'number')
+                ? Math.min(p.indiceNaFormacao, lista.length) : lista.length;
+            lista.splice(idx, 0, p);
+        }
+        this.expulsos.length = 0;
     },
 
     /*

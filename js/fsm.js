@@ -1314,7 +1314,17 @@ class PlayerFSM {
                             */
                             const forcaDef = (p.skillFor('SPEED') + p.skillFor('STRENGTH')) / 2;
                             const forcaAtk = (carrier.skillFor('SPEED') + carrier.skillFor('STRENGTH')) / 2;
-                            if (dotAngle >= 0 && venceuDuelo(forcaDef, forcaAtk, 0.5)) {
+                            const venceuTackle = dotAngle >= 0 && venceuDuelo(forcaDef, forcaAtk, 0.5);
+                            /*
+                            Desarme FALHADO: ate aqui nao custava nada a quem
+                            errava. Agora o arbitro avalia (js/officials.js) e
+                            pode dar falta. O desfecho ja era conhecido neste
+                            ponto; so faltava a consequencia.
+                            */
+                            if (!venceuTackle && typeof Officials !== 'undefined') {
+                                Officials.avaliarDueloPerdido(p, carrier, 'desarme');
+                            }
+                            if (venceuTackle) {
                                 carrier.hasBall = false;
                                 carrier.touchLock = BallControl.touchLock;
                                 Match.ballCarrier = null;
@@ -1389,6 +1399,15 @@ class PlayerFSM {
                         Só possível se o defensor estiver na frente/lado (<=90°).
                         */
                         const venceu = alvoValido && slideAngleOk && venceuDuelo(p.skillFor('MARKING'), carrierSlide.skillFor('TEC'), 0.45);
+
+                        /*
+                        Carrinho FALHADO sobre um alvo valido: e a fonte de
+                        falta mais forte do jogo (corpo no chao, em movimento,
+                        e o pe acerta na perna). Ver js/officials.js.
+                        */
+                        if (!venceu && alvoValido && typeof Officials !== 'undefined') {
+                            Officials.avaliarDueloPerdido(p, carrierSlide, 'carrinho');
+                        }
 
                         if (venceu) {
                             carrierSlide.hasBall = false;

@@ -32,6 +32,15 @@ function novoContadorEquipa() {
         perdasDePosse: 0,      // bola fugiu do pé sem ser passe (afastou-se demasiado)
         cantos: 0,
         pontapesBaliza: 0,
+        /*
+        Faltas e disciplina (ver js/officials.js). `cometidas` e `sofridas`
+        são as duas faces do mesmo lance, guardadas nas duas equipas: sem as
+        duas não se sabe se uma equipa faz muitas faltas ou se apenas sofre
+        um adversário faltoso.
+        */
+        faltas: { cometidas: 0, sofridas: 0 },
+        cartoes: { amarelos: 0, vermelhos: 0 },
+        penaltis: 0,
         posseSegundos: 0,
         // Segundos de posse por terço do campo, no referencial de ataque da
         // equipa (def = perto da própria baliza, atk = perto da baliza
@@ -240,6 +249,9 @@ const MatchStats = {
             perdasDePosse: s.perdasDePosse,
             cantos: s.cantos,
             pontapesBaliza: s.pontapesBaliza,
+            faltas: s.faltas.cometidas + ' (sofridas ' + s.faltas.sofridas + ')',
+            cartoes: s.cartoes.amarelos + 'A/' + s.cartoes.vermelhos + 'V',
+            penaltis: s.penaltis,
             posseSegundos: Math.round(s.posseSegundos * 10) / 10,
             tercoSegundos: {
                 def: Math.round(s.tercoSegundos.def * 10) / 10,

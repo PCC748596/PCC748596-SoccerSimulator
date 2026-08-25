@@ -930,6 +930,15 @@ function actCarry(ctx) {
 
 function actSlideTackle(ctx) {
     const p = ctx.p;
+    /*
+    O MEDO DO ADVERTIDO: quem tem amarelo nao faz carrinhos. Sem isto o
+    segundo amarelo dava ~46% de jogos com expulsao (5,22 cartoes repartidos
+    por 22 jogadores, problema do aniversario) quando o real e 8%. Ver
+    js/officials.js e o spec das faltas.
+    */
+    if (typeof Officials !== 'undefined' && !Officials.podeFazerCarrinho(p)) {
+        return actTackle(ctx);
+    }
     if (typeof MatchStats !== 'undefined') MatchStats[p.team].carrinhos.tentados++;
     if (Match.ballCarrier) {
         _v1.copy(Match.ballCarrier.model.position);
@@ -1378,6 +1387,15 @@ function podeMarcar(ctx) {
 function actMarcar(ctx) {
     const p = ctx.p;
     const homem = ctx.marcado;
+    /*
+    O `trocasMarcacao` do MatchStats estava declarado e exportado desde
+    sempre mas NINGUEM o incrementava: o zero que aparecia nos relatorios
+    nao era um resultado, era a ausencia de instrumentacao. Aqui e o unico
+    sitio onde a marcacao muda de homem.
+    */
+    if (typeof MatchStats !== 'undefined' && p.markingTarget && p.markingTarget !== homem) {
+        MatchStats[p.team].trocasMarcacao++;
+    }
     p.markingTarget = homem;
 
     /*

@@ -379,6 +379,15 @@ const Sim = {
         const inicio = performance.now();
 
         for (let jogo = 0; jogo < nJogos; jogo++) {
+            /*
+            Antes de qualquer coisa que indexe as listas: quem foi expulso no
+            jogo anterior volta ao plantel. O `aplicarCoberturaNoJogo` abaixo
+            indexa `Match.players[idx]` por posicao na lista, portanto com uma
+            equipa reduzida a dez atribuia o estilo ao jogador errado — sem se
+            queixar, que e o pior modo de falha possivel numa calibracao.
+            */
+            Match.reporExpulsos();
+
             if (planoCobertura) {
                 const forma = FORM_CYCLE[jogo % FORM_CYCLE.length];
                 Tatics.formacao = forma;

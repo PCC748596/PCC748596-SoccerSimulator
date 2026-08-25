@@ -185,6 +185,14 @@ rectângulo do bloco táctico nas duas pontas (ver computeBlock em team_bt.js):
 */
 const AREA_GRANDE_PROF = 16.5;
 
+/*
+Meia-largura da grande área. O número já andava escrito à mão em meia dúzia de
+sítios (`20.16` em match.js, config.js…); aqui fica com nome, para quem
+precisar dele a seguir. Os usos antigos ficam como estão — trocá-los todos é
+mexer em código que não tem nada que ver com o que se está a fazer.
+*/
+const AREA_GRANDE_MEIA_LARG = 20.16;
+
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();

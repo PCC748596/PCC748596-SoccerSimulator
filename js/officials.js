@@ -65,7 +65,78 @@ const RefereeModel = {
     */
     corCamisa: '#14161a',
     corCalcao: '#14161a',
-    corBota: '#0f1114'
+    corBota: '#0f1114',
+
+    /*
+    =========================================================================
+    FALTAS E CARTÕES
+    =========================================================================
+    Spec em docs/superpowers/specs/2026-08-25-faltas-e-cartoes-design.md.
+
+    Alvo: 27,63 faltas e 5,22 cartões por jogo de 90 minutos, com 0,08
+    vermelhos. Nada disto existia — o `triggerFreeKick` estava escrito mas só
+    o botão do painel o chamava.
+
+    DUAS FONTES de falta, e a calibração delas é ACOPLADA: as duas somam para
+    a mesma média, portanto subir uma obriga a descer a outra. Por isso existe
+    a `escala`, que multiplica ambas e deixa mexer no TOTAL sem tocar no
+    equilíbrio entre elas.
+    */
+    faltas: {
+        // Multiplicador global das duas fontes. Sobe ou desce o total de
+        // faltas por jogo sem mudar a proporção entre desarme e contacto.
+        escala: 1.0,
+
+        /*
+        FONTE A — o duelo perdido. O desfecho já existe (venceuDuelo, em
+        utils.js) e hoje não custa nada a quem falha; agora custa.
+
+        O carrinho é muito mais punido do que o desarme de pé porque é o que
+        acontece no jogo: o corpo vai no chão, em movimento, e quem falha a
+        bola acerta na perna.
+        */
+        probCarrinhoFalhado: 0.42,
+        probDesarmeFalhado: 0.11,
+
+        /*
+        FONTE B — o contacto sem tentativa de desarme: empurrões e choques.
+
+        `raio` é a distância a que dois corpos se tocam; `velRelMin` é a
+        velocidade relativa abaixo da qual o encontro é só um roçar. O
+        `arrefecimento` impede que o mesmo par marque falta atrás de falta
+        enquanto continua encostado — sem ele um único choque dava dezenas.
+        */
+        contacto: {
+            raio: 1.0,
+            velRelMin: 4.5,
+            prob: 0.06,
+            arrefecimento: 3.0
+        },
+
+        /*
+        GRAVIDADE: quatro parcelas somadas. Serve só para decidir o cartão.
+
+        `pesoAngulo` usa 0 de frente e π por trás, portanto entra a dobrar num
+        carrinho pelas costas. `travouAtaque` é a falta táctica.
+        */
+        gravidade: {
+            base: { carrinho: 0.42, desarme: 0.16, contacto: 0.12 },
+            pesoVelocidade: 0.035,   // por m/s do contacto
+            pesoAngulo: 0.22,        // × (angulo / π)
+            travarAtaque: 0.22
+        },
+
+        /*
+        LIMIARES. Calibrados para ~19% das faltas darem cartão (5,22 em
+        27,63): um desarme banal fica muito abaixo, um carrinho por trás em
+        velocidade passa.
+
+        O vermelho DIRECTO é quase inalcançável de propósito — quase todos os
+        vermelhos reais saem do segundo amarelo.
+        */
+        limiarAmarelo: 0.55,
+        limiarVermelho: 1.05
+    }
 };
 
 const Officials = {
@@ -356,8 +427,17 @@ const Officials = {
     },
 
     update: function (dt) {
-        if (!this.arbitro || !this._ativo) return;
         if (typeof Match === 'undefined' || !Match.ball) return;
+
+        /*
+        As faltas por contacto sao vigiadas SEMPRE, mesmo com os arbitros
+        escondidos (`_ativo` false, o botao do painel): esconder os bonecos e
+        uma opcao de visualizacao, nao suspender a arbitragem. So o
+        posicionamento, daqui para baixo, e que depende deles existirem.
+        */
+        this.detectarContactos(dt);
+
+        if (!this.arbitro || !this._ativo) return;
 
         const R = RefereeModel;
         const meiaLarg = CAMPO_LARG / 2;
@@ -392,5 +472,286 @@ const Officials = {
         for (let i = 0; i < this.assistentes.length; i++) {
             this.assistentes[i].model.visible = on;
         }
+    },
+
+    /*
+    =========================================================================
+    AS REGRAS
+    =========================================================================
+    Daqui para baixo é tudo função PURA — sem Match, sem cena, sem bola. É de
+    propósito: as regras são o que se testa (tests/faltas_cartoes.test.js), e
+    testá-las obrigando a montar um jogo seria trocar um teste de meio segundo
+    por um de meio minuto.
+    =========================================================================
+    */
+
+    /*
+    Gravidade de uma falta, para decidir o cartão.
+
+    `tipo`: 'carrinho' | 'desarme' | 'contacto'
+    `velocidade`: m/s do contacto
+    `angulo`: radianos entre a frente da vítima e o infractor — 0 de frente,
+              π pelas costas
+    `travouAtaque`: falta táctica sobre quem ia em progressão
+    */
+    gravidadeDaFalta: function (o) {
+        const G = RefereeModel.faltas.gravidade;
+        const base = G.base[o.tipo];
+        // Um tipo desconhecido é um erro de quem chama, não uma falta leve.
+        if (base === undefined) {
+            console.warn('Officials: tipo de falta desconhecido:', o.tipo);
+            return 0;
+        }
+        let g = base;
+        g += Math.max(0, o.velocidade || 0) * G.pesoVelocidade;
+        g += (Math.abs(o.angulo || 0) / Math.PI) * G.pesoAngulo;
+        if (o.travouAtaque) g += G.travarAtaque;
+        return g;
+    },
+
+    /*
+    Que cartão sai desta gravidade, para este jogador.
+
+    O SEGUNDO AMARELO é o que produz quase todos os vermelhos: o vermelho
+    directo exige uma gravidade que quase nenhum lance atinge.
+    */
+    decidirCartao: function (gravidade, jogador) {
+        const F = RefereeModel.faltas;
+        if (gravidade >= F.limiarVermelho) return 'vermelho';
+        if (gravidade >= F.limiarAmarelo) {
+            return (jogador && jogador.temAmarelo) ? 'vermelho' : 'amarelo';
+        }
+        return null;
+    },
+
+    /*
+    O MEDO DO ADVERTIDO.
+
+    Sem isto o segundo amarelo dava ~46% de jogos com expulsão — problema do
+    aniversário, com 5,22 cartões repartidos por 22 jogadores — quando o
+    número real é 8%. Quem tem amarelo deixa de fazer carrinhos, e é isso, e
+    não uma constante inventada para o efeito, que põe os vermelhos no sítio.
+
+    Lido pelo js/bt/player_bt.js antes de escolher SLIDE_TACKLE.
+    */
+    podeFazerCarrinho: function (p) {
+        return !(p && p.temAmarelo);
+    },
+
+    /*
+    A falta é penálti? Só quando o infractor é de quem DEFENDE aquela área e
+    a falta é dentro dela.
+
+    `zSinal < 0` é a baliza do TeamA (a mesma convenção da detecção de golo em
+    match.js), portanto o TeamA defende z negativo.
+    */
+    ehPenalti: function (x, z, teamInfractor) {
+        const meiaLargArea = AREA_GRANDE_MEIA_LARG;
+        if (Math.abs(x) > meiaLargArea) return false;
+
+        const zLimite = CAMPO_COMP / 2 - AREA_GRANDE_PROF;
+        const dentroEmZNegativo = z < -zLimite;
+        const dentroEmZPositivo = z > zLimite;
+
+        if (teamInfractor === 'TeamA') return dentroEmZNegativo;
+        if (teamInfractor === 'TeamB') return dentroEmZPositivo;
+        return false;
+    },
+
+    /*
+    =========================================================================
+    A APLICAÇÃO — daqui para baixo já se mexe no jogo
+    =========================================================================
+    */
+
+    // Pares que acabaram de chocar, para o mesmo choque não marcar falta
+    // atrás de falta enquanto os dois continuam encostados.
+    _arrefecimento: null,
+
+    resetFaltas: function () {
+        this._arrefecimento = new Map();
+    },
+
+    /*
+    Marca a falta: contadores, cartão, expulsão e reposição do jogo.
+
+    A falta é no sítio onde o INFRACTOR está, que é onde o contacto foi.
+    */
+    marcarFalta: function (infractor, vitima, dados) {
+        if (!infractor || !vitima || infractor.expulso) return;
+        if (typeof Match === 'undefined' || Match.state !== 'PLAY') return;
+
+        const gravidade = this.gravidadeDaFalta(dados);
+
+        if (typeof MatchStats !== 'undefined') {
+            MatchStats[infractor.team].faltas.cometidas++;
+            MatchStats[vitima.team].faltas.sofridas++;
+        }
+
+        const cartao = this.decidirCartao(gravidade, infractor);
+        if (cartao === 'amarelo') {
+            infractor.temAmarelo = true;
+            if (typeof MatchStats !== 'undefined') MatchStats[infractor.team].cartoes.amarelos++;
+        } else if (cartao === 'vermelho') {
+            /*
+            O segundo amarelo conta como amarelo E como vermelho, que é como
+            as estatísticas reais o contam — senão faltava um amarelo aos
+            5,22 por jogo sempre que houvesse expulsão.
+            */
+            if (typeof MatchStats !== 'undefined') {
+                if (infractor.temAmarelo) MatchStats[infractor.team].cartoes.amarelos++;
+                MatchStats[infractor.team].cartoes.vermelhos++;
+            }
+            this.expulsar(infractor);
+        }
+
+        const pos = infractor.model.position;
+        if (this.ehPenalti(pos.x, pos.z, infractor.team)) {
+            if (typeof MatchStats !== 'undefined') MatchStats[vitima.team].penaltis++;
+            Match.triggerPenalty(vitima.team);
+        } else {
+            Match.triggerFreeKick(vitima.team);
+        }
+
+        if (typeof EventBus !== 'undefined') {
+            EventBus.emit('FOUL', {
+                infractor: infractor, vitima: vitima,
+                gravidade: gravidade, cartao: cartao
+            });
+        }
+    },
+
+    /*
+    Expulsa: o jogador sai da lista da equipa e vai para `Match.expulsos`.
+
+    Tirar da lista, em vez de lá deixar uma flag para toda a gente filtrar, é
+    a mesma escolha que o cabeçalho deste ficheiro explica para os árbitros:
+    quem não joga não anda nas listas de quem joga. Os outros dez MANTÊM as
+    posições que tinham — não há reorganização para 4-4-1, porque isso exigia
+    formações novas no FormationsData para cada posição perdida.
+    */
+    expulsar: function (p) {
+        if (!p || p.expulso) return;
+        p.expulso = true;
+        p.hasBall = false;
+        if (Match.ballCarrier === p) Match.ballCarrier = null;
+
+        const lista = (p.team === 'TeamA') ? Match.players : Match.opponents;
+        const i = lista.indexOf(p);
+        /*
+        Guarda o INDICE, nao so o jogador: ha codigo que indexa a lista por
+        posicao (a cobertura de estilos do js/simulate.js), e devolver o
+        expulso ao fim da lista trocava os indices de toda a gente a seguir.
+        Ver Match.reporExpulsos.
+        */
+        if (i >= 0) { p.indiceNaFormacao = i; lista.splice(i, 1); }
+
+        Match.expulsos = Match.expulsos || [];
+        Match.expulsos.push(p);
+        if (p.model) p.model.visible = false;
+
+        console.log('Officials: ' + p.team + ' (' + p.pos + ') EXPULSO, ficam ' +
+            lista.length + ' em campo.');
+    },
+
+    /*
+    FONTE A: o duelo perdido. Chamado pelo js/fsm.js quando um desarme ou um
+    carrinho falha — o desfecho já era conhecido ali, só não custava nada.
+    */
+    avaliarDueloPerdido: function (defensor, portador, tipo) {
+        if (typeof Match === 'undefined' || Match.state !== 'PLAY') return;
+        if (!defensor || !portador || defensor.expulso) return;
+
+        const F = RefereeModel.faltas;
+        const prob = (tipo === 'carrinho' ? F.probCarrinhoFalhado : F.probDesarmeFalhado) * F.escala;
+        if (Math.random() >= prob) return;
+
+        this.marcarFalta(defensor, portador, {
+            tipo: tipo,
+            velocidade: defensor.velocity ? defensor.velocity.length() : 0,
+            angulo: this._anguloDeAtaque(defensor, portador),
+            travouAtaque: this._ehAtaqueEmProgressao(portador)
+        });
+    },
+
+    /*
+    FONTE B: contacto sem tentativa de desarme — empurrões e choques. Corre
+    por frame, sobre os pares de adversários que estão perto.
+    */
+    detectarContactos: function (dt) {
+        if (typeof Match === 'undefined' || Match.state !== 'PLAY') return;
+        if (!this._arrefecimento) this.resetFaltas();
+
+        const C = RefereeModel.faltas.contacto;
+        const prob = C.prob * RefereeModel.faltas.escala * dt;
+
+        for (const [chave, t] of this._arrefecimento) {
+            const restante = t - dt;
+            if (restante <= 0) this._arrefecimento.delete(chave);
+            else this._arrefecimento.set(chave, restante);
+        }
+
+        const raio2 = C.raio * C.raio;
+        for (const a of Match.players) {
+            for (const b of Match.opponents) {
+                const dx = a.model.position.x - b.model.position.x;
+                const dz = a.model.position.z - b.model.position.z;
+                if (dx * dx + dz * dz > raio2) continue;
+
+                const chave = a.model.id + ':' + b.model.id;
+                if (this._arrefecimento.has(chave)) continue;
+
+                const vrx = (a.velocity ? a.velocity.x : 0) - (b.velocity ? b.velocity.x : 0);
+                const vrz = (a.velocity ? a.velocity.z : 0) - (b.velocity ? b.velocity.z : 0);
+                const vRel = Math.sqrt(vrx * vrx + vrz * vrz);
+                if (vRel < C.velRelMin) continue;
+                if (Math.random() >= prob) continue;
+
+                /*
+                Quem entra é quem vai mais depressa. Não é sempre verdade num
+                choque real, mas é o critério que não precisa de saber a
+                intenção de ninguém.
+                */
+                const vA = a.velocity ? a.velocity.length() : 0;
+                const vB = b.velocity ? b.velocity.length() : 0;
+                const infractor = (vA >= vB) ? a : b;
+                const vitima = (infractor === a) ? b : a;
+
+                this._arrefecimento.set(chave, C.arrefecimento);
+                this.marcarFalta(infractor, vitima, {
+                    tipo: 'contacto',
+                    velocidade: vRel,
+                    angulo: this._anguloDeAtaque(infractor, vitima),
+                    travouAtaque: this._ehAtaqueEmProgressao(vitima)
+                });
+                return;   // uma falta por frame chega
+            }
+        }
+    },
+
+    // Ângulo entre a frente da vítima e a direcção de onde o infractor vem:
+    // 0 de frente, PI pelas costas.
+    _anguloDeAtaque: function (infractor, vitima) {
+        const vv = vitima.velocity;
+        let fx, fz;
+        if (vv && (vv.x * vv.x + vv.z * vv.z) > 0.1) {
+            const n = Math.sqrt(vv.x * vv.x + vv.z * vv.z);
+            fx = vv.x / n; fz = vv.z / n;
+        } else {
+            _v1.set(0, 0, 1).applyQuaternion(vitima.model.quaternion);
+            fx = _v1.x; fz = _v1.z;
+        }
+        let dx = infractor.model.position.x - vitima.model.position.x;
+        let dz = infractor.model.position.z - vitima.model.position.z;
+        const d = Math.sqrt(dx * dx + dz * dz) || 1;
+        dx /= d; dz /= d;
+        return Math.acos(THREE.MathUtils.clamp(fx * dx + fz * dz, -1, 1));
+    },
+
+    // Falta táctica: a vítima ia em progressão para a baliza adversária.
+    _ehAtaqueEmProgressao: function (vitima) {
+        if (!vitima || !vitima.velocity) return false;
+        const vz = vitima.velocity.z * (vitima.dirZ || 1);
+        return vz > 3.0;
     }
 };
