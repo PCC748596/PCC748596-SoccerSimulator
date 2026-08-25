@@ -146,3 +146,221 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
 
     corpo.scale.set((1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9); return { corpo, rig, backMat };
 }
+
+/*
+POSE DO ARREMESSO LATERAL — um keyframe do ThrowInClip escrito no rig.
+
+`giroAlvo` é o ângulo com sinal entre a frente do corpo e a direcção do
+lançamento, já limitado ao `giroMax` (ver prepararGiroLateral em player.js).
+No editor, onde não há ninguém a quem atirar, vale 0 e o gesto sai de frente.
+
+Só mexe no esqueleto. A altura do corpo, as mãos a fecharem-se na bola e a
+bola a seguir as mãos são do jogo, e ficam no player.js: uma pose não tem
+bola nenhuma para segurar.
+*/
+function aplicarPoseLateral(rig, K, giroAlvo) {
+    if (!rig) return;
+    const L = LateralPose;
+
+    rig.pelvis.position.set(0, 2.6, 0);
+    rig.pelvis.rotation.set(K.pelvisX, 0, 0);
+
+    /*
+    GIRO DA CINTURA para o lado do arremesso. Vai no `chest` e não na
+    pélvis: rodar a bacia levava as pernas atrás dela e os pés ficavam
+    torcidos. A cintura é o que roda num lateral — tronco, ombros e braços
+    acompanham, os pés ficam plantados.
+
+    O `K.giro` é a fracção do ângulo neste keyframe: negativa na armação, que
+    é a cintura a carregar para o lado contrário, e positiva no chicote.
+    */
+    const giroY = (K.giro || 0) * (giroAlvo || 0);
+    rig.chest.rotation.set(K.chest, giroY, 0);
+
+    rig.lArm.rotation.set(K.bracoX, 0, K.bracoZ);
+    rig.rArm.rotation.set(K.bracoX, 0, -K.bracoZ);
+    rig.lElbow.rotation.set(K.cotovelo, 0, 0);
+    rig.rElbow.rotation.set(K.cotovelo, 0, 0);
+
+    const frenteR = (L.peFrente === 'r');
+    const pernaF = frenteR ? rig.rLeg : rig.lLeg;
+    const joelhoF = frenteR ? rig.rKnee : rig.lKnee;
+    const pernaT = frenteR ? rig.lLeg : rig.rLeg;
+    const joelhoT = frenteR ? rig.lKnee : rig.rKnee;
+
+    pernaF.rotation.set(K.coxaFrente, 0, 0);
+    joelhoF.rotation.set(K.joelhoFrente, 0, 0);
+    pernaT.rotation.set(K.coxaTras, 0, 0);
+    joelhoT.rotation.set(K.joelhoTras, 0, 0);
+
+    rig.lFoot.rotation.set(0, Math.PI / 16, 0);
+    rig.rFoot.rotation.set(0, -Math.PI / 16, 0);
+}
+
+/*
+POSE DO REMATE — um keyframe do ShotClip escrito no rig.
+
+A perna de apoio e a de remate saem de `ShotClip.pernaChute`, para o clip
+servir um canhoto trocando uma letra.
+
+Enquanto isto corre, o `animateBones` do player.js é saltado: o clip manda em
+tudo o que toca, e o ciclo de passada reescrevia as pernas no mesmo frame.
+
+Só mexe no esqueleto; a altura do corpo é do jogo e fica no player.js.
+*/
+function aplicarPoseRemate(rig, K) {
+    if (!rig) return;
+
+    const chuteR = (ShotClip.pernaChute === 'r');
+    const pernaC = chuteR ? rig.rLeg : rig.lLeg;
+    const joelhoC = chuteR ? rig.rKnee : rig.lKnee;
+    const pernaA = chuteR ? rig.lLeg : rig.rLeg;
+    const joelhoA = chuteR ? rig.lKnee : rig.rKnee;
+
+    // A bacia inclina e RODA: no remate em corrida a força vem da rotação,
+    // não da inclinação (essa é do tiro de meta, com o corpo parado).
+    rig.pelvis.position.set(0, 2.6, 0);
+    rig.pelvis.rotation.set(0, chuteR ? K.pelvisY : -K.pelvisY, K.leanZ);
+
+    rig.chest.rotation.set(K.chest, chuteR ? K.chestY : -K.chestY, 0);
+
+    pernaC.rotation.set(K.coxaChute, 0, 0);
+    joelhoC.rotation.set(K.joelhoChute, 0, 0);
+    pernaA.rotation.set(K.coxaApoio, 0, 0);
+    joelhoA.rotation.set(K.joelhoApoio, 0, 0);
+
+    rig.lArm.rotation.set(K.bracoLx, 0, K.bracoLz);
+    rig.rArm.rotation.set(K.bracoRx, 0, K.bracoRz);
+    rig.lElbow.rotation.x = K.cotoveloL;
+    rig.rElbow.rotation.x = K.cotoveloR;
+
+    rig.lFoot.rotation.set(0, Math.PI / 16, 0);
+    rig.rFoot.rotation.set(0, -Math.PI / 16, 0);
+}
+
+/*
+POSE DO LANÇAMENTO COM AS MÃOS DO GUARDA-REDES — GoalkeeperThrowClip.
+*/
+function aplicarPoseLancamentoGR(rig, K) {
+    if (!rig) return;
+    rig.chest.rotation.x = K.chest;
+    rig.chest.rotation.z = 0;
+    rig.pelvis.rotation.x = 0;
+    rig.pelvis.rotation.z = 0;
+
+    rig.lLeg.rotation.x = K.coxaL;
+    rig.lKnee.rotation.x = K.joelhoL;
+    rig.rLeg.rotation.x = K.coxaR;
+    rig.rKnee.rotation.x = K.joelhoR;
+
+    rig.lArm.rotation.x = K.bracoLx;
+    rig.lArm.rotation.z = K.bracoLz;
+    rig.rArm.rotation.x = K.bracoRx;
+    rig.rArm.rotation.z = K.bracoRz;
+
+    rig.lElbow.rotation.x = K.cotoveloL;
+    rig.rElbow.rotation.x = K.cotoveloR;
+}
+
+/*
+POSE DO CHUTÃO DO GUARDA-REDES — GoalkeeperKickClip.
+
+`norm` é o tempo normalizado 0..1 do clip, e serve só para os braços abrirem
+progressivamente: é o único canal do gesto que não vem dos keyframes.
+*/
+function aplicarPoseChutaoGR(rig, K, norm) {
+    if (!rig) return;
+    const chuteR = (GoalkeeperKickClip.pernaChute === 'r');
+    const pernaC = chuteR ? rig.rLeg : rig.lLeg;
+    const joelhoC = chuteR ? rig.rKnee : rig.lKnee;
+    const pernaA = chuteR ? rig.lLeg : rig.rLeg;
+    const joelhoA = chuteR ? rig.lKnee : rig.rKnee;
+
+    pernaC.rotation.set(K.coxaChute, 0, 0);
+    joelhoC.rotation.set(K.joelhoChute, 0, 0);
+    pernaA.rotation.set(K.coxaApoio, 0, 0);
+    joelhoA.rotation.set(K.joelhoApoio, 0, 0);
+
+    rig.chest.rotation.set(K.chest, 0, 0);
+    rig.pelvis.rotation.set(0, 0, 0);
+
+    rig.lArm.rotation.x = K.bracoX;
+    rig.rArm.rotation.x = K.bracoX;
+    rig.lElbow.rotation.x = K.cotovelo;
+    rig.rElbow.rotation.x = K.cotovelo;
+
+    const abreBraco = 0.05 + 0.45 * (norm || 0);
+    rig.lArm.rotation.z = abreBraco;
+    rig.rArm.rotation.z = -abreBraco;
+}
+
+/*
+POSE DO TIRO DE META / BOLA PARADA DO CHÃO — GoalkeeperGroundKickClip.
+
+PIVÔ NO PÉ DE APOIO: o pé de apoio está em x = ±0.4 no espaço local da bacia,
+e a inclinação lateral (`leanZ`) roda o corpo inteiro em BLOCO à volta dele,
+como uma unidade rígida — sem quebrar a cintura nem dobrar a coluna de lado.
+É por isso que a bacia se desloca em vez de só rodar.
+
+`opts.poseAnterior` e `opts.peso` são a MISTURA DE ENTRADA (corrida -> chute):
+cada canal sai da pose com que a corrida acabou e vai até ao valor do clip.
+Sem os passar — como o editor faz — a pose do clip é escrita directamente,
+que é o mesmo que uma mistura já terminada.
+
+`corpo` é o Group do jogador, para a altura; pode vir a nulo.
+*/
+function aplicarPoseChuteChaoGR(rig, K, corpo, opts) {
+    if (!rig) return;
+    const P0 = (opts && opts.poseAnterior) || null;
+    const w = (opts && typeof opts.peso === 'number') ? opts.peso : 1;
+    const bl = (de, para) => (P0 ? de + (para - de) * w : para);
+
+    const chuteR = (GoalkeeperGroundKickClip.pernaChute === 'r');
+    const pernaC = chuteR ? rig.rLeg : rig.lLeg;
+    const joelhoC = chuteR ? rig.rKnee : rig.lKnee;
+    const pernaA = chuteR ? rig.lLeg : rig.rLeg;
+    const joelhoA = chuteR ? rig.lKnee : rig.rKnee;
+
+    const pivotX = chuteR ? 0.4 : -0.4;
+    const leanZ = K.leanZ;
+    const cosL = Math.cos(leanZ);
+    const sinL = Math.sin(leanZ);
+
+    rig.pelvis.position.x = bl(P0 ? P0.pelvisPx : 0, pivotX * (1 - cosL) - 2.6 * sinL);
+    rig.pelvis.position.y = bl(P0 ? P0.pelvisPy : 2.6, 2.6 * cosL - pivotX * sinL);
+    rig.pelvis.position.z = 0;
+
+    rig.pelvis.rotation.z = bl(P0 ? P0.pelvisRz : 0, leanZ);
+    rig.pelvis.rotation.x = bl(P0 ? P0.pelvisRx : 0, K.pitchX || 0);
+    rig.pelvis.rotation.y = 0;
+
+    rig.chest.rotation.x = bl(P0 ? P0.chest : 0, K.chest);
+    rig.chest.rotation.y = 0;
+    rig.chest.rotation.z = 0;
+
+    pernaA.rotation.x = bl(P0 ? P0.coxaA : 0, K.coxaApoio);
+    pernaA.rotation.y = 0;
+    pernaA.rotation.z = 0;
+    joelhoA.rotation.x = bl(P0 ? P0.joelhoA : 0, K.joelhoApoio);
+    joelhoA.rotation.y = 0;
+    joelhoA.rotation.z = 0;
+
+    pernaC.rotation.x = bl(P0 ? P0.coxaC : 0, K.coxaChute);
+    pernaC.rotation.y = 0;
+    pernaC.rotation.z = bl(P0 ? P0.coxaCz : 0, K.coxaChuteZ || 0);
+    joelhoC.rotation.x = bl(P0 ? P0.joelhoC : 0, K.joelhoChute);
+    joelhoC.rotation.y = 0;
+    joelhoC.rotation.z = 0;
+
+    rig.lArm.rotation.x = bl(P0 ? P0.bracoLx : 0, K.bracoLx);
+    rig.lArm.rotation.z = bl(P0 ? P0.bracoLz : 0, K.bracoLz);
+    rig.rArm.rotation.x = bl(P0 ? P0.bracoRx : 0, K.bracoRx);
+    rig.rArm.rotation.z = bl(P0 ? P0.bracoRz : 0, K.bracoRz);
+
+    rig.lElbow.rotation.x = bl(P0 ? P0.cotoveloL : 0, K.cotoveloL);
+    rig.rElbow.rotation.x = bl(P0 ? P0.cotoveloR : 0, K.cotoveloR);
+
+    if (corpo) {
+        corpo.position.y = bl(P0 ? P0.corpoY : ALTURA_BASE_Y, ALTURA_BASE_Y + K.altura);
+    }
+}

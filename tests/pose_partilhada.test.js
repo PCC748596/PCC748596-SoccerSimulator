@@ -41,7 +41,11 @@ const amb = { THREE, console, document: documentoFalso, window: {} };
 const mod = new Function(...Object.keys(amb),
     `${ler('js/config.js')}
      ${ler('js/pose.js')}
-     return { construirCorpo, escolherAparencia };`)(...Object.values(amb));
+     return { construirCorpo, escolherAparencia,
+              aplicarPoseRemate, aplicarPoseLateral, aplicarPoseChutaoGR,
+              aplicarPoseChuteChaoGR, aplicarPoseLancamentoGR,
+              ShotClip, ThrowInClip, GoalkeeperKickClip,
+              GoalkeeperGroundKickClip, GoalkeeperThrowClip };`)(...Object.values(amb));
 const { construirCorpo, escolherAparencia } = mod;
 
 let falhas = 0;
@@ -213,6 +217,118 @@ console.log(String.fromCharCode(10) + '5 — sem dependências do jogo');
     } catch (e) {
         erro(`sem aparência atirou: ${e.message}`);
     }
+}
+
+/*
+6 — AS CINCO POSES DOS CLIPS.
+
+Mesmo problema do buildBody: as poses saíram dos métodos do FootballPlayer e
+NENHUM teste as chegava a correr. Aqui aplicam-se todas a um rig a sério, com
+os keyframes verdadeiros do config.js.
+*/
+console.log(String.fromCharCode(10) + '6 — as poses dos clips');
+{
+    const {
+        aplicarPoseRemate, aplicarPoseLateral, aplicarPoseChutaoGR,
+        aplicarPoseChuteChaoGR, aplicarPoseLancamentoGR,
+        ShotClip, ThrowInClip, GoalkeeperKickClip,
+        GoalkeeperGroundKickClip, GoalkeeperThrowClip
+    } = mod;
+
+    // Um rig novo por pose: assim uma pose não herda o que a anterior escreveu.
+    const rigNovo = () => construirCorpo('#3498db', '#34495e').rig;
+
+    const casos = [
+        ['remate', ShotClip, (rig, K) => aplicarPoseRemate(rig, K)],
+        ['lateral', ThrowInClip, (rig, K) => aplicarPoseLateral(rig, K, 0.4)],
+        ['chutão GR', GoalkeeperKickClip, (rig, K) => aplicarPoseChutaoGR(rig, K, 0.5)],
+        ['tiro de meta', GoalkeeperGroundKickClip, (rig, K) => aplicarPoseChuteChaoGR(rig, K, null, {})],
+        ['lançamento GR', GoalkeeperThrowClip, (rig, K) => aplicarPoseLancamentoGR(rig, K)]
+    ];
+
+    for (const [nome, clip, aplicar] of casos) {
+        if (!clip || !clip.frames || !clip.frames.length) {
+            erro(`${nome}: clip sem keyframes`);
+            continue;
+        }
+
+        const rig = rigNovo();
+        let rebentou = null;
+        let mexeu = 0;
+
+        for (let i = 0; i < clip.frames.length; i++) {
+            const antes = [rig.pelvis, rig.chest, rig.lLeg, rig.rLeg, rig.lArm, rig.rArm]
+                .map(n => `${n.rotation.x},${n.rotation.y},${n.rotation.z}`).join('|');
+            try {
+                aplicar(rig, clip.frames[i]);
+            } catch (e) {
+                rebentou = `keyframe ${i + 1}: ${e.message}`;
+                break;
+            }
+            const depois = [rig.pelvis, rig.chest, rig.lLeg, rig.rLeg, rig.lArm, rig.rArm]
+                .map(n => `${n.rotation.x},${n.rotation.y},${n.rotation.z}`).join('|');
+            if (antes !== depois) mexeu++;
+
+            /*
+            NaN é o modo de falha silencioso destas funções: um canal que o
+            clip não tem dá `undefined`, e `undefined` escrito numa rotação
+            passa a NaN. O boneco desaparece do ecrã e nada se queixa.
+            */
+            for (const junta of ['pelvis', 'chest', 'lLeg', 'rLeg', 'lArm', 'rArm', 'lElbow', 'rElbow']) {
+                const r = rig[junta].rotation;
+                if (!isFinite(r.x) || !isFinite(r.y) || !isFinite(r.z)) {
+                    rebentou = `keyframe ${i + 1}: ${junta} ficou NaN ` +
+                        '(canal em falta no clip?)';
+                    break;
+                }
+            }
+            if (rebentou) break;
+        }
+
+        if (rebentou) erro(`${nome} — ${rebentou}`);
+        else if (mexeu < 2) erro(`${nome}: os ${clip.frames.length} keyframes quase não mexem no rig`);
+        else ok(`${nome}: ${clip.frames.length} keyframes aplicados, sem NaN`);
+    }
+}
+
+/*
+7 — O CONTACTO DO REMATE.
+
+O `contactFrame` é o keyframe em que a bola sai do pé. Se a perna não estiver
+esticada aí, o pé não está na bola — e o gesto deixa de ler como um remate por
+muito bem que os outros frames estejam.
+*/
+console.log(String.fromCharCode(10) + '7 — o contacto do remate');
+{
+    const { aplicarPoseRemate, ShotClip } = mod;
+    const rig = construirCorpo('#3498db', '#34495e').rig;
+
+    const iContacto = ShotClip.contactFrame - 1;
+    const chuteR = (ShotClip.pernaChute === 'r');
+    const joelhoC = chuteR ? 'rKnee' : 'rKnee';
+
+    aplicarPoseRemate(rig, ShotClip.frames[iContacto]);
+    const joelhoNoContacto = Math.abs(rig[chuteR ? 'rKnee' : 'lKnee'].rotation.x);
+
+    // E na armação (o pico do clip) o joelho tem de estar bem dobrado.
+    let joelhoMax = 0;
+    for (const f of ShotClip.frames) joelhoMax = Math.max(joelhoMax, Math.abs(f.joelhoChute));
+
+    console.log(`  joelho: ${joelhoMax.toFixed(2)} rad na armação, ` +
+        `${joelhoNoContacto.toFixed(2)} no contacto (frame ${ShotClip.contactFrame})`);
+
+    if (joelhoNoContacto > 0.5) {
+        erro(`no contacto o joelho está a ${joelhoNoContacto.toFixed(2)} rad: ` +
+            'a perna não está esticada, o pé não chega à bola');
+    } else ok('no contacto a perna do remate está esticada');
+
+    if (joelhoMax < 1.0) {
+        erro(`o joelho nunca passa de ${joelhoMax.toFixed(2)} rad: não há armação`);
+    } else ok('há armação — o joelho dobra bem antes do contacto');
+
+    if (ShotClip.contactFrame < 2 || ShotClip.contactFrame > ShotClip.frames.length) {
+        erro(`contactFrame ${ShotClip.contactFrame} fora dos ${ShotClip.frames.length} keyframes`);
+    } else ok('o contactFrame cai dentro do clip');
 }
 
 console.log('');
