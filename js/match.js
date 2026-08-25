@@ -1403,12 +1403,23 @@ const Match = {
     consola. Ficava sempre ligado e despejava uma linha por segundo na
     consola, para sempre — o que enterra tudo o resto que lá se queira ver
     (avisos do lote, expulsões, erros).
+
+    NA SIMULAÇÃO EM LOTE nunca corre, mesmo ligado à mão. Não é só o ruído:
+    um lote de 11 jogos de 90 minutos são ~3,5 milhões de updates, e dois
+    `performance.now()` em cada um são tempo real gasto a medir em vez de
+    simular. E a média não diria nada de útil — no lote o update corre em
+    ciclo fechado, sem render nem frame, que é o oposto do que se quer medir.
     */
     profiling: false,
 
+    _profilingActivo: function () {
+        return this.profiling && !(typeof Sim !== 'undefined' && Sim.running);
+    },
+
     update: function (dt) {
         if (!this._pf_stats) this._pf_stats = { count: 0, time: 0 };
-        const t0 = this.profiling ? performance.now() : 0;
+        const medir = this._profilingActivo();
+        const t0 = medir ? performance.now() : 0;
         for (let p of this.players) { p.debugPoints = null; }
         for (let p of this.opponents) { p.debugPoints = null; }
         this.delta = dt;
@@ -1741,7 +1752,7 @@ const Match = {
 
         this.updateCrowd(dt);
 
-        if (this.profiling) {
+        if (medir) {
             this._pf_stats.time += (performance.now() - t0);
             this._pf_stats.count++;
             if (this._pf_stats.count === 60) {
