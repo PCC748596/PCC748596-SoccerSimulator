@@ -298,6 +298,21 @@ ATE ONDE ESTE JOGADOR CONSEGUE ATIRAR UM LATERAL.
 Interpolacao linear entre `fraco` (STRENGTH 0) e `forte` (STRENGTH 100). Fora
 da escala corta nos extremos: um skill acima de 100 nao compra alcance extra.
 */
+/*
+RECUO PARA O GUARDA-REDES: PODE ELE PEGAR COM A MAO?
+
+A regra do jogo: um passe DELIBERADO e COM O PE de um companheiro nao pode ser
+agarrado com as maos. Cabeca, peito ou coxa podem; um desvio involuntario de
+um adversario tambem.
+
+`recuoTeam` e a equipa cujo guarda-redes esta proibido — posto quando o passe
+sai do pe (ver executePassGameplay na fsm.js) e limpo assim que outra pessoa
+toca na bola. Nulo enquanto nao houver recuo nenhum, que e o caso normal.
+*/
+function maosProibidasNoRecuo(recuoTeam, gkTeam) {
+    return !!recuoTeam && recuoTeam === gkTeam;
+}
+
 function alcanceMaximoDoLateral(strength, fraco, forte) {
     const s = Math.max(0, Math.min(100, Number(strength) || 0));
     return fraco + (forte - fraco) * (s / 100);

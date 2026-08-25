@@ -3675,7 +3675,12 @@ class FootballPlayer {
             }
 
             if (k >= 1) {
-                this.grabBall();
+                /*
+                Num recuo com o pe o grabBall recusa. Sem esta saida ele ficava
+                aqui a tentar agarrar frame apos frame, com a bola parada a
+                seus pes — um encrave.
+                */
+                if (!this.grabBall()) this.gkEstado = 'idle';
             }
         } else if (this.gkEstado === 'segurando') {
             // Bola já agarrada: segura junto ao peito enquanto as equipas se
@@ -3887,6 +3892,20 @@ class FootballPlayer {
     equipas terem tempo de se reorganizar antes do relançamento.
     */
     grabBall(manterPose) {
+        /*
+        RECUO COM O PE DE UM COMPANHEIRO: as maos estao proibidas.
+
+        A guarda vive AQUI e nao so em quem chama porque sao cinco os sitios
+        que agarram (o alcance do corpo em match.js, tres ramos do updateGK e
+        o fim do mergulho no gk_dive.js) — espalhar a regra por todos era
+        garantir que um deles ficava para tras numa alteracao futura.
+
+        Devolve false sem tocar em nada: a bola continua viva e o guarda-redes
+        joga-a com o pe, como manda a regra.
+        */
+        if (typeof maosProibidasNoRecuo === 'function' &&
+            maosProibidasNoRecuo(Match.recuoParaGR, this.team)) return false;
+
         Match.ballVel.set(0, 0, 0);
         this.hasBall = true;
         Match.ballCarrier = this;
@@ -3944,6 +3963,7 @@ class FootballPlayer {
         }
 
         if (typeof EventBus !== 'undefined') EventBus.emit('GK_CATCH_BALL', { team: this.team, gk: this });
+        return true;
     }
 
     /*

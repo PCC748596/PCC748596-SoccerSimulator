@@ -785,8 +785,11 @@ travar só quem corre.
     0.8019 -10% sobre o 0.891 (pedido)
     0.88209 +10% sobre o 0.8019 (pedido)
     0.793881 -10% sobre o 0.88209 (pedido)
+    0.912963 +15% sobre o 0.793881 (pedido)
+    1.00     de volta ao ritmo original (pedido)
+    0.90     -10% sobre o ritmo original (pedido)
 */
-const GAME_SPEED = 0.793881;
+const GAME_SPEED = 0.9;
 
 /*
 Pausa (segundos reais) entre o fim de uma reposição e o recomeço do jogo:
@@ -2550,6 +2553,34 @@ const MarkingModel = {
     */
     distanciaPorPressao: { low: 4.5, balanced: 3.0, high: 1.5 },
 
+    /*
+    QUANDO VALE A PENA SAIR À BOLA — o raio de accionamento do chaser.
+
+    Antes não existia: a Defensive Pressure decidia só ONDE se perseguia (que
+    metade do campo), nunca SE valia a pena. Com a bola no próprio meio-campo
+    mandava-se um caçador em TODOS os frames, sem condição de distância, e ele
+    corria direito ao portador o jogo inteiro — o "rush" constante que se via
+    no ecrã, com a equipa a desfazer a forma atrás da bola.
+
+    Um bloco defensivo não faz isso: mantém a forma e só sai quando o portador
+    entra no alcance de quem está de guarda. Fora disso contém-se — os
+    jogadores continuam a posicionar-se pelo bloco, e ninguém arranca.
+
+    Medido do jogador mais próximo ao portador. `high` é praticamente sem
+    limite, que é o que "pressão alta" quer dizer.
+    */
+    raioDeAccionamento: { low: 9.0, balanced: 15.0, high: 999 },
+
+    /*
+    E DENTRO DO PRÓPRIO TERÇO DEFENSIVO PERSEGUE-SE SEMPRE, seja qual for a
+    pressão escolhida. Sem esta excepção, uma equipa em pressão baixa deixava
+    o portador entrar na área a conduzir sem ninguém lhe sair ao caminho —
+    trocava-se um defeito por outro pior.
+
+    Fracção do meio-campo, medida no referencial de ataque da equipa.
+    */
+    tercoDeEmergencia: -(106 / 2) / 3,
+
     larguraCentro: 0.35,  // factor de largura da última linha com a bola no eixo
     larguraAla: 0.75,     // e com a bola no corredor
     fechoRaioX: 18.0,     // "eixo" = |ballX| abaixo disto
@@ -3072,7 +3103,59 @@ const FreeKickModel = {
     barreiraZonaZ: 30.0,       // no referencial de ataque: daqui p/ a frente é barreira cheia
     espacamentoBarreira: 0.85, // ombro com ombro
     recuoBatedor: 1.4,         // atrás da bola, na linha bola->baliza
-    afastaAdversarios: 9.15    // ninguém da defesa mais perto do que isto da bola
+    afastaAdversarios: 9.15,   // ninguém da defesa mais perto do que isto da bola
+
+    /*
+    =========================================================================
+    GENTE NA ÁREA À ESPERA DO CRUZAMENTO
+    =========================================================================
+    Não havia nenhuma: o setup da falta punha o batedor e a barreira, e os
+    outros nove atacantes ficavam onde a jogada os tinha deixado. Cruzava-se
+    para uma área vazia — e é por isso que a falta no ataque não produzia nada.
+
+    `zonaDeArea` é a partir de onde vale a pena povoar. CUIDADO COM A UNIDADE:
+    é `bolaZ * dir`, medido do MEIO-CAMPO e não da linha de fundo — o mesmo
+    referencial do `barreiraZonaZ` aqui em cima. 18 m do meio-campo é o início
+    do terço ofensivo (106/6 = 17.7), ou seja faltas a menos de ~35 m da
+    baliza. Mais atrás do que isso a falta é de recomposição, não de ataque, e
+    mandar cinco homens para a área só abria o contra-ataque.
+
+    Os slots são relativos à BALIZA, como os do canto (ver attackSetup em
+    match.js): `relX` do eixo, com sinal do lado de onde vem o cruzamento, e
+    `dist` da linha de fundo. `initial` é onde se espera, `target` para onde
+    se ataca quando a bola sai — de fora para dentro, que é como se ganha o
+    corpo ao marcador.
+
+    Menos gente do que num canto, e de propósito: numa falta a bola pode sair
+    em remate ou em passe, e uma equipa inteira dentro da área a um remate
+    directo fica sem ninguém para a segunda bola nem para o contra-ataque.
+    */
+    zonaDeArea: 18.0,
+    slotsArea: [
+        // 1. Primeiro pau
+        { initial: { relX: 3.0, dist: 7.0 }, target: { relX: 3.6, dist: 4.8 } },
+        // 2. Coração da área, à altura da marca de penálti
+        { initial: { relX: -0.5, dist: 11.0 }, target: { relX: 0.0, dist: 8.5 } },
+        // 3. Segundo pau, ataca de trás para a frente
+        { initial: { relX: -4.5, dist: 9.0 }, target: { relX: -3.4, dist: 6.0 } },
+        // 4. Segunda vaga, chega atrasado
+        { initial: { relX: 1.0, dist: 14.5 }, target: { relX: 1.0, dist: 11.5 } },
+        // 5. Sobra na entrada da área, para o ressalto e a recarga
+        { initial: { relX: 0.5, dist: 19.5 }, target: { relX: 0.5, dist: 18.0 } }
+    ],
+    /*
+    E os marcadores, um por cada slot acima, sempre do lado da BALIZA em
+    relação ao homem deles — os dois arrays andam a par, mexer num pede mexer
+    no outro. Só entram os defensores que sobram da barreira: a barreira é
+    obrigação e vem primeiro.
+    */
+    slotsMarcacao: [
+        { relX: 3.2, dist: 5.4 },
+        { relX: -0.5, dist: 9.2 },
+        { relX: -4.2, dist: 7.4 },
+        { relX: 1.0, dist: 12.7 },
+        { relX: 0.5, dist: 17.7 }
+    ]
 };
 
 /*
@@ -3634,15 +3717,26 @@ const MentalidadeModel = {
     Frações do meio-campo (53 m): um terço, um sexto, zero, um terço, dois
     terços.
     */
+    /*
+    `profundidade` (opcional) é o comprimento do bloco que a MENTALIDADE impõe,
+    por cima da escolha do Length Compactness no painel. Só as duas defensivas
+    o têm: uma equipa que se põe atrás joga curta, e deixá-la esticada a 50 m
+    contradizia a própria mentalidade escolhida. As outras três continuam a
+    obedecer ao painel.
+
+    Chave do BlockShape.profundidade — `short` são 30 m em 106 de campo.
+    */
     muito_defensiva: {
         agressao: 0.20,
         blocoZ: -10.0,
-        tectoBloco: -(CAMPO_COMP / 2) / 3
+        tectoBloco: -(CAMPO_COMP / 2) / 3,
+        profundidade: 'short'
     },
     defesa: {
         agressao: 0.35,
         blocoZ: -5.0,
-        tectoBloco: -(CAMPO_COMP / 2) / 6
+        tectoBloco: -(CAMPO_COMP / 2) / 6,
+        profundidade: 'short'
     },
     balanceado: {
         agressao: 0.50,
@@ -3814,6 +3908,26 @@ const Tatics = {
         this.compactness = document.getElementById('t-compactness').value;
         this.lengthCompactness = document.getElementById('t-length-compactness').value;
         this.pressaoDefensiva = document.getElementById('t-pressao-def').value;
+
+        /*
+        A MENTALIDADE MANDA NO COMPRIMENTO — E TEM DE SE VER NO PAINEL.
+
+        T.Defensiva e Defensiva impõem `short` (30 m) por
+        MentalidadeModel[...].profundidade. O computeBlock já obedecia, mas o
+        dropdown continuava a mostrar a escolha anterior: por fora parecia que
+        a opção não fazia nada, e um painel que mente sobre o que o jogo está a
+        fazer é pior do que não ter a regra.
+
+        Escreve-se nos dois — no `select` e na variável — para o que se vê e o
+        que corre serem a mesma coisa.
+        */
+        const mental = MentalidadeModel[this.estilo];
+        if (mental && mental.profundidade) {
+            this.lengthCompactness = mental.profundidade;
+            const el = document.getElementById('t-length-compactness');
+            if (el) el.value = mental.profundidade;
+        }
+
         Match.assignFormations();
     },
 

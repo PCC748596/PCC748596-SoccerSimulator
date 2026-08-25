@@ -341,16 +341,59 @@ function deveMandarChaser(o) {
 
     if (o.isAttacking) return false;
 
+    /*
+    EMERGÊNCIA: com a bola no próprio terço defensivo persegue-se sempre, seja
+    qual for a pressão escolhida. Sem isto, uma equipa em pressão baixa deixava
+    o portador entrar na área a conduzir sem ninguém lhe sair ao caminho.
+    */
+    if (typeof o.tercoDeEmergencia === 'number' &&
+        o.bolaZ * o.dir < o.tercoDeEmergencia) return true;
+
     // Sem pressão alta, a perseguição activa é só no próprio campo de defesa.
-    if (o.pressaoAlta) return true;
-    return !(o.bolaZ * o.dir > 0);
+    if (!o.pressaoAlta && o.bolaZ * o.dir > 0) return false;
+
+    /*
+    E SÓ SE VALER A PENA SAIR. Isto não existia: mandava-se um caçador em todos
+    os frames em que a bola estava do lado certo do campo, sem condição de
+    distância nenhuma, e ele corria atrás do portador o jogo inteiro. Um bloco
+    mantém a forma e só sai quando o portador entra no alcance de quem está de
+    guarda — ver MarkingModel.raioDeAccionamento.
+
+    Sem a medida (chamadas antigas, testes) mantém-se o comportamento de
+    sempre: quem não sabe a distância não pode decidir com ela.
+    */
+    if (typeof o.distAoPortador === 'number' && typeof o.raioAccionamento === 'number') {
+        return o.distAoPortador <= o.raioAccionamento;
+    }
+    return true;
 }
 
 function pickChaser(bb) {
     const ballPos = Match.ball.position;
     const bolaSolta = !Match.ballCarrier;
 
+    /*
+    A que distância está o mais perto do portador. É esta medida que decide se
+    vale a pena sair à bola — tem de ser calculada ANTES da decisão, e é sobre
+    o portador e não sobre a bola: são coisas diferentes enquanto ele a conduz.
+    */
+    let distAoPortador = Infinity;
+    if (Match.ballCarrier) {
+        for (const p of bb.outfield) {
+            const d = p.model.position.distanceTo(Match.ballCarrier.model.position);
+            if (d < distAoPortador) distAoPortador = d;
+        }
+    }
+    const M = (typeof MarkingModel !== 'undefined') ? MarkingModel : null;
+    const pressao = (typeof Tatics !== 'undefined' && Tatics.pressaoDefensiva) || 'balanced';
+    const raioAccionamento = (M && M.raioDeAccionamento &&
+        M.raioDeAccionamento[pressao] !== undefined)
+        ? M.raioDeAccionamento[pressao] : undefined;
+
     const podeIr = deveMandarChaser({
+        distAoPortador: distAoPortador,
+        raioAccionamento: raioAccionamento,
+        tercoDeEmergencia: M ? M.tercoDeEmergencia : undefined,
         isAttacking: bb.isAttacking,
         bolaSolta: bolaSolta,
         bolaZ: ballPos.z,
@@ -360,6 +403,32 @@ function pickChaser(bb) {
             (bb.carrier && bb.carrier.role === 'gk')
     });
     if (!podeIr) { bb.chaser = null; return; }
+
+    /*
+    PASSE EM CURSO: QUEM VAI A BOLA E QUEM A VAI RECEBER.
+
+    Sem isto o PASSADOR corria atras da sua propria bola. No instante em que o
+    passe sai, `Match.ballCarrier` fica null — a bola conta como solta — e o
+    passador e, por construcao, quem esta mais perto dela: ganhava a eleicao
+    contra o destinatario e ia atras do passe que acabara de dar.
+
+    O `pickIntercetor` aqui em baixo ja tinha esta guarda; o chaser nao, e era
+    so isso que faltava. O `intendedReceiver` e limpo quando o passe morre (ver
+    updateBall em match.js), portanto isto nao tranca ninguem numa bola
+    realmente perdida.
+
+    Serve tambem a conducao: o toque a frente poe `intendedReceiver` no proprio
+    condutor, e assim continua a ser ele a ir buscar a bola.
+    */
+    if (Match.intendedReceiver && Match.intendedReceiver.team === bb.team &&
+        bb.outfield.indexOf(Match.intendedReceiver) !== -1) {
+        if (typeof MatchStats !== 'undefined' && bb.chaser &&
+            bb.chaser !== Match.intendedReceiver) {
+            MatchStats[bb.team].trocasChaser++;
+        }
+        bb.chaser = Match.intendedReceiver;
+        return;
+    }
 
     const prevChaser = bb.chaser;
 
@@ -656,8 +725,15 @@ function computeBlock(bb) {
     const modo = bb.isAttacking ? 'comBola' : 'semBola';
     const compac = B.amplitude[Tatics.compactness] !== undefined
         ? Tatics.compactness : 'median';
-    const compacLength = B.profundidade[Tatics.lengthCompactness] !== undefined
-        ? Tatics.lengthCompactness : 'median';
+    /*
+    A MENTALIDADE PODE MANDAR NO COMPRIMENTO. T.Defensiva e Defensiva impõem
+    `short` (30 m): uma equipa que se põe atrás joga curta, e um bloco de 50 m
+    contradizia a mentalidade que o utilizador acabou de escolher. As outras
+    três não têm `profundidade` e continuam a obedecer ao painel.
+    */
+    const mental = (typeof MentalidadeModel !== 'undefined') ? MentalidadeModel[Tatics.estilo] : null;
+    const pedido = (mental && mental.profundidade) ? mental.profundidade : Tatics.lengthCompactness;
+    const compacLength = B.profundidade[pedido] !== undefined ? pedido : 'median';
 
     /* --- profundidade --------------------------------------------------- */
     const profundidade = CAMPO_COMP * B.profundidade[compacLength];

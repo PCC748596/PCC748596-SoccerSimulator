@@ -90,6 +90,23 @@ const RefereeModel = {
     corBota: '#0f1114',
 
     /*
+    DISCOS DA VISTA TACTICA. De 40 m de altura o boneco le-se mal, e os
+    jogadores ja aparecem como discos da cor da equipa (ver updateShirt em
+    player.js) — sem isto os arbitros eram os unicos bonecos no meio de vinte e
+    dois discos, e ficavam a parecer o que nao sao.
+
+    Preto com amarelo, que e o equipamento de arbitro. O RAIO E O MESMO dos
+    jogadores (ver a CircleGeometry do discoTatico em player.js): de cima, um
+    disco mais pequeno lia-se como estando mais longe.
+
+    `R` de arbitro, `A` de assistente — as duas letras que cabem num disco
+    deste tamanho sem encolherem ate deixarem de se ler.
+    */
+    discoRaio: 0.85,
+    discoFundo: '#101216',
+    discoLinha: '#f2c400',
+
+    /*
     =========================================================================
     FALTAS E CARTÕES
     =========================================================================
@@ -201,9 +218,10 @@ const Officials = {
     O construtor do FootballPlayer é seguro para isto: não se inscreve em lado
     nenhum, não toca no `Match`, e o que acrescenta à cena são dois sprites
     (etiqueta e banner) que nascem invisíveis dentro do próprio `model`. O
-    `discoTatico` — esse sim vive na cena — é criado dentro do `updateShirt`,
-    que nunca chamamos: sem número nas costas e sem disco na vista táctica, que
-    é o que se quer para um árbitro.
+    `discoTatico` do FootballPlayer — esse sim vive na cena — é criado dentro
+    do `updateShirt`, que nunca chamamos: um árbitro não leva número nas
+    costas. O disco da vista táctica é outro, feito aqui em `criarDisco` com as
+    cores e a letra dele.
 
     Os ossos têm os mesmos nomes (`lLeg`, `rKnee`, `lArm`, `chest`…), por isso o
     `mover()` aqui em baixo não muda nada.
@@ -233,20 +251,74 @@ const Officials = {
         return { corpo: jogador.model, rig: jogador.rig, jogador: jogador };
     },
 
-    criarOficial: function (scene, id) {
+    /*
+    O DISCO DA VISTA TACTICA, com a letra ja rodada.
+
+    Vive na CENA e nao dentro do `model`: assim nao sobe nem roda com o
+    boneco, fica sempre pousado no relvado — a mesma razao por que o disco dos
+    jogadores tambem vive la fora.
+
+    A letra leva `rotate(-PI/2)` no canvas pela mesma razao que a dos
+    jogadores: o disco esta deitado (`rotation.x = -PI/2`) e sem isso a letra
+    aparecia de lado para quem olha de cima.
+    */
+    criarDisco: function (scene, etiqueta) {
+        const R = RefereeModel;
+        const cv = document.createElement('canvas');
+        cv.width = 128; cv.height = 128;
+        const c = cv.getContext('2d');
+
+        c.fillStyle = R.discoFundo;
+        c.beginPath(); c.arc(64, 64, 58, 0, Math.PI * 2); c.fill();
+
+        // Duas linhas: o aro de fora e um anel fino por dentro. So o aro
+        // ficava a ler como um disco de jogador com outra cor.
+        c.strokeStyle = R.discoLinha;
+        c.lineWidth = 8;
+        c.beginPath(); c.arc(64, 64, 58, 0, Math.PI * 2); c.stroke();
+        c.lineWidth = 3;
+        c.beginPath(); c.arc(64, 64, 46, 0, Math.PI * 2); c.stroke();
+
+        c.fillStyle = R.discoLinha;
+        c.font = 'bold 54px sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.save();
+        c.translate(64, 64);
+        c.rotate(-Math.PI / 2);
+        c.fillText(etiqueta, 0, 0);
+        c.restore();
+
+        const disco = new THREE.Mesh(
+            new THREE.CircleGeometry(R.discoRaio, 24),
+            new THREE.MeshBasicMaterial({
+                map: new THREE.CanvasTexture(cv),
+                transparent: true,
+                depthWrite: false
+            })
+        );
+        disco.rotation.x = -Math.PI / 2;
+        disco.visible = false;
+        scene.add(disco);
+        return disco;
+    },
+
+    criarOficial: function (scene, id, etiqueta) {
         const feito = this.criarCorpo(id);
         scene.add(feito.corpo);
         return {
             model: feito.corpo,
             rig: feito.rig,
-            animTimer: 0
+            animTimer: 0,
+            disco: this.criarDisco(scene, etiqueta)
         };
     },
 
     init: function (scene) {
         if (this.arbitro) return;
-        this.arbitro = this.criarOficial(scene, 0);
-        this.assistentes = [this.criarOficial(scene, 1), this.criarOficial(scene, 2)];
+        this.arbitro = this.criarOficial(scene, 0, 'R');
+        this.assistentes = [this.criarOficial(scene, 1, 'A'),
+                            this.criarOficial(scene, 2, 'A')];
         this.colocarInicial();
     },
 
@@ -534,13 +606,43 @@ const Officials = {
         const alvoArb = this.pontoDoArbitro(Match.ball.position);
         this.mover(this.arbitro, alvoArb.x, alvoArb.z, R.velocidade, dt,
             Match.ball.position);
+
+        // Depois de mover, para os discos nao ficarem um frame atras.
+        this.atualizarVista();
     },
 
     setVisivel: function (on) {
         this._ativo = on;
-        if (this.arbitro) this.arbitro.model.visible = on;
-        for (let i = 0; i < this.assistentes.length; i++) {
-            this.assistentes[i].model.visible = on;
+        // A vista corrente e que decide entre boneco e disco; aqui so se
+        // guarda o interruptor e se aplica ja, para o botao do painel
+        // responder no mesmo frame.
+        this.atualizarVista();
+    },
+
+    /*
+    BONECO OU DISCO, conforme a camara — o mesmo criterio dos jogadores (ver
+    `vistaTatica` em player.js). Na vista de cima o boneco le-se mal, e um
+    arbitro em boneco no meio de vinte e dois discos lia-se como uma coisa
+    diferente do que e.
+
+    Corre todos os frames e nao so na troca de camara: o `cameraMode` e uma
+    variavel global que qualquer botao do painel pode mudar sem avisar
+    ninguem, e um sinal para aqui era mais uma coisa para esquecer de ligar.
+    */
+    atualizarVista: function () {
+        const tatico = (window.cameraMode === 'topdown');
+        const todos = this.arbitro ? [this.arbitro].concat(this.assistentes) : [];
+        for (let i = 0; i < todos.length; i++) {
+            const o = todos[i];
+            if (!o) continue;
+            o.model.visible = this._ativo && !tatico;
+            if (o.disco) {
+                o.disco.visible = this._ativo && tatico;
+                // A altura e a mesma do disco dos jogadores: pousado no
+                // relvado, e nao ao nivel dele, senao as duas superficies
+                // disputam o mesmo pixel e o disco pisca.
+                o.disco.position.set(o.model.position.x, 0.04, o.model.position.z);
+            }
         }
     },
 

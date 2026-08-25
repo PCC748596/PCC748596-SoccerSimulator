@@ -1,6 +1,9 @@
 const Match = {
     scene: null, ball: null, ballVisual: null, ballVel: new THREE.Vector3(),
     players: [], opponents: [], ballCarrier: null, intendedReceiver: null, state: 'PLAY',
+    // Equipa cujo guarda-redes nao pode usar as maos (recuo com o pe de um
+    // companheiro). Null e o caso normal. Ver maosProibidasNoRecuo em utils.js.
+    recuoParaGR: null,
     tempoParada: 0, delta: 0,
     placarA: 0, placarB: 0, tempoDeJogo: 0,
     chaserA: null, chaserB: null,
@@ -1234,6 +1237,7 @@ const Match = {
         this.chaserB = null;
         this.setPieceTaker = null;
         this.setPieceTimer = 0;
+        this.recuoParaGR = null;
         [...this.players, ...this.opponents].forEach(p => { p.jostleAncora = null; });
         this.counterAttackTeam = null;
         this.counterAttackTimer = 0;
@@ -2038,6 +2042,13 @@ const Match = {
                 (this.ball.position.z - gk.ownGoalZ) * gk.dirZ < 16.5 &&
                 (this.ball.position.z - gk.ownGoalZ) * gk.dirZ > -1.0;
             if (!dentroArea) continue;
+            /*
+            RECUO COM O PE: as maos estao proibidas. Nao se agarra, e a bola
+            segue para o tratamento normal aqui em baixo — o guarda-redes
+            joga-a com o pe como qualquer outro jogador.
+            */
+            if (typeof maosProibidasNoRecuo === 'function' &&
+                maosProibidasNoRecuo(this.recuoParaGR, gk.team)) continue;
             gk.grabBall();
             return true;
         }
@@ -2123,6 +2134,13 @@ const Match = {
 
         this.ballCarrier = best;
         best.hasBall = true;
+        /*
+        O recuo morre no primeiro toque de outra pessoa: e o passe DELIBERADO
+        do companheiro que proibe as maos, e ele acabou de ser jogado. Vale
+        tambem para o proprio guarda-redes a tocar com o pe, que e o que a
+        regra manda fazer.
+        */
+        this.recuoParaGR = null;
         this.intendedReceiver = null;
         this.passTargetPos = null;
         this.lastTouchedTeam = best.team;
@@ -2255,6 +2273,43 @@ const Match = {
     `zSinal` é o lado da baliza (+1 / -1). Tudo aqui é feito em
     profundidade `d` (metros para lá da linha), que não tem sinal.
     */
+    /*
+    A BOLA POUSADA EM CIMA DA BALIZA.
+
+    O pano de cima da rede (ver colidirComRede) e horizontal e devolve a bola
+    com `v.y = -v.y * restituicao`: quem chega la de cima ressalta cada vez
+    menos ate ficar parada em cima da rede. Fica inalcancavel, e o jogo nao
+    recomeca porque a deteccao de bola fora precisa de `|z| - raio` PASSAR a
+    linha de fundo — uma bola assente em cima do travessao esta praticamente
+    EM CIMA dessa linha e nao a passa.
+
+    A regra pratica e a do arbitro: bola que fica em cima da rede sai de jogo
+    pela linha de fundo. Aqui empurra-se `z` o suficiente para a deteccao que
+    ja existe a apanhar e decidir entre canto e pontape de baliza conforme
+    quem tocou por ultimo — em vez de duplicar essa decisao.
+
+    So actua com a bola LENTA: uma bola a passar por cima do travessao a
+    caminho da bancada nao pode ser interrompida a meio do voo.
+    */
+    destravarBolaEmCimaDaBaliza: function () {
+        const b = this.ball.position;
+        const v = this.ballVel;
+        const rB = BallPhysics.raio;
+
+        if (b.y < ALTURA_BALIZA - rB) return;                    // abaixo do travessao
+        if (v.lengthSq() > 1.0) return;                          // ainda a voar
+
+        const zSinal = Math.sign(b.z) || 1;
+        const d = b.z * zSinal - CAMPO_COMP / 2;
+        // Sobre a armacao, ou logo atras dela: fora disto e uma bola alta em
+        // pleno campo, que nao tem nada de errado.
+        if (d < -rB || d > GoalNet.profBase) return;
+        if (Math.abs(b.x) > LARGURA_BALIZA / 2 + rB) return;
+
+        b.z = (CAMPO_COMP / 2 + rB * 2) * zSinal;
+        v.set(0, 0, 0);
+    },
+
     colidirComRede: function (zSinal) {
         const rB = BallPhysics.raio;
         const N = GoalNet;
@@ -2582,6 +2637,7 @@ const Match = {
         }
 
         this.colidirComBaliza();
+        this.destravarBolaEmCimaDaBaliza();
 
         if (Math.abs(this.ball.position.z) - BallPhysics.raio > CAMPO_COMP / 2) {
             let zSinal = Math.sign(this.ball.position.z);
@@ -3249,6 +3305,81 @@ const Match = {
                 lookAtBola(p.model, bolaFK);
                 p.fsm.changeState('SET_PIECE_WAIT');
             });
+
+            /*
+            ==========================================================
+            GENTE NA ÁREA À ESPERA DO CRUZAMENTO
+            ==========================================================
+            Até aqui só o batedor e a barreira eram colocados: os outros nove
+            atacantes ficavam onde a jogada os tinha deixado, e cruzava-se para
+            uma área vazia.
+
+            Mesmo desenho do canto (ver attackSetup mais acima): slots
+            relativos à baliza, `initial` onde se espera e `target` para onde
+            se ataca quando a bola sai, com a disputa de posição (jostle) por
+            cima. O que muda é a quantidade — cinco e não nove, porque numa
+            falta a bola tanto pode sair em cruzamento como em remate directo,
+            e a equipa inteira dentro da área deixava o contra-ataque aberto.
+
+            Só a partir de `zonaDeArea`: mais longe do que isso a falta é de
+            recomposição e não de ataque.
+            */
+            const povoarArea = avancoFK >= F.zonaDeArea;
+            if (povoarArea) {
+                const ladoFK = Math.sign(bolaFK.x) || 1;
+                const linhaFundoFK = attDir * (CAMPO_COMP / 2);
+
+                /*
+                Quem vai à área: avançados primeiro, laterais e trincos por
+                último — a mesma ordem do canto, e pela mesma razão (sem ela o
+                slot saía pela ordem do plantel e um lateral ficava no primeiro
+                pau com o ponta-de-lança na sobra).
+                */
+                const naArea = attackingPlayers
+                    .filter(p => p !== takerFK && p.role !== 'gk')
+                    .sort((a, b) => {
+                        const ordem = { 'ata': 1, 'mid': 2, 'def': 3 };
+                        return (ordem[a.role] || 2) - (ordem[b.role] || 2);
+                    })
+                    .slice(0, F.slotsArea.length);
+
+                naArea.forEach((p, idx) => {
+                    const cfg = F.slotsArea[idx];
+                    const initX = ladoFK * cfg.initial.relX;
+                    const initZ = linhaFundoFK - attDir * cfg.initial.dist;
+
+                    p.model.position.set(initX, ALTURA_BASE_Y, initZ);
+                    p.dynamicTarget.set(
+                        ladoFK * cfg.target.relX, ALTURA_BASE_Y,
+                        linhaFundoFK - attDir * cfg.target.dist);
+                    p.setPieceTarget = new THREE.Vector3().copy(p.model.position);
+                    p.jostleAncora = { x: initX, z: initZ };
+                    p.jostleAngulo = Math.random() * Math.PI * 2;
+                    p.jostleRaio = Math.random() * SetPieceJostle.raio;
+                    p.jostleTimer = Math.random() * SetPieceJostle.intervaloMax;
+                    p.fsm.changeState('SET_PIECE_WAIT');
+                    lookAtBola(p.model, bolaFK);
+                });
+
+                /*
+                E os marcadores. Só os defensores que SOBRAM da barreira — ela
+                é obrigação e vem primeiro. Sem isto os atacantes ficavam na
+                área sozinhos, que é tão irreal como a área vazia.
+                */
+                const livres = defesaOrdenada.slice(nBarreira);
+                for (let i = 0; i < naArea.length && i < livres.length; i++) {
+                    const cfg = F.slotsMarcacao[i];
+                    const d = livres[i];
+                    d.model.position.set(
+                        ladoFK * cfg.relX, ALTURA_BASE_Y,
+                        linhaFundoFK - attDir * cfg.dist);
+                    // Marcação POSICIONAL: o slot é que emparelha com o do
+                    // atacante. O `markingTarget` não serve aqui — está
+                    // atribuído em vários sítios e não é lido por ninguém.
+                    lookAtBola(d.model, bolaFK);
+                    d.fsm.changeState('SET_PIECE_WAIT');
+                }
+            }
 
             this.faltaPendente = true;
             this.faltaAtraso = ESPERA_APOS_REPOSICAO;

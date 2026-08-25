@@ -280,6 +280,20 @@ function executePassGameplay(p) {
     jogada morria no sitio onde nasceu.
     */
     p.runCooldown = 0;
+
+    /*
+    RECUO PARA O GUARDA-REDES. Sai daqui porque daqui e que sai um passe com o
+    PE — a cabecada e a matada no peito tem caminhos proprios e nao passam por
+    esta funcao, que e exactamente a distincao que a regra faz.
+
+    Marca a equipa; quem limpa e o toque seguinte de outra pessoa (ver
+    resolveBallContact em match.js).
+    */
+    if (p.role !== 'gk' && p.passTarget && p.passTarget.role === 'gk' &&
+        p.passTarget.team === p.team) {
+        Match.recuoParaGR = p.team;
+    }
+
     Match.ballCarrier = null;
     Match.intendedReceiver = p.passTarget;
     if (Match.passTargetVisual) Match.passTargetVisual.visible = false;
