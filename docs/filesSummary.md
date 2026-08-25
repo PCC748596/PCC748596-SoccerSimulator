@@ -5,6 +5,49 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 25 de Agosto de 2026 — faltas e cartões, editor de animação, som
+
+Specs em [docs/superpowers/specs/2026-08-25-faltas-e-cartoes-design.md](superpowers/specs/2026-08-25-faltas-e-cartoes-design.md) e [docs/superpowers/specs/2026-08-25-editor-de-animacao-design.md](superpowers/specs/2026-08-25-editor-de-animacao-design.md). Testes: `tests/faltas_cartoes.test.js`, `tests/pose_partilhada.test.js`, `tests/anim_editor_export.test.js`.
+
+#### Faltas, cartões e expulsão (peça 1 de 5 do caminho para o teste de calibração)
+
+O objectivo final é um teste que compare a simulação com as médias reais de um jogo (2,52 golos, 26,11 finalizações, 27,63 faltas, 5,22 cartões, 3,20 impedimentos, xG…). **Sete dos dez indicadores não existiam no código**, portanto instrumenta-se primeiro. As cinco peças: faltas e cartões (feita), impedimento marcado, ataques totais/perigosos, xG, e só então o teste.
+
+- **O `triggerFreeKick` e o `triggerPenalty` já existiam mas só o BOTÃO do painel os chamava.** Não havia detecção de falta nenhuma, e num lote de simulação as faltas eram sempre zero. Agora há duas fontes, ambas em `js/officials.js` (é onde o árbitro já vivia): o **duelo perdido** — um desarme ou carrinho falhado, desfecho que o `fsm.js` já conhecia e que não custava nada a quem errava — e o **contacto** com velocidade relativa alta, com arrefecimento por par para o mesmo choque não marcar falta atrás de falta.
+- **A calibração das duas fontes é ACOPLADA** (somam para a mesma média), por isso existe a `RefereeModel.faltas.escala`, que multiplica ambas e deixa mexer no TOTAL sem mudar a proporção entre elas.
+- **A primeira calibração falhou por um erro de raciocínio, não de afinação:** dava ~58 faltas, ~34 amarelos e **~12,6 vermelhos** por 90 minutos, contra 27,63 / 5,22 / 0,08. A causa foi tratar o **carrinho por trás como caso excepcional quando ele é o caso COMUM** — o `fsm.js` garante que um carrinho por trás nunca rouba a bola, logo falha sempre, logo vira falta sempre. Com o peso do ângulo a somar, saíam **vermelhos directos a eito** (uma equipa fez 0 amarelos e 3 vermelhos num jogo, o que só pode ser vermelho directo). Recalibrado: com o carrinho a deslizar aos 9 m/s do `SlideTackleModel`, por trás sozinho dá 0.83 (nada), por trás a travar ataque 1.08 (amarelo), e só a 11.7 m/s chega a vermelho directo.
+- **O teste era cúmplice do erro:** usava um "pior lance" a 7 m/s inventado, que passava enquanto o jogo falhava. Passou a ler a velocidade real do carrinho e a **exigir que o caso comum NÃO dê cartão**.
+- **O segundo amarelo tem um problema aritmético que muda o desenho.** Com 5,22 cartões repartidos por 22 jogadores, a probabilidade de ALGUM apanhar dois amarelos é ~46% por jogo (problema do aniversário), quando o número real é 8%. A solução não é uma constante: **quem tem amarelo passa a jogar com medo** (`Officials.podeFazerCarrinho`, lido pelo `player_bt.js`) e deixa de fazer carrinhos. É isso que faz o vermelho ser **emergente** em vez de sorteado.
+- **Marcação e força pesam no cartão**: `MARKING` desce a gravidade (quem marca bem entra com o tempo certo e leva mais bola do que perna), `STRENGTH` sobe-a. Entram normalizadas a partir de 50, portanto um jogador mediano dá exactamente o mesmo resultado e as contas do cabeçalho continuam válidas. A skill alivia mas **não absolve**: um carrinho brutal de um bom marcador continua a dar cartão.
+- **A expulsão tira o jogador da lista e devolve-o ao MESMO índice.** O `aplicarCoberturaNoJogo` (js/simulate.js) indexa `Match.players[idx]` por posição na lista: com dez jogadores atribuía o estilo ao jogador errado **sem se queixar**. O lote repõe os expulsos antes de indexar.
+- **`trocasMarcacao` instrumentado**: estava declarado e exportado desde sempre mas ninguém o incrementava — o zero nos relatórios era ausência de instrumentação, não um resultado.
+
+#### `js/pose.js` (ficheiro novo) — o corpo e as poses, sem o jogo
+
+Extraído do `player.js` para o editor de animação poder desenhar sem carregar a partida. **A razão é a fidelidade:** se o editor tivesse a sua própria leitura dos ângulos, afinava-se uma pose ali e no jogo ficava outra — uma ferramenta que mente é pior do que não ter ferramenta.
+
+- `construirCorpo(camisa, calcao, aparencia)` (era `buildBody`), as cinco `aplicarPose*` dos clips, `aplicarPosePassada` e os cinco amostradores de clip. O `player.js` delega e fica só com o que uma pose não pode saber: a altura do corpo, as mãos a fecharem-se na bola, a bola a seguir as mãos.
+- **O tiro de meta não era extraível como os outros:** é todo escrito através de um `bl(de, para)`, a mistura corrida→chute. A mistura passou a ARGUMENTO (`poseAnterior`, `peso`) — o jogo continua a misturar, o editor chama a mesma função sem ter corrida de onde vir. Extrair só a pose "limpa" daria um gesto que o jogo nunca faz.
+- **Duas vezes seguidas os testes existentes ficaram verdes sem provarem nada:** nenhum deles chegava a chamar o `buildBody`, e nenhum corria as poses dos clips. O `tests/pose_partilhada.test.js` cobre agora as 15 juntas, as 14 ligações da hierarquia, a escala (a mesma do `crowd.js`), e aplica **os 58 keyframes dos cinco clips** verificando que nenhum canal fica `NaN` — o modo de falha silencioso: um canal em falta dá `undefined`, `undefined` numa rotação dá `NaN`, e o boneco desaparece do ecrã sem ninguém se queixar.
+
+#### `animEditor.html` + `js/animEditor.js` (novos) — o editor de animação
+
+Página separada, com o boneco, linha do tempo dos keyframes e um slider por canal. Carrega só `three`, `config.js`, `utils.js` e `pose.js` — nada de `match.js`, `player.js`, BTs ou FSM.
+
+- **A legenda do sinal por baixo de cada slider** (`coxaChute > 0 perna para TRÁS`): é a parte que responde a "não percebo os radianos". Sai da documentação que já estava nos cabeçalhos dos clips.
+- **Fantasma** com três modos: `original` (como está no ficheiro — o que mudei?), `anterior` (o keyframe antes deste — de onde vem?, mostra se a progressão salta) e `off`. Em `anterior` a interpolação é saltada de propósito: o que interessa é a diferença entre as duas poses.
+- **Aba da passada.** Andar, trotar e correr **não são clips** — são fórmulas com senos (`getGaitPose`) alimentadas pelo `GaitModel`, portanto o painel é de CONSTANTES e o boneco anda em ciclo contínuo. O ciclo avança com a **distância** e não com o tempo (`velocidade / passada` ciclos por segundo, a conta do jogo): só com o tempo, mexer na `passada` não mudava nada no ecrã. O painel mostra o andamento correspondente à velocidade escolhida, porque o `misturarAndamento` interpola entre os três.
+- **Gizmo**: clicar num membro selecciona a junta e abre os anéis de rotação (`TransformControls` do r128). **Só rotação** nas juntas — arrastar a posição de um joelho estica o osso, e os clips só guardam ângulos, portanto perder-se-ia ao exportar. A bacia leva translação porque essa o clip guarda (`altura`). O **mapa junta→canal** é a peça crítica (o mesmo osso tem nomes diferentes por gesto: `coxaChute` no remate, `coxaFrente`/`coxaTras` no lateral) e tem teste: as 65 juntas mapeadas nos cinco clips apontam todas a canais que existem. Junta sem canal não é seleccionável.
+- **Undo** por instantâneos do clip, botão e `Ctrl+Z`. Um instantâneo por ARRASTO e não por evento: um slider emite dezenas de `input`.
+- **Pés e cabeça** ganharam canais (`peLx/peLy/peRx/peRy`, `cabecaX/cabecaY`), **opcionais**: os pés estavam fixos em ±π/16 e a cabeça nunca era tocada. Um keyframe sem eles comporta-se como antes, portanto nenhuma animação existente mudou.
+- **O exportador reescreve os NÚMEROS dentro do texto do `config.js`**, mantendo comentários e formatação. Os clips têm um cabeçalho com as fases do gesto e um comentário por keyframe: um exportador de JSON destruía isso ao colar. É função pura, com teste sobre o config real — 36 comentários preservados nos cinco clips, 13 no `GaitModel`, saída que faz parse, e **`null` em vez de uma versão a fingir** quando não consegue.
+
+#### Simulação em lote e som
+
+- **O botão do lote passou a ter caixas de jogos e minutos** (`index.html`, `main.js`), com aviso do que o lote cobre e do tempo real estimado, e progresso no botão enquanto corre. **São minutos do RELÓGIO DO JOGO**, não de espera. O `calibrarEstilos` liga-se sozinho a partir de **11 jogos**, que é o mínimo para cobrir os 21 playing styles: cada jogo usa uma formação e o gargalo é o LW, que só existe no 433 e tem quatro estilos à espera dele.
+- **O log `Avg Match.update ms` deixou de ser permanente.** Despejava uma linha por segundo, para sempre, e enterrava tudo o resto na consola — foi por isso que o erro do shader do público demorou a aparecer. Passa a depender de `Match.profiling`, e nunca corre no lote (3,5 milhões de updates × dois `performance.now()`).
+- **Som de ambiente** (`js/ambiente_sonoro.js`, `assets/SoccerStadium1.mp3`): o volume lê a MESMA fonte que a bancada (`Crowd._frac`), para o que se ouve e o que se vê dizerem a mesma coisa. Sobe depressa e desce devagar. Silenciado durante o lote.
+
 ### Sessão de 24 de Agosto de 2026 — torcida viva e bancada vermelha e branca
 
 Spec em [docs/superpowers/specs/2026-08-24-torcida-viva-design.md](superpowers/specs/2026-08-24-torcida-viva-design.md). Testes: `tests/crowd_vida.test.js` (o `tests/crowd.test.js` continua a passar sem alteração).
@@ -285,11 +328,15 @@ three.min.js (CDN)
        → bt/action_state.js → perception.js
        → spatial_grid.js → pass_candidates.js
        → bt/core.js → bt/team_bt.js → bt/position_bt.js → bt/player_bt.js
-       → match.js → player.js → fsm.js → simulate.js
+       → match.js → ambiente_sonoro.js → pose.js → player.js → fsm.js → simulate.js
        → minimap.js → officials.js → crowd.js
        → bt/btDebug.js
        → main.js
 ```
+
+O `pose.js` tem de vir ANTES do `player.js`, que lhe delega o corpo e as poses
+dos clips. É também o único ficheiro que o `animEditor.html` partilha com o
+jogo, e por isso não pode depender de nada do `Match`.
 
 O `reach.js` vem depois do `ik.js` (usa o `IK` e o `IKChains`) e antes do
 `gk_dive.js`. O `crowd.js` pode vir depois do `match.js`: só é tocado em
@@ -1801,6 +1848,14 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Placar / cronómetro no ecrã | `match.js` → `updatePlacar()`, `#placar` no `index.html` |
 | Ver a árvore/condições activas de um jogador em tempo real | `main.js` → painel "PlayerBT Debug" (`updatePainelPlayerBT`) |
 | Guarda-redes de costas para a bola/campo | `utils.js` → `lookAtBola()` — **problema em aberto**, ver a nota na secção do `player.js` |
+| Ver e afinar um clip de animação (remate, chutão, lateral…) | [animEditor.html](animEditor.html) — aba Clips |
+| Afinar andar / trotar / correr com o boneco à vista | [animEditor.html](animEditor.html) — aba Passada |
+| A pose de um clip escrita no esqueleto | `pose.js` → `aplicarPose*` (o jogo e o editor usam as MESMAS) |
+| O corpo do jogador (geometria, rig, materiais) | `pose.js` → `construirCorpo()` |
+| Quando há falta, cartão ou expulsão | `officials.js` → `RefereeModel.faltas` e `marcarFalta()` |
+| Quantas faltas por jogo (sem mudar o equilíbrio das fontes) | `officials.js` → `RefereeModel.faltas.escala` |
+| Volume e reacção do som do estádio | `ambiente_sonoro.js` |
+| Quantos jogos e minutos a simulação em lote corre | painel → Simulação em lote (11 jogos cobre os estilos) |
 | Quando a bancada se levanta / festeja | `crowd.js` → `CrowdTrigger.avaliar()` |
 | Fracções de pé, poses e ritmos do público | `crowd.js` → `CrowdModel.poses` e `fraccao*` |
 | Cores e padrão das cadeiras da bancada | `match.js` → `getSeatColor()` em `createField` |
