@@ -481,6 +481,12 @@ const Crowd = {
     /*
     Enxerta o morph e a animação no MeshStandardMaterial.
 
+    O GLSL AQUI DENTRO É ASCII, comentários incluídos. O código-fonte de GLSL
+    ES 1.00 é ASCII, e o compilador do Windows (ANGLE) recusa qualquer byte
+    fora disso — um `ç` num comentário chega para o programa não compilar e as
+    quatro malhas do público desaparecerem do ecrã, com o resto da cena
+    intacto. Já aconteceu; ver o teste do ASCII em tests/crowd_vida.test.js.
+
     Porquê `onBeforeCompile` e não um ShaderMaterial próprio: o material padrão
     já traz luzes, sombras, fog e — o que aqui interessa mesmo — o suporte de
     `instanceColor`, que é o que dá a cada adepto a sua cor. Reescrever isso à
@@ -513,8 +519,9 @@ uniform vec2 uFracNova;
 uniform vec2 uTempoTroca;
 uniform vec2 uFesta;
 
-// Pesos deste adepto neste instante. Usados pela posição E pela normal, que
-// têm de andar juntas — senão o sombreamento denuncia a pose antiga.
+// Pesos deste adepto neste instante. Usados pela posicao E pela normal, que
+// tem de andar juntas: senao o sombreamento denuncia a pose antiga.
+// (Comentarios sem acentos de proposito: o GLSL e ASCII, ver _aplicarShader.)
 void crowdPesos(out float dePe, out float w1, out float w2,
                 out float osc, out float festa) {
     bool claqueA = aClaque < 0.5;
@@ -523,14 +530,14 @@ void crowdPesos(out float dePe, out float w1, out float w2,
     float tTroca = claqueA ? uTempoTroca.x : uTempoTroca.y;
     festa = claqueA ? uFesta.x : uFesta.y;
 
-    // O estado sai de uma comparação com o limiar fixo do adepto: é isso que
+    // O estado sai de uma comparacao com o limiar fixo do adepto: e isso que
     // deixa mudar a bancada inteira com dois uniforms.
     float antes = step(aLimiar, fAnt);
     float depois = step(aLimiar, fNova);
     float k = clamp((uTempo - tTroca) / max(uDurTransicao, 0.0001), 0.0, 1.0);
     dePe = mix(antes, depois, smoothstep(0.0, 1.0, k));
 
-    // s em 0..2: 0 sentado, 1 de pé, 2 a festejar.
+    // s em 0..2: 0 sentado, 1 de pe, 2 a festejar.
     float s = dePe * (1.0 + festa);
     w1 = clamp(s, 0.0, 1.0);
     w2 = clamp(s - 1.0, 0.0, 1.0);
@@ -545,11 +552,11 @@ void crowdPesos(out float dePe, out float w1, out float w2,
 
     vec3 crowdPos = mix(position, aPosDePe, w1);
     crowdPos = mix(crowdPos, aPosFesta, w2);
-    // Oscilação de repouso: some à medida que o adepto se levanta.
+    // Oscilacao de repouso: some a medida que o adepto se levanta.
     crowdPos = mix(crowdPos, aPosIdle, osc * uAmpIdle * (1.0 - w1));
-    // De pé à espera: uma oscilação vertical pequena, para não ser um poste.
+    // De pe a espera: uma oscilacao vertical pequena, para nao ser um poste.
     crowdPos.y += uBobDePe * w1 * (1.0 - festa) * (osc - 0.5);
-    // Salto do golo, só a quem está de pé.
+    // Salto do golo, so a quem esta de pe.
     crowdPos.y += uSalto * festa * dePe *
         abs(sin(uTempo * uRitmoSalto * aRitmo + aFase));
 
