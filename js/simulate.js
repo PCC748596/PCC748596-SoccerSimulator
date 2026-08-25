@@ -321,6 +321,77 @@ function resumirEstilos(stats) {
     return linhas;
 }
 
+
+/*
+=============================================================================
+VIGIA DE JOGO ENCRAVADO
+=============================================================================
+Num lote de 5 jogos, um deles passou ~33 minutos com a bola parada no
+meio-campo: 47 passes contra ~200 dos outros, 61 km percorridos contra 160 km,
+e 2042 s de posse a somar sem nada acontecer. O relatório dá o SINTOMA e não o
+momento, portanto não houve como saber onde começou.
+
+Isto vigia a bola: se ela não se mexer mais do que `raio` durante `segundos`
+seguidos de jogo, regista UMA vez o estado completo no momento — quem tem a
+bola, em que estado está o Match, o que a FSM de cada jogador está a fazer.
+
+É diagnóstico, não correcção: da próxima vez que acontecer, o relatório traz o
+retrato do encrave em vez de só as suas consequências.
+=============================================================================
+*/
+function criarVigia() {
+    return {
+        raio: 1.5,          // metros que a bola tem de percorrer para "contar"
+        segundos: 25,       // tempo parada até se considerar encravada
+        pos: null,
+        parada: 0,
+        registos: []
+    };
+}
+
+function vigiarEncrave(v, jogo, tempoDeJogo, dt) {
+    if (!v || typeof Match === 'undefined' || !Match.ball) return;
+
+    const b = Match.ball.position;
+    if (!v.pos) { v.pos = { x: b.x, z: b.z }; return; }
+
+    const d = Math.hypot(b.x - v.pos.x, b.z - v.pos.z);
+    if (d > v.raio) {
+        v.pos = { x: b.x, z: b.z };
+        v.parada = 0;
+        v.jaRegistou = false;
+        return;
+    }
+
+    v.parada += dt;
+    if (v.parada < v.segundos || v.jaRegistou) return;
+    v.jaRegistou = true;
+
+    // Quem está a fazer o quê, agregado por estado da FSM.
+    const porEstado = {};
+    for (const p of [...Match.players, ...Match.opponents]) {
+        const e = (p.fsm && p.fsm.currentState) || '?';
+        porEstado[e] = (porEstado[e] || 0) + 1;
+    }
+
+    const reg = {
+        jogo: jogo,
+        aosSegundos: Math.round(tempoDeJogo),
+        estadoDoMatch: Match.state,
+        bola: { x: +b.x.toFixed(1), z: +b.z.toFixed(1) },
+        portador: Match.ballCarrier ? `${Match.ballCarrier.team} ${Match.ballCarrier.pos}` : null,
+        posse: Match.possessionTeam,
+        setPieceTimer: +(Match.setPieceTimer || 0).toFixed(1),
+        setPieceTaker: Match.setPieceTaker
+            ? `${Match.setPieceTaker.team} ${Match.setPieceTaker.pos}` : null,
+        emCampo: { TeamA: Match.players.length, TeamB: Match.opponents.length },
+        estadosFSM: porEstado
+    };
+    v.registos.push(reg);
+    console.warn(`Sim: JOGO ENCRAVADO — bola parada ${v.segundos}s ` +
+        `no jogo ${jogo}, aos ${reg.aosSegundos}s.`, reg);
+}
+
 const Sim = {
     running: false,
     resultados: [],
@@ -369,6 +440,7 @@ const Sim = {
         }
 
         const desvioStats = criarDesvioStats();
+        const vigia = criarVigia();
         const estiloStats = calibrarEstilos ? criarEstiloStats() : null;
         const estilosAnteriores = calibrarEstilos ? forcarEstilosLigados() : null;
 
@@ -397,6 +469,7 @@ const Sim = {
 
             Match.resetPlay();
             MatchStats.reset();
+            vigia.pos = null; vigia.parada = 0; vigia.jaRegistou = false;
 
             const totalPassos = Math.round(duracaoSeg / dt);
             let passosFeitos = 0;
@@ -413,6 +486,7 @@ const Sim = {
                 const lote = Math.min(passosPorLote, totalPassos - passosFeitos);
                 for (let i = 0; i < lote; i++) {
                     Match.update(dt);
+                    vigiarEncrave(vigia, jogo + 1, passosFeitos * dt, dt);
                     registarHeatmap(this.heatmap);
                     /*
                     Só com o nível 2 a correr. Ele é que escreve o slotTarget
@@ -506,7 +580,13 @@ const Sim = {
             quem as quiser cruzar na consola.
             */
             amostrasPasse: (opts.exportarAmostras && typeof MatchStats !== 'undefined')
-                ? MatchStats.amostrasPasse : null
+                ? MatchStats.amostrasPasse : null,
+            /*
+            Retratos de jogo encravado, se houve algum. Vazio é o que se quer
+            ver; com conteúdo, cada entrada diz o estado do Match, quem tinha
+            a bola e o que os 22 jogadores estavam a fazer no momento.
+            */
+            encraves: vigia.registos
         };
         this.exportar(relatorio);
         return relatorio;

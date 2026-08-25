@@ -937,7 +937,14 @@ function actSlideTackle(ctx) {
     js/officials.js e o spec das faltas.
     */
     if (typeof Officials !== 'undefined' && !Officials.podeFazerCarrinho(p)) {
-        return actTackle(ctx);
+        /*
+        SÓ com portador: o `actTackle` lê `Match.ballCarrier.model.position`
+        sem guarda, enquanto esta folha também corre com a bola solta (usa
+        `Match.ball.position` mais abaixo). Mandar para lá um caso sem
+        portador atirava TypeError a meio do BT.
+        */
+        if (Match.ballCarrier) return actTackle(ctx);
+        return;
     }
     if (typeof MatchStats !== 'undefined') MatchStats[p.team].carrinhos.tentados++;
     if (Match.ballCarrier) {
@@ -952,6 +959,9 @@ function actSlideTackle(ctx) {
 
 function actTackle(ctx) {
     const p = ctx.p;
+    // Sem portador não há a quem desarmar. A guarda existe porque uma
+    // excepção aqui rebenta o BT a meio e leva o frame inteiro atrás.
+    if (!Match.ballCarrier || !Match.ballCarrier.model) return;
     if (typeof MatchStats !== 'undefined') MatchStats[p.team].desarmes.tentados++;
     p.speedMult = 8.0 * 1.25 * 0.9; // +25% depois -10% pedidos: velocidade máxima SEM bola
     p.dynamicTarget.copy(Match.ballCarrier.model.position);
