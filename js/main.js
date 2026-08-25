@@ -221,6 +221,21 @@ function toggleFans() {
     }
 }
 
+/*
+Som do estádio ON/OFF. O volume acompanha o jogo sozinho (ver
+js/ambiente_sonoro.js); isto só o silencia.
+*/
+function toggleSom() {
+    if (typeof AmbienteSonoro === 'undefined') return;
+    const ligado = !AmbienteSonoro.ligado;
+    AmbienteSonoro.setLigado(ligado);
+    const b = document.getElementById('btn-som');
+    if (b) {
+        b.innerText = 'Som: ' + (ligado ? 'ON' : 'OFF');
+        b.classList.toggle('active', ligado);
+    }
+}
+
 function toggleMinimapa() {
     if (typeof Minimap === 'undefined') return;
     Minimap.setVisivel(!Minimap.visivel);
@@ -618,6 +633,8 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
         // Preenche o aviso do lote com os valores por omissão das caixas.
         actualizarAvisoDoLote();
+
+        if (typeof AmbienteSonoro !== 'undefined') AmbienteSonoro.init();
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);

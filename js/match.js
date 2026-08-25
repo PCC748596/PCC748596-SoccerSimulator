@@ -1773,6 +1773,18 @@ const Match = {
         */
         if (typeof Crowd !== 'undefined') Crowd.update(dt);
 
+        /*
+        O som do estádio lê o mesmo estado da bancada (js/ambiente_sonoro.js),
+        para o que se ouve e o que se vê dizerem a mesma coisa. Sai daqui, e
+        não do loop de render, porque durante a simulação em lote não há
+        render nenhum — e um lote a berrar 90 minutos de estádio não era o
+        que ninguém queria.
+        */
+        if (typeof AmbienteSonoro !== 'undefined' &&
+            !(typeof Sim !== 'undefined' && Sim.running)) {
+            AmbienteSonoro.update(dt);
+        }
+
         // Daqui para baixo é o boneco simplificado antigo, desligado desde que
         // o Crowd passou a usar o modelo dos jogadores (ver createField).
         if (!this.specMesh || !this.specMesh.material.userData.time) return;
