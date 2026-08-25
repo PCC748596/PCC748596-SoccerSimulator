@@ -52,7 +52,7 @@ const lerp = (a, b, k) => a + (b - a) * k;
 const lerpTo = (a, b, k) => a + (b - a) * (k === undefined ? 0.2 : k);
 const THREE = { MathUtils: { clamp: (v, a, b) => Math.max(a, Math.min(b, v)) } };
 
-const ambiente = { GaitModel, LateralGait, THREE, lerp, lerpTo };
+const ambiente = { GaitModel, LateralGait, RefereeModel, THREE, lerp, lerpTo };
 const fns = new Function(...Object.keys(ambiente), `
     ${extrairFuncao(srcUtils, 'misturarAndamento', 'js/utils.js')}
     ${extrairFuncao(srcUtils, 'getGaitPose', 'js/utils.js')}
@@ -144,8 +144,74 @@ deslocam a marcar, e a essa velocidade não se lê como deslize.
     }
 }
 
+/*
+=============================================================================
+O TREMOR AO PARAR
+=============================================================================
+Com o alvo estabilizado em cima dele, o árbitro TREMIA. A conta: o passo de um
+frame é `min(d, velMax*amp*dt)`, portanto perto do alvo o passo é o próprio
+`d`, e a velocidade que alimenta a animação é `d/dt` — a 1/60, seis
+centímetros dão 3.6 m/s. O movimento parava em `d <= 0.05` e o ciclo de
+passada ligava em `vel > 0.1`: a velocidade saltava entre 0 e vários m/s sem
+nada pelo meio, e o boneco alternava entre correr e parar a cada frame, com o
+ressalto vertical a acompanhar.
+
+A medida é o número de VEZES que a animação liga e desliga. Um árbitro que
+chegou ao sítio faz isso zero vezes.
+=============================================================================
+*/
+console.log('\ntremor com o alvo estabilizado');
+{
+    const medirTremor = (amplitude) => {
+        const o = novoOficial(0, 0);
+        const dt = 1 / 60;
+        // Deixa-o chegar ao alvo antes de medir.
+        for (let i = 0; i < 240; i++) mover(o, 0, 0, RefereeModel.velocidade, dt, { x: 0, z: 10 });
+
+        let trocas = 0, antes = null, ySalto = 0, yAnt = o.model.position.y;
+        for (let i = 0; i < 600; i++) {
+            // O alvo vibra em torno do sítio onde ele está: a bola parada não
+            // fica perfeitamente imóvel, e era isto que despoletava o tremor.
+            mover(o, Math.sin(i * 0.7) * amplitude, Math.cos(i * 1.1) * amplitude,
+                RefereeModel.velocidade, dt, { x: 0, z: 10 });
+
+            const aAndar = (o.velAnim || 0) > 0.1;
+            if (antes !== null && aAndar !== antes) trocas++;
+            antes = aAndar;
+
+            ySalto = Math.max(ySalto, Math.abs(o.model.position.y - yAnt));
+            yAnt = o.model.position.y;
+        }
+        console.log(`  alvo a vibrar ${(amplitude * 100).toFixed(0)} cm: ${trocas} troca(s) ` +
+            `da passada, salto vertical máx ${(ySalto * 1000).toFixed(1)} mm`);
+        return { trocas, ySalto };
+    };
+
+    // Vibração dentro da zona morta: não pode mexer uma palha.
+    const perto = medirTremor(0.06);
+    if (perto.trocas > 0) {
+        console.error(`  X ainda treme com o alvo a vibrar 6 cm: ${perto.trocas} trocas`);
+        falhas++;
+    }
+    if (perto.ySalto > 0.005) {
+        console.error(`  X o ressalto vertical salta ${(perto.ySalto * 1000).toFixed(1)} mm por frame`);
+        falhas++;
+    }
+
+    /*
+    Com o alvo a vibrar MAIS do que a zona morta ele tem de andar — a correcção
+    não pode ser "deixar de seguir a bola". Aqui as trocas são legítimas, mas
+    poucas: é a histerese a segurar.
+    */
+    const longe = medirTremor(0.9);
+    if (longe.trocas > 40) {
+        console.error(`  X a histerese não segura: ${longe.trocas} trocas em 600 frames`);
+        falhas++;
+    }
+}
+
 if (falhas > 0) {
-    console.error(`\nFALHOU: ${falhas} casos em que o árbitro percorre mais chão do que as pernas dão.`);
+    console.error(`\nFALHOU: ${falhas} problema(s) no movimento do árbitro.`);
     process.exit(1);
 }
-console.log('\nOK: o avanço do árbitro corresponde à passada.');
+console.log('\nOK: o avanço corresponde à passada, e ele não treme parado.');

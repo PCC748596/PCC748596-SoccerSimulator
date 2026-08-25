@@ -525,6 +525,29 @@ esticadas no ar.
 em vez de ficarem à largura dos ombros.
 =============================================================================
 */
+/*
+=============================================================================
+TIPOGRAFIA DAS COSTAS DA CAMISOLA
+=============================================================================
+Separado do desenho (player.js -> setBackTexture) para se experimentar uma
+fonte sem mexer no código que a escreve.
+
+`Bauhaus 93` é uma fonte do SISTEMA, não vem com o projecto: onde não estiver
+instalada o browser cai calado no fallback seguinte, sem erro nenhum. Por isso
+a cadeia acaba sempre num genérico.
+
+O `pesoNumero` é vazio de propósito para a Bauhaus: ela já é pesada, e pedir
+`bold` a uma fonte que não tem variante negra faz o browser sintetizar uma —
+engorda os traços e fecha os contra-formas dos algarismos.
+=============================================================================
+*/
+const CamisolaTipografia = {
+    fonteNumero: '"Bauhaus 93", "Segoe UI", Arial, sans-serif',
+    pesoNumero: '',
+    fonteNome: '"Segoe UI", Arial, sans-serif',
+    pesoNome: 'bold'
+};
+
 const LateralPose = {
     chest: -0.22,        // tronco em arco para trás, a armar o lançamento
     pelvisX: -0.06,
@@ -570,6 +593,19 @@ const LateralPose = {
     negativo na armação (roda ao contrário, a carregar) e positivo no chicote.
     */
     giroMax: 0.55,
+
+    /*
+    O QUE A CINTURA NÃO ALCANÇA, O CORPO DÁ (ver giroDoCorpoNoLateral em
+    utils.js e o case LATERAL na fsm.js). Só o EXCESSO acima de `giroMax`:
+    dentro do alcance da cintura o corpo continua de frente para o campo,
+    exactamente como estava. Sem isto, atirar para trás deixava o jogador de
+    lado para o alvo o gesto inteiro.
+
+    `velGiroCorpo` é a velocidade dessa rotação, em rad/s. O corpo tem os
+    ESPERA_APOS_REPOSICAO da espera mais a subida do clip até ao contacto para
+    lá chegar; rodar de uma vez lia-se como um salto na imagem.
+    */
+    velGiroCorpo: 2.2,
 
     coxaFrente: -0.18,   // pé da frente adiantado
     joelhoFrente: 0.20,
@@ -645,16 +681,27 @@ Arremesso lateral: a que distância a bola cai e com que elevação. A potência
 sai da balística (v = sqrt(R*g / sin2θ)), como no chutão do guarda-redes — não
 de um número à mão.
 
-`alcanceMin/Max` é curto de propósito: um lateral não é um passe longo, e o
-regulamento não deixa correr para o ganhar. O `forcaBraco` escala com o
-atributo STRENGTH de quem repõe.
+O alcance é curto de propósito: um lateral não é um passe longo, e o
+regulamento não deixa correr para o ganhar. O tecto escala com o atributo
+STRENGTH de quem repõe — ver `alcanceMaxFraco`/`alcanceMaxForte` mais abaixo.
 */
 const ThrowInModel = {
     alcanceMin: 9.0,
-    alcanceMax: 18.0,
     elevMin: 22 * Math.PI / 180,
     elevMax: 34 * Math.PI / 180,
-    forcaBraco: 0.25,        // ±25% de alcance entre STRENGTH 0 e 100
+
+    /*
+    ATÉ ONDE CHEGA UM LATERAL, POR STRENGTH — os dois extremos, escritos.
+
+    Era `alcanceMax * (1 +/- forcaBraco)`, um multiplicador de +/-25% sobre 18
+    m: o mais forte do plantel atirava a 22.5 m e o número que interessa (o
+    alcance de quem tem STRENGTH 100) só se sabia fazendo a conta. Agora
+    lê-se directamente, e é interpolação linear entre os dois.
+
+    Ver alcanceMaximoDoLateral em utils.js.
+    */
+    alcanceMaxFraco: 12.0,   // STRENGTH 0
+    alcanceMaxForte: 20.0,   // STRENGTH 100
     recuoDaLinha: 0.7,       // metros para lá da linha onde o batedor se põe
     afastaAdversarios: 2.5,  // ninguém do outro lado a menos disto da bola
 

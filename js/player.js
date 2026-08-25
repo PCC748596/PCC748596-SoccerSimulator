@@ -67,6 +67,10 @@ class FootballPlayer {
 
         this.decisionTimer = 0;
         this.carryTouchGrace = 0;
+        // Giro do corpo no lançamento lateral: o alvo (excesso acima do
+        // giroMax da cintura) e o valor perseguido frame a frame.
+        this.lateralGiroCorpo = 0;
+        this.lateralGiroCorpoActual = 0;
         this.actionState = null;
 
         // Perception System (ver js/perception.js) — camada só de leitura para
@@ -428,6 +432,7 @@ class FootballPlayer {
                 this.lateralAlvo.model.position.x, this.lateralAlvo.model.position.z);
         } else {
             this.lateralGiroAlvo = 0;
+            this.lateralGiroCorpo = 0;
         }
         return this.lateralAlvo;
     }
@@ -455,6 +460,15 @@ class FootballPlayer {
             _vFrenteCorpo.x * dx + _vFrenteCorpo.z * dz);
 
         this.lateralGiroAlvo = THREE.MathUtils.clamp(ang, -L.giroMax, L.giroMax);
+        /*
+        O CORPO DÁ O QUE A CINTURA NÃO ALCANÇA. Estava só a cintura a torcer,
+        com tecto em `giroMax`, e o corpo virado para dentro do campo sempre —
+        um lançamento para trás saía com o jogador de lado para onde atirava.
+        Guarda-se o excesso; o case LATERAL da fsm roda o corpo para lá aos
+        poucos. Dentro do alcance da cintura isto é zero e nada muda.
+        */
+        this.lateralGiroCorpo = (typeof giroDoCorpoNoLateral === 'function')
+            ? giroDoCorpoNoLateral(ang, L.giroMax) : 0;
         return this.lateralGiroAlvo;
     }
 
@@ -505,9 +519,9 @@ class FootballPlayer {
         const errePeso = THREE.MathUtils.clamp(
             1 + amostraGaussiana(Math.random) * sigmaPeso, T.pesoMin, T.pesoMax);
 
-        const forca = 1 + ((this.skillFor('STRENGTH') - 50) / 50) * T.forcaBraco;
-        const alcance = THREE.MathUtils.clamp(dist * errePeso,
-            T.alcanceMin, T.alcanceMax * forca);
+        const alcanceMax = alcanceMaximoDoLateral(
+            this.skillFor('STRENGTH'), T.alcanceMaxFraco, T.alcanceMaxForte);
+        const alcance = THREE.MathUtils.clamp(dist * errePeso, T.alcanceMin, alcanceMax);
         const elev = T.elevMin + Math.random() * (T.elevMax - T.elevMin);
 
         /*
@@ -1663,7 +1677,22 @@ class FootballPlayer {
         decisão e o estado durava 0.2 s no total.
         */
         this.actionState = new ActionState('shot', {
-            onContact: () => { if (this.hasBall) executeShotGameplay(this); }
+            /*
+            FURAR A BOLA. Quem AUTORIZA o remate aceita a graça de condução
+            (`temBola` no player_bt.js é `hasBall || carryTouchGrace > 0`),
+            mas quem o EXECUTA exige a bola no pé — e entre a decisão e o
+            contacto passam 0.318 s (contactTime 7/11 de duration 0.50). Se a
+            bola ainda vem a caminho do pé, o gesto completa-se e não sai bola
+            nenhuma.
+
+            O `remates.tentados` já foi contado acima, portanto uma furada
+            entra nas estatísticas como remate. Contá-las à parte diz quanto
+            das finalizações dos relatórios é gesto sem bola.
+            */
+            onContact: () => {
+                if (this.hasBall) executeShotGameplay(this);
+                else if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.furados++;
+            }
         });
         this.fsm.changeState('SHOOT');
     }
@@ -2967,8 +2996,20 @@ class FootballPlayer {
         ctxBack.textBaseline = 'middle';
         ctxBack.lineJoin = 'round';   // sem isto os cantos do contorno espetam
 
-        const escrever = (texto, y, tamanho, espessura) => {
-            ctxBack.font = `bold ${tamanho}px "Segoe UI", Arial, sans-serif`;
+        /*
+        As duas fontes saem do CamisolaTipografia (config.js) — o número tem a
+        sua, que hoje e a Bauhaus 93, e o nome fica na do painel. Sem o
+        config carregado cai no que estava aqui antes.
+        */
+        const TIPO = (typeof CamisolaTipografia !== 'undefined') ? CamisolaTipografia : {
+            fonteNumero: '"Segoe UI", Arial, sans-serif', pesoNumero: 'bold',
+            fonteNome: '"Segoe UI", Arial, sans-serif', pesoNome: 'bold'
+        };
+        const fonteDe = (peso, tamanho, familia) =>
+            `${peso ? peso + ' ' : ''}${tamanho}px ${familia}`;
+
+        const escrever = (texto, y, tamanho, espessura, peso, familia) => {
+            ctxBack.font = fonteDe(peso, tamanho, familia);
             ctxBack.lineWidth = espessura;
             ctxBack.strokeStyle = corContorno;
             ctxBack.strokeText(texto, 256, y);
@@ -2983,14 +3024,14 @@ class FootballPlayer {
         */
         const NOME = nome.toString().toUpperCase();
         let tamanhoNome = 72;
-        ctxBack.font = `bold ${tamanhoNome}px "Segoe UI", Arial, sans-serif`;
+        ctxBack.font = fonteDe(TIPO.pesoNome, tamanhoNome, TIPO.fonteNome);
         while (tamanhoNome > 28 && ctxBack.measureText(NOME).width > 430) {
             tamanhoNome -= 4;
-            ctxBack.font = `bold ${tamanhoNome}px "Segoe UI", Arial, sans-serif`;
+            ctxBack.font = fonteDe(TIPO.pesoNome, tamanhoNome, TIPO.fonteNome);
         }
-        escrever(NOME, 108, tamanhoNome, 10);
+        escrever(NOME, 108, tamanhoNome, 10, TIPO.pesoNome, TIPO.fonteNome);
 
-        escrever(this.num.toString(), 300, 260, 16);
+        escrever(this.num.toString(), 300, 260, 16, TIPO.pesoNumero, TIPO.fonteNumero);
 
         if (this.backMat.map) this.backMat.map.dispose();
         this.backMat.map = new THREE.CanvasTexture(cvsBack);

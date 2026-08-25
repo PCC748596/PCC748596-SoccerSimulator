@@ -1146,8 +1146,51 @@ tudo isto para arrancar:
 
 Ver RunIntoSpaceModel em config.js.
 */
+function posicaoCorreAoEspaco(role, pos) {
+    if (role === 'gk') return false;
+    if (role !== 'def') return true;
+    /*
+    LATERAIS SIM, CENTRAIS NAO. A versao anterior barrava `def` inteiro, e com
+    isso o lateral que servia o ponta ficava parado a ver — que e metade do
+    que falta nas jogadas pela ala. Um CENTRAL a arrancar deixa mesmo a linha
+    a descoberto; um lateral a subir e futebol normal, e ate ha um playing
+    style so para isso (offensive_fullback).
+    */
+    return pos === 'LB' || pos === 'RB';
+}
+
+/*
+QUEM SERVE DE REFERENCIA PARA A CORRIDA.
+
+Normalmente o portador. Mas durante o VOO de um passe nao ha portador nenhum
+(`Match.ballCarrier` fica null ate alguem receber) — e e exactamente esse o
+instante em que o passador tem de arrancar para receber de volta. Sem isto o
+toca-e-recebe era impossivel por construcao: quem passa nunca podia correr.
+*/
+function referenciaDaBola() {
+    if (typeof Match === 'undefined') return null;
+    return Match.ballCarrier || Match.intendedReceiver || null;
+}
+
 function podeCorrerNoEspaco(ctx) {
-    return false;
+    const p = ctx.p;
+    if (typeof RunIntoSpaceModel === 'undefined') return false;
+    if ((p.runTimer || 0) > 0) return true;          // ja vai a caminho
+
+    if (!posicaoCorreAoEspaco(p.role, p.pos)) return false;
+    if ((p.runCooldown || 0) > 0) return false;
+
+    const bb = ctx.bb;
+    if (!bb || !bb.isAttacking) return false;
+
+    const referencia = referenciaDaBola();
+    if (!referencia || referencia === p || referencia.team !== p.team) return false;
+
+    const R = RunIntoSpaceModel;
+    const dist = p.model.position.distanceTo(referencia.model.position);
+    if (dist < R.distMin || dist > R.distMax) return false;
+
+    return escolherDestinoDeCorrida(p, bb) !== null;
 }
 
 /*
@@ -1160,8 +1203,11 @@ condicao, que nao pode ter efeitos.
 */
 function escolherDestinoDeCorrida(p, bb) {
     const R = RunIntoSpaceModel;
-    const portador = Match.ballCarrier;
-    if (!portador) return null;
+    // A MESMA referencia da condicao (ver referenciaDaBola): se aqui fosse so
+    // o portador, quem acabou de passar passava na condicao e nao encontrava
+    // destino nenhum, e a corrida morria entre as duas.
+    const portador = referenciaDaBola();
+    if (!portador || portador === p) return null;
 
     const pos = p.model.position;
     const cp = portador.model.position;

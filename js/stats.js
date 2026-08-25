@@ -23,7 +23,7 @@ function novoContadorEquipa() {
         passes: { tentados: 0, certos: 0 },
         lancamentos: { tentados: 0, certos: 0 },   // passe para o espaço (through ball)
         cruzamentos: { tentados: 0, certos: 0 },
-        remates: { tentados: 0, golos: 0 },
+        remates: { tentados: 0, golos: 0, furados: 0 },
         desarmes: { tentados: 0, sucesso: 0 },      // TACKLE (de pé)
         carrinhos: { tentados: 0, sucesso: 0 },     // SLIDE_TACKLE
         dribles: { tentados: 0, sucesso: 0 },       // 1x1 (DRIBBLE)
@@ -240,7 +240,7 @@ const MatchStats = {
             passes: s.passes.tentados + '/' + s.passes.certos + ' (' + pct(s.passes.certos, s.passes.tentados) + '%)',
             lancamentos: s.lancamentos.tentados + '/' + s.lancamentos.certos,
             cruzamentos: s.cruzamentos.tentados + '/' + s.cruzamentos.certos,
-            remates: s.remates.tentados + ' (' + s.remates.golos + ' golos)',
+            remates: s.remates.tentados + ' (' + s.remates.golos + ' golos, ' + s.remates.furados + ' furados)',
             desarmes: s.desarmes.tentados + '/' + s.desarmes.sucesso,
             carrinhos: s.carrinhos.tentados + '/' + s.carrinhos.sucesso,
             dribles: s.dribles.tentados + '/' + s.dribles.sucesso,

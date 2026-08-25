@@ -273,6 +273,13 @@ function executePassGameplay(p) {
         p.passInertiaTimer = 4.0;
         p.passInertiaZDir = p.model.position.z * p.dirZ;
     }
+    /*
+    TOCA E SEGUE. Quem acaba de passar fica livre para arrancar no frame
+    seguinte, em vez de esperar o arrefecimento de uma corrida anterior. E o
+    que faz o toca-e-recebe: sem isto o passador ficava a ver a bola sair e a
+    jogada morria no sitio onde nasceu.
+    */
+    p.runCooldown = 0;
     Match.ballCarrier = null;
     Match.intendedReceiver = p.passTarget;
     if (Match.passTargetVisual) Match.passTargetVisual.visible = false;
@@ -606,10 +613,37 @@ class PlayerFSM {
             case 'LATERAL':
                 p.velocity.set(0, 0, 0);
 
-                // Vira-se para DENTRO do campo, não para a bola: a bola está
-                // nas mãos dele.
-                _v1.set(0, p.model.position.y, p.model.position.z);
-                lookAtBola(p.model, _v1);
+                /*
+                Vira-se para DENTRO do campo, não para a bola: a bola está nas
+                mãos dele.
+
+                E RODA PARA ONDE VAI ATIRAR. O `lateralGiroCorpo` é o que a
+                cintura não alcança (ver prepararGiroLateral): sem ele o corpo
+                ficava perpendicular à linha o gesto inteiro e um lançamento
+                para trás saía com o jogador de lado para o alvo. É zero
+                enquanto o alvo couber no giro da cintura, portanto os
+                lançamentos curtos para a frente ficam exactamente como estavam.
+
+                Vira aos poucos porque o gesto já começou: o corpo tem os
+                `ESPERA_APOS_REPOSICAO` da espera mais a subida do clip até ao
+                contacto, e uma rotação instantânea lê-se como um salto.
+                */
+                {
+                    const alvoGiro = p.lateralGiroCorpo || 0;
+
+                    // Persegue o ângulo alvo em vez de saltar para ele. A
+                    // direcção "para dentro" é (-x, 0): aponta da linha para o
+                    // eixo do campo, perpendicular à lateral.
+                    const passo = LateralPose.velGiroCorpo * dt;
+                    const falta = alvoGiro - (p.lateralGiroCorpoActual || 0);
+                    p.lateralGiroCorpoActual = (Math.abs(falta) <= passo)
+                        ? alvoGiro
+                        : (p.lateralGiroCorpoActual || 0) + Math.sign(falta) * passo;
+
+                    const d = rodarNoPlano(-p.model.position.x, 0, p.lateralGiroCorpoActual);
+                    _v1.set(p.model.position.x + d.x, p.model.position.y, p.model.position.z + d.z);
+                    lookAtBola(p.model, _v1);
+                }
 
                 /*
                 Duas fases no mesmo estado:
@@ -629,6 +663,10 @@ class PlayerFSM {
                     if (p.lateralAction.isDone()) {
                         p.lateralAction = null;
                         p.lateralLargou = false;
+                        // Sem isto o giro ficava guardado e o lateral seguinte
+                        // arrancava já com o corpo torcido do anterior.
+                        p.lateralGiroCorpo = 0;
+                        p.lateralGiroCorpoActual = 0;
                         p.resetBonesToDefault();
                         this.changeState('IDLE');
                     }

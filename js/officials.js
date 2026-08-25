@@ -59,6 +59,28 @@ const RefereeModel = {
     velocidadeAssistente: 8.5,
 
     /*
+    ZONA MORTA COM HISTERESE, e um filtro na velocidade da animacao.
+
+    Sem isto o boneco TREMIA sempre que o alvo estabilizava. A conta: o passo
+    de um frame e `min(d, velMax*amp*dt)`, portanto perto do alvo o passo e o
+    proprio `d`, e a velocidade que alimenta o ciclo de passada e `d/dt` — com
+    dt de 1/60, seis centimetros dao 3.6 m/s. O movimento parava em d <= 0.05 e
+    a animacao ligava em vel > 0.1, ou seja a velocidade saltava entre 0 e ~3
+    m/s sem nada pelo meio. Alvo a oscilar dois centimetros = correr/parar a
+    cada frame, com o ressalto vertical a acompanhar.
+
+    `paragemMax` e onde se considera chegado; `arranqueMin` e o quanto o alvo
+    tem de se afastar para valer a pena voltar a andar. Serem DIFERENTES e o
+    ponto: com um so limiar volta o mesmo tremor, mais fino.
+
+    `suavizacaoVel` filtra a velocidade que a animacao ve, para o ciclo de
+    passada nao ligar de golpe num passo curto.
+    */
+    paragemMax: 0.25,
+    arranqueMin: 0.60,
+    suavizacaoVel: 0.20,
+
+    /*
     Equipamento, preto por agora. Em texto e não em hexadecimal numérico: o
     `buildBody` dos jogadores pinta as texturas da camisola e dos meiões num
     canvas 2D, e o canvas quer uma cor CSS.
@@ -376,8 +398,21 @@ const Officials = {
         Decidir ORIENTAÇÃO e LATERALIDADE antes de dar o passo: é a lateralidade
         que limita a velocidade deste frame.
         */
+        /*
+        CHEGOU OU NAO CHEGOU — com histerese (ver paragemMax/arranqueMin).
+        Um limiar unico punha o boneco a correr/parar a cada frame quando o
+        alvo estabilizava em cima dele.
+        */
+        const R = RefereeModel;
+        if (o.paradoNoAlvo === undefined) o.paradoNoAlvo = true;
+        if (o.paradoNoAlvo) {
+            if (d > R.arranqueMin) o.paradoNoAlvo = false;
+        } else if (d < R.paragemMax) {
+            o.paradoNoAlvo = true;
+        }
+
         let lateralidade = 0, ladoMov = 0;
-        const velDesejada = (d > 0.05) ? Math.min(velMax, d / Math.max(dt, 1e-4)) : 0;
+        const velDesejada = o.paradoNoAlvo ? 0 : Math.min(velMax, d / Math.max(dt, 1e-4));
         const emCorrida = !L || velDesejada > L.velViragem;
 
         if (olharPara && !emCorrida) {
@@ -405,12 +440,19 @@ const Officials = {
         const amp = 1 - lateralidade * (L ? L.reducaoPassada : 0);
 
         let passo = 0;
-        if (d > 0.05) {
+        if (!o.paradoNoAlvo && d > 0.0001) {
             passo = Math.min(d, velMax * amp * dt);
             o.model.position.x += (dx / d) * passo;
             o.model.position.z += (dz / d) * passo;
         }
-        const vel = dt > 0.0001 ? passo / dt : 0;
+        /*
+        A velocidade que a ANIMACAO ve e filtrada. A instantanea (`passo/dt`)
+        salta de 0 para varios m/s num unico passo curto, e era ela que ligava
+        e desligava o ciclo de passada a cada frame.
+        */
+        const velInstant = dt > 0.0001 ? passo / dt : 0;
+        o.velAnim = lerpTo(o.velAnim || 0, velInstant, R.suavizacaoVel);
+        const vel = o.velAnim;
 
         const rig = o.rig;
         if (vel > 0.1 && typeof getGaitPose === 'function') {

@@ -281,6 +281,36 @@ alvoDeApoio: x = sin, z = cos).
 Pura: sem THREE — isto corre uma vez por passe e criar um Vector3 para o
 efeito era desperdicio.
 */
+/*
+QUANTO É QUE O CORPO TEM DE RODAR NUM LANÇAMENTO LATERAL.
+
+A cintura torce-se até `giroMax` e não mais (LateralPose.giroMax) — para lá
+disso deixava de ser um arco e passava a ser um jogador partido ao meio. O que
+sobra é o corpo que o dá: quem atira para trás de si vira-se, não se contorce.
+
+Devolve só o EXCESSO, e por isso um alvo dentro do alcance da cintura continua
+a ser resolvido exactamente como antes, com o corpo de frente para o campo.
+`ang` é o ângulo com sinal entre a frente do corpo e a direcção do lançamento.
+*/
+/*
+ATE ONDE ESTE JOGADOR CONSEGUE ATIRAR UM LATERAL.
+
+Interpolacao linear entre `fraco` (STRENGTH 0) e `forte` (STRENGTH 100). Fora
+da escala corta nos extremos: um skill acima de 100 nao compra alcance extra.
+*/
+function alcanceMaximoDoLateral(strength, fraco, forte) {
+    const s = Math.max(0, Math.min(100, Number(strength) || 0));
+    return fraco + (forte - fraco) * (s / 100);
+}
+
+function giroDoCorpoNoLateral(ang, giroMax) {
+    if (!Number.isFinite(ang) || !Number.isFinite(giroMax)) return 0;
+    const m = Math.abs(giroMax);
+    if (ang > m) return ang - m;
+    if (ang < -m) return ang + m;
+    return 0;
+}
+
 function rodarNoPlano(x, z, angulo) {
     const c = Math.cos(angulo);
     const s = Math.sin(angulo);
