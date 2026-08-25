@@ -2320,6 +2320,33 @@ const CarryModel = {
     convenção do bolaNoUltimoTerco do TeamBT). `velMaxLivre` é o topo da corrida
     normal — acima disto é sprint (ver GaitModel.correr.vel).
     */
+    /*
+    =====================================================================
+    O FUTEBOL E FEITO DE MAIS PASSES DO QUE CORRIDAS
+    =====================================================================
+    A arvore de decisao com bola tinha o `ConduzirEmEspaco` ACIMA do
+    `ProcurarPasse`, e o fallback final era conduzir. Resultado: conduzir era
+    a opcao por omissao e passar a excepcao — chegava-se ao passe generico so
+    se nao houvesse campo aberto, o caminho nao estivesse fechado, nao se
+    estivesse na defesa e nao se pudesse driblar. Medido num lote: 7309
+    conducoes contra 5604 passes, quase um para um. No futebol e varias vezes
+    mais passes.
+
+    `conduzirSoAcimaDe` inverte isso sem desligar a conducao: com um passe bom
+    disponivel, conduz-se apenas a partir desta distancia da baliza adversaria
+    (no referencial de ataque, `zoneAhead`). Ou seja, no ultimo terco — que e
+    onde conduzir decide alguma coisa — e nao a sair da defesa.
+
+    Sem passe nenhum disponivel, conduz-se onde quer que se esteja: o ramo do
+    passe falha e a arvore segue para os de baixo, como antes.
+
+    O valor vem do `zonaLivre` logo abaixo, que ja marcava o "ultimo terco"
+    para o orcamento de conducao — nao se inventa uma segunda fronteira para
+    a mesma ideia.
+    =====================================================================
+    */
+    conduzirSoAcimaDe: 17.0,
+
     zonaLivre: 17.0,
     velMaxLivre: GaitModel.correr.vel,
 

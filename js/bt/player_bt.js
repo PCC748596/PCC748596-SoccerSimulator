@@ -45,6 +45,14 @@ class PlayerContext {
         this._backPass = undefined;
         this._cross = undefined;
         this._throughBall = undefined;
+        /*
+        O `ctx` sobrevive entre frames (`player.btCtx`), portanto uma escolha de
+        passe guardada tem de morrer AQUI. O ConduzirEmEspaco guarda-a para o
+        ProcurarPasse a reaproveitar no MESMO frame; sobrevivendo ao frame,
+        apontaria para um companheiro que entretanto se moveu ou que ja recebeu
+        a bola — e o passe sairia para onde ele estava.
+        */
+        this.currentPassChoice = null;
 
         // Sob pressão: um adversário a menos de 3.5 m.
         // Espaço à frente: adversário mais próximo dentro de um corredor que
@@ -1856,6 +1864,35 @@ const PlayerBT = sel('PlayerRoot',
                 cond('campoAberto', (ctx) => {
                     const p = ctx.p;
                     if (p.role === 'gk') return false;
+
+                    /*
+                    O PASSE VEM PRIMEIRO — ver CarryModel.conduzirSoAcimaDe.
+
+                    Este ramo estava ACIMA do ProcurarPasse e o fallback da
+                    arvore e conduzir: conduzir era a opcao por omissao e
+                    passar a excepcao. Medido num lote: 7309 conducoes contra
+                    5604 passes, quase um para um, quando o futebol e varias
+                    vezes mais passes do que corridas.
+
+                    Agora, HAVENDO PASSE BOM, so se conduz a partir do ultimo
+                    terco — que e onde conduzir decide alguma coisa. Fora dai
+                    passa-se, e a conducao fica para quem nao tem a quem dar.
+
+                    Sem passe disponivel isto nao faz nada: o `haPasse` da
+                    falso e o ramo segue como sempre.
+                    */
+                    const limite = (typeof CarryModel.conduzirSoAcimaDe === 'number')
+                        ? CarryModel.conduzirSoAcimaDe : -Infinity;
+                    if (ctx.zoneAhead < limite) {
+                        const passe = findBestPassAnywhere(ctx);
+                        if (passe) {
+                            // Guardado para o ProcurarPasse nao repetir a busca
+                            // no mesmo frame: e a parte cara desta decisao.
+                            ctx.currentPassChoice = passe;
+                            return false;
+                        }
+                    }
+
                     // Só `campoAberto` — ele já pesa o `livreAFrente10m20g` por
                     // dentro, contra o orçamento de condução. Aceitá-lo aqui
                     // outra vez era saltar o orçamento pela segunda vez.
@@ -1937,7 +1974,13 @@ const PlayerBT = sel('PlayerRoot',
             // 6. Escolha de passe baseada na avaliação geral
             seq('ProcurarPasse',
                 cond('haOpcaoDePasse', (ctx) => {
-                    const passChoice = findBestPassAnywhere(ctx);
+                    /*
+                    Reaproveita a escolha que o ConduzirEmEspaco ja fez neste
+                    frame, se a fez: `findBestPassAnywhere` percorre todos os
+                    companheiros e todas as linhas, e corre-lo duas vezes no
+                    mesmo frame e o dobro do custo pela mesma resposta.
+                    */
+                    const passChoice = ctx.currentPassChoice || findBestPassAnywhere(ctx);
                     if (!passChoice) return false;
                     ctx.currentPassChoice = passChoice;
                     return true;
@@ -2066,9 +2109,33 @@ const PlayerBT = sel('PlayerRoot',
             posicionamento: quem tem um homem no sector acompanha-o em vez de
             ir ocupar um ponto no mapa.
             */
-            seq('Marcar',
-                cond('temHomemNoSector', podeMarcar),
-                act('marcar', actMarcar)
+            /* ============================================================
+               A DEFENDER — os ramos que so existem sem a posse
+               ============================================================
+               A guarda da FASE vive aqui em cima, uma vez, em vez de estar
+               repetida dentro de cada folha. Ler esta lista responde a "o que
+               e importante quando nao temos a bola?" sem ter de abrir as
+               condicoes uma a uma.
+
+               Os ramos de BOLA (desarme, intercepcao, perseguicao, recepcao) e
+               o guarda-redes ficam ACIMA e fora das duas fases, de proposito:
+               valem nas duas. Uma bola solta persegue-se com posse nominal ou
+               sem ela, e o guarda-redes posiciona-se sempre.
+               ============================================================ */
+            seq('SemBolaDefendendo',
+                cond('equipaSemPosse', (ctx) => !ctx.bb || !ctx.bb.isAttacking),
+
+                sel('DecisaoDefendendo',
+                    /*
+                    Marcacao por zona. Vem depois de tudo o que e bola e ANTES
+                    das folhas de posicionamento: quem tem um homem no sector
+                    acompanha-o em vez de ir ocupar um ponto no mapa.
+                    */
+                    seq('Marcar',
+                        cond('temHomemNoSector', podeMarcar),
+                        act('marcar', actMarcar)
+                    )
+                )
             ),
 
             /*
@@ -2118,38 +2185,53 @@ const PlayerBT = sel('PlayerRoot',
             a jogada depois dessa. Sem opcao de passe agora, nao ha jogada
             depois dessa.
             */
-            seq('ApoioDeCirculacao',
-                cond('fuiChamadoAApoiar', podeApoiarCirculacao),
-                act('apoiarCirculacao', actApoioCirculacao)
-            ),
+            /* ============================================================
+               A ATACAR SEM A BOLA — o movimento que faz a jogada existir
+               ============================================================
+               Mesma razao da lista de cima: a fase num sitio so. E estes tres
+               nunca competem com a marcacao nem com o desarme — sao de
+               momentos diferentes do jogo, e ate hoje estavam intercalados
+               com eles numa lista de onze, onde `CorrerNoEspaco` aparecia
+               ABAIXO de `Marcar` sem que isso quisesse dizer nada.
+               ============================================================ */
+            seq('SemBolaAtacando',
+                cond('equipaComPosse', (ctx) => !!(ctx.bb && ctx.bb.isAttacking)),
 
-            seq('CorrerNoEspaco',
-                cond('haEspacoAFrente', podeCorrerNoEspaco),
-                act('correrNoEspaco', actRunIntoSpace)
-            ),
+                sel('DecisaoAtacando',
+                seq('ApoioDeCirculacao',
+                    cond('fuiChamadoAApoiar', podeApoiarCirculacao),
+                    act('apoiarCirculacao', actApoioCirculacao)
+                ),
 
-            seq('AtacarArea',
-                cond('colegaVaiCruzar', (ctx) => {
-                    const p = ctx.p;
-                    if (p.role === 'def' || p.role === 'gk') return false;
-                    const c = Match.ballCarrier;
-                    if (!c || c.team !== p.team || c === p) return false;
-                    const carrierX = Math.abs(c.model.position.x);
-                    const carrierZ = c.model.position.z * c.dirZ;
-                    return carrierX >= CrossModel.alaX && carrierZ >= CrossModel.zonaZ;
-                }),
-                act('atacarArea', (ctx) => {
-                    const p = ctx.p;
-                    const c = Match.ballCarrier;
-                    const side = Math.sign(c.model.position.x) || 1;
-                    // Metade dos candidatos ataca o 1º poste (lado do cruzamento),
-                    // a outra o 2º poste — leque simples, sem coordenação fina.
-                    const targetX = (p.id % 2 === 0) ? -side * 5.0 : side * 9.0;
-                    const targetZ = (CrossModel.areaZ + 6.0) * p.dirZ;
-                    p.dynamicTarget.set(targetX, ALTURA_BASE_Y, targetZ);
-                    p.speedMult = (5.5 + ((ctx.skillSpeed - 50) / 50) * 1.2) * 1.25 * 0.9;
-                    p.fsm.changeState('MOVE_TO_POS');
-                })
+                seq('CorrerNoEspaco',
+                    cond('haEspacoAFrente', podeCorrerNoEspaco),
+                    act('correrNoEspaco', actRunIntoSpace)
+                ),
+
+                seq('AtacarArea',
+                    cond('colegaVaiCruzar', (ctx) => {
+                        const p = ctx.p;
+                        if (p.role === 'def' || p.role === 'gk') return false;
+                        const c = Match.ballCarrier;
+                        if (!c || c.team !== p.team || c === p) return false;
+                        const carrierX = Math.abs(c.model.position.x);
+                        const carrierZ = c.model.position.z * c.dirZ;
+                        return carrierX >= CrossModel.alaX && carrierZ >= CrossModel.zonaZ;
+                    }),
+                    act('atacarArea', (ctx) => {
+                        const p = ctx.p;
+                        const c = Match.ballCarrier;
+                        const side = Math.sign(c.model.position.x) || 1;
+                        // Metade dos candidatos ataca o 1º poste (lado do cruzamento),
+                        // a outra o 2º poste — leque simples, sem coordenação fina.
+                        const targetX = (p.id % 2 === 0) ? -side * 5.0 : side * 9.0;
+                        const targetZ = (CrossModel.areaZ + 6.0) * p.dirZ;
+                        p.dynamicTarget.set(targetX, ALTURA_BASE_Y, targetZ);
+                        p.speedMult = (5.5 + ((ctx.skillSpeed - 50) / 50) * 1.2) * 1.25 * 0.9;
+                        p.fsm.changeState('MOVE_TO_POS');
+                    })
+                )
+                )
             ),
 
             act('ocuparPosicao', actHoldPosition)
