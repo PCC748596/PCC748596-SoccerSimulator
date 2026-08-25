@@ -1,6 +1,10 @@
 const Match = {
     scene: null, ball: null, ballVisual: null, ballVel: new THREE.Vector3(),
     players: [], opponents: [], ballCarrier: null, intendedReceiver: null, state: 'PLAY',
+    // Matadas no peito seguidas sem a bola assentar. Ver maxPeitosSeguidos em
+    // config.js: era por aqui que o jogo encravava, com a bola presa no ar
+    // entre dois jogadores a matá-la no peito um ao outro.
+    peitosSeguidos: 0,
     // Equipa cujo guarda-redes nao pode usar as maos (recuo com o pe de um
     // companheiro). Null e o caso normal. Ver maosProibidasNoRecuo em utils.js.
     recuoParaGR: null,
@@ -1238,6 +1242,7 @@ const Match = {
         this.setPieceTaker = null;
         this.setPieceTimer = 0;
         this.recuoParaGR = null;
+        this.peitosSeguidos = 0;
         [...this.players, ...this.opponents].forEach(p => { p.jostleAncora = null; });
         this.counterAttackTeam = null;
         this.counterAttackTimer = 0;
@@ -2084,11 +2089,22 @@ const Match = {
         const maxHeaders = (typeof HeaderModel !== 'undefined' && HeaderModel.maxHeadersSeguidos) ? HeaderModel.maxHeadersSeguidos : 2;
         const atingiuLimiteCabeca = this.aerialHeaderCount >= maxHeaders;
 
+        const maxPeitos = (typeof BallControl.maxPeitosSeguidos === 'number')
+            ? BallControl.maxPeitosSeguidos : 2;
         if ((bestAltura >= BallControl.peitoYMin && bestAltura <= BallControl.peitoYMax && best.jumpTimer <= 0) ||
             (atingiuLimiteCabeca && bestAltura <= (ALTURA_TESTA + HeaderModel.janelaContacto) && best.jumpTimer <= 0)) {
-            if (best.fsm.currentState !== 'CHEST_CONTROL') {
+            /*
+            LIMITE DE PEITOS SEGUIDOS. Sem ele, dois jogadores lado a lado
+            matavam a bola no peito um ao outro indefinidamente: o
+            `colarBolaAoPeito` prende-a e zera-lhe a velocidade, e ao largar
+            ela cai tão devagar que não sai da faixa do peito antes de o outro
+            a apanhar. Passado o limite deixa-se cair — o toque normal aqui em
+            baixo trata dela com o pé, ou ela chega ao chão e o contador zera.
+            */
+            if (best.fsm.currentState !== 'CHEST_CONTROL' && this.peitosSeguidos < maxPeitos) {
                 this.aerialHeaderCount = 0;
                 this.aerialHeaderTimer = 0;
+                this.peitosSeguidos++;
                 best.controlarNoPeito(bestAltura);
                 return true;
             }
@@ -2141,6 +2157,8 @@ const Match = {
         regra manda fazer.
         */
         this.recuoParaGR = null;
+        // Alguém dominou a bola: a sequência de peitos acabou.
+        this.peitosSeguidos = 0;
         this.intendedReceiver = null;
         this.passTargetPos = null;
         this.lastTouchedTeam = best.team;
@@ -2547,6 +2565,12 @@ const Match = {
             // Bola tocou no chão: reseta a contagem de cabeceios aéreos sucessivos
             this.aerialHeaderCount = 0;
             this.aerialHeaderTimer = 0;
+            /*
+            E a de peitos, pela mesma razão e no mesmo sítio: a sequência é
+            "sem a bola assentar". Sem este zero o contador esgotava-se uma vez
+            e a matada no peito desaparecia do resto do jogo.
+            */
+            this.peitosSeguidos = 0;
 
             // Ressalto: só ressalta se ainda vier com velocidade vertical
             // suficiente, senão assenta em vez de tremer no chão.

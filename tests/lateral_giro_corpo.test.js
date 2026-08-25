@@ -35,9 +35,11 @@ const api = new Function(
     extrair(utils, 'giroDoCorpoNoLateral', 'js/utils.js') + LF +
     extrair(utils, 'rodarNoPlano', 'js/utils.js') + LF +
     extrair(utils, 'alcanceMaximoDoLateral', 'js/utils.js') + LF +
-    'return { giroDoCorpoNoLateral, rodarNoPlano, alcanceMaximoDoLateral };')();
+    extrair(utils, 'alvoDeApoioNoLateral', 'js/utils.js') + LF +
+    'return { giroDoCorpoNoLateral, rodarNoPlano, alcanceMaximoDoLateral, alvoDeApoioNoLateral };')();
 
-const { giroDoCorpoNoLateral, rodarNoPlano, alcanceMaximoDoLateral } = api;
+const { giroDoCorpoNoLateral, rodarNoPlano, alcanceMaximoDoLateral,
+        alvoDeApoioNoLateral } = api;
 
 // O valor real do jogo, lido do config para o teste não guardar uma cópia que
 // possa divergir.
@@ -212,6 +214,78 @@ console.log(LF + '6 — alcance do lateral por STRENGTH');
     if (alcanceMaximoDoLateral(130, FRACO, FORTE) !== FORTE) erro('STRENGTH acima de 100 não devia passar do tecto');
     else if (alcanceMaximoDoLateral(-10, FRACO, FORTE) !== FRACO) erro('STRENGTH negativo devia cair no mínimo');
     else ok('fora da escala corta nos extremos');
+}
+
+/*
+7 — OS COMPANHEIROS APROXIMAM-SE DO BATEDOR.
+
+Ficavam nos slots do bloco, a vinte e tal metros: o batedor tinha meio campo à
+frente e ninguém a quem atirar. A regra é uma FAIXA — nem em cima dele, nem
+longe de mais.
+*/
+console.log(LF + '7 — apoio ao batedor do lateral');
+{
+    const MIN = parseFloat(cfg.match(/apoioMin:\s*([\d.]+)/)[1]);
+    const MAX = parseFloat(cfg.match(/apoioMax:\s*([\d.]+)/)[1]);
+    const QUANTOS = parseInt(cfg.match(/apoioQuantos:\s*(\d+)/)[1], 10);
+
+    if (MIN !== 5 || MAX !== 10) {
+        erro(`a faixa pedida era 5-10 m, o config diz ${MIN}-${MAX}`);
+    } else ok(`faixa ${MIN}-${MAX} m, ${QUANTOS} jogadores`);
+
+    // Batedor na linha lateral direita.
+    const bx = 34, bz = 0;
+    const dist = (a) => Math.hypot(a.x - bx, a.z - bz);
+
+    // Longe: é puxado para o máximo, e no MESMO rumo — o corredor dele.
+    {
+        const px = 5, pz = 20;
+        const a = alvoDeApoioNoLateral(px, pz, bx, bz, MIN, MAX);
+        if (Math.abs(dist(a) - MAX) > 1e-9) {
+            erro(`de 34 m devia vir para ${MAX}, ficou a ${dist(a).toFixed(1)}`);
+        } else ok(`quem está longe vem para ${MAX} m`);
+
+        // O ângulo em relação ao batedor não muda: continua no seu corredor.
+        const angAntes = Math.atan2(pz - bz, px - bx);
+        const angDepois = Math.atan2(a.z - bz, a.x - bx);
+        if (Math.abs(angAntes - angDepois) > 1e-9) {
+            erro('o jogador mudou de rumo — saiu do corredor dele');
+        } else ok('aproxima-se pela mesma linha: mantém o corredor');
+    }
+
+    // Perto de mais: é empurrado para o mínimo, senão fica em cima do batedor.
+    {
+        const a = alvoDeApoioNoLateral(bx - 1.5, bz, bx, bz, MIN, MAX);
+        if (Math.abs(dist(a) - MIN) > 1e-9) {
+            erro(`de 1.5 m devia afastar-se para ${MIN}, ficou a ${dist(a).toFixed(1)}`);
+        } else ok(`quem está em cima do batedor afasta-se para ${MIN} m`);
+    }
+
+    // Já na faixa: não se mexe. Sem isto tremiam todos os frames.
+    {
+        const px = bx - 7, pz = 2;
+        const a = alvoDeApoioNoLateral(px, pz, bx, bz, MIN, MAX);
+        if (a.x !== px || a.z !== pz) {
+            erro('quem já está na faixa não devia ser movido');
+        } else ok('já dentro da faixa: fica onde está');
+    }
+
+    // Em cima do batedor, sem rumo definido: manda-se para DENTRO do campo.
+    {
+        const a = alvoDeApoioNoLateral(bx, bz, bx, bz, MIN, MAX);
+        if (Math.abs(a.x) > Math.abs(bx)) {
+            erro('sem rumo, o jogador foi mandado para FORA do campo');
+        } else if (Math.abs(dist(a) - MIN) > 1e-9) {
+            erro(`devia ficar a ${MIN} m, ficou a ${dist(a).toFixed(1)}`);
+        } else ok('exactamente em cima do batedor: entra para o campo');
+    }
+
+    // E na linha do lado oposto, o "dentro" é o outro lado.
+    {
+        const a = alvoDeApoioNoLateral(-34, 0, -34, 0, MIN, MAX);
+        if (a.x < -34) erro('na linha esquerda foi mandado para fora do campo');
+        else ok('vale nas duas linhas');
+    }
 }
 
 console.log(LF + (falhas === 0

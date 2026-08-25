@@ -59,6 +59,19 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     const rig = { pelvis: null, chest: null, neck: null, lArm: null, rArm: null, lElbow: null, rElbow: null, lHand: null, rHand: null, lLeg: null, rLeg: null, lKnee: null, rKnee: null, lFoot: null, rFoot: null, olhoEsq: null, olhoDir: null };
 
     const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 850);
+    /*
+    QUEM PROJECTA SOMBRA.
+
+    Das 24 pecas do corpo so a BACIA tinha `castShadow` — a sombra no relvado
+    era uma manchinha do tamanho da anca, sem tronco, sem cabeca e sem pernas.
+    Agora as pecas ESTRUTURAIS projectam (tronco, cabeca, bracos, coxas,
+    canelas, chuteiras) e as decorativas nao: o cabelo, as mangas, os calcoes,
+    os meioes, as juntas e as travas das chuteiras estao todos DENTRO de uma
+    peca que ja projecta, e a sombra deles seria a mesma silhueta desenhada
+    duas vezes — custo no shadow pass a troco de nada.
+
+    Em tablets continua tudo desligado, como estava.
+    */
     function criarPeca(geo, mat, castShadow = false) { 
         const m = new THREE.Mesh(geo, mat); 
         m.castShadow = isTouchDevice ? false : castShadow; 
@@ -86,7 +99,7 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     chest.add(criarPeca(new THREE.BoxGeometry(u * 1.45, u * 1.5, u * 0.8), chestMats));
     pelvis.add(chest); rig.chest = chest;
     const neck = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.15, u * 0.35), blockMat); neck.position.y = 0.8; chest.add(neck); rig.neck = neck;
-    const head = criarPeca(new THREE.BoxGeometry(u * 0.8, u * 1.0, u * 0.85), blockMat); head.position.y = 0.575;
+    const head = criarPeca(new THREE.BoxGeometry(u * 0.8, u * 1.0, u * 0.85), blockMat, true); head.position.y = 0.575;
 
     const faceGrp = new THREE.Group(); const faceZ = u * 0.426;
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x2f3640 });
@@ -109,10 +122,10 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     function criarBraco(x) {
         // 0.525 = 0.30 de antes + 0.225 da nova origem do tronco.
         const grp = new THREE.Group(); grp.position.set(x, 0.525, 0);
-        const up = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 1.0, u * 0.35), blockMat); up.position.y = -0.5;
+        const up = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 1.0, u * 0.35), blockMat, true); up.position.y = -0.5;
         const manga = criarPeca(new THREE.BoxGeometry(u * 0.4, u * 0.5, u * 0.4), shirtMat); manga.position.y = 0.25; up.add(manga); grp.add(up);
         const elb = new THREE.Group(); elb.position.y = -1.0; grp.add(elb); elb.add(criarPeca(smallJointGeo, jointMat));
-        const low = criarPeca(new THREE.BoxGeometry(u * 0.3, u * 0.8, u * 0.3), blockMat); low.position.y = -0.4; elb.add(low);
+        const low = criarPeca(new THREE.BoxGeometry(u * 0.3, u * 0.8, u * 0.3), blockMat, true); low.position.y = -0.4; elb.add(low);
         const handG = new THREE.Group(); handG.position.y = -0.8; elb.add(handG);
         const mao = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.4, u * 0.2), blockMat); mao.position.y = -0.2; mao.rotation.y = Math.PI / 2; handG.add(mao);
         grp.rotation.z = x < 0 ? -Math.PI / 16 : Math.PI / 16; chest.add(grp); return { raiz: grp, cotovelo: elb, mao: handG };
@@ -120,15 +133,15 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
 
     function criarPerna(x) {
         const grp = new THREE.Group(); grp.position.set(x, -0.3, 0); grp.add(criarPeca(jointGeo, jointMat));
-        const coxa = criarPeca(new THREE.BoxGeometry(u * 0.45, u * 1.0, u * 0.45), blockMat); coxa.position.y = -0.5;
+        const coxa = criarPeca(new THREE.BoxGeometry(u * 0.45, u * 1.0, u * 0.45), blockMat, true); coxa.position.y = -0.5;
         const shortL = criarPeca(new THREE.BoxGeometry(u * 0.5, u * 0.5, u * 0.5), shortMat); shortL.position.y = 0.25; coxa.add(shortL); grp.add(coxa);
         const joelho = new THREE.Group(); joelho.position.y = -1.0; grp.add(joelho); joelho.add(criarPeca(smallJointGeo, jointMat));
-        const canela = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.9, u * 0.35), blockMat); canela.position.y = -0.45;
+        const canela = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.9, u * 0.35), blockMat, true); canela.position.y = -0.45;
         const meiao = criarPeca(new THREE.BoxGeometry(u * 0.4, u * 0.85, u * 0.4), sockMats); meiao.position.y = 0.0; canela.add(meiao); joelho.add(canela);
         const peG = new THREE.Group(); peG.position.y = -0.9; joelho.add(peG);
 
         const footGeo = new THREE.BoxGeometry(u * 0.45, u * 0.4, u * 1.0); const p = footGeo.attributes.position; for (let i = 0; i < p.count; i++) { if (p.getZ(i) > 0 && p.getY(i) > 0) p.setY(i, p.getY(i) - u * 0.25); } footGeo.computeVertexNormals();
-        const chuteira = criarPeca(footGeo, bootMat); chuteira.position.set(0, -0.2, u * 0.25); peG.add(chuteira);
+        const chuteira = criarPeca(footGeo, bootMat, true); chuteira.position.set(0, -0.2, u * 0.25); peG.add(chuteira);
 
         const studGeo = new THREE.CylinderGeometry(u * 0.03, u * 0.02, u * 0.04, 8);
         const posTravas = [[-u * 0.12, u * 0.25], [u * 0.12, u * 0.25], [-u * 0.12, 0], [u * 0.12, 0], [-u * 0.12, -u * 0.3], [u * 0.12, -u * 0.3]];

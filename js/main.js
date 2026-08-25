@@ -204,6 +204,61 @@ function toggleArbitragem() {
 }
 
 /*
+SOMBRAS ON/OFF.
+
+`shadowMap.enabled` sozinho não chega: o Three guarda o programa compilado de
+cada material e não o recompila só porque a flag do renderer mudou. Sem
+marcar os materiais como sujos, desligar não apaga as sombras já desenhadas e
+voltar a ligar deixa metade da cena sem elas — o modo de falha é ficar num
+estado a meio, que se lê como um bug do jogo e não do botão.
+
+O `needsUpdate` percorre a cena uma vez por clique. É caro, mas isto é uma
+opção de painel: acontece quando alguém carrega, não por frame.
+
+O que NÃO se toca são os `castShadow`/`receiveShadow` das malhas. Esses dizem
+o que cada objecto FAZ com as sombras — a bancada, por exemplo, está
+deliberadamente fora delas (ver createField) — e reescrevê-los aqui perdia
+essas decisões assim que se voltasse a ligar.
+*/
+function toggleSombras() {
+    const r = window.rendererCore;
+    if (!r) return;
+
+    r.shadowMap.enabled = !r.shadowMap.enabled;
+    const on = r.shadowMap.enabled;
+
+    /*
+    E TIRAR A SOMBRA À LUZ, não só ao renderer.
+
+    Com `shadowMap.enabled = false` o Three deixa de ACTUALIZAR o mapa mas não
+    o limpa: os materiais continuam a amostrar o último mapa desenhado e as
+    sombras ficam CONGELADAS no sítio onde estavam quando se desligou — os
+    jogadores andam e as manchas ficam no relvado.
+
+    Pôr `castShadow = false` na luz é o que faz o mapa deixar de existir. Isto
+    é a FONTE de luz, não as malhas: os `castShadow` das malhas dizem o que
+    cada objecto faz com as sombras e continuam intocados.
+    */
+    if (window.dirLightCore) window.dirLightCore.castShadow = on;
+
+    if (window.Match && window.Match.scene) {
+        window.Match.scene.traverse(function (o) {
+            if (!o.material) return;
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            for (let i = 0; i < mats.length; i++) {
+                if (mats[i]) mats[i].needsUpdate = true;
+            }
+        });
+    }
+
+    const b = document.getElementById('btn-sombras');
+    if (b) {
+        b.innerText = 'Sombras: ' + (on ? 'ON' : 'OFF');
+        b.classList.toggle('active', on);
+    }
+}
+
+/*
 Adeptos ON/OFF. São 10 000 bonecos em quatro InstancedMesh (ver js/crowd.js) —
 desligar é útil para medir o custo do resto da cena sem eles.
 
@@ -661,18 +716,44 @@ document.addEventListener("DOMContentLoaded", () => {
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
         dirLight.position.set(50, 100, 40);
         dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = isTouchDevice ? 512 : 1024;
-        dirLight.shadow.mapSize.height = isTouchDevice ? 512 : 1024;
-        
-        const d = 80;
+        /*
+        NITIDEZ DA SOMBRA = texels por metro, e é uma divisão simples:
+        `mapSize / (2*d)`. Estava em 1024 sobre uma área de 160x160 m, ou seja
+        6.4 texels por metro — uma perna de 20 cm ficava em 1.3 texels e a
+        sombra saía uma mancha, mesmo com o corpo todo a projectar.
+
+        O `d` cobre o campo inteiro (106x68, meia-diagonal 63 m), portanto 70
+        chega e sobra; com 2048 dão 14.6 texels por metro, mais do dobro.
+        Baixar o `d` sem baixar a nitidez não era opção: a sombra tem de
+        alcançar a bancada e as balizas, e cortar a área faz as sombras
+        desaparecerem nas pontas do campo.
+
+        Em tablets fica como estava — lá as peças nem projectam (ver
+        criarPeca em pose.js).
+        */
+        dirLight.shadow.mapSize.width = isTouchDevice ? 512 : 2048;
+        dirLight.shadow.mapSize.height = isTouchDevice ? 512 : 2048;
+
+        const d = isTouchDevice ? 80 : 70;
         dirLight.shadow.camera.left = -d;
         dirLight.shadow.camera.right = d;
         dirLight.shadow.camera.top = d;
         dirLight.shadow.camera.bottom = -d;
         dirLight.shadow.camera.near = 10;
         dirLight.shadow.camera.far = 250;
-        dirLight.shadow.bias = -0.0005; 
+        /*
+        O `bias` afasta a sombra da superfície para o chão não se sombrear a si
+        próprio (acne). Está ligado à resolução: com o dobro dos texels, o
+        valor antigo passava a afastar de mais e descolava a sombra dos pés —
+        o boneco parecia a pairar. `normalBias` trata do mesmo problema pela
+        normal, que é o que funciona bem em caixas.
+        */
+        dirLight.shadow.bias = -0.0002;
+        dirLight.shadow.normalBias = 0.02;
 
+        // Guardada para o botão das sombras: desligar só o `shadowMap` do
+        // renderer não chega (ver toggleSombras).
+        window.dirLightCore = dirLight;
         scene.add(dirLight);
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);

@@ -313,6 +313,40 @@ function maosProibidasNoRecuo(recuoTeam, gkTeam) {
     return !!recuoTeam && recuoTeam === gkTeam;
 }
 
+/*
+ONDE SE POE UM COMPANHEIRO NUM LANCAMENTO LATERAL.
+
+Quem repoe nao tinha a quem atirar: os companheiros ficavam nos slots do bloco,
+a vinte e tal metros, e o lateral saia para ninguem. Isto puxa-os para uma
+FAIXA em volta do batedor — nem em cima dele, nem longe de mais.
+
+Move-os ao longo da linha que ja os liga ao batedor, e nao para pontos fixos:
+assim cada um continua no seu corredor (o central pelo eixo, o medio pelo meio,
+o extremo pela ala) e a unica coisa que muda e a distancia. Slots fixos punham
+tres jogadores em leque no mesmo sitio, seja qual for a posicao deles.
+
+Devolve { x, z }. Pura: sem Match, sem THREE.
+*/
+function alvoDeApoioNoLateral(px, pz, bx, bz, distMin, distMax) {
+    const dx = px - bx, dz = pz - bz;
+    const d = Math.hypot(dx, dz);
+
+    // Em cima do batedor, sem direccao definida: manda-se para dentro do campo
+    // (o batedor esta na linha, logo o campo e do lado do x menor em modulo).
+    if (d < 0.001) {
+        const paraDentro = (bx >= 0) ? -1 : 1;
+        return { x: bx + paraDentro * distMin, z: bz };
+    }
+
+    let alvo = d;
+    if (d > distMax) alvo = distMax;
+    else if (d < distMin) alvo = distMin;
+    else return { x: px, z: pz };      // ja esta na faixa: nao se mexe
+
+    const k = alvo / d;
+    return { x: bx + dx * k, z: bz + dz * k };
+}
+
 function alcanceMaximoDoLateral(strength, fraco, forte) {
     const s = Math.max(0, Math.min(100, Number(strength) || 0));
     return fraco + (forte - fraco) * (s / 100);

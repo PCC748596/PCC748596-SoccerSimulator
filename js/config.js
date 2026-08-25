@@ -722,6 +722,24 @@ const ThrowInModel = {
     distanciaAosPes: 9.0,
 
     /*
+    APOIO AO BATEDOR. Os companheiros ficavam nos slots do bloco, a vinte e
+    tal metros, e o lateral saia para ninguem — via-se no ecra o batedor
+    sozinho com meio campo a frente.
+
+    `apoioQuantos` mais proximos sao puxados para a faixa `apoioMin`..
+    `apoioMax` em volta dele. Tres e o numero que cobre as opcoes sem esvaziar
+    o resto do campo: perto de uma linha lateral sao tipicamente o central, o
+    medio e o extremo desse lado, que e quem la esta.
+
+    A faixa e a distancia util de um lateral curto: abaixo de `apoioMin` estao
+    em cima do batedor e nao abrem linha nenhuma; acima de `apoioMax` ja e um
+    lancamento longo, que tem os seus proprios problemas de precisao.
+    */
+    apoioQuantos: 3,
+    apoioMin: 5.0,
+    apoioMax: 10.0,
+
+    /*
     ERRO DE EXECUÇÃO, por TEC de quem repõe. Não havia nenhum: a direcção saía
     exacta para o alvo e a única variação era o sorteio uniforme da elevação,
     que muda a trajectória mas não a pontaria. Um jogador de TEC 20 repunha tão
@@ -3381,6 +3399,28 @@ const BallControl = {
     peitoYMax: 1.35,      // acima disto é cabeça (ver ALTURA_CABECA), não peito
     peitoBase: 0.45,      // probabilidade base de amortecer bem (só animação/stats)
     peitoDur: 0.55,       // duração (s) do gesto
+
+    /*
+    QUANTAS MATADAS NO PEITO SEGUIDAS, sem a bola assentar no chão.
+
+    O anti ping-pong aéreo já existia para a CABEÇA (HeaderModel.
+    maxHeadersSeguidos) e não contava os peitos — e era pelo peito que o jogo
+    encravava. O retrato de um encrave: bola parada NO AR a 1.35 m (o próprio
+    `peitoYMax`) com velocidade zero, entre dois jogadores a 1.2 m dela, ambos
+    a meio do gesto.
+
+    O mecanismo: o `colarBolaAoPeito` fixa a bola e zera-lhe a velocidade
+    enquanto o `peitoCola` durar; ao largar, ela sai a `peitoVelYBoa`, que a
+    TEC 63 são -0.19 m/s — cai tão devagar que não sai da faixa 1.15-1.35
+    antes de o outro jogador a matar no peito outra vez. Ninguém a domina e
+    ninguém a vai buscar, porque enquanto o gesto dura o BT trata-os como
+    ocupados.
+
+    Ao fim destes, ninguém mais mata no peito até a bola tocar o relvado.
+    Mesmo número do cabeceio, e pela mesma razão: dois toques seguidos é uma
+    disputa, três é um ciclo.
+    */
+    maxPeitosSeguidos: 2,
 
     /*
     Distância a que a bola fica ADIANTADA depois da matada, por TEC. O máximo

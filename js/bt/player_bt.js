@@ -1553,6 +1553,50 @@ do goleiro", um pouco mais adiantado (ver setupSetPiece), e chamar changeState
 aqui apagaria o dynamicTarget calculado no setup. Chegando ao alvo, match.js
 muda para SET_PIECE_WAIT.
 */
+/*
+APROXIMAR-SE DO BATEDOR NUM LATERAL.
+
+Os companheiros ficavam nos slots do bloco, a vinte e tal metros, e o lateral
+saía para ninguém. Os `apoioQuantos` mais próximos do batedor são puxados para
+a faixa `apoioMin`..`apoioMax` (ver ThrowInModel).
+
+ESCRITO NO NÍVEL 3 e não no setupSetPiece, de propósito: o nível 2 reescreve o
+`dynamicTarget` de toda a gente TODOS os frames, e um alvo posto uma vez no
+setup era apagado no frame seguinte sem deixar rasto. A ordem por frame é
+1 -> 2 -> 3, portanto quem escreve por último é quem manda.
+
+Só a equipa QUE REPÕE: os adversários têm a sua própria regra (ficam a 2.5 m
+da bola, ver setupSetPiece) e puxá-los para aqui era pô-los a infringi-la.
+*/
+function aproximarNoLateral(p) {
+    const T = (typeof ThrowInModel !== 'undefined') ? ThrowInModel : null;
+    if (!T || typeof alvoDeApoioNoLateral !== 'function') return;
+
+    const batedor = Match.setPieceTaker;
+    if (!batedor || batedor === p || batedor.team !== p.team) return;
+    if (p.role === 'gk') return;
+
+    /*
+    Os N mais próximos, medidos ao BATEDOR. Recalculado por frame e não
+    guardado: os jogadores estão a mover-se, e uma lista fixada no início
+    deixava de fora quem entretanto ficou mais perto.
+    */
+    const meus = (p.team === 'TeamA') ? Match.players : Match.opponents;
+    const d = p.model.position.distanceTo(batedor.model.position);
+    let maisPertoQueEu = 0;
+    for (const outro of meus) {
+        if (outro === p || outro === batedor || outro.role === 'gk') continue;
+        if (outro.model.position.distanceTo(batedor.model.position) < d) maisPertoQueEu++;
+    }
+    if (maisPertoQueEu >= T.apoioQuantos) return;
+
+    const alvo = alvoDeApoioNoLateral(
+        p.model.position.x, p.model.position.z,
+        batedor.model.position.x, batedor.model.position.z,
+        T.apoioMin, T.apoioMax);
+    p.dynamicTarget.set(alvo.x, ALTURA_BASE_Y, alvo.z);
+}
+
 function tratarBolaParada(p) {
     const fsm = p.fsm;
     const s = fsm.currentState;
@@ -1570,11 +1614,11 @@ function tratarBolaParada(p) {
         // decide nada até a bola sair.
         if (s !== 'SET_PIECE_WAIT') fsm.changeState('SET_PIECE_WAIT');
     } else if (Match.state === 'THROW_IN') {
-        // O batedor está em LATERAL (pose + gesto) e não passa por aqui; os
-        // outros continuam a posicionar-se normalmente pelo nível 2.
+        // O batedor está em LATERAL (pose + gesto) e não passa por aqui.
         if (s !== 'LATERAL' && s !== 'MOVE_TO_POS') {
             fsm.changeState('MOVE_TO_POS');
         }
+        aproximarNoLateral(p);
     } else if (Match.state === 'GOAL') {
         if (s !== 'MOVE_TO_POS') {
             fsm.changeState('IDLE');
