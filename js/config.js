@@ -548,6 +548,26 @@ const CamisolaTipografia = {
     pesoNome: 'bold'
 };
 
+/*
+=============================================================================
+CANTO DO CAMPO — o quarto de circulo e a bandeirinha
+=============================================================================
+Faltavam os dois. O arco de canto tem 1 m de raio por regulamento, e a
+bandeirinha e obrigatoria em campo oficial.
+
+A bandeira e um plano com `DoubleSide`: de um lado so, desaparecia consoante
+a camara — e a camara deste jogo anda a toda a volta.
+*/
+const CornerFlag = {
+    raioArco: 1.0,        // regulamento
+    alturaPoste: 1.5,     // regulamento: minimo 1.5 m
+    raioPoste: 0.03,
+    corPoste: 0xf5f5f5,
+    larguraBandeira: 0.42,
+    alturaBandeira: 0.30,
+    corBandeira: 0xf2c400
+};
+
 const LateralPose = {
     chest: -0.22,        // tronco em arco para trás, a armar o lançamento
     pelvisX: -0.06,

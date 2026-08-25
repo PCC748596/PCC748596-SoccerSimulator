@@ -628,6 +628,62 @@ const Match = {
         const circ = new THREE.Mesh(new THREE.RingGeometry(9.15 - esp / 2, 9.15 + esp / 2, 64), matLinha); circ.rotation.x = -Math.PI / 2; circ.position.y = 0.02; campoGrupo.add(circ);
         const ptC = new THREE.Mesh(new THREE.CircleGeometry(0.2, 16), matLinha); ptC.rotation.x = -Math.PI / 2; ptC.position.y = 0.02; campoGrupo.add(ptC);
 
+        /*
+        OS QUATRO CANTOS: quarto de círculo e bandeirinha.
+
+        O arco é o mesmo `RingGeometry` deitado do arco da grande área; o que
+        muda é o `thetaStart`, que tem de apontar o quarto para DENTRO do
+        campo. Essa conta saiu para `arcoDeCanto` (utils.js) porque o `z` fica
+        invertido quando o anel é deitado — é o género de sinal que se acerta
+        por tentativa e se volta a perder na alteração seguinte.
+
+        A bandeira fica virada para o meio do campo e é `DoubleSide`: de um
+        lado só, desaparecia consoante a câmara, e esta anda à volta toda.
+        */
+        const CF = CornerFlag;
+        const matPosteCanto = new THREE.MeshStandardMaterial({ color: CF.corPoste, roughness: 0.6 });
+        const matBandeira = new THREE.MeshStandardMaterial({
+            color: CF.corBandeira, roughness: 0.9, side: THREE.DoubleSide
+        });
+
+        [1, -1].forEach(sx => [1, -1].forEach(sz => {
+            const cx = sx * larg / 2, cz = sz * comp / 2;
+
+            const quarto = new THREE.Mesh(
+                new THREE.RingGeometry(CF.raioArco - esp / 2, CF.raioArco + esp / 2,
+                    16, 1, arcoDeCanto(sx, sz), Math.PI / 2),
+                matLinha);
+            quarto.rotation.x = -Math.PI / 2;
+            quarto.position.set(cx, 0.02, cz);
+            quarto.receiveShadow = true;
+            campoGrupo.add(quarto);
+
+            const poste = new THREE.Mesh(
+                new THREE.CylinderGeometry(CF.raioPoste, CF.raioPoste, CF.alturaPoste, 8),
+                matPosteCanto);
+            poste.position.set(cx, CF.alturaPoste / 2, cz);
+            poste.castShadow = true;
+            campoGrupo.add(poste);
+
+            /*
+            A bandeira sai do poste para DENTRO do campo (-sx), no topo.
+
+            SEM rotação nenhuma: o `PlaneGeometry` já nasce no plano XY, ou
+            seja com a largura em X e a altura em Y — que é exactamente um pano
+            preso ao poste e a apontar para dentro ao longo de X. Rodá-lo em Y
+            punha-o a estender-se em Z enquanto a posição o desloca em X, e a
+            bandeira ficava ao lado do poste em vez de presa a ele.
+            */
+            const bandeira = new THREE.Mesh(
+                new THREE.PlaneGeometry(CF.larguraBandeira, CF.alturaBandeira), matBandeira);
+            bandeira.position.set(
+                cx - sx * (CF.larguraBandeira / 2 + CF.raioPoste),
+                CF.alturaPoste - CF.alturaBandeira / 2 - 0.05,
+                cz);
+            bandeira.castShadow = true;
+            campoGrupo.add(bandeira);
+        }));
+
         const cvsRede = document.createElement('canvas'); cvsRede.width = 32; cvsRede.height = 32; const ctxRede = cvsRede.getContext('2d');
         ctxRede.fillStyle = 'rgba(240, 240, 245, 0.35)'; ctxRede.fillRect(0, 0, 32, 32);
         ctxRede.strokeStyle = 'rgba(255, 255, 255, 0.9)'; ctxRede.lineWidth = 1.5; ctxRede.strokeRect(0, 0, 32, 32);

@@ -327,6 +327,25 @@ tres jogadores em leque no mesmo sitio, seja qual for a posicao deles.
 
 Devolve { x, z }. Pura: sem Match, sem THREE.
 */
+/*
+ONDE COMECA O QUARTO DE CIRCULO DE UM CANTO.
+
+O arco de canto e um quarto de circulo virado PARA DENTRO do campo. A conta
+nao e obvia porque o `RingGeometry` e desenhado no plano XY e depois deitado
+com `rotation.x = -PI/2`: um ponto em angulo t, que no plano seria
+(cos t, sin t), acaba em (x = cos t, z = -sin t) — o z fica INVERTIDO.
+
+Dai a tabela: para cada canto, o `thetaStart` cujo quarto (t ate t + PI/2)
+cai no quadrante que aponta para o meio do campo. `sx` e `sz` sao os sinais
+das coordenadas do canto.
+
+Devolve o angulo inicial em radianos; o comprimento e sempre PI/2.
+*/
+function arcoDeCanto(sx, sz) {
+    if (sx > 0) return (sz > 0) ? Math.PI / 2 : Math.PI;
+    return (sz > 0) ? 0 : -Math.PI / 2;
+}
+
 function alvoDeApoioNoLateral(px, pz, bx, bz, distMin, distMax) {
     const dx = px - bx, dz = pz - bz;
     const d = Math.hypot(dx, dz);
