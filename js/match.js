@@ -1398,9 +1398,17 @@ const Match = {
         this.kickoffPendingPassToDef = true;
     },
 
+    /*
+    Cronómetro do próprio update, ligado por `Match.profiling = true` na
+    consola. Ficava sempre ligado e despejava uma linha por segundo na
+    consola, para sempre — o que enterra tudo o resto que lá se queira ver
+    (avisos do lote, expulsões, erros).
+    */
+    profiling: false,
+
     update: function (dt) {
         if (!this._pf_stats) this._pf_stats = { count: 0, time: 0 };
-        const t0 = performance.now();
+        const t0 = this.profiling ? performance.now() : 0;
         for (let p of this.players) { p.debugPoints = null; }
         for (let p of this.opponents) { p.debugPoints = null; }
         this.delta = dt;
@@ -1732,13 +1740,15 @@ const Match = {
         }
 
         this.updateCrowd(dt);
-        const t1 = performance.now();
-        this._pf_stats.time += (t1 - t0);
-        this._pf_stats.count++;
-        if (this._pf_stats.count === 60) {
-            console.log("Avg Match.update ms:", this._pf_stats.time / 60);
-            this._pf_stats.count = 0;
-            this._pf_stats.time = 0;
+
+        if (this.profiling) {
+            this._pf_stats.time += (performance.now() - t0);
+            this._pf_stats.count++;
+            if (this._pf_stats.count === 60) {
+                console.log('Avg Match.update ms:', this._pf_stats.time / 60);
+                this._pf_stats.count = 0;
+                this._pf_stats.time = 0;
+            }
         }
     },
 
