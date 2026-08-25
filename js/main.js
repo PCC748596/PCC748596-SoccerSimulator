@@ -204,7 +204,7 @@ function toggleArbitragem() {
 }
 
 /*
-Adeptos ON/OFF. São 15 000 bonecos em quatro InstancedMesh (ver js/crowd.js) —
+Adeptos ON/OFF. São 10 000 bonecos em quatro InstancedMesh (ver js/crowd.js) —
 desligar é útil para medir o custo do resto da cena sem eles.
 
 O estado vive no próprio botão e não no `Crowd`, porque o `Crowd` não guarda

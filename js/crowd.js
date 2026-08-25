@@ -1,6 +1,6 @@
 /*
 =============================================================================
-CROWD — 15 000 adeptos com o modelo dos jogadores, que reagem ao jogo
+CROWD — 10 000 adeptos com o modelo dos jogadores, que reagem ao jogo
 =============================================================================
 O público era um boneco simplificado próprio (`createSpectatorGeometry`, seis
 caixas fundidas numa peça só e uma cor por adepto). Aqui usa-se o MODELO DOS
@@ -19,7 +19,7 @@ instância. Cada um leva a sua cor: o adepto 7 tem a camisa vermelha no mesh das
 camisas e a pele morena no mesh das peles, e as quatro peças coincidem no
 espaço porque partilham a matriz.
 
-Custo: 4 draw calls para 15 000 adeptos, e a geometria é construída UMA vez.
+Custo: 4 draw calls para 10 000 adeptos, e a geometria é construída UMA vez.
 
 -----------------------------------------------------------------------------
 O PROBLEMA DO MOVIMENTO, e como se resolve
@@ -31,7 +31,7 @@ essa matriz antes de ser fundida. A hierarquia existe só durante a construção
 é deitada fora.
 
 Sem rig não há como animar do lado da CPU sem reescrever as matrizes de
-instância — 15 000 × 4 malhas = 60 000 `setMatrixAt` por frame. Está fora de
+instância — 10 000 × 4 malhas = 40 000 `setMatrixAt` por frame. Está fora de
 questão.
 
     TODO O MOVIMENTO VIVE NO VERTEX SHADER.
@@ -50,7 +50,7 @@ vértice com as outras poses, e o shader interpola.
 Quem está de pé sai de uma COMPARAÇÃO no shader, não de um valor guardado por
 instância: cada adepto tem um limiar fixo, e levanta-se se o limiar for menor
 que a fracção que a claque tem no momento. Assim mudar de "ninguém de pé" para
-"metade de pé" custa DOIS uniforms, não 15 000 escritas. As matrizes de
+"metade de pé" custa DOIS uniforms, não 10 000 escritas. As matrizes de
 instância nunca mudam e continuam `StaticDrawUsage`.
 
 Repouso, expectativa e golo são o MESMO mecanismo com três valores de fracção.
@@ -59,7 +59,7 @@ Não há casos especiais.
 */
 
 const CrowdModel = {
-    total: 15000,
+    total: 10000,
 
     /*
     Cores das duas claques, iguais às camisolas das equipas (ver createTeams em
@@ -85,7 +85,7 @@ const CrowdModel = {
     cabelos: ['#2f2f2f', '#1a1a1a', '#5b3a1e', '#8b5a2b', '#c9a227', '#eeeeee', '#7a4a2b'],
 
     /*
-    Variação por adepto: sem isto 15 000 bonecos com a mesma cor exacta leem-se
+    Variação por adepto: sem isto 10 000 bonecos com a mesma cor exacta leem-se
     como um padrão impresso, não como gente. Multiplica-se a cor por um factor
     à volta de 1.
     */
@@ -433,8 +433,15 @@ const Crowd = {
                 }
                 base[canal].setAttribute('aPos' + nome,
                     new THREE.BufferAttribute(g.attributes.position.array, 3));
-                base[canal].setAttribute('aNor' + nome,
-                    new THREE.BufferAttribute(g.attributes.normal.array, 3));
+                /*
+                A pose idle não leva normal: só inclina o tronco uns graus, e a
+                normal da pose sentada serve. Cada attribute custa um dos 16
+                slots do hardware, e este era o mais fácil de dispensar.
+                */
+                if (nome !== 'Idle') {
+                    base[canal].setAttribute('aNor' + nome,
+                        new THREE.BufferAttribute(g.attributes.normal.array, 3));
+                }
             }
         }
         return base;
@@ -460,7 +467,7 @@ const Crowd = {
     mesma pose nos quatro canais, e a maneira mais segura de garantir isso é os
     quatro shaders lerem os MESMOS objectos.
 
-    Os vectores por claque são `[A, B]`, indexados pelo `aClaque` da instância.
+    Os vectores por claque são `[A, B]`, indexados pelo `aAdepto.w` da instância.
     */
     _criarUniforms() {
         return {
@@ -481,6 +488,14 @@ const Crowd = {
     /*
     Enxerta o morph e a animação no MeshStandardMaterial.
 
+    O ORÇAMENTO DE ATTRIBUTES É 16, e é apertado. Cada `attribute` ocupa um
+    slot, e a `instanceMatrix` sozinha come QUATRO (é uma mat4); com
+    `instanceColor`, `position` e `normal` já vão sete antes de eu escrever a
+    primeira linha. Os quatro valores por adepto vão por isso num `vec4` só, e
+    a pose idle não tem normal própria. Passar dos 16 dá
+    `Too many attributes` no link do programa e o público desaparece — já
+    aconteceu. Ver o teste do orçamento em tests/crowd_vida.test.js.
+
     O GLSL AQUI DENTRO É ASCII, comentários incluídos. O código-fonte de GLSL
     ES 1.00 é ASCII, e o compilador do Windows (ANGLE) recusa qualquer byte
     fora disso — um `ç` num comentário chega para o programa não compilar e as
@@ -500,13 +515,13 @@ const Crowd = {
 attribute vec3 aPosIdle;
 attribute vec3 aPosDePe;
 attribute vec3 aPosFesta;
-attribute vec3 aNorIdle;
 attribute vec3 aNorDePe;
 attribute vec3 aNorFesta;
-attribute float aLimiar;
-attribute float aFase;
-attribute float aRitmo;
-attribute float aClaque;
+// Os quatro valores por adepto num vec4 e nao em quatro floats: cada
+// attribute ocupa um slot dos 16 que o hardware da, e a instanceMatrix
+// sozinha come quatro. Ver o comentario em _aplicarShader.
+// x = limiar, y = fase, z = ritmo, w = claque (0 = A, 1 = B).
+attribute vec4 aAdepto;
 uniform float uTempo;
 uniform float uDurTransicao;
 uniform float uAmpIdle;
@@ -524,7 +539,7 @@ uniform vec2 uFesta;
 // (Comentarios sem acentos de proposito: o GLSL e ASCII, ver _aplicarShader.)
 void crowdPesos(out float dePe, out float w1, out float w2,
                 out float osc, out float festa) {
-    bool claqueA = aClaque < 0.5;
+    bool claqueA = aAdepto.w < 0.5;
     float fAnt = claqueA ? uFracAnt.x : uFracAnt.y;
     float fNova = claqueA ? uFracNova.x : uFracNova.y;
     float tTroca = claqueA ? uTempoTroca.x : uTempoTroca.y;
@@ -532,8 +547,8 @@ void crowdPesos(out float dePe, out float w1, out float w2,
 
     // O estado sai de uma comparacao com o limiar fixo do adepto: e isso que
     // deixa mudar a bancada inteira com dois uniforms.
-    float antes = step(aLimiar, fAnt);
-    float depois = step(aLimiar, fNova);
+    float antes = step(aAdepto.x, fAnt);
+    float depois = step(aAdepto.x, fNova);
     float k = clamp((uTempo - tTroca) / max(uDurTransicao, 0.0001), 0.0, 1.0);
     dePe = mix(antes, depois, smoothstep(0.0, 1.0, k));
 
@@ -542,7 +557,7 @@ void crowdPesos(out float dePe, out float w1, out float w2,
     w1 = clamp(s, 0.0, 1.0);
     w2 = clamp(s - 1.0, 0.0, 1.0);
 
-    osc = 0.5 + 0.5 * sin(uTempo * uRitmoIdle * aRitmo + aFase);
+    osc = 0.5 + 0.5 * sin(uTempo * uRitmoIdle * aAdepto.z + aAdepto.y);
 }
 `;
 
@@ -558,7 +573,7 @@ void crowdPesos(out float dePe, out float w1, out float w2,
     crowdPos.y += uBobDePe * w1 * (1.0 - festa) * (osc - 0.5);
     // Salto do golo, so a quem esta de pe.
     crowdPos.y += uSalto * festa * dePe *
-        abs(sin(uTempo * uRitmoSalto * aRitmo + aFase));
+        abs(sin(uTempo * uRitmoSalto * aAdepto.z + aAdepto.y));
 
     vec3 transformed = crowdPos;
 `;
@@ -568,7 +583,8 @@ void crowdPesos(out float dePe, out float w1, out float w2,
     crowdPesos(nDePe, nW1, nW2, nOsc, nFesta);
     vec3 crowdNor = mix(normal, aNorDePe, nW1);
     crowdNor = mix(crowdNor, aNorFesta, nW2);
-    crowdNor = mix(crowdNor, aNorIdle, nOsc * uAmpIdle * (1.0 - nW1));
+    // A pose idle nao tem normal propria: inclina o tronco uns graus e a
+    // normal da pose sentada serve. Um attribute a menos, e sao contados.
     vec3 objectNormal = normalize(crowdNor);
 `;
 
@@ -620,10 +636,7 @@ void crowdPesos(out float dePe, out float w1, out float w2,
         portanto os arrays são preenchidos uma vez e partilhados pelas quatro
         geometrias.
         */
-        const aLimiar = new Float32Array(n);
-        const aFase = new Float32Array(n);
-        const aRitmo = new Float32Array(n);
-        const aClaque = new Float32Array(n);
+        const aAdepto = new Float32Array(n * 4);
 
         for (const canal of canais) {
             const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.0 });
@@ -644,10 +657,7 @@ void crowdPesos(out float dePe, out float w1, out float w2,
             a caixa certa.
             */
             m.frustumCulled = false;
-            geos[canal].setAttribute('aLimiar', new THREE.InstancedBufferAttribute(aLimiar, 1));
-            geos[canal].setAttribute('aFase', new THREE.InstancedBufferAttribute(aFase, 1));
-            geos[canal].setAttribute('aRitmo', new THREE.InstancedBufferAttribute(aRitmo, 1));
-            geos[canal].setAttribute('aClaque', new THREE.InstancedBufferAttribute(aClaque, 1));
+            geos[canal].setAttribute('aAdepto', new THREE.InstancedBufferAttribute(aAdepto, 4));
             meshes[canal] = m;
         }
 
@@ -707,10 +717,10 @@ void crowdPesos(out float dePe, out float w1, out float w2,
             A fase e o ritmo dessincronizam: sem eles 7 500 pessoas saltavam
             exactamente ao mesmo tempo, que lê como um único objecto a pulsar.
             */
-            aLimiar[i] = rnd();
-            aFase[i] = rnd() * Math.PI * 2;
-            aRitmo[i] = 0.85 + rnd() * 0.30;
-            aClaque[i] = (claque === 'A') ? 0 : 1;
+            aAdepto[i * 4 + 0] = rnd();
+            aAdepto[i * 4 + 1] = rnd() * Math.PI * 2;
+            aAdepto[i * 4 + 2] = 0.85 + rnd() * 0.30;
+            aAdepto[i * 4 + 3] = (claque === 'A') ? 0 : 1;
 
             meshes.camisa && meshes.camisa.setColorAt(i, variar(eq.camisa));
             meshes.calcao && meshes.calcao.setColorAt(i, variar(eq.calcao));
@@ -724,10 +734,7 @@ void crowdPesos(out float dePe, out float w1, out float w2,
             meshes[canal].instanceMatrix.needsUpdate = true;
             if (meshes[canal].instanceColor) meshes[canal].instanceColor.needsUpdate = true;
             const g = meshes[canal].geometry;
-            g.attributes.aLimiar.needsUpdate = true;
-            g.attributes.aFase.needsUpdate = true;
-            g.attributes.aRitmo.needsUpdate = true;
-            g.attributes.aClaque.needsUpdate = true;
+            g.attributes.aAdepto.needsUpdate = true;
             meshes[canal].count = n;
             scene.add(meshes[canal]);
         }

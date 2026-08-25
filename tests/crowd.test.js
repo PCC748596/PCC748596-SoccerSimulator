@@ -1,5 +1,5 @@
 /*
-Multidão: 15 000 adeptos com o modelo dos jogadores, sentados, em
+Multidão: 10 000 adeptos com o modelo dos jogadores, sentados, em
 InstancedMesh.
 
 Corre o `js/crowd.js` a sério com o `three` de node, sobre lugares sintéticos
@@ -217,4 +217,4 @@ if (falhas > 0) {
     console.error(`\nFALHOU: ${falhas} casos.`);
     process.exit(1);
 }
-console.log('\nOK: 15 000 adeptos sentados, em 4 InstancedMesh, com as duas claques no sítio.');
+console.log('\nOK: 10 000 adeptos sentados, em 4 InstancedMesh, com as duas claques no sítio.');
