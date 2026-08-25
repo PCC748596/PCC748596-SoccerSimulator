@@ -309,31 +309,59 @@ function pickBlocker(bb) {
     bb.blocker = bestBlocker;
 }
 
+/*
+Esta equipa manda alguém à bola?
+
+Função pura, à parte, porque foi aqui que se perdeu a bola durante 25 segundos
+em quatro dos vinte jogos de um lote: as duas guardas abaixo, cada uma
+sensata sozinha, DESLIGAVAM AS DUAS EQUIPAS AO MESMO TEMPO.
+
+O caso: bola SOLTA no terço ofensivo do TeamA, posse nominal do TeamB.
+  - o TeamB não perseguia porque "está a atacar" — mas não tinha portador
+    nenhum, a bola estava parada no chão;
+  - o TeamA não perseguia porque a bola estava no seu campo de ataque, e sem
+    pressão alta não se avança para lá.
+
+Ninguém ia buscá-la. O vigia do js/simulate.js apanhou-o com a bola imóvel
+perto da linha e os 22 jogadores em MOVE_TO_POS, MARKING e SUPPORT_PASS — nem
+um único a perseguir.
+
+    COM A BOLA SOLTA, AS DUAS GUARDAS NÃO SE APLICAM.
+
+É o que o futebol faz: bola no chão sem dono, vai-se buscar, esteja onde
+estiver. As guardas continuam a valer para bola COM portador, que é o caso
+que elas foram escritas para tratar (não subir o bloco para pressionar quem
+tem a bola).
+*/
+function deveMandarChaser(o) {
+    // Guarda-redes com a bola: não se vai lá.
+    if (o.gkTemBola) return false;
+
+    if (o.bolaSolta) return true;
+
+    if (o.isAttacking) return false;
+
+    // Sem pressão alta, a perseguição activa é só no próprio campo de defesa.
+    if (o.pressaoAlta) return true;
+    return !(o.bolaZ * o.dir > 0);
+}
+
 function pickChaser(bb) {
-    if (bb.isAttacking) { bb.chaser = null; return; }
-
-    if (bb.oppCarrier && bb.oppCarrier.role === 'gk') {
-        bb.chaser = null;
-        return;
-    }
-    if (bb.carrier && bb.carrier.role === 'gk') {
-        bb.chaser = null;
-        return;
-    }
-
     const ballPos = Match.ball.position;
+    const bolaSolta = !Match.ballCarrier;
 
-    // No Defensive Pressure Balanceado (e Low), perseguição ativa e roubo de bola
-    // acontecem EXCLUSIVAMENTE no campo de defesa (ballPos.z * bb.dir <= 0).
-    // No campo de ataque, a equipa não avança para roubar bola nem manda chaser;
-    // mantém a linha e marca à distância acompanhando a jogada (a não ser em High Press).
-    if (typeof Tatics !== 'undefined' && Tatics.pressaoDefensiva !== 'high' && (ballPos.z * bb.dir > 0)) {
-        bb.chaser = null;
-        return;
-    }
+    const podeIr = deveMandarChaser({
+        isAttacking: bb.isAttacking,
+        bolaSolta: bolaSolta,
+        bolaZ: ballPos.z,
+        dir: bb.dir,
+        pressaoAlta: (typeof Tatics !== 'undefined' && Tatics.pressaoDefensiva === 'high'),
+        gkTemBola: (bb.oppCarrier && bb.oppCarrier.role === 'gk') ||
+            (bb.carrier && bb.carrier.role === 'gk')
+    });
+    if (!podeIr) { bb.chaser = null; return; }
 
     const prevChaser = bb.chaser;
-    const bolaSolta = !Match.ballCarrier;
 
     const candidatos = bb.outfield.map(p => {
         let score;
