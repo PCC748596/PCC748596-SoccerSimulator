@@ -132,6 +132,69 @@ class Condition extends BTNode {
 }
 
 // Acção. Se a função não devolver nada, assume-se SUCCESS.
+/*
+=============================================================================
+QUE RAMO DA ARVORE E QUE DECIDE
+=============================================================================
+Sem isto, saber porque um jogador faz o que faz e deduzir a partir da ordem
+dos ramos — e deduzir mal sai caro: uma alteracao ao `ConduzirEmEspaco`
+custou um lote inteiro para se descobrir que a conducao nem vinha desse ramo.
+
+Uma ACCAO executada e uma decisao tomada. Contam-se duas coisas, porque
+respondem a perguntas diferentes:
+
+    frames    quanto TEMPO aquela folha mandou no jogador. Uma conducao de
+              3 s conta 180 vezes.
+    entradas  quantas VEZES a decisao foi tomada de novo. A mesma conducao
+              conta uma.
+
+Foi a mesma licao da tabela `permanencia`: o total de frames nao distingue
+mil decisoes curtas de uma decisao longa, e as duas pedem correccoes opostas.
+
+Desligado por omissao. So o lote o liga (ver js/simulate.js): no jogo normal
+sao 22 jogadores x 60 fps a escrever num objecto, para ninguem ler.
+=============================================================================
+*/
+const BTStats = {
+    activo: false,
+    porAccao: {},
+
+    reset() { this.porAccao = {}; return this; },
+
+    contar(nome, p) {
+        let e = this.porAccao[nome];
+        if (!e) e = this.porAccao[nome] = { frames: 0, entradas: 0 };
+        e.frames++;
+        /*
+        `entradas` conta a TRANSICAO, e por isso precisa do ultimo ramo deste
+        jogador. Guardado nele proprio: um contador global nao distinguiria
+        onze jogadores a alternar entre dois ramos de uma pessoa a mudar onze
+        vezes.
+        */
+        if (p && p.ultimaAccaoBT !== nome) {
+            e.entradas++;
+            p.ultimaAccaoBT = nome;
+        }
+    },
+
+    resumo() {
+        const linhas = [];
+        let totalFrames = 0;
+        for (const nome in this.porAccao) totalFrames += this.porAccao[nome].frames;
+        for (const nome in this.porAccao) {
+            const e = this.porAccao[nome];
+            linhas.push({
+                accao: nome,
+                entradas: e.entradas,
+                frames: e.frames,
+                pctTempo: totalFrames ? +(100 * e.frames / totalFrames).toFixed(1) : 0
+            });
+        }
+        linhas.sort((a, b) => b.entradas - a.entradas);
+        return linhas;
+    }
+};
+
 class Action extends BTNode {
     constructor(name, fn) {
         super(name);
@@ -140,6 +203,8 @@ class Action extends BTNode {
 
     tick(bb) {
         const status = this.fn(bb);
+        // Ver BTStats acima. O `bb` e o contexto do jogador (ctx.p).
+        if (BTStats.activo) BTStats.contar(this.name, bb && bb.p);
         return this.trace(bb, status === undefined ? BT.SUCCESS : status);
     }
 }

@@ -40,14 +40,19 @@ const iSemBola = src.indexOf("    seq('SemBola',");
 if (iSemBola < 0) throw new Error('seq(SemBola) nao encontrado');
 const bloco = src.slice(iSemBola);
 
-// Nomes dos seq/act pela ordem em que aparecem no ficheiro.
+/*
+So os RAMOS (`seq`), pela ordem em que aparecem. Os `act` de dentro de cada
+ramo nao entram — sao a accao, nao a prioridade — e o `sel` tambem nao, que
+agrupa e nao decide.
+
+O fallback `act('ocuparPosicao')` e a excepcao: e um act SOLTO no topo do
+selector, sem seq a envolve-lo, e faz parte da ordem. Vai a lista a mao.
+*/
 const nomes = [];
-const re = /\b(seq|sel|act)\('([A-Za-z]+)'/g;
+const re = /\bseq\('([A-Za-z]+)'/g;
 let m;
-while ((m = re.exec(bloco)) !== null) {
-    if (m[1] === 'sel') continue;
-    nomes.push(m[2]);
-}
+while ((m = re.exec(bloco)) !== null) nomes.push(m[1]);
+if (/\bact\('ocuparPosicao'/.test(bloco)) nomes.push('ocuparPosicao');
 
 console.log(LF + '1 — a ordem das folhas nao mudou');
 {

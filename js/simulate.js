@@ -583,6 +583,14 @@ const Sim = {
 
         const desvioStats = criarDesvioStats();
         const permanenciaStats = criarPermanenciaStats();
+
+        /*
+        Contagem de decisoes por ramo da arvore (ver BTStats em bt/core.js).
+        Ligada so aqui: no jogo normal seriam 22 jogadores x 60 fps a escrever
+        num objecto que ninguem le.
+        */
+        const contarRamos = (typeof BTStats !== 'undefined');
+        if (contarRamos) { BTStats.reset(); BTStats.activo = true; }
         const vigia = criarVigia();
         const estiloStats = calibrarEstilos ? criarEstiloStats() : null;
         const estilosAnteriores = calibrarEstilos ? forcarEstilosLigados() : null;
@@ -689,6 +697,13 @@ const Sim = {
             console.table(relatorioDesvios);
         }
 
+        if (contarRamos) BTStats.activo = false;
+        const relatorioRamos = contarRamos ? BTStats.resumo() : null;
+        if (relatorioRamos && relatorioRamos.length) {
+            console.log('Sim: decisoes por ramo da arvore (quem manda no jogador)');
+            console.table(relatorioRamos);
+        }
+
         const relatorioPermanencia = resumirPermanencia(permanenciaStats);
         if (relatorioPermanencia.length) {
             console.log('Sim: permanência contínua por estado da FSM (episódios, não frames)');
@@ -727,6 +742,12 @@ const Sim = {
             passes: relatorioPasses,
             desvios: relatorioDesvios,
             permanencia: relatorioPermanencia,
+            /*
+            Que ramo da arvore ganhou a decisao, e quantas vezes. `entradas` e
+            o numero de decisoes; `frames` e quanto tempo cada uma mandou. Ver
+            BTStats em bt/core.js.
+            */
+            ramos: relatorioRamos,
             /*
             Amostras cruas só a pedido (`opts.exportarAmostras`): são
             milhares, e enchiam o JSON exportado sem que a tabela resumo
