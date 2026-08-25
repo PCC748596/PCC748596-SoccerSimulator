@@ -14,7 +14,8 @@ const PlayerSkillsData = {
       "speed": 65,
       "strength": 86,
       "pass": 75,
-      "intercept": 94
+      "intercept": 94,
+      "tacticknow": 83
     },
     {
       "nome": "RB Blue",
@@ -29,7 +30,8 @@ const PlayerSkillsData = {
       "speed": 85,
       "strength": 84,
       "pass": 75,
-      "intercept": 85
+      "intercept": 85,
+      "tacticknow": 81
     },
     {
       "nome": "CB(1) Blue",
@@ -44,7 +46,8 @@ const PlayerSkillsData = {
       "speed": 75,
       "strength": 91,
       "pass": 76,
-      "intercept": 80
+      "intercept": 80,
+      "tacticknow": 77
     },
     {
       "nome": "CB(2) Blue",
@@ -59,7 +62,8 @@ const PlayerSkillsData = {
       "speed": 68,
       "strength": 82,
       "pass": 70,
-      "intercept": 86
+      "intercept": 86,
+      "tacticknow": 84
     },
     {
       "nome": "LB Blue",
@@ -74,7 +78,8 @@ const PlayerSkillsData = {
       "speed": 81,
       "strength": 75,
       "pass": 65,
-      "intercept": 78
+      "intercept": 78,
+      "tacticknow": 71
     },
     {
       "nome": "RM Blue",
@@ -89,7 +94,8 @@ const PlayerSkillsData = {
       "speed": 72,
       "strength": 68,
       "pass": 97,
-      "intercept": 69
+      "intercept": 69,
+      "tacticknow": 78
     },
     {
       "nome": "CM(1) Blue",
@@ -104,7 +110,8 @@ const PlayerSkillsData = {
       "speed": 84,
       "strength": 72,
       "pass": 87,
-      "intercept": 80
+      "intercept": 80,
+      "tacticknow": 86
     },
     {
       "nome": "CM(2) Blue",
@@ -119,7 +126,8 @@ const PlayerSkillsData = {
       "speed": 83,
       "strength": 80,
       "pass": 83,
-      "intercept": 76
+      "intercept": 76,
+      "tacticknow": 93
     },
     {
       "nome": "LM Blue",
@@ -134,7 +142,8 @@ const PlayerSkillsData = {
       "speed": 85,
       "strength": 84,
       "pass": 86,
-      "intercept": 80
+      "intercept": 80,
+      "tacticknow": 84
     },
     {
       "nome": "CF(1) Blue",
@@ -149,7 +158,8 @@ const PlayerSkillsData = {
       "speed": 96,
       "strength": 79,
       "pass": 79,
-      "intercept": 89
+      "intercept": 89,
+      "tacticknow": 85
     },
     {
       "nome": "CF(2) Blue",
@@ -164,7 +174,8 @@ const PlayerSkillsData = {
       "speed": 85,
       "strength": 74,
       "pass": 94,
-      "intercept": 86
+      "intercept": 86,
+      "tacticknow": 69
     }
   ],
   "teamB": [
@@ -181,7 +192,8 @@ const PlayerSkillsData = {
       "speed": 70,
       "strength": 95,
       "pass": 69,
-      "intercept": 87
+      "intercept": 87,
+      "tacticknow": 81
     },
     {
       "nome": "RB Red",
@@ -196,7 +208,8 @@ const PlayerSkillsData = {
       "speed": 71,
       "strength": 81,
       "pass": 74,
-      "intercept": 94
+      "intercept": 94,
+      "tacticknow": 79
     },
     {
       "nome": "CB(1) Red",
@@ -211,7 +224,8 @@ const PlayerSkillsData = {
       "speed": 86,
       "strength": 84,
       "pass": 69,
-      "intercept": 91
+      "intercept": 91,
+      "tacticknow": 82
     },
     {
       "nome": "CB(2) Red",
@@ -226,7 +240,8 @@ const PlayerSkillsData = {
       "speed": 78,
       "strength": 86,
       "pass": 81,
-      "intercept": 86
+      "intercept": 86,
+      "tacticknow": 95
     },
     {
       "nome": "LB Red",
@@ -241,7 +256,8 @@ const PlayerSkillsData = {
       "speed": 72,
       "strength": 94,
       "pass": 69,
-      "intercept": 76
+      "intercept": 76,
+      "tacticknow": 77
     },
     {
       "nome": "RM Red",
@@ -256,7 +272,8 @@ const PlayerSkillsData = {
       "speed": 80,
       "strength": 71,
       "pass": 84,
-      "intercept": 61
+      "intercept": 61,
+      "tacticknow": 85
     },
     {
       "nome": "CM(1) Red",
@@ -271,7 +288,8 @@ const PlayerSkillsData = {
       "speed": 80,
       "strength": 80,
       "pass": 89,
-      "intercept": 67
+      "intercept": 67,
+      "tacticknow": 95
     },
     {
       "nome": "CM(2) Red",
@@ -286,7 +304,8 @@ const PlayerSkillsData = {
       "speed": 86,
       "strength": 88,
       "pass": 89,
-      "intercept": 81
+      "intercept": 81,
+      "tacticknow": 87
     },
     {
       "nome": "LM Red",
@@ -301,7 +320,8 @@ const PlayerSkillsData = {
       "speed": 72,
       "strength": 86,
       "pass": 91,
-      "intercept": 66
+      "intercept": 66,
+      "tacticknow": 86
     },
     {
       "nome": "CF(1) Red",
@@ -316,7 +336,8 @@ const PlayerSkillsData = {
       "speed": 86,
       "strength": 77,
       "pass": 75,
-      "intercept": 88
+      "intercept": 88,
+      "tacticknow": 76
     },
     {
       "nome": "CF(2) Red",
@@ -331,7 +352,8 @@ const PlayerSkillsData = {
       "speed": 99,
       "strength": 80,
       "pass": 73,
-      "intercept": 82
+      "intercept": 82,
+      "tacticknow": 83
     }
   ]
 };
