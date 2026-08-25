@@ -368,9 +368,45 @@ function deveMandarChaser(o) {
     return true;
 }
 
+/*
+Alguem esta a conduzir a bola neste instante? Percorre os dois planteis: o
+condutor pode ser do outro lado, e e justamente esse o caso que interessa —
+nao se manda um cacador atras de uma bola que o adversario esta a conduzir com
+o toque a frente.
+*/
+function alguemAConduzir() {
+    if (typeof Match === 'undefined') return false;
+    const listas = [Match.players, Match.opponents];
+    for (const lista of listas) {
+        if (!lista) continue;
+        for (const p of lista) {
+            if (p && (p.carryTouchGrace || 0) > 0) return true;
+        }
+    }
+    return false;
+}
+
 function pickChaser(bb) {
     const ballPos = Match.ball.position;
-    const bolaSolta = !Match.ballCarrier;
+    /*
+    A BOLA SO ESTA SOLTA SE NINGUEM A ESTIVER A CONDUZIR.
+
+    `!Match.ballCarrier` sozinho nao chega, e era por aqui que fugia a
+    perseguicao ao campo todo: o toque da conducao LARGA a bola de proposito —
+    `ballCarrier = null` por ~0.3 s a cada toque (ver o case CARRY na fsm.js).
+    Nessa janela `bolaSolta` ficava true, e o `deveMandarChaser` devolve true
+    incondicionalmente com bola solta: sem metade do campo, sem raio, sem nada.
+
+    Como conduzir e uma sequencia de toques, isso reabria a porta a CADA TOQUE.
+    Resultado no ecra: o avancado adversario a pressionar o central o campo
+    inteiro, com pressao balanceada e mentalidade equilibrada — exactamente o
+    que essas duas opcoes dizem que nao deve acontecer.
+
+    A graca de conducao e o campo que diz "esta bola tem dono, ele ja vem
+    busca-la". Contar com ela aqui e o que faz a equipa sem bola voltar ao
+    bloco em vez de correr atras dela.
+    */
+    const bolaSolta = !Match.ballCarrier && !alguemAConduzir();
 
     /*
     A que distância está o mais perto do portador. É esta medida que decide se

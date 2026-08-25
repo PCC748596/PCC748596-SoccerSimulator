@@ -3811,6 +3811,10 @@ const MentalidadeModel = {
     contradizia a própria mentalidade escolhida. As outras três continuam a
     obedecer ao painel.
 
+    A LARGURA fica de fora de propósito: fechar em largura entrega as alas, e
+    isso é escolha do utilizador no Width Compactness — não uma consequência
+    automática de escolher uma mentalidade defensiva.
+
     Chave do BlockShape.profundidade — `short` são 30 m em 106 de campo.
     */
     muito_defensiva: {

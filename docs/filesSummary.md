@@ -162,6 +162,28 @@ enquanto ele a conduz.
   repor nas 20 pedidas — é esse o botão, e escala as duas fontes sem mudar a
   proporção entre elas.
 
+#### Conduzir não é a bola estar solta (o CF a pressionar o campo todo)
+
+Com pressão BALANCEADA e mentalidade EQUILIBRADA, o avançado adversário
+perseguia o central o campo inteiro — as duas opções que dizem exactamente o
+contrário.
+
+A fuga era o `bolaSolta` do `pickChaser`: `!Match.ballCarrier` sozinho. **O
+toque da condução larga a bola de propósito** — `ballCarrier = null` por ~0,3 s
+a cada toque (ver o `case CARRY` na fsm.js) — e com `bolaSolta` o
+`deveMandarChaser` devolve `true` INCONDICIONALMENTE, sem metade do campo e sem
+raio. Como conduzir é uma sequência de toques, a porta reabria a cada um deles e
+a perseguição era permanente.
+
+`alguemAConduzir()` percorre **os dois planteis** — o condutor é tipicamente do
+outro lado, e é esse o caso que interessa. A graça de condução é o campo que diz
+"esta bola tem dono"; contá-la aqui é o que faz a equipa sem bola voltar ao
+bloco em vez de correr atrás dela.
+
+**O que não mudou:** uma bola realmente perdida, com ninguém a conduzir,
+continua a ser perseguida a qualquer distância — é o encrave de 25 s que o
+`chaser_bola_solta.test.js` fixa.
+
 #### O passador corria atrás da própria bola
 
 Assimetria entre duas eleições que deviam concordar: o `pickIntercetor` tinha a

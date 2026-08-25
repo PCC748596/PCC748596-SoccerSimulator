@@ -167,10 +167,26 @@ console.log(LF + '5 — T.Defensiva e Defensiva jogam curtas (30 m)');
         } else ok(`${m}: ${metros(chave).toFixed(0)} m`);
     }
 
+    /*
+    A LARGURA fica de fora de propósito: fechar em largura entrega as alas, e
+    isso é escolha do utilizador no Width Compactness — não uma consequência
+    automática da mentalidade. Fixado aqui para não voltar a ser acrescentado
+    por engano.
+    */
+    for (const m of ['muito_defensiva', 'defesa']) {
+        if (MentalidadeModel[m].largura !== undefined) {
+            erro(`${m} não devia impor largura; o Width Compactness é do utilizador`);
+        }
+    }
+    ok('a largura continua a ser escolha do painel');
+
     // As outras três não impõem nada — o painel continua a mandar nelas.
     for (const m of ['balanceado', 'ataque', 'muito_ofensiva']) {
         if (MentalidadeModel[m].profundidade !== undefined) {
             erro(`${m} não devia impor comprimento; o Length Compactness é do utilizador`);
+        }
+        if (MentalidadeModel[m].largura !== undefined) {
+            erro(`${m} não devia impor largura; o Width Compactness é do utilizador`);
         }
     }
     ok('as outras três continuam a obedecer ao painel');
@@ -187,7 +203,8 @@ console.log(LF + '5 — T.Defensiva e Defensiva jogam curtas (30 m)');
         erro('o Tatics.update não aplica a profundidade da mentalidade');
     } else if (!/getElementById\('t-length-compactness'\)[\s\S]{0,120}\.value\s*=/.test(corpoUpdate)) {
         erro('o dropdown do Length Compactness não é actualizado — o painel mente');
-    } else ok('o dropdown do painel passa a mostrar Small (30m)');
+    } else ok('o dropdown do Length Compactness passa a mostrar Small (30m)');
+
 
     // As chaves do MentalidadeModel têm de existir no <select> do HTML, senão
     // escrever nele não faz nada e falha em silêncio.
@@ -202,6 +219,77 @@ console.log(LF + '5 — T.Defensiva e Defensiva jogam curtas (30 m)');
         }
     }
     ok('as chaves batem certo com as opções do HTML');
+
+    /*
+    E o Defensive Pressure NAO tem 'short': é low/balanced/high. Fica aqui
+    fixado porque foi confundido com os dois Compactness — se um dia alguém lhe
+    acrescentar um 'Small', isto avisa que há duas coisas com o mesmo nome.
+    */
+    const iPress = html.indexOf('id="t-pressao-def"');
+    const selPress = iPress < 0 ? '' : html.slice(iPress, html.indexOf('</select>', iPress));
+    if (selPress.indexOf('value="short"') >= 0) {
+        erro('o Defensive Pressure ganhou um valor "short" — colide com os Compactness');
+    } else ok('Defensive Pressure continua low/balanced/high (nao tem Small)');
+}
+
+/*
+6 — A CONDUCAO NAO CONTA COMO BOLA SOLTA.
+
+O caso visto no ecra: o avancado adversario a pressionar o central o campo
+inteiro, com pressao BALANCEADA e mentalidade EQUILIBRADA — as duas opcoes que
+dizem o contrario.
+
+A fuga era o `bolaSolta` do pickChaser: `!Match.ballCarrier` sozinho. O toque
+da conducao larga a bola de proposito (`ballCarrier = null` por ~0.3 s a cada
+toque), e com `bolaSolta` o `deveMandarChaser` devolve true INCONDICIONALMENTE
+— sem metade do campo, sem raio. Conduzir e uma sequencia de toques, portanto
+a porta reabria a cada um deles.
+*/
+console.log(LF + '6 — conduzir nao e a bola estar solta');
+{
+    const src = ler('js/bt/team_bt.js');
+
+    const iFn = src.indexOf('function alguemAConduzir');
+    if (iFn < 0) {
+        erro('alguemAConduzir nao existe — o pickChaser nao sabe distinguir conducao de bola perdida');
+    } else {
+        const fn = new Function(
+            src.slice(iFn, src.indexOf(LF + '}', iFn) + 2) + '; return alguemAConduzir;')();
+
+        // Sem Match definido nao pode rebentar.
+        if (fn() !== false) erro('sem Match, alguemAConduzir devia dar false');
+        else ok('sem Match: false, sem rebentar');
+    }
+
+    // O `bolaSolta` tem de consultar a conducao.
+    const iSolta = src.indexOf('const bolaSolta =');
+    const linha = iSolta < 0 ? '' : src.slice(iSolta, src.indexOf(';', iSolta));
+    if (!linha) {
+        erro('bolaSolta nao encontrado no pickChaser');
+    } else if (linha.indexOf('alguemAConduzir') < 0) {
+        erro('bolaSolta ignora a conducao — a perseguicao volta a abrir a cada toque');
+    } else ok('bolaSolta exclui quem esta a conduzir');
+
+    /*
+    E a busca tem de percorrer OS DOIS planteis: o condutor e tipicamente do
+    outro lado, e e esse o caso que interessa.
+    */
+    const corpoFn = iFn < 0 ? '' : src.slice(iFn, iFn + 700);
+    if (corpoFn && !/Match\.players/.test(corpoFn)) erro('nao percorre o plantel de casa');
+    else if (corpoFn && !/Match\.opponents/.test(corpoFn)) {
+        erro('nao percorre o plantel adversario — e ele que costuma estar a conduzir');
+    } else ok('percorre os dois planteis');
+
+    /*
+    O QUE NAO PODE MUDAR: uma bola REALMENTE perdida, com ninguem a conduzir,
+    continua a ser perseguida a qualquer distancia. E o encrave de 25 s que o
+    chaser_bola_solta.test.js fixa.
+    */
+    const solta = deveMandarChaser(cenario({
+        bolaSolta: true, distAoPortador: Infinity, bolaZ: 40, raioAccionamento: RAIO.low
+    }));
+    if (!solta) erro('bola perdida deixou de ser perseguida — o encrave de 25 s volta');
+    else ok('bola realmente perdida: continua a ser perseguida');
 }
 
 console.log(LF + (falhas === 0
