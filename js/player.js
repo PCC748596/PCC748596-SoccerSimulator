@@ -42,6 +42,10 @@ class FootballPlayer {
         // Direccao em que a bola vinha a viajar quando ele a dominou; escrita no
         // match.js e lida pelo eixoDeConducao (ver GiroDeCostasModel).
         this.dirEntradaBola = null;
+        // Posto do frame anterior, para se saber se o alvo VEM na direccao dele
+        // (ver esperarPeloSlot em config.js). O alvo e recalculado do zero em
+        // cada frame e nao tem velocidade guardada em lado nenhum.
+        this.slotAnterior = null;
         this.dribbleOpponent = null;
         this.dribbleCooldownTimer = 0;
         this.isCross = false;

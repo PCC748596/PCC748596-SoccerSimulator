@@ -135,15 +135,41 @@ console.log(LF + '3 — marcador nas costas: sai em toques de 30 graus');
 /* =====================================================================
    4 — NO CAMPO DE ATAQUE A REGRA NÃO SE APLICA
    ===================================================================== */
-console.log(LF + '4 — no campo de ataque gira à vontade');
+console.log(LF + '4 — o giro livre é só no último terço');
 {
+    /*
+    A fronteira é a do `CarryModel.zonaLivre` (17 m no referencial de ataque, a
+    entrada do último terço) e não a linha de meio-campo. No meio-campo
+    adversário perder a bola ainda dói: o contra-ataque sai com a equipa toda
+    subida. Onde perder a bola custa pouco é lá à frente.
+    */
     const eixo = eixoDeConducao(base({
-        zDir: 20,
+        zDir: G.zonaLivre + 3,
         adversarios: [{ x: 0, z: 2 }]
     }));
     if (graus(eixo.bx, eixo.bz) !== 0) {
-        erro('travou o giro no campo de ataque, onde perder a bola não é golo');
-    } else ok('campo de ataque: gira mesmo com o marcador em cima');
+        erro('travou o giro no último terço, onde perder a bola custa pouco');
+    } else ok('último terço: gira mesmo com o marcador em cima');
+
+    // Já no meio-campo adversário, mas antes do último terço: vale a regra.
+    const meio = eixoDeConducao(base({
+        zDir: G.zonaLivre - 5,
+        adversarios: [{ x: 0, z: 3 }, { x: 3, z: 2 }]
+    }));
+    if (graus(meio.bx, meio.bz) === 0) {
+        erro('girou os 180 no meio-campo adversário com o marcador nas costas');
+    } else ok('antes do último terço: continua a valer o cone');
+
+    // E a fronteira é a MESMA do orçamento de condução — não uma segunda
+    // inventada para a mesma ideia.
+    const iC = srcConfig.indexOf('const CarryModel = {');
+    const fC = srcConfig.indexOf(LF + '};', iC);
+    const CarryModel = new Function(`const GaitModel = { correr: { vel: 8.0 } };
+        ${srcConfig.slice(iC, fC + 3)}; return CarryModel;`)();
+    if (G.zonaLivre !== CarryModel.zonaLivre) {
+        erro(`a fronteira do giro (${G.zonaLivre}) divergiu da do orçamento de ` +
+            `condução (${CarryModel.zonaLivre})`);
+    } else ok(`mesma fronteira do CarryModel.zonaLivre (${G.zonaLivre} m)`);
 }
 
 /* =====================================================================

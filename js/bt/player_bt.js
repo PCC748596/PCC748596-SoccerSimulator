@@ -543,6 +543,9 @@ function acharLateralParaSaida(ctx) {
     const p = ctx.p;
     const G = GoalkeeperDistribution;
     let melhor = null, melhorNota = -Infinity;
+    // Lateral com folga de sobra: sai por ali, sem concorrer com os centrais.
+    // Ver folgaPreferencialLateral em config.js.
+    let melhorLateralLivre = null, melhorFolgaLateral = -Infinity;
 
     for (const mate of ctx.teammates) {
         if (mate === p) continue;
@@ -559,10 +562,16 @@ function acharLateralParaSaida(ctx) {
         }
         if (folga < G.folgaMinima) continue;
 
+        if (ehLateral && G.folgaPreferencialLateral !== undefined &&
+            folga >= G.folgaPreferencialLateral && folga > melhorFolgaLateral) {
+            melhorFolgaLateral = folga;
+            melhorLateralLivre = mate;
+        }
+
         const nota = folga + (ehLateral ? (G.bonusLateral || 0) : 0);
         if (nota > melhorNota) { melhorNota = nota; melhor = mate; }
     }
-    return melhor;
+    return melhorLateralLivre || melhor;
 }
 
 /*
@@ -957,8 +966,34 @@ function actClearance(ctx) {
     p.fsm.changeState('MOVE_TO_POS');
 }
 
+/*
+CONDUZIR — e a velocidade de conduzir, que faltava.
+
+Isto era so o `changeState('CARRY')`, sem tocar no `speedMult`: o portador
+ficava com o da folha anterior, e num jogador que acaba de ganhar a bola essa e
+sempre uma das rapidas (9.00 m/s do actTackle, 7.88 do sprint do
+actRunIntoSpace). Saia a conduzir mais depressa do que qualquer sprint SEM bola
+— era o "disparar demais com a bola" que se via.
+
+Os numeros vivem no CarryModel; aqui e so a conta.
+*/
 function actCarry(ctx) {
-    ctx.p.fsm.changeState('CARRY');
+    const p = ctx.p;
+    const C = (typeof CarryModel !== 'undefined') ? CarryModel : null;
+
+    if (C && typeof C.velocidadeBase === 'number') {
+        // Sem skill no ctx assume-se o medio: ha chamadas a esta folha sem ele,
+        // e um NaN aqui congela o jogador no sitio.
+        const skill = (typeof ctx.skillSpeed === 'number') ? ctx.skillSpeed : 50;
+        let vel = C.velocidadeBase + ((skill - 50) / 50) * C.velocidadePorSkill;
+        if (p.carryRecuo) vel *= C.recuoMult;
+        if (typeof Match !== 'undefined' && Match.counterAttackTeam === p.team) {
+            vel *= C.contraAtaqueMult;
+        }
+        p.speedMult = vel;
+    }
+
+    p.fsm.changeState('CARRY');
 }
 
 /* =========================================================================

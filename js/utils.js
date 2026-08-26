@@ -617,7 +617,7 @@ rolamento); integrando `v·dv / (k·v² + μ·g) = -dx`:
 
     v0 = √( ( (k·v1² + μ·g)·e^(2·k·x) − μ·g ) / k )
 */
-function velocidadeRasteiraPara(dist, vChegada) {
+function velocidadeRasteiraPara(dist, vChegada, opcoes) {
     /*
     Velocidade de SAÍDA para a bola percorrer `dist` e lá chegar ainda
     jogável. Inverte o arrasto quadrático do ar mais o atrito de rolamento:
@@ -647,9 +647,24 @@ function velocidadeRasteiraPara(dist, vChegada) {
     // zero — isso lançaria a bola morta aos pés do próprio passador.
     dist = Math.max(0, dist);
 
+    /*
+    O REFORCO DO CURTO NAO VALE PARA O LANCAMENTO.
+
+    O `+ (12 - dist) * 0.18` existe para o passe AOS PES: uma bola de 3 m com a
+    mesma chegada de uma de 20 sai a passo e parece que o jogador nao quis
+    passar. Num lancamento nao faz sentido nenhum — o alvo JA e o espaco a
+    frente de quem corre, e a bola chegar viva ali significa passar-lhe para
+    la. Medido: com o reforco, um lancamento de 6 m parava 2.7 m depois do
+    ponto; sem ele, 0.5 m.
+
+    Quem chama passa `{ reforcoCurto: false }`. A omissao mantem o reforco,
+    porque o caso comum e mesmo o passe aos pes.
+    */
+    const reforcoCurto = !(opcoes && opcoes.reforcoCurto === false);
+
     let vAlvo = vChegada;
     if (dist < 12.0) {
-        vAlvo += (12.0 - dist) * 0.18;
+        if (reforcoCurto) vAlvo += (12.0 - dist) * 0.18;
     } else if (dist > 15.0) {
         vAlvo = Math.max(1.5, vChegada - (dist - 15.0) * 0.15);
     }

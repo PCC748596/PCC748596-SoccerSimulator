@@ -234,7 +234,33 @@ const RefereeModel = {
         */
         limiarAmarelo: 0.85,
         limiarVermelho: 1.10
-    }
+    },
+
+    /*
+    =========================================================================
+    O GESTO DO BRACO — para que lado e a falta
+    =========================================================================
+    A etiqueta diz O QUE foi marcado; o braco diz A FAVOR DE QUEM. Na
+    arbitragem real e o gesto que segue o apito: braco direito estendido na
+    direccao do ataque da equipa que beneficia.
+
+    Duas geometrias diferentes, e por isso dois angulos:
+
+      elevacaoSinal    falta. O braco na HORIZONTAL indica um SENTIDO — a
+                       baliza atacada fica longe, e apontar para baixo nao
+                       diria nada.
+      elevacaoPenalti  penalti. Aqui nao se aponta um sentido, aponta-se um
+                       SITIO: a marca, no chao, a poucos metros. O braco desce
+                       para a diagonal.
+
+    A convencao do braco e a do THROW_IN_CLIP: rotation.x MAIS NEGATIVO leva o
+    braco para cima e para tras; zero e o braco caido ao lado do corpo.
+    */
+    elevacaoSinal: -Math.PI / 2,   // 90 graus: horizontal
+    elevacaoPenalti: -1.0,         // ~57 graus: diagonal para o chao
+    duracaoSinal: 2.5,
+    marcaPenaltiZ: 11.0,           // distancia da marca a linha de fundo
+    suavizacaoBraco: 0.25
 };
 
 const Officials = {
@@ -341,7 +367,17 @@ const Officials = {
             model: feito.corpo,
             rig: feito.rig,
             animTimer: 0,
-            disco: this.criarDisco(scene, etiqueta)
+            disco: this.criarDisco(scene, etiqueta),
+            /*
+            A INSTANCIA, e nao so o `model`.
+
+            O corpo do arbitro e um FootballPlayer e vinha a ser deitado fora
+            aqui — ficava so o `model`. Mas e na instancia que vive o
+            `showActionBanner` e o sprite do banner (que ja e filho do `model`,
+            portanto ja esta na cena a ser desenhado). Guarda-la e o que
+            permite escrever a marcacao por cima dele; ver `anunciar`.
+            */
+            jogador: feito.jogador
         };
     },
 
@@ -599,6 +635,182 @@ const Officials = {
         }
     },
 
+    /*
+    O NOME DA MARCACAO, para escrever por cima do arbitro.
+
+    Havia marcacoes a acontecer sem nada que as anunciasse: a bola muda de
+    sitio, os jogadores reorganizam-se, e quem esta a ver tem de deduzir se
+    aquilo foi falta, canto ou pontape de baliza.
+
+    Os nomes sao os do jogo em ingles, como o resto dos banners dos jogadores
+    (PASS, SHOT, TACKLE...). Um estado que nao e marcacao nenhuma devolve null,
+    e o `anunciar` nao acende nada.
+
+    NAO HA "OFFSIDE" nesta tabela porque nao ha impedimento marcado no jogo: o
+    `offsideLimitDir` do TeamBT so limita onde os atacantes se poem. Por o
+    escrever aqui sem existir a regra ficava um rotulo que nunca aparecia — ou
+    pior, que aparecia a mentir.
+    */
+    rotulosDeMarcacao: {
+        FREE_KICK: 'FOUL',
+        PENALTY: 'PENALTY',
+        CORNER_KICK: 'CORNER',
+        GOAL_KICK: 'GOAL KICK',
+        THROW_IN: 'THROW-IN'
+    },
+
+    rotuloDaMarcacao: function (tipo) {
+        if (!tipo) return null;
+        const r = this.rotulosDeMarcacao[tipo];
+        return r !== undefined ? r : null;
+    },
+
+    /*
+    Escreve a etiqueta por cima do arbitro, reaproveitando o banner dos
+    jogadores (player.js, showActionBanner).
+
+    Silencioso e sem rebentar quando nao ha arbitro: isto e chamado de dentro
+    do `setupSetPiece`, e uma excepcao ali levava o frame inteiro atras. Com os
+    arbitros escondidos pelo painel (`_ativo` false) tambem nao escreve — a
+    arbitragem continua a existir, o boneco e que nao esta la.
+    */
+    anunciar: function (texto) {
+        if (!texto) return;
+        if (!this._ativo) return;
+        const arb = this.arbitro;
+        if (!arb || !arb.jogador || typeof arb.jogador.showActionBanner !== 'function') return;
+        arb.jogador.showActionBanner(texto);
+    },
+
+    /*
+    Aponta com o braco direito para um ponto do campo, durante
+    `RefereeModel.duracaoSinal` segundos.
+
+    Guarda-se o ALVO e nao o angulo do corpo: o arbitro continua a mexer-se
+    enquanto sinaliza (o `mover` corre na mesma), e um angulo fixo deixava o
+    braco a apontar para o sitio errado assim que ele desse dois passos.
+    */
+    sinalizar: function (x, z, elevacao) {
+        if (!this.arbitro) return;
+        this.arbitro.sinal = {
+            x: x, z: z,
+            elev: elevacao,
+            timer: RefereeModel.duracaoSinal
+        };
+    },
+
+    /*
+    O gesto que corresponde a marcacao, se houver.
+
+    FALTA: a direccao do ataque da equipa que beneficia — a baliza que ela
+    ataca, no eixo do campo. O sentido sai do `dirZ` de um jogador dela, que e
+    onde essa informacao vive.
+
+    PENALTI: a marca. Nao e uma direccao, e um ponto — e por isso leva o outro
+    angulo.
+
+    CANTO, LATERAL e PONTAPE DE BALIZA nao levam este gesto: ali o arbitro
+    aponta a BANDEIROLA ou a linha, que sao gestos diferentes e cada um com a
+    sua geometria. Melhor nao ter do que ter todos iguais e errados.
+    */
+    sinalizarMarcacao: function (tipo, team) {
+        if (!this._ativo || !this.arbitro) return;
+        if (tipo !== 'FREE_KICK' && tipo !== 'PENALTY') return;
+        if (typeof Match === 'undefined') return;
+
+        const lista = (team === 'TeamA') ? Match.players : Match.opponents;
+        if (!lista || !lista.length) return;
+        const dir = lista[0].dirZ;
+        if (typeof dir !== 'number') return;
+
+        const fundo = CAMPO_COMP / 2;
+        if (tipo === 'PENALTY') {
+            this.sinalizar(0, (fundo - RefereeModel.marcaPenaltiZ) * dir,
+                RefereeModel.elevacaoPenalti);
+        } else {
+            this.sinalizar(0, fundo * dir, RefereeModel.elevacaoSinal);
+        }
+    },
+
+    /*
+    Mantem o braco no ar enquanto o gesto dura, e vira o corpo para o alvo.
+
+    Corre DEPOIS do `mover`: e ele que escreve a pose de passada, incluindo os
+    bracos, e escrever antes era ver o gesto apagado no mesmo frame.
+    */
+    tickSinal: function (dt) {
+        const arb = this.arbitro;
+        if (!arb || !arb.sinal) return;
+
+        arb.sinal.timer -= dt;
+        if (arb.sinal.timer <= 0) {
+            arb.sinal = null;
+            // A guinada do braco tem de ser desfeita, senao a passada seguinte
+            // desenha-se com o braco torcido para o lado.
+            if (arb.rig && arb.rig.rArm) arb.rig.rArm.rotation.y = 0;
+            return;
+        }
+
+        const rig = arb.rig;
+        if (!rig || !rig.rArm) return;
+
+        /*
+        O CORPO NAO SE MEXE AQUI. Quem o vira e o `mover`, que ja o poe a olhar
+        para a BOLA — e e isso que se quer ver: o arbitro de frente para o
+        lance, com o braco a apontar o ataque. Rodar o corpo para o alvo punha-o
+        de costas para a jogada que acabou de marcar.
+
+        Logo a direccao tem de ser dada pelo BRACO, em coordenadas do mundo: a
+        guinada dele e a diferenca entre o angulo para o alvo e o angulo a que o
+        corpo esta.
+
+        `order = 'YXZ'` porque a guinada tem de ser aplicada ANTES da elevacao.
+        Na ordem por omissao (XYZ) a elevacao roda primeiro e a guinada passa a
+        girar em torno de um eixo ja inclinado — o braco acaba a apontar para
+        outro sitio qualquer.
+        */
+        const dx = arb.sinal.x - arb.model.position.x;
+        const dz = arb.sinal.z - arb.model.position.z;
+
+        const k = RefereeModel.suavizacaoBraco;
+        rig.rArm.rotation.order = 'YXZ';
+
+        if (Math.hypot(dx, dz) > 0.05) {
+            let guinada = Math.atan2(dx, dz) - arb.model.rotation.y;
+            // Ao menor dos dois caminhos: sem isto o braco dava a volta larga
+            // quando o angulo passava por +/-PI.
+            guinada = Math.atan2(Math.sin(guinada), Math.cos(guinada));
+            let actual = Math.atan2(Math.sin(rig.rArm.rotation.y),
+                Math.cos(rig.rArm.rotation.y));
+            let delta = Math.atan2(Math.sin(guinada - actual), Math.cos(guinada - actual));
+            rig.rArm.rotation.y = actual + delta * k;
+        }
+
+        rig.rArm.rotation.x = lerpTo(rig.rArm.rotation.x, arb.sinal.elev, k);
+        // Cotovelo esticado: um braco dobrado nao aponta nada.
+        if (rig.rElbow) rig.rElbow.rotation.x = lerpTo(rig.rElbow.rotation.x, 0, k);
+    },
+
+    /*
+    Desconta o relogio da etiqueta e apaga-a no fim.
+
+    Os jogadores fazem isto dentro do proprio `update` (player.js), que para o
+    arbitro nunca corre — o Officials so lhe usa o `model` e move-lhe os ossos
+    a mao. Sem isto a primeira marcacao do jogo ficava escrita por cima dele
+    ate ao fim.
+    */
+    tickEtiqueta: function (dt) {
+        const arb = this.arbitro;
+        if (!arb || !arb.jogador) return;
+        const j = arb.jogador;
+        if (!(j.actionBannerTimer > 0)) return;
+        j.actionBannerTimer -= dt;
+        if (j.actionBannerTimer <= 0) {
+            j.actionBannerTimer = 0;
+            if (j.actionSprite) j.actionSprite.visible = false;
+        }
+    },
+
     update: function (dt) {
         if (typeof Match === 'undefined' || !Match.ball) return;
 
@@ -609,6 +821,8 @@ const Officials = {
         posicionamento, daqui para baixo, e que depende deles existirem.
         */
         this.detectarContactos(dt);
+        // A etiqueta da ultima marcacao apaga-se sozinha (ver tickEtiqueta).
+        this.tickEtiqueta(dt);
 
         if (!this.arbitro || !this._ativo) return;
 
@@ -637,6 +851,10 @@ const Officials = {
         const alvoArb = this.pontoDoArbitro(Match.ball.position);
         this.mover(this.arbitro, alvoArb.x, alvoArb.z, R.velocidade, dt,
             Match.ball.position);
+
+        // Depois do mover: e ele que escreve a pose dos bracos, e o gesto
+        // tem de ficar por cima dela (ver tickSinal).
+        this.tickSinal(dt);
 
         // Depois de mover, para os discos nao ficarem um frame atras.
         this.atualizarVista();
@@ -827,6 +1045,14 @@ const Officials = {
         } else {
             Match.triggerFreeKick(vitima.team);
         }
+
+        /*
+        O CARTAO POR CIMA DA FALTA, e nesta ordem: o `triggerFreeKick` /
+        `triggerPenalty` acima ja anunciou FOUL ou PENALTY, e o cartao e a
+        informacao mais forte das duas. Sem cartao fica o que o lance escreveu.
+        */
+        if (cartao === 'amarelo') this.anunciar('YELLOW CARD');
+        else if (cartao === 'vermelho') this.anunciar('RED CARD');
 
         if (typeof EventBus !== 'undefined') {
             EventBus.emit('FOUL', {

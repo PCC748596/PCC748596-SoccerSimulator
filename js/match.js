@@ -1,4 +1,49 @@
 /*
+QUEM COBRA O LATERAL — ver ThrowInModel.ordemBatedor.
+
+Era o jogador de campo mais PERTO do ponto da linha, e num lateral no proprio
+meio-campo isso da quase sempre o CENTRAL: o homem que menos devia estar a por a
+bola em jogo fica com ela nas maos e a linha defensiva abre ao meio enquanto ele
+la vai.
+
+A ordem e a do futebol — lateral do lado, medio da ala, CM — e o lado sai do
+sinal do x da bola, a mesma convencao das formacoes (LB em +x, RB em -x).
+
+Duas saidas de emergencia, ambas deliberadas:
+  - candidato da ordem longe de mais (`distanciaMaxBatedor`): passa-se ao
+    seguinte, senao o lance ficava parado a espera de quem vem de 45 m;
+  - nenhum dos tres em campo (expulsoes, formacoes sem medios de ala): cobra o
+    mais perto, como antes. Um batedor imperfeito e melhor do que nenhum.
+*/
+function escolherBatedorDoLateral(candidatos, bolaPos) {
+    const T = ThrowInModel;
+    const lado = (bolaPos.x >= 0) ? 'esquerda' : 'direita';
+    const ordem = T.ordemBatedor[lado];
+
+    const dist = (p) => Math.hypot(
+        p.model.position.x - bolaPos.x, p.model.position.z - bolaPos.z);
+
+    for (const pos of ordem) {
+        let melhor = null, melhorD = Infinity;
+        for (const p of candidatos) {
+            if (!p || p.role === 'gk' || p.pos !== pos) continue;
+            const d = dist(p);
+            if (d > T.distanciaMaxBatedor) continue;
+            if (d < melhorD) { melhorD = d; melhor = p; }
+        }
+        if (melhor) return melhor;
+    }
+
+    let maisPerto = null, minD = Infinity;
+    for (const p of candidatos) {
+        if (!p || p.role === 'gk') continue;
+        const d = dist(p);
+        if (d < minD) { minD = d; maisPerto = p; }
+    }
+    return maisPerto;
+}
+
+/*
 PRAZO DA SAÍDA DE JOGO.
 
 Quem recebe a primeira bola do pontapé de saída toca para um defesa (o ramo
@@ -3050,6 +3095,21 @@ const Match = {
     setupSetPiece: function (type, team) {
         this.state = type;
         this.setPieceTeam = team;
+
+        /*
+        A ETIQUETA DA MARCACAO, por cima do arbitro. Aqui e nao em cada
+        `trigger*`: este e o unico sitio por onde TODOS os lances parados
+        passam, incluindo os que vierem a ser escritos.
+
+        Ver Officials.rotuloDaMarcacao — um estado sem nome de marcacao nao
+        acende nada, e sem arbitros na cena isto nao faz nem rebenta.
+        */
+        if (typeof Officials !== 'undefined' && Officials.anunciar) {
+            Officials.anunciar(Officials.rotuloDaMarcacao(type));
+            // E o braco: a direccao do ataque de quem beneficia, ou a marca de
+            // penalti. Ver Officials.sinalizarMarcacao.
+            if (Officials.sinalizarMarcacao) Officials.sinalizarMarcacao(type, team);
+        }
         this.kickoffPendingPassToDef = false;
         
         // Ao marcar uma bola parada, a posse de bola já é da equipe que vai cobrar.
@@ -3320,12 +3380,9 @@ const Match = {
             this.players.concat(this.opponents).forEach(p => { p.hasBall = false; });
             this.ballCarrier = null;
 
-            let taker = null, minDist = 999;
-            attackingPlayers.forEach(p => {
-                if (p.role === 'gk') return;
-                const d = p.model.position.distanceTo(this.ball.position);
-                if (d < minDist) { minDist = d; taker = p; }
-            });
+            // Ordem do batedor: lateral, medio da ala, CM — ver
+            // escolherBatedorDoLateral e ThrowInModel.ordemBatedor.
+            const taker = escolherBatedorDoLateral(attackingPlayers, this.ball.position);
             this.setPieceTaker = taker || null;
 
             if (taker) {

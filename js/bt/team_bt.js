@@ -406,7 +406,28 @@ function pickChaser(bb) {
     busca-la". Contar com ela aqui e o que faz a equipa sem bola voltar ao
     bloco em vez de correr atras dela.
     */
-    const bolaSolta = !Match.ballCarrier && !alguemAConduzir();
+    /*
+    E UMA BOLA NO AR COM DESTINATARIO NAO ESTA SOLTA — ESTA ENDERECADA.
+
+    Assim que o passe sai, `ballCarrier` fica null e a bola contava como solta;
+    o `deveMandarChaser` responde true incondicionalmente a bola solta, antes
+    sequer de olhar para a fase, para a metade do campo ou para o raio. A
+    equipa que defende mandava um chaser atras da bola AO MESMO TEMPO que o
+    `pickIntercetor` mandava um intercetor, e a equipa que passou ja tinha o
+    destinatario a caminho: tres pessoas a convergir na mesma bola, duas delas
+    do mesmo lado a fazer o mesmo trabalho.
+
+    Das duas, o chaser e a pior: aponta a posicao ACTUAL da bola, um ponto que
+    ja se moveu quando ele la chega. O intercetor tem a conta do tempo de voo e
+    o ponto de encontro — e esse fica.
+
+    Com o destinatario conhecido, o chaser volta as guardas normais (distancia
+    ao portador, metade do campo, pressao) e so arranca quando a bola aterra e
+    volta a ter dono. O `intendedReceiver` e limpo quando o passe morre (ver
+    updateBall em match.js), portanto uma bola realmente perdida volta a ser
+    disputada no frame seguinte.
+    */
+    const bolaSolta = !Match.ballCarrier && !alguemAConduzir() && !Match.intendedReceiver;
 
     /*
     A que distância está o mais perto do portador. É esta medida que decide se
@@ -426,32 +447,20 @@ function pickChaser(bb) {
         M.raioDeAccionamento[pressao] !== undefined)
         ? M.raioDeAccionamento[pressao] : undefined;
 
-    const podeIr = deveMandarChaser({
-        distAoPortador: distAoPortador,
-        raioAccionamento: raioAccionamento,
-        tercoDeEmergencia: M ? M.tercoDeEmergencia : undefined,
-        isAttacking: bb.isAttacking,
-        bolaSolta: bolaSolta,
-        bolaZ: ballPos.z,
-        dir: bb.dir,
-        pressaoAlta: (typeof Tatics !== 'undefined' && Tatics.pressaoDefensiva === 'high'),
-        gkTemBola: (bb.oppCarrier && bb.oppCarrier.role === 'gk') ||
-            (bb.carrier && bb.carrier.role === 'gk')
-    });
-    if (!podeIr) { bb.chaser = null; return; }
-
     /*
     PASSE EM CURSO: QUEM VAI A BOLA E QUEM A VAI RECEBER.
 
     Sem isto o PASSADOR corria atras da sua propria bola. No instante em que o
-    passe sai, `Match.ballCarrier` fica null — a bola conta como solta — e o
-    passador e, por construcao, quem esta mais perto dela: ganhava a eleicao
-    contra o destinatario e ia atras do passe que acabara de dar.
+    passe sai, `Match.ballCarrier` fica null e o passador e, por construcao,
+    quem esta mais perto dela: ganhava a eleicao contra o destinatario e ia
+    atras do passe que acabara de dar.
 
-    O `pickIntercetor` aqui em baixo ja tinha esta guarda; o chaser nao, e era
-    so isso que faltava. O `intendedReceiver` e limpo quando o passe morre (ver
-    updateBall em match.js), portanto isto nao tranca ninguem numa bola
-    realmente perdida.
+    Corre ANTES do `deveMandarChaser`, e nao depois. Uma bola endereçada deixou
+    de contar como solta (ver o `bolaSolta` la em baixo), e com a equipa em
+    posse o `deveMandarChaser` responde `false` — o destinatario ficava sem
+    ninguem a ir buscar o passe que vinha para ele. Quem tem o passe a caminho
+    vai busca-lo, e isso nao e uma decisao de bloco: e o passe da propria
+    equipa.
 
     Serve tambem a conducao: o toque a frente poe `intendedReceiver` no proprio
     condutor, e assim continua a ser ele a ir buscar a bola.
@@ -465,6 +474,20 @@ function pickChaser(bb) {
         bb.chaser = Match.intendedReceiver;
         return;
     }
+
+    const podeIr = deveMandarChaser({
+        distAoPortador: distAoPortador,
+        raioAccionamento: raioAccionamento,
+        tercoDeEmergencia: M ? M.tercoDeEmergencia : undefined,
+        isAttacking: bb.isAttacking,
+        bolaSolta: bolaSolta,
+        bolaZ: ballPos.z,
+        dir: bb.dir,
+        pressaoAlta: (typeof Tatics !== 'undefined' && Tatics.pressaoDefensiva === 'high'),
+        gkTemBola: (bb.oppCarrier && bb.oppCarrier.role === 'gk') ||
+            (bb.carrier && bb.carrier.role === 'gk')
+    });
+    if (!podeIr) { bb.chaser = null; return; }
 
     const prevChaser = bb.chaser;
 
@@ -1843,6 +1866,41 @@ const PosicionamentoAI = {
             }
         }
 
+        /*
+        LANCE DE LATERAL: quem se aproxima, e quanto.
+
+        O nivel 2 fica ligado no THROW_IN e a mola de coesao (aqui em cima)
+        puxa o bloco inteiro para a bola: o central sai da posicao, o CM
+        cola-se a linha, e um lance que precisa de duas ou tres opcoes curtas
+        acaba com seis pessoas em cima umas das outras — todas cobertas pelo
+        mesmo adversario.
+
+        A distancia minima por posicao (ThrowInModel.distanciaMinimaPorPos)
+        empurra de volta para fora quem nao tem nada a fazer ali. O batedor
+        fica de fora: o lugar dele e escrito a mao no setupSetPiece.
+
+        Corre DEPOIS da mola — e ela que causa a aproximacao, e desfaze-la
+        antes era so ve-la voltar no mesmo frame.
+        */
+        if (typeof Match !== 'undefined' && Match.state === 'THROW_IN' &&
+            typeof distanciaMinimaNoLateral === 'function' &&
+            Match.setPieceTaker !== p && Match.ball) {
+            const minDist = distanciaMinimaNoLateral(p.pos);
+            if (minDist > 0) {
+                const bx = Match.ball.position.x, bz = Match.ball.position.z;
+                const dx = molaX - bx, dz = finalZ - bz;
+                const d = Math.hypot(dx, dz);
+                if (d < minDist) {
+                    // Sem direccao nenhuma (em cima da bola) empurra-se para o
+                    // campo, que e o unico lado que existe.
+                    const ux = (d > 0.001) ? dx / d : -Math.sign(bx || 1);
+                    const uz = (d > 0.001) ? dz / d : 0;
+                    molaX = bx + ux * minDist;
+                    finalZ = bz + uz * minDist;
+                }
+            }
+        }
+
         const tx = THREE.MathUtils.clamp(molaX, -34, 34);
         const tz = THREE.MathUtils.clamp(finalZ, -50, 50);
 
@@ -1865,6 +1923,54 @@ const PosicionamentoAI = {
         */
         if (!p.styleTarget) p.styleTarget = new THREE.Vector3(0, ALTURA_BASE_Y, 0);
         p.styleTarget.set(comEstilo.x, ALTURA_BASE_Y, comEstilo.z);
+
+        /*
+        ESPERAR PELO POSTO — ver esperarPeloSlot/EsperaPeloSlotModel (config.js).
+
+        Quem esta adiantado em relacao ao seu posto e ve o posto VIR NA SUA
+        DIRECCAO nao vai para tras busca-lo: fica, e deixa-o chegar. Sem isto
+        ele inverte o sentido, a inercia do velocity.lerp leva-o 2-3 m longe de
+        mais, e quando o passe sai o apoio que devia estar ali vem a meio
+        caminho no sentido errado — a jogada morre por falta de um apoio que
+        existia e estava a fazer marcha atras.
+
+        Guarda-se o posto do frame anterior (`slotAnterior`) porque a
+        velocidade do alvo nao esta guardada em lado nenhum: o alvo e um ponto
+        recalculado do zero em cada frame.
+
+        FORA DA REGRA quem tem tarefa com a bola — portador, chaser, intercetor
+        e destinatario. Esses nao estao a ocupar posicao nenhuma, e a folha da
+        arvore reescreve o `dynamicTarget` a seguir; deixa-los esperar era
+        travar quem vai a bola.
+
+        O `tacticalTarget` (o anel do debug) NAO congela: continua a mostrar
+        onde o TeamBT o quer, que e o que faz a espera perceber-se ao olhar.
+        */
+        let esperar = false;
+        if (typeof esperarPeloSlot === 'function' && p.slotAnterior) {
+            const semTarefaDeBola = !p.hasBall &&
+                !(bb && (bb.chaser === p || bb.intercetor === p)) &&
+                !(typeof Match !== 'undefined' && Match.intendedReceiver === p);
+            if (semTarefaDeBola) {
+                esperar = esperarPeloSlot({
+                    px: p.model.position.x, pz: p.model.position.z,
+                    slotX: tx, slotZ: tz,
+                    slotAnteriorX: p.slotAnterior.x, slotAnteriorZ: p.slotAnterior.z,
+                    dt: dt
+                });
+            }
+        }
+
+        if (!p.slotAnterior) p.slotAnterior = { x: tx, z: tz };
+        p.slotAnterior.x = tx;
+        p.slotAnterior.z = tz;
+
+        if (esperar) {
+            p.dynamicTarget.x = p.model.position.x;
+            p.dynamicTarget.z = p.model.position.z;
+            p.dynamicTarget.y = ALTURA_BASE_Y;
+            return;
+        }
 
         p.dynamicTarget.x = lerp(p.dynamicTarget.x, tx, k);
         p.dynamicTarget.z = lerp(p.dynamicTarget.z, tz, k);

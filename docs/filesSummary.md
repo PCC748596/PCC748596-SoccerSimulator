@@ -7,11 +7,42 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ### Sessão de 26 de Agosto de 2026 — a fase manda
 
-Teste novo: `tests/marcacao_e_bloco_por_fase.test.js`. Suite: 36 ficheiros.
+Testes novos: `marcacao_e_bloco_por_fase`, `marcacao_por_setor`,
+`saida_de_jogo_para_defesa`, `passe_no_vazio_alcancavel`, `giro_de_costas`,
+`passe_em_voo_nao_e_bola_solta`, `esperar_pelo_slot`, `saida_gk_pelos_laterais`,
+`lateral_batedor_e_apoios`, `velocidade_de_conducao`, `forca_do_passe`,
+`etiqueta_do_arbitro`, `sinal_do_arbitro`. Suite: **48 ficheiros**.
 
-Duas coisas que se viam no mesmo ecrã, com causas independentes e a mesma
-forma: uma regra que existia na árvore do jogador e faltava na camada
-posicional.
+O fio comum da sessão, e vale a pena lê-lo antes das secções: **quase todos os
+defeitos eram uma decisão com dois donos, ou um número que tapava outro.**
+
+- A marcação existia na árvore do jogador com a guarda de fase certa, e na
+  camada posicional sem guarda nenhuma.
+- O passe do kickoff escolhia o defesa e depois punha-o a votos outra vez.
+- O tecto da marcação era o raio de PROCURA a fazer de tecto de DESLOCAÇÃO.
+- A força do passe levava um ×1.20 por cima da balística — e dois
+  multiplicadores mais abaixo existiam só para o cancelar em dois dos três
+  caminhos.
+- A condução não escrevia velocidade nenhuma e herdava a de quem tinha corrido
+  antes.
+
+Secções, pela ordem em que estão aqui:
+
+- Os atacantes a correr atrás dos defensores (js/bt/team_bt.js)
+- A saída de jogo acaba nos defesas (e agora vê-se)
+- O braço do árbitro: para que lado é a falta
+- A etiqueta do árbitro
+- O lançamento a passar muito do alvo
+- O passe forte demais: um multiplicador por cima da balística
+- A condução não tinha velocidade nenhuma
+- O lateral: quem cobra e quem se aproxima
+- Saída do guarda-redes: o lateral bem livre manda
+- Esperar pelo posto em vez de recuar contra ele
+- Três a ir à bola depois de um passe
+- Girar de costas: só onde perder a bola não é golo
+- O tecto da marcação passou a ser o do SETOR, nas duas camadas
+- O comprimento do bloco por fase (`escolherProfundidade`)
+- Simulação em lote: o tecto de 50 jogos
 
 #### Os atacantes a correr atrás dos defensores (js/bt/team_bt.js)
 
@@ -84,6 +115,336 @@ Teste: `tests/saida_de_jogo_para_defesa.test.js` — fixa a ordem dos três ramo
 (`RecuperarControlo` < `PasseSaidaDeBola` < `Dominar`), o alvo ser um defesa que
 não é o próprio, e o prazo a correr só com a bandeira acesa.
 
+#### O braço do árbitro: para que lado é a falta
+
+A etiqueta diz **o que** foi marcado; o braço diz **a favor de quem**.
+
+- **Falta** — braço direito na horizontal (`elevacaoSinal = −π/2`), a apontar a
+  baliza que a equipa beneficiada ataca. O sentido sai do `dirZ` de um jogador
+  dela, que é onde essa informação vive.
+- **Penálti** — aqui não se aponta um sentido, aponta-se um **sítio**: a marca,
+  a 11 m da linha de fundo, no eixo. O braço desce para a diagonal
+  (`elevacaoPenalti = −1.0`, ~57°).
+
+Canto, lateral e pontapé de baliza **não** levam este gesto: ali o árbitro aponta
+a bandeirola ou a linha, gestos com geometria própria. Melhor não ter do que ter
+todos iguais e errados.
+
+**O corpo fica virado para a bola; quem aponta é o braço.** Rodar o corpo para
+o alvo punha o árbitro de costas para o lance que acabou de marcar. A direcção
+passa a ser dada pela **guinada do braço em coordenadas do mundo**: a diferença
+entre o ângulo para o alvo e o ângulo a que o corpo está (o `mover` já o põe a
+olhar para a bola, via `olharPara`).
+
+`rArm.rotation.order = 'YXZ'`, porque a guinada tem de ser aplicada **antes** da
+elevação: na ordem por omissão (`XYZ`) a elevação roda primeiro e a guinada passa
+a girar em torno de um eixo já inclinado — o braço acaba a apontar para outro
+sítio qualquer. A guinada é desfeita no fim do gesto, senão a passada seguinte
+desenhava-se com o braço torcido para o lado.
+
+O gesto guarda o **alvo**, não o ângulo do corpo: o árbitro continua a mexer-se
+enquanto sinaliza (o `mover` corre na mesma), e um ângulo fixo deixava o braço a
+apontar para o sítio errado assim que ele desse dois passos. O `tickSinal` corre
+**depois** do `mover` — é ele que escreve a pose de passada, braços incluídos, e
+escrever antes era ver o gesto apagado no mesmo frame.
+
+A convenção do braço é a do `THROW_IN_CLIP`: `rotation.x` mais negativo leva o
+braço para cima; zero é o braço caído.
+
+Teste: `tests/sinal_do_arbitro.test.js`.
+
+#### A etiqueta do árbitro
+
+Havia marcações a acontecer sem nada que as anunciasse: a bola muda de sítio, os
+jogadores reorganizam-se, e quem está a ver tem de deduzir se aquilo foi falta,
+canto ou pontapé de baliza.
+
+A maquinaria já existia toda do lado dos jogadores (`showActionBanner` e o sprite
+do banner, que nasce dentro do `model`), e o corpo do árbitro **é** um
+`FootballPlayer` — só que o `criarOficial` deitava fora a instância e ficava com
+o `model`. Guardá-la (`jogador`) era o que faltava.
+
+| estado | etiqueta |
+|---|---|
+| `FREE_KICK` | FOUL |
+| `PENALTY` | PENALTY |
+| `CORNER_KICK` | CORNER |
+| `GOAL_KICK` | GOAL KICK |
+| `THROW_IN` | THROW-IN |
+
+Cartões escrevem-se por cima da etiqueta do lance (YELLOW CARD / RED CARD): o
+`triggerFreeKick`/`triggerPenalty` já anunciou FOUL ou PENALTY, e o cartão é a
+informação mais forte das duas.
+
+O anúncio vive no `setupSetPiece` e não em cada `trigger*`: é o único sítio por
+onde **todos** os lances parados passam, incluindo os que vierem a ser escritos.
+Sem árbitros na cena não faz nada e não rebenta — é chamado de dentro do
+`setupSetPiece`, e uma excepção ali levava o frame inteiro atrás. Com os árbitros
+escondidos pelo painel também não escreve: a arbitragem continua, o boneco é que
+não está lá.
+
+`tickEtiqueta`, no `update` do Officials, desconta o relógio e apaga. Os jogadores
+fazem isso no próprio `update`, que para o árbitro nunca corre — sem isto a
+primeira marcação do jogo ficava escrita por cima dele até ao fim.
+
+**Não há OFFSIDE na tabela** porque não há impedimento marcado no jogo: o
+`offsideLimitDir` do TeamBT apenas limita onde os atacantes se põem. Escrever o
+rótulo sem existir a regra dava uma etiqueta que nunca aparecia — ou pior, que
+aparecia a mentir.
+
+Teste: `tests/etiqueta_do_arbitro.test.js`.
+
+#### O lançamento a passar muito do alvo
+
+Um lançamento é apontado a um **ponto que já está à frente de quem corre**. Se,
+por cima disso, a bola ainda passa metros para lá do ponto, o companheiro nunca
+a apanha — e o erro de peso (aleatório, e de propósito) soma-se a isso.
+
+O desvio **sistemático** vinha de duas coisas somadas:
+
+- `vChegadaLancamento` a 3,5 m/s: a bola chega **viva** ao ponto, logo continua
+  a rolar depois dele;
+- o reforço do passe curto dentro do `velocidadeRasteiraPara`
+  (`+ (12 − dist) * 0.18`), que existe para uma bola de 3 m **aos pés** não sair
+  a passo. Num lançamento não faz sentido nenhum: o alvo já é o espaço.
+
+Medido, distância a que a bola pára depois do ponto:
+
+| alvo | antes | agora |
+|---|---|---|
+| 6 m | +2,7 m | +0,8 m |
+| 10 m | +1,9 m | +0,8 m |
+| 15 m | +1,6 m | +0,8 m |
+| 20 m | +1,0 m | +0,4 m |
+
+O `velocidadeRasteiraPara` passou a aceitar `{ reforcoCurto: false }`, e o
+caminho do lançamento usa-o. **A omissão mantém o reforço**, porque o caso comum
+é mesmo o passe aos pés — está fixado no teste que a bola curta aos pés continua
+a sair mais viva (11,3 contra 10,2 m/s aos 5 m).
+
+`vChegadaLancamento` desceu de 3,5 para 2,5.
+
+#### O passe forte demais: um multiplicador por cima da balística
+
+A calibração do passe é feita pela velocidade de **chegada**, não pela de saída:
+pede-se "quero que chegue a `PassModel.vChegadaRasteira`" e o
+`velocidadeRasteiraPara` (utils.js) inverte o arrasto e o rolamento para dar a
+saída. É a chegada que decide se o receptor domina — `BallControl.easySpeed`.
+
+Depois de toda essa conta, o `executePassGameplay` fazia isto para **todos** os
+passes, lançamentos e cruzamentos:
+
+```js
+forcaPasse *= 1.20;
+Match.ballVel.y /= 1.20;
+```
+
+Com isso a chegada deixava de descrever o que sai. Medido: um passe de 5 m sai
+a 11,3 m/s pela conta e chega a 8,8 — com o ×1.20 sai a 13,6 e chega a ~10,6,
+**acima do `easySpeed` de 9,69**. O receptor falhava o primeiro toque numa bola
+de cinco metros. E é essa mesma inflação que tinha obrigado a empurrar o
+`easySpeed` de 7,75 para 9,69: acelerar o passe sem acelerar o controlo não faz
+o jogo mais rápido, faz os receptores mais incompetentes.
+
+O `/1.20` na vertical era pior: o passe alto era resolvido para uma elevação e
+saía com outra, portanto o alcance que a conta garantia deixava de valer.
+
+Removidos os dois. Chegadas medidas agora: 9,1 m/s aos 3 m, 8,8 aos 5, 7,9 aos
+10, 6,7 aos 20 — todas abaixo do limiar de domínio.
+
+**E o 1.20 tinha dois pares que o cancelavam.** Logo a seguir estavam estes:
+
+```js
+if (ehLancamento && (isLongo || isLateral)) { forcaPasse *= 0.85; ... }
+if (ehCruzamento)                           { forcaPasse *= 0.80; ... }
+```
+
+1,20 × 0,85 = **1,02**. 1,20 × 0,80 = **0,96**. Ou seja: os dois existiam apenas
+para cancelar o multiplicador global nesses dois caminhos — o passe directo era
+o único que ficava mesmo 20% mais forte.
+
+Tirar o 1.20 e deixá-los sozinhos punha lançamentos 15% fracos e cruzamentos 20%
+fracos. Medido: **um lançamento de 25 m morria aos 20 m**. Era isso que se lia
+como "só os passes directos estão certos" — foram os outros dois que eu parti ao
+tirar metade do par. Saíram os três.
+
+O cruzamento alto é resolvido para chegar a `PassModel.alturaCruzamento` **no
+ponto do alvo** (`velocidadeParaAlturaEm`): qualquer multiplicador posterior
+desfaz exactamente a conta que garante a bola à altura da cabeça.
+
+**A manípula do ritmo continua a existir e é o `vChegadaRasteira`**: subi-lo
+acelera a bola toda sem partir a relação entre saída, chegada e domínio. Se o
+passe passar a ler como lento, é ali que se mexe — e o `easySpeed` acompanha.
+
+Teste: `tests/forca_do_passe.test.js`, que fixa a invariante (sair pela conta,
+chegar à velocidade pedida) integrando o rolamento a sério.
+
+#### A condução não tinha velocidade nenhuma
+
+O `actCarry` era isto, e só isto:
+
+```js
+function actCarry(ctx) {
+    ctx.p.fsm.changeState('CARRY');
+}
+```
+
+**Não escrevia `speedMult`** — o portador ficava com o da folha que tinha corrido
+antes. Num jogador que acaba de ganhar a bola essa é sempre uma das rápidas:
+
+| folha | velocidade |
+|---|---|
+| `actTackle` | 9,00 m/s — o próprio comentário lhe chama "velocidade máxima SEM bola" |
+| `actRunIntoSpace` | 7,88 m/s (sprint a atacar o espaço) |
+| `actChaseBall` | 6,53 m/s, +25% em contra-ataque |
+
+Quem desarmava saía a conduzir a 9 m/s: mais depressa do que qualquer sprint sem
+bola. O `* 0.95` do estado CARRY não chega perto de compensar.
+
+`CarryModel.velocidadeBase: 5.0` (a SPEED 50), `velocidadePorSkill: 1.2`,
+`recuoMult: 0.75`, `contraAtaqueMult: 1.25`. Dá 4,28 m/s a SPEED 20 e 5,96 a
+SPEED 90 — abaixo dos 6,53 de quem persegue a bola sem ela, que é a ordem certa:
+conduzir é mais lento do que correr livre, porque se leva a bola no pé.
+
+Sem `skillSpeed` no `ctx` assume-se o médio: há chamadas à folha sem ele, e um
+NaN ali congelava o jogador no sítio.
+
+Teste: `tests/velocidade_de_conducao.test.js`.
+
+#### O lateral: quem cobra e quem se aproxima
+
+**Quem cobra.** Era o jogador de campo mais **perto** do ponto da linha, e num
+lateral no próprio meio-campo isso dá quase sempre o **central** — o homem que
+menos devia estar a pôr a bola em jogo fica com ela nas mãos, e a linha
+defensiva abre ao meio enquanto ele lá vai.
+
+`escolherBatedorDoLateral` (match.js) + `ThrowInModel.ordemBatedor`: lateral do
+lado, médio da ala, CM. O lado sai do sinal do x da bola, a mesma convenção das
+formações (LB em +x, RB em −x). Duas saídas de emergência, ambas deliberadas:
+
+- candidato da ordem além de `distanciaMaxBatedor` (25 m) — passa-se ao seguinte,
+  senão o lance ficava parado à espera de quem vem de 45 m;
+- nenhum dos três em campo (expulsões, formações sem médios de ala) — cobra o
+  mais perto, como antes. Um batedor imperfeito é melhor do que nenhum.
+
+**Quem se aproxima.** O nível 2 fica ligado no `THROW_IN` e a mola de coesão puxa
+o bloco inteiro para a bola: um lance que precisa de duas ou três opções curtas
+acabava com seis pessoas em cima umas das outras, todas cobertas pelo mesmo
+adversário.
+
+`ThrowInModel.distanciaMinimaPorPos` + `distanciaMinimaNoLateral`, aplicados no
+`tickFinal` **depois** da mola — é ela que causa a aproximação, e desfazê-la antes
+era vê-la voltar no mesmo frame:
+
+| posição | distância mínima à bola |
+|---|---|
+| CB / DC | 18 m (na prática, mantém a posição) |
+| CM / DM | 12 m |
+| médio da ala, outro lateral | sem restrição |
+
+O médio da ala fica dentro do `alcanceMin` do lance de propósito: é ele uma das
+opções curtas, e pô-lo longe trocava "toda a gente em cima" por "ninguém a quem
+jogar". O batedor está fora da regra — o lugar dele é escrito à mão no
+`setupSetPiece`.
+
+Teste: `tests/lateral_batedor_e_apoios.test.js`.
+
+#### Saída do guarda-redes: o lateral bem livre manda
+
+Os laterais já eram candidatos à saída curta, mas concorriam com os centrais numa
+nota que é `folga + bonusLateral` (3 m). O bónus **inclina, não impõe**: com um
+central muito desmarcado e um lateral com folga confortável ganhava o central, e
+a bola saía pelo **meio** — a zona onde a perda custa golo, e o oposto de sair a
+jogar.
+
+`GoalkeeperDistribution.folgaPreferencialLateral: 10.0` — a partir de 10 m de
+folga o lateral é a saída, sem nota nenhuma pelo meio. Entre dois laterais acima
+do limiar, o mais livre. Abaixo dele nada muda: volta a valer a nota de sempre.
+
+O número tem de ficar acima da `folgaMinima` (4 m), senão qualquer lateral
+elegível ganhava sempre e a saída pelos centrais deixava de existir — está
+fixado no teste.
+
+Teste: `tests/saida_gk_pelos_laterais.test.js`.
+
+#### Esperar pelo posto em vez de recuar contra ele
+
+O que se via: um jogador sai da posição para participar na jogada e fica mais
+adiantado do que o seu posto. A jogada progride, o posto avança — mas ainda não
+passou por cima dele. Ele inverte o sentido para o ir buscar, a inércia leva-o
+2-3 m longe de mais, e quando o passe sai o apoio que devia estar ali vem a meio
+caminho no sentido errado. **A jogada morre por falta de um apoio que existia e
+estava a fazer marcha atrás.**
+
+Ninguém lhe dizia que o alvo vinha a caminho: o `tickFinal` escreve um ponto e o
+`steerArrive` persegue-o, sem olhar se esse ponto se está a **aproximar**.
+
+`esperarPeloSlot` + `EsperaPeloSlotModel` (config.js), geometria pura: posição
+dele, posto de agora, posto do frame anterior, `dt`. A aproximação mede-se ao
+longo da recta jogador→posto, e não em z — um posto que chega pelo lado conta
+como um que chega pela frente.
+
+- `distanciaMax: 8.0` — mais longe do que isto vai-se ao encontro do posto, senão
+  ficava parado fora da jogada.
+- `velocidadeMin: 0.5` — piso de aproximação. Sem ele o ruído do
+  `PositionSmoothing` passava por aproximação e o jogador ficava colado ao chão a
+  jogada inteira.
+
+O posto do frame anterior guarda-se em `p.slotAnterior` porque o alvo é
+recalculado do zero em cada frame e não tem velocidade em lado nenhum.
+
+**Fora da regra** quem tem tarefa com a bola — portador, chaser, intercetor,
+destinatário. Esses não estão a ocupar posição, e a folha da árvore reescreve o
+`dynamicTarget` logo a seguir; deixá-los esperar era travar quem vai à bola. O
+`tacticalTarget` (o anel do debug) não congela, para a espera se ver ao olhar.
+
+**A inércia em si continua por tratar**, e é o passo seguinte:
+`this.velocity.lerp(desired, 5*dt)` em [player.js:2386](js/player.js#L2386) é um
+filtro de 0,2 s **igual em todas as direcções** — travar e acelerar custam o
+mesmo, o que nenhum corpo humano faz. Isto aqui evita a inversão; não a torna
+mais rápida quando ela é mesmo precisa.
+
+Teste: `tests/esperar_pelo_slot.test.js`.
+
+#### Três a ir à bola depois de um passe
+
+A conta, com um passe no ar:
+
+| quem | porquê |
+|---|---|
+| destinatário | o `pickChaser` dá-lhe o lugar de chaser da equipa que passou |
+| chaser da equipa que defende | corre para onde a bola **está** |
+| intercetor da equipa que defende | corre para onde a bola **vai** |
+
+Três a convergir na mesma bola, e **dois do mesmo lado a fazer o mesmo
+trabalho**. A causa é a primeira linha do `deveMandarChaser`:
+
+```js
+if (o.bolaSolta) return true;   // antes da fase, da metade do campo e do raio
+if (o.isAttacking) return false;
+```
+
+Assim que o passe sai, `Match.ballCarrier` fica null e a bola contava como
+solta — e bola solta persegue-se sempre, sem condição nenhuma.
+
+**Uma bola no ar com destinatário conhecido não está solta: está endereçada.**
+O `bolaSolta` do `pickChaser` passou a exigir também `!Match.intendedReceiver`.
+Das duas figuras, quem fica é o **intercetor**: tem a conta do tempo de voo e o
+ponto de encontro. O chaser apontava à posição actual da bola, um ponto que já
+se moveu quando ele lá chega — e volta às guardas normais de distância, metade
+do campo e pressão, arrancando quando a bola aterra e volta a ter dono.
+
+A atribuição do chaser ao destinatário **subiu para antes do
+`deveMandarChaser`**: com a bola já não-solta e a equipa em posse, aquele
+devolve `false`, e o destinatário ficava sem ninguém a ir buscar o passe que
+vinha para ele. Ir buscar o passe da própria equipa não é uma decisão de bloco.
+
+O `intendedReceiver` é limpo no `updateBall` quando o passe morre, portanto uma
+bola realmente perdida volta a ser disputada no frame seguinte — está fixado no
+teste.
+
+Teste: `tests/passe_em_voo_nao_e_bola_solta.test.js`.
+
 #### Girar de costas: só onde perder a bola não é golo
 
 O que se via: o jogador domina de costas para o ataque e roda 180 graus para
@@ -97,11 +458,15 @@ sabe nada de quem está lá.
 
 A regra, no `GiroDeCostasModel` e no `eixoDeConducao` (config.js):
 
-- **No campo de ataque gira à vontade.** Perder a bola ali não é golo, e travar
-  o giro só tirava jogo ofensivo.
-- **No próprio meio-campo** só gira com o cone de saída limpo: **5 m**, **45°**
-  para cada lado da direcção oposta àquela de onde a bola vem — por onde ele
-  quer sair.
+- **No último terço gira à vontade** (`zonaLivre: 17.0`, no referencial de
+  ataque). A primeira versão abria a excepção já a partir da linha de meio-campo,
+  mas no meio-campo adversário perder a bola **ainda dói**: o contra-ataque sai
+  com a equipa toda subida e as costas da defesa à vista. É o mesmo número do
+  `CarryModel.zonaLivre` e do `conduzirSoAcimaDe` — a mesma ideia de "último
+  terço", sem inventar uma segunda fronteira; o teste compara os dois e falha se
+  divergirem.
+- **Aquém disso** só gira com o cone de saída limpo: **5 m**, **45°** para cada
+  lado da direcção oposta àquela de onde a bola vem — por onde ele quer sair.
 - **Cone ocupado: não gira.** Sai em toques de **30°** para o lado livre, e o
   lado escolhe-se pela folga real a cada uma das duas hipóteses, não por
   preferência.

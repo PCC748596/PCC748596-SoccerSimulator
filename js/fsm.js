@@ -141,7 +141,10 @@ function executePassGameplay(p) {
             Match.ballVel.y = vL * Math.sin(elevL);
             forcaPasse = vL * Math.cos(elevL);
         } else {
-            forcaPasse = velocidadeRasteiraPara(distToTarget, PassModel.vChegadaLancamento);
+            // Sem o reforco do passe curto: aqui o alvo ja e o espaco a frente
+            // de quem corre, e chegar vivo ao ponto e passar-lhe para la.
+            forcaPasse = velocidadeRasteiraPara(distToTarget,
+                PassModel.vChegadaLancamento, { reforcoCurto: false });
             Match.ballVel.y = 0;
         }
         usouBalistica = true;
@@ -207,28 +210,57 @@ function executePassGameplay(p) {
         usouBalistica = true;
     }
 
-    // Aumento de 20% na velocidade dos passes (pedido do utilizador):
-    // Multiplicamos a força horizontal por 1.2 e dividimos a vertical por 1.2.
-    // Numa parábola, isto aumenta a velocidade horizontal em 20% mas reduz o tempo de voo,
-    // mantendo o alcance (distância do passe) praticamente inalterado.
-    forcaPasse *= 1.20;
-    Match.ballVel.y /= 1.20;
+    /*
+    O MULTIPLICADOR GLOBAL DE 1.20 SAIU DAQUI.
 
-    // Redução de 15% da força pedida: lançamentos longos e lançamentos para as laterais
-    if (ehLancamento) {
-        let isLongo = distToTarget > 20.0;
-        let isLateral = Math.abs(dirX) > Math.abs(dirZ);
-        if (isLongo || isLateral) {
-            forcaPasse *= 0.85;
-            Match.ballVel.y *= 0.85;
-        }
-    }
+    Estava assim, para TODOS os passes, lancamentos e cruzamentos:
 
-    // Redução de 20% da força nos cruzamentos
-    if (ehCruzamento) {
-        forcaPasse *= 0.80;
-        Match.ballVel.y *= 0.80;
-    }
+        forcaPasse *= 1.20;
+        Match.ballVel.y /= 1.20;
+
+    Passava por cima de toda a balistica que acabou de ser resolvida. A
+    calibracao do passe e feita pela velocidade de CHEGADA
+    (PassModel.vChegadaRasteira) e nao pela de saida — pede-se "quero que
+    chegue a 7.5 m/s" e o velocidadeRasteiraPara inverte o arrasto e o
+    rolamento para dar a saida. Com o 1.20 por cima, a chegada deixava de
+    descrever o que sai: um passe de 5 m chegava a ~10.6 m/s, acima do
+    `BallControl.easySpeed` (9.69), e o receptor falhava o primeiro toque numa
+    bola de cinco metros.
+
+    O `/1.20` na vertical era pior ainda: o passe alto foi resolvido para uma
+    elevacao, e saia com outra — o alcance que a conta garantia deixava de
+    valer.
+
+    A manipula do ritmo continua a existir, e e o `vChegadaRasteira`: subi-lo
+    acelera a bola toda sem partir a relacao entre saida, chegada e dominio.
+    */
+
+    /*
+    E A REDUCAO DE 15% DOS LANCAMENTOS SAIU COM ELE.
+
+    Estava aqui uma reducao de 15% para lancamentos longos ou laterais. Somada
+    ao 1.20 global que vinha imediatamente antes dava 1.20 x 0.85 = 1.02, ou
+    seja NADA: o 0.85 existia so para cancelar o 1.20 neste caminho.
+
+    Tirar o 1.20 e deixar o 0.85 deixava os lancamentos 15% fracos, e um passe
+    no espaco 15% fraco nao chega a lado nenhum — medido, um lancamento de 25 m
+    morria aos 20. Era isso que se lia como "so os passes directos estao
+    certos".
+
+    Quem manda na forca do lancamento e o `PassModel.vChegadaLancamento`: e a
+    velocidade a que a bola chega ao PONTO, e o ponto ja e a frente do
+    companheiro.
+    */
+
+    /*
+    E A REDUCAO DE 20% DOS CRUZAMENTOS TAMBEM. Mesmo par: 1.20 x 0.80 = 0.96,
+    ou seja o 0.80 tambem existia so para cancelar o 1.20 global. Deixa-lo
+    sozinho punha os cruzamentos 20% fracos — a bola cai antes da area.
+
+    O cruzamento alto e resolvido para chegar a `PassModel.alturaCruzamento` no
+    ponto do alvo (velocidadeParaAlturaEm): mexer na forca depois disso desfaz
+    exactamente a conta que garante a bola a altura da cabeca.
+    */
 
     // Percepção de limites do campo: se o vetor do passe estiver indo em direção à linha lateral
     // ou de fundo, o passador pondera a força de modo a não chutar a bola para além do gramado.

@@ -723,6 +723,51 @@ const ThrowInModel = {
     alcanceMaxFraco: 12.0,   // STRENGTH 0
     alcanceMaxForte: 20.0,   // STRENGTH 100
     recuoDaLinha: 0.7,       // metros para lá da linha onde o batedor se põe
+
+    /*
+    QUEM COBRA, E POR QUE ORDEM — ver escolherBatedorDoLateral em match.js.
+
+    Era o jogador de campo mais PERTO do ponto da linha, e num lateral no nosso
+    meio-campo isso dá quase sempre o CENTRAL: o homem que menos devia estar a
+    pôr a bola em jogo é o que fica com ela nas mãos, e a linha defensiva abre
+    ao meio enquanto ele lá vai.
+
+    A ordem é a do futebol: o LATERAL do lado, depois o MÉDIO DA ALA, depois o
+    CM. Sem nenhum dos três — pode acontecer com expulsões ou formações sem
+    médios de ala — cobra o mais perto, como sempre: um lance parado à espera
+    de um batedor que não existe é pior do que um batedor imperfeito.
+
+    `distanciaMaxBatedor` impede a outra ponta: chamar um lateral que está a 45
+    m dali é o lance todo parado à espera dele. Além disso, passa-se ao
+    seguinte da ordem.
+    */
+    ordemBatedor: {
+        esquerda: ['LB', 'LM', 'CM'],
+        direita: ['RB', 'RM', 'CM']
+    },
+    distanciaMaxBatedor: 25.0,
+
+    /*
+    QUEM SE APROXIMA, E QUANTO — distância mínima à bola, por posição, enquanto
+    o lance decorre.
+
+    O nível 2 fica ligado no THROW_IN e a mola de coesão puxa o bloco inteiro
+    para a bola: o central sai da posição, o CM cola-se à linha, e num lance que
+    precisa de duas ou três opções curtas aparecem seis — todas em cima umas das
+    outras, todas marcadas pelo mesmo adversário.
+
+    O central mantém a posição (por isso o número dele é grande: na prática
+    nunca é puxado). O CM oferece-se, mas de longe. O médio da ala e o outro
+    lateral são as opções curtas do lance e ficam DENTRO do `alcanceMin` — se
+    também tivessem de ficar longe, trocava-se "toda a gente em cima" por
+    "ninguém a quem jogar".
+    */
+    distanciaMinimaPorPos: {
+        CB: 18.0, DC: 18.0,
+        CM: 12.0, DM: 12.0,
+        GK: 25.0
+    },
+    distanciaMinimaOmissao: 0.0,
     afastaAdversarios: 2.5,  // ninguém do outro lado a menos disto da bola
 
     /*
@@ -778,6 +823,19 @@ const ThrowInModel = {
     pesoMin: 0.6,            // cortes do erro de peso, para não sair absurdo
     pesoMax: 1.4
 };
+/*
+Distância mínima à bola, por posição, durante um lance de lateral. Ver
+ThrowInModel.distanciaMinimaPorPos, que é onde os números vivem.
+
+Zero quer dizer "sem restrição": é a omissão, e é o que vale para quem são as
+opções curtas do lance.
+*/
+function distanciaMinimaNoLateral(pos) {
+    const T = ThrowInModel;
+    const v = T.distanciaMinimaPorPos[pos];
+    return (typeof v === 'number') ? v : T.distanciaMinimaOmissao;
+}
+
 
 const GoalkeeperThrowPower = 1.0;
 
@@ -1682,7 +1740,14 @@ const PassModel = {
     */
     vChegadaRasteira: 7.5,
     vChegadaCruzamento: 3.5,
-    vChegadaLancamento: 3.5,
+    /*
+    O lancamento chega mais manso do que o passe aos pes, e de proposito: o
+    alvo dele e um PONTO a frente de quem corre, nao o pe de ninguem. A 3.5 a
+    bola chegava viva ao ponto e continuava — passava 1.6 a 2.7 m para la dele,
+    somados ao erro de peso e ao facto de o ponto ja estar adiantado. A 2.5
+    passa 0.3 a 0.8 m, que e a folga certa para quem vai a correr.
+    */
+    vChegadaLancamento: 2.5,
 
     /*
     Erro máximo no PESO da bola, para skill de passe 0. Escala com
@@ -2266,9 +2331,11 @@ recebe de costas aponta logo para a frente — isto é, gira os 180 — e o cone
 sabe nada de quem está lá.
 
 A REGRA:
-  - No CAMPO DE ATAQUE gira à vontade. Perder a bola ali não é golo, e travar o
+  - No ÚLTIMO TERÇO gira à vontade. Perder a bola ali não é golo, e travar o
     giro só tirava jogo ofensivo.
-  - No próprio meio-campo, gira apenas se o CONE DE SAÍDA estiver limpo: `raio`
+  - Aquém disso — incluindo o meio-campo adversário, onde uma perda ainda deixa
+    a equipa subida e as costas da defesa à vista — gira apenas se o CONE DE
+    SAÍDA estiver limpo: `raio`
     metros, `meiaAberturaGraus` para cada lado da direcção OPOSTA àquela de onde
     a bola vem — que é por onde ele quer sair.
   - Com o cone ocupado não gira: sai em toques de `passoGiroGraus`, para o lado
@@ -2280,10 +2347,82 @@ domínio (match.js). Sem ela, cai-se na direcção de ataque, que é a leitura c
 quando não se sabe de onde veio.
 =============================================================================
 */
+/*
+=============================================================================
+ESPERAR PELO POSTO — não correr para trás contra um alvo que se aproxima
+=============================================================================
+O que se via: um jogador sai da posição para participar na jogada e fica mais
+adiantado do que o seu posto. A jogada progride, o posto avança — mas ainda não
+passou por cima dele. Ele vira-se para trás para o ir buscar, a inércia leva-o
+longe de mais, e quando o passe sai o apoio que devia estar naquele ponto vem a
+meio caminho, no sentido errado. A jogada morre por falta de apoio, e o apoio
+existia: estava a fazer marcha atrás.
+
+Ninguém lhe dizia que o alvo vinha a caminho. O `tickFinal` escreve um ponto e
+o `steerArrive` persegue-o, sem olhar se esse ponto se está a APROXIMAR. Um
+jogador real não recua contra um posto que avança na direcção dele — fica, e
+deixa-o chegar.
+
+A inércia em si é o `velocity.lerp(desired, 5*dt)` do player.js, um filtro de
+0.2 s igual em todas as direcções: inverter o sentido custa quase meio segundo,
+e nesse tempo ele percorre 2-3 m no sentido errado. Isto aqui não trata disso —
+trata de nunca chegar a haver a inversão, que é a metade barata do problema.
+
+    distanciaMax     até aqui vale a pena esperar; mais longe vai-se ao
+                     encontro do posto, senão ficava fora da jogada parado
+    velocidadeMin    piso de aproximação, em m/s. Sem ele o ruído do
+                     alisamento (PositionSmoothing) passava por aproximação e
+                     o jogador ficava colado ao chão a jogada inteira
+=============================================================================
+*/
+const EsperaPeloSlotModel = {
+    distanciaMax: 8.0,
+    velocidadeMin: 0.5
+};
+
+/*
+O posto vem ter com ele? Geometria pura: posição dele, posto de agora, posto do
+frame anterior e o dt entre os dois.
+
+A aproximação mede-se ao longo da recta jogador->posto, e não em z: um posto que
+chega pelo lado conta exactamente como um que chega pela frente.
+*/
+function esperarPeloSlot(e) {
+    const dx = e.slotX - e.px, dz = e.slotZ - e.pz;
+    const dist = Math.hypot(dx, dz);
+    if (dist > EsperaPeloSlotModel.distanciaMax) return false;
+    if (dist < 0.001) return true;
+
+    const dtSeguro = (e.dt && e.dt > 0.0001) ? e.dt : 0.016;
+    const vx = (e.slotX - e.slotAnteriorX) / dtSeguro;
+    const vz = (e.slotZ - e.slotAnteriorZ) / dtSeguro;
+
+    // Componente da velocidade do posto NA DIRECÇÃO do jogador: positiva
+    // quando ele se aproxima.
+    const aproximacao = -((vx * dx) + (vz * dz)) / dist;
+    return aproximacao >= EsperaPeloSlotModel.velocidadeMin;
+}
+
 const GiroDeCostasModel = {
     raio: 5.0,
     meiaAberturaGraus: 45,
-    passoGiroGraus: 30
+    passoGiroGraus: 30,
+
+    /*
+    ONDE O GIRO E LIVRE: o ULTIMO TERCO, e nao a metade adversaria.
+
+    A primeira versao abria a excepcao a partir da linha de meio-campo. Mas no
+    meio-campo adversario perder a bola ainda doi — o contra-ataque sai com a
+    equipa toda subida e as costas da defesa a descoberto. Onde perder a bola
+    custa mesmo pouco e la a frente.
+
+    17 m no referencial de ataque, o MESMO numero do `CarryModel.zonaLivre` e do
+    `conduzirSoAcimaDe`: e a mesma ideia de "ultimo terco" e nao se inventa uma
+    segunda fronteira para ela. Esta escrito aqui em vez de referenciado porque
+    o CarryModel so e definido mais abaixo neste ficheiro; o teste
+    tests/giro_de_costas.test.js compara os dois e falha se divergirem.
+    */
+    zonaLivre: 17.0
 };
 
 /*
@@ -2309,8 +2448,8 @@ function eixoDeConducao(e) {
     const olhaParaOAtaque = (e.facingZ * e.dirZ) >= 0;
     if (olhaParaOAtaque) return paraFrente;
 
-    // No campo de ataque gira à vontade.
-    if (e.zDir > 0) return paraFrente;
+    // No ULTIMO TERCO gira à vontade — ver GiroDeCostasModel.zonaLivre.
+    if (e.zDir > GiroDeCostasModel.zonaLivre) return paraFrente;
 
     // Direcção de saída: a oposta àquela de onde a bola vem, ou seja o próprio
     // sentido em que ela viajava.
@@ -2464,6 +2603,29 @@ const CarryModel = {
 
     zonaLivre: 17.0,
     velMaxLivre: GaitModel.correr.vel,
+
+    /*
+    VELOCIDADE DE CONDUÇÃO — a que faltava.
+
+    O `actCarry` não escrevia `speedMult` nenhum: o portador ficava com o da
+    folha que tinha corrido antes. Num jogador que acabou de ganhar a bola isso
+    é sempre uma das rápidas — 9.00 m/s do `actTackle` (que o próprio comentário
+    chama "velocidade máxima SEM bola"), 7.88 do sprint do `actRunIntoSpace`.
+    Saía a conduzir mais depressa do que qualquer sprint sem bola, e o 0.95 do
+    estado CARRY não chega perto de compensar.
+
+    Conduzir é mais lento do que correr livre: leva-se a bola no pé, dá-se o
+    toque à frente e corre-se atrás dela. Por isso a base fica abaixo dos 6.53
+    m/s de quem persegue a bola sem ela.
+
+    O recuo com bola é mais lento ainda — é para segurar a jogada, não para
+    arrancar (`recuoMult`). O contra-ataque acelera, como em todas as outras
+    folhas.
+    */
+    velocidadeBase: 5.0,      // m/s a SPEED 50
+    velocidadePorSkill: 1.2,  // ± isto entre SPEED 0 e SPEED 100
+    recuoMult: 0.75,
+    contraAtaqueMult: 1.25,
 
     // Toques de condução — distância do toque depende do espaço à frente
     touchLong: 2.8,       // toque longo (campo aberto, adversário > 15m)
@@ -3432,6 +3594,21 @@ const GoalkeeperDistribution = {
     entra quando é ele o que está mesmo desmarcado.
     */
     bonusLateral: 3.0,
+
+    /*
+    E UM LATERAL MESMO LIVRE NÃO CONCORRE COM NINGUÉM.
+
+    O `bonusLateral` inclina, mas não impõe: com um central muito desmarcado e
+    um lateral com folga confortável ganhava o central, e a bola saía pelo MEIO
+    — a zona onde a perda custa golo, e o oposto de sair a jogar.
+
+    A partir desta folga o lateral é a saída, sem nota nenhuma pelo meio: dez
+    metros de espaço num corredor é a bola a sair em segurança.
+
+    Tem de ficar acima da `folgaMinima`, senão qualquer lateral elegível
+    ganhava sempre e a saída pelos centrais deixava de existir.
+    */
+    folgaPreferencialLateral: 10.0,
 
     /*
     Segundos com a bola no pé antes de largar. A saída curta é mais rápida do
