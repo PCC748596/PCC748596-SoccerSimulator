@@ -48,6 +48,55 @@ const PassCandidates = {
     raioAdversario: 2.0,   // adversário a menos disto do ponto -> ponto descartado
 
     /*
+    ALCANCE DO RECEPTOR — o filtro que faltava.
+
+    Os sete arcos põem pontos até 21 m à frente do companheiro, e nenhum dos
+    filtros perguntava se ele CHEGA LÁ: nem o do campo, nem o do adversário em
+    cima do ponto, nem o da linha de passe. O `leading` escolhe de propósito o
+    ponto vivo mais adiantado, portanto ia buscar o arco de fora sempre que o
+    campo estivesse limpo — e o passe saía para onde nunca ninguém ia. Pior:
+    ficava mais longo justamente quando a defesa estava organizada e não havia
+    lá ninguém para invalidar os pontos de fora.
+
+    O limite é físico. O companheiro só apanha o ponto se lá chegar no tempo
+    que a bola demora a percorrer o caminho:
+
+        tempo de voo = distância(bola -> ponto) / velocidadeMediaDaBola
+        alcance      = velocidade dele * tempo de voo * margem
+
+    `velocidadeMediaBola` é a mesma média do lead do initiatePass (player.js) —
+    a de saída é maior, mas o arrasto e o atrito travam a bola ao longo do
+    percurso, e é a média que conta para saber quem lá chega.
+
+    `margemAlcance` abaixo de 1 porque ele não parte na direcção certa nem
+    acelera de repente: pedir-lhe o alcance teórico completo é pedir-lhe uma
+    corrida perfeita.
+
+    `alcanceMinimo` garante que o primeiro arco sobrevive sempre. Sem isso um
+    jogador parado ficava sem passe no vazio nenhum, e trocava-se "longe de
+    mais" por "nunca" — que é o mesmo defeito ao contrário.
+    */
+    velocidadeMediaBola: 11.0,
+    margemAlcance: 0.8,
+    alcanceMinimo: 3.0,
+
+    /*
+    Até onde vale a pena pôr pontos à frente DESTE companheiro, dado onde a
+    bola está agora.
+
+    Resolve-se por arco em vez de fechar uma fórmula: o tempo de voo depende da
+    distância da BOLA ao ponto, que muda com o raio. Percorrer os arcos de fora
+    para dentro (é a ordem do gerador) e ficar pelo primeiro que ele alcança dá
+    o mesmo resultado sem resolver equação nenhuma.
+    */
+    alcancaOPonto: function (mate, raio, distBolaAoPonto) {
+        if (raio <= this.alcanceMinimo) return true;
+        const vMate = (mate && mate.speedMult) ? mate.speedMult : 3.5;
+        const tVoo = distBolaAoPonto / this.velocidadeMediaBola;
+        return raio <= vMate * tVoo * this.margemAlcance;
+    },
+
+    /*
     Gera a lista de candidatos sobreviventes para o `carrier` — pura, sem
     THREE (ver pontosPorMate em pass_types.js e findGridPassTarget em
     player_bt.js). Devolve [{x, z, mate}, ...].
@@ -112,6 +161,14 @@ const PassCandidates = {
                     const pz = mz + (fz * cosO - fx * sinO) * raio;
 
                     if (!this.pontoValido(px, pz, carrier, opponents)) continue;
+
+                    // O companheiro chega lá dentro do tempo de voo? Ver
+                    // alcancaOPonto: sem isto o leading ia buscar o arco de
+                    // fora e o passe saía para o vazio.
+                    const distBola = Math.hypot(px - carrier.model.position.x,
+                        pz - carrier.model.position.z);
+                    if (!this.alcancaOPonto(mate, raio, distBola)) continue;
+
                     out.push({ x: px, z: pz, mate: mate });
                 }
             }

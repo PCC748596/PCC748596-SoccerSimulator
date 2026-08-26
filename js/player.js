@@ -39,6 +39,9 @@ class FootballPlayer {
         em vez de a atirar para a lateral. Ver o case CARRY em fsm.js.
         */
         this.carryRecuo = false;
+        // Direccao em que a bola vinha a viajar quando ele a dominou; escrita no
+        // match.js e lida pelo eixoDeConducao (ver GiroDeCostasModel).
+        this.dirEntradaBola = null;
         this.dribbleOpponent = null;
         this.dribbleCooldownTimer = 0;
         this.isCross = false;

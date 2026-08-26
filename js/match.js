@@ -2249,6 +2249,22 @@ const Match = {
         this.lastTouchedTeam = best.team;
         this.lastTouchedPlayer = best;
 
+        /*
+        DE ONDE VEIO A BOLA, guardado no instante do domínio.
+
+        É o que permite ao `eixoDeConducao` (config.js) saber para onde ele quer
+        SAIR: a direcção oposta àquela de onde a bola vem, que é o próprio
+        sentido em que ela viajava. Lido a seguir, no estado CARRY, quando já
+        não há velocidade nenhuma para consultar — a bola parou no pé dele.
+        */
+        {
+            const v = this.ballVel;
+            const len = v ? Math.hypot(v.x, v.z) : 0;
+            if (len > 0.5) {
+                best.dirEntradaBola = { x: v.x / len, z: v.z / len };
+            }
+        }
+
         if (this.kickoffTeam && best.team !== this.kickoffTeam) {
             this.kickoffPendingPassToDef = false;
         }

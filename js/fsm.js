@@ -934,9 +934,41 @@ class PlayerFSM {
                         */
                         const sentido = p.carryRecuo ? -p.dirZ : p.dirZ;
 
+                        /*
+                        EIXO DO LEQUE — ver eixoDeConducao/GiroDeCostasModel em
+                        config.js. Era sempre (0, sentido), ou seja a direcção
+                        de ataque: quem recebia de costas apontava logo para a
+                        frente, girava os 180 e ia dar de caras com o marcador
+                        que tinha atrás. No próprio meio-campo isso é a perda de
+                        bola mais cara que há.
+
+                        Agora o eixo pode vir rodado — um toque de 30 graus para
+                        o lado livre — e todo o resto do leque (o cone da
+                        técnica, a nota de espaço, o sector) continua a abrir à
+                        volta dele, sem saber que mudou.
+                        */
+                        const _fq = p.model.quaternion;
+                        const eixo = (typeof eixoDeConducao === 'function')
+                            ? eixoDeConducao({
+                                dirZ: p.dirZ,
+                                zDir: pz * p.dirZ,
+                                facingX: _fq ? 2 * (_fq.x * _fq.z + _fq.w * _fq.y) : 0,
+                                facingZ: _fq ? 1 - 2 * (_fq.x * _fq.x + _fq.y * _fq.y) : p.dirZ,
+                                entradaX: p.dirEntradaBola ? p.dirEntradaBola.x : 0,
+                                entradaZ: p.dirEntradaBola ? p.dirEntradaBola.z : p.dirZ,
+                                carryRecuo: p.carryRecuo,
+                                adversarios: (p.team === 'TeamA' ? Match.opponents : Match.players)
+                                    .filter(o => o.role !== 'gk')
+                                    .map(o => ({
+                                        x: o.model.position.x - px,
+                                        z: o.model.position.z - pz
+                                    }))
+                            })
+                            : { bx: 0, bz: sentido };
+
                         // Recuo seguro se nenhum candidato passar os filtros:
                         // dez metros a direito, no sentido em que vai.
-                        let alvoX = px, alvoZ = pz + 10 * sentido;
+                        let alvoX = px + eixo.bx * 10, alvoZ = pz + eixo.bz * 10;
 
                         // Visão de jogo baseada na técnica — ver VisionModel
                         // em config.js, que é onde os números vivem agora.
@@ -954,8 +986,11 @@ class PlayerFSM {
                         for (let k = 0; k < passos; k++) {
                             const ratio = (k / (passos - 1)) * 2 - 1; // de -1 a +1
                             const ang = ratio * maxAngRad;
-                            const tx = px + Math.sin(ang) * visDist;
-                            let tz = pz + Math.cos(ang) * sentido * visDist;
+                            // O leque abre em torno do eixo, que já não é
+                            // obrigatoriamente a direcção de ataque.
+                            const cosA = Math.cos(ang), sinA = Math.sin(ang);
+                            const tx = px + (eixo.bx * cosA + eixo.bz * sinA) * visDist;
+                            let tz = pz + (eixo.bz * cosA - eixo.bx * sinA) * visDist;
                             if (tz * sentido > avancoMax) tz = avancoMax * sentido;
                             if (Math.abs(tx) > 31 || Math.abs(tz) > 51) continue;
 

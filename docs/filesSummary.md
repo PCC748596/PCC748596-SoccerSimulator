@@ -84,6 +84,40 @@ Teste: `tests/saida_de_jogo_para_defesa.test.js` — fixa a ordem dos três ramo
 (`RecuperarControlo` < `PasseSaidaDeBola` < `Dominar`), o alvo ser um defesa que
 não é o próprio, e o prazo a correr só com a bandeira acesa.
 
+#### Girar de costas: só onde perder a bola não é golo
+
+O que se via: o jogador domina de costas para o ataque e roda 180 graus para
+cima do adversário que o marca por trás. No próprio meio-campo essa bola perdida
+deixa o atacante isolado com o guarda-redes — não é uma perda de bola qualquer.
+
+A causa é o cone de condução do estado `CARRY` ser centrado em `p.dirZ`, a
+direcção de **ataque**, e nunca na direcção para onde o corpo está virado. Quem
+recebe de costas aponta logo para a frente — isto é, gira os 180 — e o cone não
+sabe nada de quem está lá.
+
+A regra, no `GiroDeCostasModel` e no `eixoDeConducao` (config.js):
+
+- **No campo de ataque gira à vontade.** Perder a bola ali não é golo, e travar
+  o giro só tirava jogo ofensivo.
+- **No próprio meio-campo** só gira com o cone de saída limpo: **5 m**, **45°**
+  para cada lado da direcção oposta àquela de onde a bola vem — por onde ele
+  quer sair.
+- **Cone ocupado: não gira.** Sai em toques de **30°** para o lado livre, e o
+  lado escolhe-se pela folga real a cada uma das duas hipóteses, não por
+  preferência.
+
+O `eixoDeConducao` é puro — recebe números e devolve um vector unitário, sem
+tocar em `Match` nem em THREE — porque é a única forma de fixar a regra num teste
+sem montar um jogo à volta. O `CARRY` passou a abrir o leque em torno desse
+eixo; o cone da técnica, a nota de espaço e a penalização de sector continuam
+todos a funcionar sem saber que o eixo mudou.
+
+A direcção de entrada vem do `p.dirEntradaBola`, escrito no instante do domínio
+(match.js, a partir da velocidade da bola): no `CARRY` já não há velocidade
+nenhuma para consultar, a bola parou no pé dele.
+
+Teste: `tests/giro_de_costas.test.js`.
+
 #### O tecto da marcação passou a ser o do SETOR, nas duas camadas
 
 O `biasMaxPorSetor` (def/mid/atk × low/balanced/high) já existia e já era

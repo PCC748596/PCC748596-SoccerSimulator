@@ -2251,6 +2251,121 @@ function alcanceVisao(tec, minimo) {
         tec * V.distanciaPorTecnica);
 }
 
+/*
+=============================================================================
+GIRAR DE COSTAS — quando é que quem recebe pode rodar para o ataque
+=============================================================================
+O que se via: o jogador domina de costas para o ataque e roda 180 graus para
+cima do adversário que o marca por trás. Feito no PRÓPRIO meio-campo, a bola
+perdida ali deixa o atacante isolado com o guarda-redes — o erro mais caro que
+há, e não uma perda de bola qualquer.
+
+A causa é o cone de condução do estado CARRY ser centrado em `p.dirZ`, a
+direcção de ATAQUE, e nunca na direcção para onde o corpo está virado. Quem
+recebe de costas aponta logo para a frente — isto é, gira os 180 — e o cone não
+sabe nada de quem está lá.
+
+A REGRA:
+  - No CAMPO DE ATAQUE gira à vontade. Perder a bola ali não é golo, e travar o
+    giro só tirava jogo ofensivo.
+  - No próprio meio-campo, gira apenas se o CONE DE SAÍDA estiver limpo: `raio`
+    metros, `meiaAberturaGraus` para cada lado da direcção OPOSTA àquela de onde
+    a bola vem — que é por onde ele quer sair.
+  - Com o cone ocupado não gira: sai em toques de `passoGiroGraus`, para o lado
+    livre. Chegar lá em três toques a ver o que tem à volta é melhor do que
+    rodar de uma vez para cima do marcador.
+
+A direcção de entrada da bola vem do `p.dirEntradaBola`, escrito no instante do
+domínio (match.js). Sem ela, cai-se na direcção de ataque, que é a leitura certa
+quando não se sabe de onde veio.
+=============================================================================
+*/
+const GiroDeCostasModel = {
+    raio: 5.0,
+    meiaAberturaGraus: 45,
+    passoGiroGraus: 30
+};
+
+/*
+Eixo em torno do qual o leque de condução abre, já com a regra do giro.
+
+Pura de propósito — recebe números e devolve um vector unitário, sem tocar em
+Match nem em THREE — porque é a única forma de a fixar num teste sem montar um
+jogo inteiro à volta.
+
+    dirZ        sentido de ataque da equipa (+1 ou -1)
+    zDir        z do jogador no referencial de ataque (negativo: campo próprio)
+    facingX/Z   para onde o corpo está virado
+    entradaX/Z  direcção em que a BOLA vinha a viajar quando ele a dominou
+    adversarios posições RELATIVAS a ele, no referencial do mundo
+*/
+function eixoDeConducao(e) {
+    const paraFrente = { bx: 0, bz: e.dirZ };
+
+    // Recuo deliberado: quem manda é o carryRecuo, e isto não lhe toca.
+    if (e.carryRecuo) return { bx: 0, bz: -e.dirZ };
+
+    // Já virado para a frente não há giro nenhum para travar.
+    const olhaParaOAtaque = (e.facingZ * e.dirZ) >= 0;
+    if (olhaParaOAtaque) return paraFrente;
+
+    // No campo de ataque gira à vontade.
+    if (e.zDir > 0) return paraFrente;
+
+    // Direcção de saída: a oposta àquela de onde a bola vem, ou seja o próprio
+    // sentido em que ela viajava.
+    let sx = e.entradaX, sz = e.entradaZ;
+    const lenS = Math.hypot(sx, sz);
+    if (lenS < 0.001) { sx = 0; sz = e.dirZ; } else { sx /= lenS; sz /= lenS; }
+
+    const cosAbertura = Math.cos(e.meiaAberturaGraus !== undefined
+        ? e.meiaAberturaGraus * Math.PI / 180
+        : GiroDeCostasModel.meiaAberturaGraus * Math.PI / 180);
+    const raio = GiroDeCostasModel.raio;
+
+    let livre = true;
+    for (const o of (e.adversarios || [])) {
+        const d = Math.hypot(o.x, o.z);
+        if (d > raio || d < 0.001) continue;
+        if ((o.x / d) * sx + (o.z / d) * sz >= cosAbertura) { livre = false; break; }
+    }
+    if (livre) return paraFrente;
+
+    /*
+    Cone ocupado: um toque de `passoGiroGraus` a partir de onde ele está
+    virado, para o lado mais livre. O lado escolhe-se pelo adversário mais
+    próximo de cada uma das duas hipóteses — sair para onde há mais espaço é
+    literalmente isto, e não uma preferência por um dos lados.
+    */
+    const fLen = Math.hypot(e.facingX, e.facingZ) || 1;
+    const fx = e.facingX / fLen, fz = e.facingZ / fLen;
+    const passo = GiroDeCostasModel.passoGiroGraus * Math.PI / 180;
+
+    const rodar = (ang) => ({
+        bx: fx * Math.cos(ang) + fz * Math.sin(ang),
+        bz: fz * Math.cos(ang) - fx * Math.sin(ang)
+    });
+
+    const folgaDe = (v) => {
+        let menor = Infinity;
+        for (const o of (e.adversarios || [])) {
+            const d = Math.hypot(o.x, o.z);
+            if (d < 0.001) return 0;
+            // Distância do adversário à semi-recta da saída, só para quem
+            // está do lado de lá: quem ficou para trás não estorva.
+            const t = o.x * v.bx + o.z * v.bz;
+            if (t <= 0) continue;
+            const perp = Math.abs(o.x * v.bz - o.z * v.bx);
+            if (perp < menor) menor = perp;
+        }
+        return menor;
+    };
+
+    const esq = rodar(-passo);
+    const dir = rodar(passo);
+    return folgaDe(esq) >= folgaDe(dir) ? esq : dir;
+}
+
 const CarryModel = {
     leque: [-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2],
     lookAhead: 10.0,      // base de distância (sobrescrita por player.tec * 0.5)
