@@ -805,3 +805,56 @@ arrastar a câmara mesmo por cima dele).
 
 }
 
+
+/*
+PAINEL DE ESTATÍSTICA POR JOGO (esquerda, abaixo do RED AVERAGE).
+
+Tabela apertada de propósito: são doze linhas num painel lateral estreito, e
+o que se lê é a coluna do meio contra a da direita. A cor da linha diz o
+desvio ao alvo — verde dentro de 15%, amarelo até 40%, vermelho acima disso
+(ver classificarDesvio em main.js).
+*/
+#estat-relogio {
+    font-size: 10px;
+    color: #7f8c8d;
+    margin: 4px 0 6px 0;
+}
+
+#estat-tabela {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+#estat-tabela th {
+    text-align: left;
+    font-weight: 600;
+    color: #7f8c8d;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 3px;
+    border-bottom: 1px solid #34495e;
+}
+
+#estat-tabela th:nth-child(2),
+#estat-tabela th:nth-child(3),
+#estat-tabela td:nth-child(2),
+#estat-tabela td:nth-child(3) {
+    text-align: right;
+    /* Alinha as casas decimais: sem isto, 176,63 e 2,52 dançam na coluna. */
+    font-variant-numeric: tabular-nums;
+}
+
+#estat-tabela td {
+    padding: 2px 3px;
+    border-bottom: 1px solid rgba(52, 73, 94, 0.4);
+    color: #bdc3c7;
+}
+
+#estat-tabela td:nth-child(3) { color: #7f8c8d; }
+
+#estat-tabela tr.estat-ok      td:nth-child(2) { color: #2ecc71; }
+#estat-tabela tr.estat-perto   td:nth-child(2) { color: #f1c40f; }
+#estat-tabela tr.estat-longe   td:nth-child(2) { color: #e74c3c; }
+#estat-tabela tr.estat-semdado td { color: #7f8c8d; font-style: italic; }

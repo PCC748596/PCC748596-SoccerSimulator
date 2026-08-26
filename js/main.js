@@ -14,6 +14,7 @@ function toggleTodosPaineis(minimizar) {
     togglePainelJogadores(minimizar);
     toggleSkillsTeam('a', minimizar);
     toggleSkillsTeam('b', minimizar);
+    toggleEstatisticas(minimizar);
 }
 
 // Minimiza/maximiza o painel de comandos. Também ligado à tecla X
@@ -50,6 +51,143 @@ function toggleSkillsTeam(letra, forcarMinimizado, evt) {
 
     conteudo.classList.toggle('oculto', minimizar);
     if (btn) btn.innerHTML = minimizar ? '&plus;' : '&minus;';
+}
+
+/*
+=============================================================================
+PAINEL DE ESTATÍSTICA POR JOGO
+=============================================================================
+A tabela é a ÚNICA fonte: a ordem das linhas, os rótulos, os alvos e as casas
+decimais estão todos aqui, e o HTML só tem o `<tbody>` vazio. Acrescentar uma
+métrica é acrescentar uma linha nesta lista.
+
+`campo` é a chave devolvida pelo `MatchStats.porJogo()`. `alvo` a null é uma
+métrica sem número acordado — mostra-se o medido e um travessão na coluna do
+alvo, em vez de se inventar uma referência.
+
+Os alvos são de JOGO e não de equipa: 2,52 golos são os dois lados somados.
+=============================================================================
+*/
+const ALVOS_ESTATISTICA = [
+    { campo: 'pctPassesCertos', rotulo: '% passes certos', alvo: null, casas: 1, sufixo: '%' },
+    { campo: 'golos', rotulo: '⚽ Golos', alvo: 2.52, casas: 2 },
+    { campo: 'remates', rotulo: '🎯 Finalizações', alvo: 26.11, casas: 2 },
+    { campo: 'pctRematesNoAlvo', rotulo: '% no alvo', alvo: null, casas: 1, sufixo: '%' },
+    { campo: 'cantos', rotulo: '🚩 Escanteios', alvo: 9.92, casas: 2 },
+    /*
+    Os cartões ainda não têm alvo acordado (pedido explícito: "os cartões ainda
+    não definimos"). Os números ficam à vista como referência, mas marcados
+    como provisórios para não se calibrar contra eles por engano.
+    */
+    { campo: 'amarelos', rotulo: '🟨 Amarelos', alvo: 5.22, casas: 2, provisorio: true },
+    { campo: 'vermelhos', rotulo: '🟥 Vermelhos', alvo: 0.08, casas: 2, provisorio: true },
+    { campo: 'faltas', rotulo: '🦶 Faltas', alvo: 27.63, casas: 2 },
+    /*
+    NÃO HÁ REGRA DE FORA-DE-JOGO NO JOGO. O `offsideLimitDir` do TeamBT limita
+    onde os atacantes se PÕEM, mas nada marca a infracção — por isso o contador
+    é sempre 0. `semRegra` faz a linha dizer isso, em vez de mostrar um zero
+    que se leria como "nunca ninguém está em fora-de-jogo".
+    */
+    { campo: 'impedimentos', rotulo: '🚫 Impedimentos', alvo: 3.20, casas: 2, semRegra: true },
+    { campo: 'ataquesPerigosos', rotulo: '🔥 Ataques perigosos', alvo: 77.84, casas: 1 },
+    { campo: 'ataquesTotais', rotulo: '⚔️ Ataques totais', alvo: 176.63, casas: 1 },
+    { campo: 'xg', rotulo: '📈 xG total', alvo: 2.84, casas: 2 },
+    { campo: 'xgPorRemate', rotulo: '📈 xG por remate', alvo: 0.109, casas: 3 }
+];
+
+/*
+Cor da linha pelo desvio relativo ao alvo. Relativo e não absoluto: 2 golos a
+mais é um desastre, 2 faltas a mais não é nada.
+*/
+function classificarDesvio(valor, alvo) {
+    if (alvo === null || alvo === undefined || valor === null) return '';
+    if (alvo === 0) return (valor === 0) ? 'estat-ok' : 'estat-longe';
+    const desvio = Math.abs(valor - alvo) / alvo;
+    if (desvio <= 0.15) return 'estat-ok';
+    if (desvio <= 0.40) return 'estat-perto';
+    return 'estat-longe';
+}
+
+function toggleEstatisticas(forcarMinimizado, evt) {
+    const conteudo = document.getElementById('estat-conteudo');
+    const btn = document.getElementById('btn-estat');
+    if (!conteudo) return;
+
+    const minimizar = (forcarMinimizado === undefined)
+        ? !conteudo.classList.contains('oculto')
+        : forcarMinimizado;
+
+    if (evt && evt.shiftKey) { toggleTodosPaineis(minimizar); return; }
+
+    conteudo.classList.toggle('oculto', minimizar);
+    if (btn) btn.innerHTML = minimizar ? '&plus;' : '&minus;';
+}
+
+/*
+Reescreve a tabela. Chamada do `animate`, mas só de `INTERVALO_ESTATISTICA` em
+`INTERVALO_ESTATISTICA` segundos reais: são treze linhas de DOM e os números
+mexem-se devagar — a 60 Hz seria trabalho de layout por nada, e ainda por cima
+ilegível.
+*/
+const INTERVALO_ESTATISTICA = 0.5;
+let _relogioEstatistica = 0;
+
+/*
+`forcar` existe para a simulação em lote. O `animate()` faz `return` à cabeça
+enquanto o `Sim` corre — não há loop de render nenhum a chamar isto — por isso
+o Sim chama-o ele próprio uma vez por lote de passos, e aí não há `deltaReal`
+que faça sentido: o relógio de jogo avançou minutos no tempo de um frame.
+*/
+function updatePainelEstatisticas(deltaReal, forcar) {
+    if (!forcar) {
+        _relogioEstatistica -= deltaReal;
+        if (_relogioEstatistica > 0) return;
+    }
+    _relogioEstatistica = INTERVALO_ESTATISTICA;
+
+    const tbody = document.getElementById('estat-linhas');
+    if (!tbody || typeof MatchStats === 'undefined' || typeof Match === 'undefined') return;
+
+    // Minimizado: não vale a pena escrever DOM que ninguém vê.
+    const conteudo = document.getElementById('estat-conteudo');
+    if (conteudo && conteudo.classList.contains('oculto')) return;
+
+    const segundos = Match.tempoDeJogo || 0;
+    const s = MatchStats.porJogo(segundos);
+
+    const relogio = document.getElementById('estat-relogio');
+    if (relogio) {
+        const min = Math.floor(segundos / 60), seg = Math.floor(segundos % 60);
+        const txt = `${min}'${String(seg).padStart(2, '0')} jogados`;
+        relogio.textContent = s.escalado
+            ? `${txt} — extrapolado para 90'`
+            : `${txt} — pouco jogo para extrapolar`;
+    }
+
+    const linhas = [];
+    for (const m of ALVOS_ESTATISTICA) {
+        const valor = s[m.campo];
+
+        let medido, classe;
+        if (m.semRegra) {
+            medido = 'sem regra';
+            classe = 'estat-semdado';
+        } else if (valor === null || valor === undefined || !isFinite(valor)) {
+            medido = '—';
+            classe = 'estat-semdado';
+        } else {
+            medido = valor.toFixed(m.casas) + (m.sufixo || '');
+            classe = classificarDesvio(valor, m.alvo);
+        }
+
+        const alvo = (m.alvo === null || m.alvo === undefined)
+            ? '—'
+            : m.alvo.toFixed(m.casas) + (m.sufixo || '') + (m.provisorio ? '?' : '');
+
+        linhas.push(`<tr class="${classe}"><td>${m.rotulo}</td>` +
+            `<td>${medido}</td><td>${alvo}</td></tr>`);
+    }
+    tbody.innerHTML = linhas.join('');
 }
 
 function togglePainelDireito(forcarMinimizado, evt) {
@@ -646,9 +784,37 @@ function animate(time) {
                 Match.update((1/60) * GAME_SPEED);
             }
         } else {
-            Match.update(delta * window.speedMultiplier * GAME_SPEED);
+            /*
+            PASSOS PARTIDOS, e não um passo grande.
+
+            `Match.update(dt * 10)` não é o mesmo jogo dez vezes mais depressa:
+            é o mesmo jogo com a física a saltar buracos. A 10x o passo seria
+            ~0.15 s (7 Hz), e a essa cadência a bola anda 1,5 m entre frames —
+            atravessa a rede (testada por bandas de 0.22 m), passa ao lado dos
+            contactos, e os temporizadores da FSM saltam gestos inteiros.
+
+            Correr N passos do tamanho normal dá exactamente o mesmo jogo, só
+            mais vezes por frame. Abaixo de `PASSO_MAX` isto é um passo só, ou
+            seja o 0.7x/1.0x/1.2x de sempre não muda nada.
+
+            A `guarda` existe para o caso do frame lento: sem ela, um frame
+            demorado pedia mais passos, que o tornavam mais demorado ainda.
+            Melhor perder tempo de jogo do que entrar em espiral.
+            */
+            let restante = delta * window.speedMultiplier * GAME_SPEED;
+            const PASSO_MAX = (1 / 60) * GAME_SPEED * 1.5;
+            let guarda = 0;
+            while (restante > 1e-6 && guarda++ < 40) {
+                const passo = Math.min(PASSO_MAX, restante);
+                Match.update(passo);
+                restante -= passo;
+            }
         }
     }
+
+    // Fora do `if (!isPaused)`: em pausa os números continuam a valer, e o
+    // painel tem de continuar a mostrá-los.
+    updatePainelEstatisticas(delta);
 
     if (TeamAI && TeamAI.blackboards) {
         const bbA = TeamAI.blackboards['TeamA'];

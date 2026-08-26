@@ -3647,7 +3647,26 @@ class FootballPlayer {
                 }
             }
 
-            if (tM >= GoalkeeperPose.maosDur) {
+            /*
+            A SAÍDA DO GESTO NÃO PODE PISAR UMA CAPTURA.
+
+            O `grabBall()` acima põe `gkEstado = 'segurando'`, e este teste corre
+            no MESMO frame, logo a seguir: se ele agarrava no último frame do
+            gesto, o 'segurando' era imediatamente substituído por 'idle' — com
+            o `hasBall` a true.
+
+            E de 'idle' não há saída nenhuma para essa situação: o ramo de
+            decisão só olha para bolas SEM dono (`semDono`, `looseBallInBox`) ou
+            em movimento (`possoEspalmar`, que com velocidade zero dá 999 s de
+            tempo até ele). O guarda-redes ficava com a bola presa para sempre,
+            e o `player.update` colava-lha ao corpo a cada frame. Era o jogo
+            travado logo a seguir a uma defesa.
+
+            A condição do estado é o que diz "o grabBall não mexeu em mim": vale
+            para esta e para qualquer saída futura que ele venha a escolher, ao
+            contrário de um `!this.hasBall`, que descreve só o caso de hoje.
+            */
+            if (tM >= GoalkeeperPose.maosDur && this.gkEstado === 'maos') {
                 this.gkEstado = 'idle';
                 this.resetBonesToDefault();
             }
@@ -3680,7 +3699,16 @@ class FootballPlayer {
                 gkCorpo.position.y = lerpTo(gkCorpo.position.y, ALTURA_BASE_Y, 0.2);
                 gkRig.lArm.rotation.z = lerpTo(gkRig.lArm.rotation.z, 0.5, 0.15);
                 gkRig.rArm.rotation.z = lerpTo(gkRig.rArm.rotation.z, -0.5, 0.15);
-            } else {
+            } else if (this.gkEstado === 'salto_alto') {
+                /*
+                Mesma guarda do ramo 'maos': a saída do gesto não pisa uma
+                captura. Aqui a ordem já protegia — o `grabBall()` deste ramo
+                vem DEPOIS deste bloco, e além disso só corre com `t < 0.7`,
+                que nunca coincide com o `t >= 1.2` da saída. É protecção por
+                acidente, e a guarda torna-a intencional: trocar a ordem das
+                duas metades ou mexer nos tempos deixa de reintroduzir o
+                encrave.
+                */
                 gkCorpo.position.y = ALTURA_BASE_Y;
                 this.gkEstado = 'idle';
                 this.resetBonesToDefault();

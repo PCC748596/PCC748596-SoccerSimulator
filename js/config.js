@@ -3373,16 +3373,48 @@ const PassTypeModel = {
         única, em vez de ser a regra.
         */
         raioPressao: 8.0,
-        pesosSemPressao: { progresso: 1.0, espaco: 0.30, distancia: 0.35 },
-        pesosSobPressao: { progresso: 0.45, espaco: 1.00, distancia: 0.20 },
+        pesosSemPressao: { progresso: 1.0, espaco: 0.30, distancia: 0.35, linha: 1.10 },
+        pesosSobPressao: { progresso: 0.45, espaco: 1.00, distancia: 0.20, linha: 1.10 },
+
+        /*
+        `linha` é a FOLGA da linha de passe até ao ponto de mira, normalizada
+        pela geometria do PassLineModel (corredor que cresce com a distância,
+        `bloqueioDuro` como piso). Ver notaCandidato/escolher em pass_types.js.
+
+        Não existia, e era esse o furo: o `findPassTarget` media a linha e
+        rejeitava quem tinha alguém em cima da recta, mas quem DECIDE é o
+        `escolher`, e a nota dele só tinha progresso, espaço e distância. O
+        alvo com a linha medida entrava aqui como sugestão e valia
+        `bonusSugerido`. Medido: um companheiro 30 m à frente com um
+        adversário em cima da linha (folga 0,00 m) e o leque de candidatos
+        vazio ganhava 0,767 contra 0,539 do companheiro a 12 m com 14,8 m de
+        folga — e daí vinham os 53% de passes cortados acima dos 25 m.
+
+        1.10 e não menos: tem de bater o progresso (peso 1.0) sozinho, senão
+        a distância continua a pagar a linha fechada. Igual com e sem pressão
+        de propósito — um passe para dentro de alguém é ainda pior com um
+        adversário em cima de quem passa, porque a perda é logo ali.
+        */
 
         /*
         Abaixo desta nota não vale a pena passar a ninguém: o actPass desce a
         cascata driblar -> atrasar a alguém perto -> conduzir para trás.
         `tecnicaDrible` é o mesmo 75 que o podeDriblar já usa.
         */
-        notaMinima: 0.35,
+        notaMinima: 1.45,
         tecnicaDrible: 75,
+
+        /*
+        1.45 e não 0.35 porque a nota mudou de escala quando o termo `linha`
+        entrou: um passe de linha limpa ganha os 1.10 do peso, e com o limiar
+        antigo passava a bastar ter linha para o passe valer a pena — a cascata
+        (atrasar / conduzir) deixava de disparar.
+
+        1.45 = 0.35 + 1.10, de propósito: para uma linha COMPLETAMENTE limpa o
+        limiar é exactamente o de antes, e o que mudou é só que a linha suja
+        passa a ter de pagar a diferença em progresso. É a alteração mínima —
+        não se aproveitou o fix para reafinar quanto se passa.
+        */
 
         /*
         Até onde se atrasa a bola. Sem este limite, um médio sob pressão
@@ -4067,6 +4099,42 @@ do `pickChaser`, que escolhe UM jogador por equipa. Resultado: uma bola a
 passar rente a um jogador que não fosse nem o chaser nem o destinatário do
 passe era ignorada por ele — ficava parado a ver.
 */
+/*
+=============================================================================
+xG — QUANTO VALIA A OPORTUNIDADE
+=============================================================================
+Modelo logístico sobre duas variáveis, que é o esqueleto de qualquer xG
+público: a DISTÂNCIA à baliza e o ÂNGULO que a baliza subtende do ponto do
+remate. O ângulo é o que distingue um remate de 12 m à entrada da área de um
+de 12 m junto à linha de fundo, onde não há baliza nenhuma para acertar.
+
+    logit = base + pesoLogAngulo * ln(angulo) - pesoDistancia * distancia
+
+O que este modelo NÃO tem, e convém estar escrito: pressão (defensores entre a
+bola e a baliza), parte do corpo (pé ou cabeça), e se veio de um passe em
+profundidade. São as três variáveis que mais valem a seguir a estas duas — se
+o xG do lote ficar sistematicamente alto, é por aqui que se acrescenta.
+
+Âncoras usadas para escolher os números (remate central, jogo corrido):
+
+    5,5 m  -> ~0,54      11 m -> ~0,26
+    16,5 m -> ~0,12      25 m -> ~0,04
+
+E a âncora do lote inteiro: o alvo é 2,84 xG em 26,11 finalizações, ou seja
+uma MÉDIA de 0,109 por remate. É esse o número a olhar no painel — as âncoras
+por distância só dizem que a forma da curva é plausível.
+=============================================================================
+*/
+const XGModel = {
+    base: 0.55,
+    pesoLogAngulo: 1.10,
+    pesoDistancia: 0.10,
+
+    // Um remate de trás da linha de fundo não tem ângulo nenhum; o piso evita
+    // o ln(0) e dá-lhe um valor desprezável em vez de -Infinity.
+    anguloMinimo: 0.02
+};
+
 const PerceptionModel = {
     // Só reage quem lá chega depressa. Acima disto é bola para o chaser, não
     // para toda a gente — senão a equipa inteira colapsa sobre a bola.

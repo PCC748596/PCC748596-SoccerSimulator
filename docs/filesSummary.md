@@ -5,6 +5,194 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 26 de Agosto de 2026 (continuação 6) — a bola parada que ninguém ia buscar
+
+Testes novos: `passe_morto_bola_parada`, `sim_amostragem`. Suite: **52 ficheiros**.
+
+TODOS os jogos de um lote congelavam. A bola ficava parada a poucos metros da
+linha de fundo (`bolaVel: 0`, `portador: null`), 22 jogadores no bloco,
+`Match.state === 'PLAY'`, e ninguém ia lá. Medido: um jogo de 5400 s morto aos
+375 s, com `MOVE_TO_POS` a durar 5066 s seguidos.
+
+Quem decide se alguém vai à bola é o `deveMandarChaser` (`bt/team_bt.js`), e a
+primeira pergunta é se a bola está solta:
+
+```js
+const bolaSolta = !Match.ballCarrier && !alguemAConduzir() && !Match.intendedReceiver;
+```
+
+O `intendedReceiver` é escrito quando o passe sai e limpo quando alguém toca na
+bola. Para o passe que passa AO LADO do destinatário havia uma expiração no
+`updateBall`, e era aí que estava o furo:
+
+```js
+if (alvo && this.ballVel.lengthSq() > 0.5) { ... }
+```
+
+**A expiração exigia que a bola estivesse em movimento.** Se ela parava longe do
+destinatário, a condição nunca mais corria — porque era ela que poria a bola a
+mexer outra vez:
+
+```
+bola pára longe -> intendedReceiver nunca limpo -> bolaSolta = false
+  -> deveMandarChaser não manda ninguém -> ninguém toca na bola
+  -> a bola continua parada
+```
+
+Um deadlock que se alimenta a si próprio. Os outros sítios que limpam o
+`intendedReceiver` são todos no CONTACTO (`resolveBallContact`), na bola parada
+(`setupSetPiece`) ou no `resetPlay` — nenhum serve a uma bola imóvel e não
+tocada em `PLAY`. E o teste de "afasta-se dele?" não quer dizer nada a
+velocidade zero: o produto escalar dá 0, que não é afastar nem aproximar.
+
+**O bug era antigo, mas a taxa de disparo é nova.** O lote anterior à
+`continuação 4` não tinha um único encrave; depois passaram a ser 6 em 6 jogos.
+A ligação está no `pctNinguemTocou` da faixa dos 25 m+, que subiu de 9% para
+13% com o corte duro da linha de passe: são exactamente os passes que morrem sem
+ninguém tocar, ou seja mais oportunidades de cair no deadlock.
+
+O fix vive no `passeMorreuParaODestinatario` (`js/utils.js`), puro, com três
+casos por esta ordem: **perto** (dentro do `passePerdidoDist` é dele, mesmo
+parada — o passe que morre aos pés do receptor é um passe bem sucedido);
+**parada e longe** (bola solta); **a mexer e longe** (perdida só se se afastar,
+o caso de sempre). O teste da paragem mede as TRÊS componentes da velocidade:
+um passe alto no topo do arco tem velocidade horizontal quase nula e muito `y`,
+e chamar-lhe parada tirava o dono a uma bola ainda a caminho.
+
+#### Velocidade 10× no painel
+
+`main.js` → `animate()`. **Passos partidos, e não um passo grande:**
+`Match.update(dt * 10)` não é o mesmo jogo dez vezes mais depressa — a 10× o
+passo seria ~0,15 s (7 Hz), a bola andaria 1,5 m entre frames, atravessaria a
+rede (testada por bandas de 0,22 m), passaria ao lado dos contactos e os
+temporizadores da FSM saltariam gestos inteiros. Corre-se N passos do tamanho
+normal por frame, com `PASSO_MAX = (1/60) * GAME_SPEED * 1.5` — abaixo disso é
+um passo só, portanto o 0.7x/1.0x/1.2x de sempre não mudou nada. A `guarda` de
+40 passos evita a espiral do frame lento.
+
+Tecla `4`, ou o botão no painel esquerdo. O botão de toque continua a ciclar só
+`[0.7, 1.0, 1.2]`; a partir de 10× cai em 0.7x, que é comportamento são.
+
+### Sessão de 26 de Agosto de 2026 (continuação 5) — o lote mais rápido
+
+Teste novo: `sim_amostragem`. Suite: **51 ficheiros**.
+
+`Sim.run({ rapido: true })`: amostra o `registarHeatmap` e o `registarDesvios`
+de 6 em 6 frames (10 Hz a dt=1/60) e sobe o `passosPorLote` para 2000. Num lote
+de 5 × 90 min a telemetria corria 1,62 M vezes para 22 jogadores — ~36 M
+chamadas de cada registador, todas para desenhar médias que 10 Hz descrevem
+igual.
+
+**O que NÃO é amostrável, e é a parte que interessa não esquecer:**
+`registarPermanencia` e `registarEstilos` fazem detecção de FLANCO — o primeiro
+abre e fecha episódios quando o estado da FSM muda, o segundo conta activações
+na transição de `styleAtivo`. O `PASS` dura 0,07 s de média e o `DRIBBLE`
+0,02 s, ou seja **menos do que um intervalo de amostragem**: medi-los a 10 Hz
+não os mediria com menos resolução, apagava-os. Ficam a 60 Hz. A
+`vigiarEncrave` também, por outra razão — mede a distância percorrida desde a
+última leitura, e saltar frames dava-lhe saltos acima do `raio` de 1,5 m, com o
+cronómetro de bola parada a reiniciar sozinho.
+
+Dois detalhes que o teste fixa porque se partem sem dar por isso:
+
+- O `frames` do relatório de desvios continua a querer dizer FRAMES
+  (`st.n * amostragem`), com o número de leituras a aparecer à parte em
+  `amostras`. Publicar `st.n` cru dividia o número por seis sem nada a dizê-lo.
+  Médias e RMS não levam correcção — são razões, e o factor cancela-se.
+- O contador da amostragem é `passosFeitos + i` e não `i`: com o índice do lote,
+  o primeiro frame **de cada lote** era sempre medido, e com lotes de 2000 e
+  amostragem 6 dá 1002 leituras em vez de 1000, com o frame a seguir a cada
+  cedência ao browser sobre-representado.
+
+`rapido` e `amostragem` vão para os `parametros` do relatório: mudam o que os
+números querem dizer, e dois lotes com amostragens diferentes não se comparam
+sem isso escrito.
+
+**Por medir**: o ganho real. A estimativa é modesta — a telemetria é barata por
+chamada, e o custo grande por frame é o `animateBones` dos 22 jogadores, que
+corre na mesma sem renderer. Esse **não** é seguro desligar em bloco: o gameplay
+lê posições de ossos no mundo (as mãos em `player.js`, para o GR agarrar e
+lançar, e o pé em `fsm.js`). O maior ganho disponível continua a ser resolver o
+encrave — 73% do último lote foram jogos congelados a pagar AI e animação para
+nada.
+
+### Sessão de 26 de Agosto de 2026 (continuação 4) — o passe jogado para dentro de alguém
+
+Teste novo: `passe_por_linha_tapada`. Suite: **50 ficheiros**.
+
+O lote de 20 jogos deu isto, e é o número que manda nesta sessão:
+
+| faixa | n | certo | cortado | domínio falhado | ninguém tocou |
+|---|---|---|---|---|---|
+| 0-8 m | 308 | 86 % | 13 % | 1 % | 0 % |
+| 8-15 m | 1162 | 65 % | 30 % | 3 % | 2 % |
+| 15-25 m | 1703 | 46 % | 40 % | 9 % | 5 % |
+| 25 m+ | 827 | 25 % | **53 %** | 13 % | 9 % |
+
+O passe não estava forte demais — as velocidades de chegada (6,8 / 7,4 / 8,7 /
+10,1 m/s) estão todas abaixo do `BallControl.easySpeed`, e o domínio falhado
+nunca passa dos 13%. **Estava a ser jogado para dentro de alguém.**
+
+#### Duas camadas a escolher o receptor, e só uma olhava para a linha
+
+- O `findPassTarget` (`js/player.js`) mede o corredor de ameaça
+  (`PassLineModel`), descarta com `continue` quem tem alguém em cima da recta
+  (`bloqueioDuro`) e pesa a qualidade da linha no resto da nota.
+- O `PassTypes.escolher` (`js/pass_types.js`) é **quem decide de facto**, e a
+  nota dele tinha três termos: progresso, espaço, distância. Nenhum era a
+  linha. O alvo que a primeira camada escolheu — com a linha medida — entra ali
+  apenas como sugestão e vale um `bonusSugerido` de 0,5.
+
+Medido antes do fix, num cenário com o portador a `z = −20`:
+
+| companheiro | distância | folga da linha | leque | nota |
+|---|---|---|---|---|
+| lateral a 12 m | 12,2 m | 14,80 m | 11 pontos | 0,039 (+0,5 de sugerido = 0,539) |
+| 30 m à frente | 30,0 m | **0,00 m** | **0 pontos** | **0,767 — ganha** |
+
+O companheiro com um adversário exactamente em cima da linha de passe e com o
+leque de candidatos **completamente vazio** — o próprio sistema a dizer que ali
+não há passe nenhum — ganhava nos três tipos de passe sorteados.
+
+O leque vazio ainda piorava as coisas. Sem pontos, o `pontoPara` cai no
+`pontoLiderancaCurta`, que valida o raio à volta do ponto mas **não a linha até
+lá**: o veredicto "não há passe" transformava-se num ponto de mira 4 m à frente
+do companheiro tapado, com o progresso máximo que a nota premeia.
+
+#### O que mudou
+
+- **Quarto termo na nota** (`js/pass_types.js`, `notaCandidato` e
+  `qualidadeDaLinha`): a folga da linha até ao **ponto de mira** — e não até ao
+  companheiro, porque num passe para o espaço a bola vai ao ponto e é esse o
+  caminho que alguém corta. A geometria é a do `findPassTarget`, deliberadamente
+  a mesma: corredor que cresce com a distância, `bloqueioDuro` como piso, e o
+  `factorUltimoTerco` a perdoar a linha apertada perto da baliza. As duas
+  camadas deixaram de julgar a mesma linha por réguas diferentes.
+- **Peso `linha: 1.10`** (`js/config.js`, `PassTypeModel.escolha`), com e sem
+  pressão. Tem de bater o progresso (peso 1.0) sozinho, senão a distância
+  continua a pagar a linha fechada.
+- **Corte duro, e não mais um peso**: com folga abaixo do `bloqueioDuro` o
+  candidato é descartado com `continue`, como o `findPassTarget` já fazia. Uma
+  nota baixa continua a competir e ganha por não haver melhor — era assim que a
+  bola ia parar ao adversário quando não havia mais ninguém livre. Sem candidato
+  nenhum, o `escolher` devolve `null` e o `actPass` desce a cascata (atrasar a
+  alguém perto, conduzir), que é a jogada certa quando não há linha.
+- **`notaMinima` de 0,35 para 1,45**, que é `0.35 + 1.10`. O termo novo mudou a
+  escala das notas (0,65 → 1,75 num passe típico) e com o limiar antigo bastava
+  ter linha para qualquer passe valer a pena — a cascata deixava de disparar.
+  Somar exactamente o peso da linha deixa a exigência **igual à de antes** para
+  uma linha completamente limpa, e só obriga a linha suja a pagar a diferença em
+  progresso. É a alteração mínima: não se aproveitou o fix para reafinar quanto
+  se passa.
+
+`tests/passe_por_linha_tapada.test.js` fixa os cinco casos: o peso a decidir
+entre linha apertada e limpa, a linha limpa a não ser penalizada, o corte duro a
+devolver `null`, o último terço a ser perdoado, e o limiar acompanhar a escala
+(um passe lateral sem progresso nenhum não passa só por ter a linha livre).
+
+**Por medir**: o efeito no lote. O `pctCortado` das faixas de 15 m+ é a métrica,
+e o `notaMinima` é o botão a rever se o jogo passar a circular de menos.
+
 ### Sessão de 26 de Agosto de 2026 — a fase manda
 
 Testes novos: `marcacao_e_bloco_por_fase`, `marcacao_por_setor`, 
@@ -1601,7 +1789,7 @@ Coisas medidas e por resolver, para não se voltarem a descobrir por acaso:
   activam e não deslocam nada. Já não prendem o portador (ver a guarda `comBola`
   no `PlayerAI.tick`), mas continuam a ser estilos que não fazem o que dizem.
 
-- **Metade dos passes não chega ao receptor pretendido, mesmo com o erro de execução desligado** (52.5 ± 7.9%, 10 sementes × 2 corridas). Alguma outra coisa — escolha de alvo, lead/tempo de voo, recepção acima do `easySpeed`, interceptação — domina o resultado do passe por uma ordem de grandeza. É o próximo alvo óbvio, à frente de qualquer afinação do erro de execução. A medição que o isolaria: o **desvio lateral da bola em relação à linha passador→alvo**, medido à distância do alvo, que com o erro desligado tem de dar exactamente zero.
+- **Metade dos passes não chega ao receptor pretendido, mesmo com o erro de execução desligado** (52.5 ± 7.9%, 10 sementes × 2 corridas). Alguma outra coisa — escolha de alvo, lead/tempo de voo, recepção acima do `easySpeed`, interceptação — domina o resultado do passe por uma ordem de grandeza. **Parte disto está identificado e tratado**: o `PassTypes.escolher` escolhia o receptor sem termo nenhum de linha de passe (ver "o passe jogado para dentro de alguém", no topo). Falta medir quanto do `pctCortado` isso explicava — o resto das hipóteses continua de pé. A medição que isolaria o erro de execução: o **desvio lateral da bola em relação à linha passador→alvo**, medido à distância do alvo, que com o erro desligado tem de dar exactamente zero.
 - **Lançamento rasteiro acima dos ~28 m é cortado em silêncio.** O `velocidadeRasteiraPara` é usado também nos lançamentos (`ehLancamento && !lancamentoAlto`) e o `findThroughBall` não está limitado em distância. Com o tecto de 18.5 m/s a bola fica pelos ~29.8 m e cai curta, sem cair para o ramo aéreo.
 - **`isCovering` é código morto:** lido em `player_bt.js` para o estado `BLOCKING`, atribuído só a `false` no construtor e na limpeza por frame. Nada o activa — não há 2º defensor (cobertura). O `markingTarget` está na mesma situação.
 - **A rede lateral e o pano de cima são testados por bandas finas** (`|b.x ∓ meiaLarg| < raio`, 0.22 m de espessura) em vez de meios-espaços, portanto uma bola rápida o suficiente atravessa-os sem colisão nenhuma e o `dist > 0.8` no topo da `colidirComRede` impede que volte a ser apanhada. Um varrimento de 1208 golos não produziu um único caso — a bola chega sempre lá lenta — por isso não é urgente, mas é a forma errada de fazer o teste e morde se as velocidades de remate subirem.
@@ -3138,6 +3326,9 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Mudar quando um jogador remata em vez de passar | `bt/player_bt.js` → a árvore |
 | Alcance de remate / drible / lançamento | `config.js` → `ShootingModel`, `PassModel` |
 | Facilidade de intercetar ou receber um passe | `config.js` → `BallControl` |
+| Quem recebe o passe (e o quanto a linha tapada conta) | `pass_types.js` → `escolher` / `qualidadeDaLinha`; pesos em `config.js` → `PassTypeModel.escolha` |
+| Passa-se para dentro de tráfego / passes cortados de mais | `config.js` → `PassLineModel.bloqueioDuro` e `PassTypeModel.escolha.pesosSemPressao.linha` |
+| Passa-se de menos, circula-se de menos | `config.js` → `PassTypeModel.escolha.notaMinima` (anda com o peso `linha`) |
 | Como o portador escolhe por onde conduzir | `config.js` → `DribbleModel` |
 | Mudar como um remate é executado | `fsm.js` → `case 'SHOOT'` |
 | Física da bola, golo, linha lateral | `match.js` → `updateBall()` |
@@ -3156,6 +3347,9 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Cruzamento morre sempre (ninguém na área) | `bt/player_bt.js` → `AtacarArea` |
 | Estatísticas da partida (passes, remates, posse, etc.) | `stats.js` |
 | Rodar centenas de jogos sem ecrã | `simulate.js` |
+| Ninguém vai buscar uma bola parada / jogo encravado | `utils.js` → `passeMorreuParaODestinatario`; `bt/team_bt.js` → `bolaSolta` em `pickChaser` |
+| Velocidade de jogo (incl. 10×) | `index.html` → botões `.btn-speed`; `main.js` → `animate()`, passos partidos |
+| Lote a demorar demasiado | `simulate.js` → `Sim.run({ rapido: true })` (amostra heatmap e desvios a 10 Hz) |
 | Placar / cronómetro no ecrã | `match.js` → `updatePlacar()`, `#placar` no `index.html` |
 | Ver a árvore/condições activas de um jogador em tempo real | `main.js` → painel "PlayerBT Debug" (`updatePainelPlayerBT`) |
 | Guarda-redes de costas para a bola/campo | `utils.js` → `lookAtBola()` — **problema em aberto**, ver a nota na secção do `player.js` |

@@ -171,14 +171,23 @@ function resumirPermanencia(stats) {
     return linhas;
 }
 
-function resumirDesvios(stats) {
+/*
+`amostragem` é o intervalo com que os desvios foram medidos (1 = todos os
+frames). Entra aqui para o `frames` do relatório continuar a querer dizer
+FRAMES: com amostragem 6, `st.n` são leituras de 6 em 6, e publicá-lo como
+frames dividia o número por seis sem nada a dizê-lo. As médias e o RMS não
+precisam da correcção — são razões, e o factor cancela-se.
+*/
+function resumirDesvios(stats, amostragem) {
+    const passo = Math.max(1, amostragem || 1);
     const linhas = [];
     for (const estado in stats) {
         const st = stats[estado];
         if (!st.n) continue;
         linhas.push({
             estado: estado,
-            frames: st.n,
+            frames: st.n * passo,
+            amostras: st.n,
             desvioMedioM: +(st.soma / st.n).toFixed(2),
             desvioRmsM: +Math.sqrt(st.soma2 / st.n).toFixed(2),
             desvioMaxM: +st.max.toFixed(2),
@@ -553,6 +562,21 @@ const Sim = {
                       corrida só, mesmo que o painel tenha outra formação
                       escolhida — ver construirPlanoCobertura
                       (default = mesmo valor de calibrarEstilos)
+    opts.rapido      amostra a telemetria acumulativa em vez de a medir em
+                      todos os frames, e cede ao browser menos vezes. Ver
+                      `amostragem` abaixo (default false)
+    opts.amostragem  1 = mede tudo em todos os frames (o de sempre); N = mede
+                      o heatmap e os desvios 1 vez em cada N. `rapido` põe-no
+                      a 6 (10 Hz a dt=1/60). Explícito ganha ao `rapido`.
+
+    O QUE **NÃO** É AMOSTRÁVEL, e porquê: `registarPermanencia` e
+    `registarEstilos` fazem detecção de FLANCO — o primeiro abre e fecha
+    episódios quando o estado da FSM muda, o segundo conta activações na
+    transição de `styleAtivo`. Medi-los de 6 em 6 frames apagava os episódios
+    curtos (o `PASS` dura 0,07 s de média e o `DRIBBLE` 0,02 s, ou seja menos
+    de um intervalo de amostragem) e subcontava as activações. Continuam nos
+    60 Hz. Só o heatmap e os desvios acumulam sem olhar para o frame anterior,
+    e por isso só esses é que se podem amostrar sem mentir.
     */
     run: async function (opts) {
         opts = opts || {};
@@ -565,7 +589,22 @@ const Sim = {
         const nJogos = opts.jogos || 10;
         const duracaoSeg = opts.duracaoSeg || 300;
         const dt = opts.dt || 1 / 60;
-        const passosPorLote = opts.passosPorLote || 300;
+        const rapido = !!opts.rapido;
+
+        /*
+        Ceder ao browser custa mais do que os 0 ms que o `setTimeout(0)` pede:
+        a partir do quinto encadeamento o browser força um mínimo de ~4 ms.
+        Com 300 passos por lote são ~5400 cedências num lote de 5 × 90 min, o
+        que dá ~22 s de espera pura. Pouco em 2300 s, mas não é de graça, e em
+        `rapido` a página não precisa de responder tão depressa.
+        */
+        const passosPorLote = opts.passosPorLote || (rapido ? 2000 : 300);
+
+        // Explícito ganha ao `rapido`, para se poder pedir 60 Hz num lote
+        // rápido (ou amostrar num lote normal) sem ter de mexer no resto.
+        const amostragem = Math.max(1, Math.round(
+            opts.amostragem || (rapido ? 6 : 1)));
+
         const calibrarEstilos = opts.calibrarEstilos !== false;
         const rotacionarFormacoes = calibrarEstilos && opts.rotacionarFormacoes !== false;
 
@@ -637,8 +676,22 @@ const Sim = {
                 const lote = Math.min(passosPorLote, totalPassos - passosFeitos);
                 for (let i = 0; i < lote; i++) {
                     Match.update(dt);
+
+                    /*
+                    A vigia fica em TODOS os frames: mede a distância que a bola
+                    percorreu desde a última leitura, e saltar frames dava-lhe
+                    saltos maiores do que o `raio` de 1,5 m — o cronómetro de
+                    bola parada reiniciava sozinho e o encrave deixava de ser
+                    detectado. É uma hipotenusa por frame, não é o custo.
+                    */
                     vigiarEncrave(vigia, jogo + 1, passosFeitos * dt, dt);
-                    registarHeatmap(this.heatmap);
+
+                    // Só o heatmap e os desvios acumulam sem olhar para o frame
+                    // anterior; ver a nota em cima sobre o que não é amostrável.
+                    const medirAcumulados = (amostragem === 1) ||
+                        ((passosFeitos + i) % amostragem === 0);
+
+                    if (medirAcumulados) registarHeatmap(this.heatmap);
                     /*
                     Só com o nível 2 a correr. Ele é que escreve o slotTarget
                     contra o qual se mede o desvio do estilo; parado (golo,
@@ -653,7 +706,7 @@ const Sim = {
                     // O desvio por estado mede-se sempre (não depende dos
                     // estilos estarem a ser calibrados), pela mesma razão só
                     // com o nível 2 a correr.
-                    if (Match.nivel2Activo()) {
+                    if (medirAcumulados && Match.nivel2Activo()) {
                         registarDesvios(desvioStats, Match.players);
                         registarDesvios(desvioStats, Match.opponents);
                     }
@@ -662,6 +715,17 @@ const Sim = {
                 }
                 passosFeitos += lote;
                 if (aoProgresso) aoProgresso(jogo + 1, nJogos, passosFeitos / totalPassos);
+
+                /*
+                O painel de estatística vive no `animate()`, que faz `return` à
+                cabeça enquanto o Sim corre — sem isto ficava congelado no que
+                estivesse escrito quando o lote arrancou. Uma vez por lote de
+                passos chega e sobra: são minutos de jogo entre chamadas.
+                */
+                if (typeof updatePainelEstatisticas === 'function') {
+                    updatePainelEstatisticas(0, true);
+                }
+
                 await cederAoBrowser();
             }
 
@@ -691,7 +755,7 @@ const Sim = {
             }
         }
 
-        const relatorioDesvios = resumirDesvios(desvioStats);
+        const relatorioDesvios = resumirDesvios(desvioStats, amostragem);
         if (relatorioDesvios.length) {
             console.log('Sim: desvio do alvo (dynamicTarget) ao slot do bloco, por estado');
             console.table(relatorioDesvios);
@@ -734,7 +798,16 @@ const Sim = {
 
         const relatorio = {
             geradoEm: new Date().toISOString(),
-            parametros: { jogos: nJogos, duracaoSeg, dt, calibrarEstilos, rotacionarFormacoes },
+            /*
+            `amostragem` vai para o relatório porque muda o que os números
+            querem dizer: com 6, o heatmap tem um sexto das contagens e os
+            desvios um sexto das leituras. Comparar dois lotes com amostragens
+            diferentes sem isto escrito seria comparar escalas diferentes.
+            */
+            parametros: {
+                jogos: nJogos, duracaoSeg, dt, calibrarEstilos, rotacionarFormacoes,
+                rapido, amostragem, passosPorLote
+            },
             duracaoRealSeg: Number(duracaoReal),
             resultados: this.resultados,
             heatmap: this.heatmap,

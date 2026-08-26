@@ -381,6 +381,22 @@ Nada aqui mudou de conteudo — os pesos de resultado, o duelo com o bloqueador
 e o aviso ao guarda-redes sao os mesmos.
 */
 function executeShotGameplay(p) {
+    /*
+    xG E ATAQUE PERIGOSO, no instante do contacto e antes de se saber o
+    desfecho — que é a definição de xG: quanto VALIA a oportunidade, não o que
+    ela deu. Contado aqui e não no `initiateShoot` porque ali o gesto ainda
+    pode furar (bola a caminho do pé), e uma furada não é uma oportunidade.
+
+    Bloqueados entram: um remate travado por um defensor à saída do pé foi uma
+    oportunidade criada, e é assim que os fornecedores a contam.
+    */
+    if (typeof MatchStats !== 'undefined' && typeof xgDoRemate === 'function') {
+        MatchStats[p.team].xg += xgDoRemate(
+            p.model.position.x, p.model.position.z,
+            p.targetGoalZ, LARGURA_BALIZA, XGModel);
+        MatchStats.registarRemateNoAtaque(p.team);
+    }
+
     const opponentsShoot = (p.team === 'TeamA') ? Match.opponents : Match.players;
     let bloqueador = null, distBloqueio = 999;
     for (const opp of opponentsShoot) {
@@ -441,7 +457,23 @@ function executeShotGameplay(p) {
             }
             roll -= w.weight;
         }
-        
+
+        /*
+        NO ALVO: só o que ia mesmo à baliza — golo, ou defesa do guarda-redes.
+        Postes e travessões ficam de fora, como nos fornecedores de
+        estatística: sem o desvio da madeira a bola não entrava.
+
+        Aqui e não no `initiateShoot`, porque é aqui que o desfecho existe. Um
+        remate bloqueado nem chega a este ramo (o `bloqueado` desvia acima), e
+        um `furado` não chega a executar nada — nenhum dos dois conta.
+        */
+        if (typeof MatchStats !== 'undefined' &&
+            (selectedOutcome === 'GOL' ||
+                selectedOutcome === 'GOLEIRO_DEFENDE_VOLTA' ||
+                selectedOutcome === 'GOLEIRO_DEFENDE_FORA')) {
+            MatchStats[p.team].remates.noAlvo++;
+        }
+
         let sinal = Math.random() > 0.5 ? 1 : -1;
         pow = Math.max(ShotModel.potenciaMin,
             ShotModel.potenciaBase + ((p.skillFor('TEC') - 50) / 50) * ShotModel.potenciaPorSkill);

@@ -401,6 +401,7 @@ const Match = {
             if (e.key === '1') this.setSpeed(0.7);
             if (e.key === '2') this.setSpeed(1.0);
             if (e.key === '3') this.setSpeed(1.2);
+            if (e.key === '4') this.setSpeed(10);
             if (e.key === '4') this.setCameraMode('center');
             if (e.key === '5') this.setCameraMode('sideline');
             if (e.key === '6') this.setCameraMode('topdown');
@@ -1610,6 +1611,38 @@ const Match = {
                     }
                 }
             }
+
+            /*
+            CANTO ENCRAVADO. Era o ÚNICO estado de bola parada sem cão-de-guarda
+            — o FREE_KICK, o PENALTY e o THROW_IN têm 15 s, o GOAL_KICK tem 20 —
+            e por isso o único que podia ficar aceso para sempre. Incrementava o
+            `setPieceTimer` e nunca olhava para ele.
+
+            Ficar aceso para sempre não é só o canto que não se bate: o
+            `player.update` NÃO chama o `updateGK` enquanto `Match.state` é
+            'CORNER_KICK' (ver a guarda lá), portanto o guarda-redes congela na
+            pose e no `gkEstado` que tinha — um gesto a meio nunca mais avança,
+            porque quem lhe mexe o relógio é o updateGK.
+
+            Duas maneiras de aqui ficar preso, e o prazo cobre as duas:
+
+              - a bola nunca "aterra" (`cantoAguardaChao` exige
+                `y <= raio + 0.01`), logo o `cantoBolaAlvo` nunca é limpo e o
+                SET_PIECE_TAKER nunca chega a cruzar;
+              - não há batedor no estado SET_PIECE_TAKER que execute o gesto.
+
+            20 s como no tiro de meta: o posicionamento, a espera da reposição e
+            a bola a assentar cabem lá dentro com folga. O `resetPlay` é a
+            limpeza completa (estado, batedor, temporizador, `gkHoldingBall` e
+            os estados dos guarda-redes), que é precisamente o que falta a um
+            lance que nunca aconteceu.
+            */
+            if (this.setPieceTimer > 20.0) {
+                this.setPieceTimer = 0;
+                this.cantoBolaAlvo = null;
+                this.cantoAguardaChao = false;
+                this.resetPlay();
+            }
         }
 
         if (this.state === 'FREE_KICK') {
@@ -2116,20 +2149,25 @@ const Match = {
 
             Consideramos perdido quando a bola já se afasta dele e está a mais
             de `passePerdidoDist` — aí a jogada volta a ser de quem lá chegar.
+
+            A DECISÃO SAIU PARA O `passeMorreuParaODestinatario` (utils.js), e
+            com ela saiu a guarda que encravava o jogo: isto só corria com a
+            bola EM MOVIMENTO (`ballVel.lengthSq() > 0.5`). Uma bola que parava
+            longe do destinatário nunca era libertada, ninguém a ia buscar
+            (`bolaSolta` exige `!intendedReceiver`), e por isso ela nunca
+            voltava a mexer-se — o deadlock alimentava-se a si próprio. Ver
+            tests/passe_morto_bola_parada.test.js.
             */
             const alvo = this.intendedReceiver;
-            if (alvo && this.ballVel.lengthSq() > 0.5) {
-                const dx = ballPos.x - alvo.model.position.x;
-                const dz = ballPos.z - alvo.model.position.z;
-                const dist = Math.hypot(dx, dz);
-                if (dist > PerceptionModel.passePerdidoDist) {
-                    // Afasta-se dele? (a bola vai no sentido oposto ao alvo)
-                    const afasta = (this.ballVel.x * dx + this.ballVel.z * dz) > 0;
-                    if (afasta) {
-                        this.intendedReceiver = null;
-                        this.passTargetPos = null;
-                    }
-                }
+            if (alvo && passeMorreuParaODestinatario({
+                bolaX: ballPos.x, bolaZ: ballPos.z,
+                alvoX: alvo.model.position.x, alvoZ: alvo.model.position.z,
+                velX: this.ballVel.x, velZ: this.ballVel.z, velY: this.ballVel.y,
+                distPerdido: PerceptionModel.passePerdidoDist,
+                paradaV2: 0.5
+            })) {
+                this.intendedReceiver = null;
+                this.passTargetPos = null;
             }
 
             if (!this.resolveBallContact() && this.possessionTeam) {

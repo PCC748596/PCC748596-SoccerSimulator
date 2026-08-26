@@ -128,7 +128,7 @@
                     onclick="Match.setCameraMode('topdown')">Tática Cima (6)</button>
             </div>
 
-            <label>Velocidade (1-3, F)</label>
+            <label>Velocidade (1-4, F)</label>
             <div style="display: flex; gap: 4px; margin-bottom: 8px;">
                 <button type="button" class="btn-sector btn-speed" id="spd-frame"
                     onclick="Match.setSpeed('frame')">Frame</button>
@@ -138,6 +138,10 @@
                     onclick="Match.setSpeed(1.0)">1.0x</button>
                 <button type="button" class="btn-sector btn-speed" id="spd-1.2"
                     onclick="Match.setSpeed(1.2)">1.2x</button>
+                <!-- 10x corre em passos partidos (ver o animate em main.js):
+                     são ~7 updates normais por frame, não um update gigante. -->
+                <button type="button" class="btn-sector btn-speed" id="spd-10"
+                    onclick="Match.setSpeed(10)">10x</button>
             </div>
 
 
@@ -185,6 +189,30 @@
                 <label>GR <span class="val-skill" id="val-gk-b">80</span></label>
                 <input type="range" id="skill-gk-b" min="50" max="100" step="5" value="80"
                     onchange="Tatics.updateSkills()">
+            </div>
+
+            <!--
+            ESTATÍSTICA POR JOGO — calibração contra os alvos reais.
+
+            Os números são das DUAS equipas somadas e extrapolados para 90 min
+            (ver MatchStats.porJogo). As linhas são escritas por
+            `updatePainelEstatisticas` em main.js, a partir da tabela
+            ALVOS_ESTATISTICA — para acrescentar uma métrica mexe-se lá, não
+            aqui.
+            -->
+            <div class="subpainel-cabecalho">
+                <h2 style="border-bottom: 2px solid #2ecc71; color: #2ecc71;">ESTATÍSTICA / JOGO</h2>
+                <button type="button" class="btn-subpainel" id="btn-estat" title="Minimizar / maximizar"
+                    onclick="toggleEstatisticas(undefined, event)">&minus;</button>
+            </div>
+            <div id="estat-conteudo">
+                <div id="estat-relogio">a aguardar jogo…</div>
+                <table id="estat-tabela">
+                    <thead>
+                        <tr><th>Estatística</th><th>Medido</th><th>Alvo</th></tr>
+                    </thead>
+                    <tbody id="estat-linhas"></tbody>
+                </table>
             </div>
 
         </div><!-- /painel-conteudo -->

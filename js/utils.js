@@ -1582,6 +1582,100 @@ serve para PONTUAR uma linha de passe em vez de a aceitar ou rejeitar.
 
 `Infinity` quando não há ninguém — o chamador é que decide o tecto.
 */
+/*
+ÂNGULO QUE A BALIZA SUBTENDE a partir de um ponto do campo, em radianos.
+
+É a abertura entre os dois postes vista de onde se remata: o que fica para
+acertar. Dois remates à mesma DISTÂNCIA podem ter ângulos muito diferentes —
+12 m em frente à baliza contra 12 m junto à linha de fundo, onde a baliza é
+uma fresta.
+
+Calculado pelo produto escalar entre os vectores ponto->poste, e não por
+diferença de `atan2`, que dava o ângulo errado (o reflexo, 2π menos este)
+sempre que o ponto ficava entre os postes prolongados.
+
+`golZ` é a linha de baliza que se ataca; a baliza está centrada em x = 0.
+
+Pura: sem Match, sem THREE.
+*/
+function anguloDaBaliza(x, z, golZ, larguraBaliza) {
+    const meia = larguraBaliza / 2;
+
+    const ax = -meia - x, az = golZ - z;
+    const bx = meia - x, bz = golZ - z;
+
+    const na = Math.hypot(ax, az), nb = Math.hypot(bx, bz);
+    if (na < 1e-6 || nb < 1e-6) return Math.PI;   // em cima de um poste
+
+    let cos = (ax * bx + az * bz) / (na * nb);
+    cos = Math.max(-1, Math.min(1, cos));
+    return Math.acos(cos);
+}
+
+/*
+xG DE UM REMATE — ver XGModel em config.js para o modelo e as âncoras.
+
+Devolve 0..1. Pura: sem Match, sem THREE.
+*/
+function xgDoRemate(x, z, golZ, larguraBaliza, M) {
+    const ang = Math.max(M.anguloMinimo,
+        anguloDaBaliza(x, z, golZ, larguraBaliza));
+    const dist = Math.hypot(x, golZ - z);
+
+    const logit = M.base + M.pesoLogAngulo * Math.log(ang) - M.pesoDistancia * dist;
+    return 1 / (1 + Math.exp(-logit));
+}
+
+/*
+O PASSE JÁ MORREU PARA O DESTINATÁRIO?
+
+`Match.intendedReceiver` é escrito quando o passe sai e limpo quando alguém
+toca na bola. Enquanto ele existe, a bola NÃO conta como solta (ver `bolaSolta`
+em pickChaser, bt/team_bt.js) e ninguém é mandado buscá-la — o que está certo
+para um passe a decorrer e é um deadlock para um passe que morreu.
+
+A versão anterior vivia inline no `updateBall` e tinha uma guarda fatal:
+
+    if (alvo && this.ballVel.lengthSq() > 0.5) { ... }
+
+Só expirava com a bola EM MOVIMENTO. Se ela parava longe do destinatário, a
+condição nunca mais corria — porque era ela que poria a bola a mexer outra vez:
+
+    bola pára longe -> intendedReceiver nunca limpo -> bolaSolta false
+      -> ninguém vai à bola -> a bola continua parada
+
+Medido: jogos inteiros mortos, com a bola imóvel a poucos metros da linha de
+fundo e 22 jogadores no bloco. E o teste de "afasta-se dele?" não quer dizer
+nada a velocidade zero: o produto escalar dá 0, que não é afastar nem aproximar.
+
+Três casos, por esta ordem:
+
+    perto           dentro de `distPerdido` — é dele, mesmo parada: o passe que
+                    morre aos pés do receptor é um passe bem sucedido
+    parada e longe  bola solta. Não está a caminho de ninguém
+    a mexer e longe perdida só se se AFASTAR dele (o caso de sempre)
+
+`paradaV2` é o quadrado da velocidade abaixo da qual se considera parada, e
+mede as TRÊS componentes: um passe alto no topo do arco tem velocidade
+horizontal quase nula e muito `y`, e chamar-lhe parada tirava o dono a uma bola
+ainda a caminho.
+
+Pura: sem Match, sem THREE.
+*/
+function passeMorreuParaODestinatario(o) {
+    const dx = o.bolaX - o.alvoX;
+    const dz = o.bolaZ - o.alvoZ;
+
+    if (Math.hypot(dx, dz) <= o.distPerdido) return false;
+
+    const vy = o.velY || 0;
+    const v2 = o.velX * o.velX + o.velZ * o.velZ + vy * vy;
+    if (v2 <= o.paradaV2) return true;
+
+    // Afasta-se dele? (a bola vai no sentido oposto ao alvo)
+    return (o.velX * dx + o.velZ * dz) > 0;
+}
+
 function folgaDaLinha(ax, az, bx, bz, obstaculos) {
     if (!obstaculos || !obstaculos.length) return Infinity;
 

@@ -23,7 +23,39 @@ function novoContadorEquipa() {
         passes: { tentados: 0, certos: 0 },
         lancamentos: { tentados: 0, certos: 0 },   // passe para o espaço (through ball)
         cruzamentos: { tentados: 0, certos: 0 },
-        remates: { tentados: 0, golos: 0, furados: 0 },
+        /*
+        `noAlvo` conta o que ia MESMO à baliza: golo ou defesa do guarda-redes.
+        Postes e travessões ficam de fora, como nos fornecedores de estatística
+        — a bola não entrava sem o desvio da madeira. Um remate `furado` (gesto
+        sem bola no pé) e um bloqueado também não contam.
+        */
+        remates: { tentados: 0, golos: 0, furados: 0, noAlvo: 0 },
+
+        // Soma do xG de cada remate (ver XGModel em config.js e xgDoRemate em
+        // utils.js). É a qualidade das oportunidades, não o número delas.
+        xg: 0,
+
+        /*
+        ATAQUES — sequências de posse, e não jogadas de bola parada.
+
+        Uma sequência começa quando a equipa ganha a posse e acaba quando a
+        perde. Conta como ATAQUE se em algum momento levou a bola ao meio-campo
+        adversário; como PERIGOSO se chegou ao último terço ou acabou em
+        remate. É a definição dos fornecedores de estatística e, mais
+        importante, é a única que se consegue medir com o que o jogo já regista
+        por frame (ver registarZona).
+        */
+        ataques: { totais: 0, perigosos: 0 },
+
+        /*
+        IMPEDIMENTOS — fica sempre a ZERO, e de propósito.
+
+        Não há regra de fora-de-jogo no jogo: o `offsideLimitDir` do TeamBT
+        limita onde os atacantes se PÕEM, mas nada marca a infracção. O
+        contador existe para o painel poder dizer "sem regra" em vez de mostrar
+        um zero que se lê como "a equipa nunca está em fora-de-jogo".
+        */
+        impedimentos: 0,
         desarmes: { tentados: 0, sucesso: 0 },      // TACKLE (de pé)
         carrinhos: { tentados: 0, sucesso: 0 },     // SLIDE_TACKLE
         dribles: { tentados: 0, sucesso: 0 },       // 1x1 (DRIBBLE)
@@ -75,6 +107,9 @@ const MatchStats = {
         this._pendingPassType = null;
         this._pendingPassTeam = null;
         this._pendingSample = null;
+        // Sem isto, a primeira sequência do jogo seguinte herdava a equipa e o
+        // "já passou o meio" do jogo anterior.
+        this._ataque = null;
     },
 
     /*
@@ -90,6 +125,65 @@ const MatchStats = {
         if (zoneAhead < -terco) s.tercoSegundos.def += dt;
         else if (zoneAhead > terco) s.tercoSegundos.atk += dt;
         else s.tercoSegundos.mid += dt;
+
+        this.seguirAtaque(team, zoneAhead);
+    },
+
+    /*
+    A SEQUÊNCIA DE ATAQUE EM CURSO — de quem é a bola, e até onde ela já foi.
+
+    Vive aqui e não no Match porque é alimentada pelo `registarZona`, que já é
+    chamado uma vez por frame com a posse e com o `zoneAhead` no referencial de
+    ataque de quem tem a bola. Não é preciso ler estado nenhum do jogo outra
+    vez, e não há um segundo sítio a decidir de quem é a posse.
+
+    `null` entre sequências (ninguém com a bola).
+    */
+    _ataque: null,
+
+    /*
+    Fecha a sequência em curso e credita-a. Chamada quando a posse muda de
+    equipa, quando a bola sai de jogo e no fim do jogo — uma sequência aberta
+    que nunca fecha é uma que nunca conta, e o último ataque de cada jogo é
+    precisamente o que ficaria de fora.
+    */
+    fecharAtaque: function () {
+        const a = this._ataque;
+        this._ataque = null;
+        if (!a) return;
+
+        const s = this[a.team];
+        if (!s) return;
+
+        // Um ataque que nunca saiu do próprio meio-campo não é um ataque:
+        // é a equipa a segurar a bola atrás.
+        if (!a.passouOMeio) return;
+        s.ataques.totais++;
+        if (a.chegouAoTerco || a.rematou) s.ataques.perigosos++;
+    },
+
+    seguirAtaque: function (team, zoneAhead) {
+        if (!this._ataque || this._ataque.team !== team) {
+            this.fecharAtaque();
+            this._ataque = {
+                team: team, passouOMeio: false,
+                chegouAoTerco: false, rematou: false
+            };
+        }
+        const a = this._ataque;
+        if (zoneAhead > 0) a.passouOMeio = true;
+        if (zoneAhead > CAMPO_COMP / 6) a.chegouAoTerco = true;
+    },
+
+    /*
+    Um remate torna PERIGOSA a sequência em curso, mesmo que tenha saído de
+    trás do meio-campo — e torna-a um ataque, ponto. Um remate de 40 m não
+    passou o meio-campo com a bola no pé, mas foi uma ida à baliza.
+    */
+    registarRemateNoAtaque: function (team) {
+        if (!this._ataque || this._ataque.team !== team) return;
+        this._ataque.rematou = true;
+        this._ataque.passouOMeio = true;
     },
 
     // Chamado no instante em que a bola sai do pé (fsm.js, case PASS).
@@ -234,6 +328,78 @@ const MatchStats = {
     },
 
     // Resumo simples para consola/JSON — usado pela simulação em lote.
+    /*
+    =========================================================================
+    ESTATÍSTICA POR JOGO — o painel de calibração
+    =========================================================================
+    Os contadores são absolutos e o relógio de jogo anda enquanto se joga, por
+    isso qualquer leitura a meio de um jogo é uma FRACÇÃO de jogo. Aqui
+    escala-se tudo para 90 minutos, que é a única forma de comparar com os
+    alvos sem esperar pelo apito final.
+
+        porJogo = valor * (5400 / segundosJogados)
+
+    `Match.tempoDeJogo` já vem em segundos de RELÓGIO DE JOGO (o `update`
+    multiplica-o pelo `MatchDuration.timeScale`), portanto não se volta a
+    escalar aqui — foi esse o erro que já invalidou uma calibração inteira
+    (ver "O ERRO QUE INVALIDAVA TODA A CALIBRAÇÃO" no filesSummary).
+
+    **As duas equipas somam.** Os alvos são de JOGO (2,52 golos por jogo são os
+    golos dos dois lados juntos), não de equipa.
+
+    As percentagens NÃO são escaladas: uma razão já é independente do tempo.
+
+    `segundosJogados` abaixo de `MINIMO_PARA_ESCALAR` devolve `null` em vez de
+    um número: aos 10 segundos de jogo, um único canto extrapola para 540 por
+    jogo, e um painel a mostrar isso é pior do que um painel a dizer que ainda
+    não sabe.
+    =========================================================================
+    */
+    MINIMO_PARA_ESCALAR: 60,
+    SEGUNDOS_DE_UM_JOGO: 90 * 60,
+
+    porJogo: function (segundosJogados) {
+        const A = this.TeamA, B = this.TeamB;
+        const soma = (f) => f(A) + f(B);
+
+        const remates = soma(s => s.remates.tentados);
+        const passesT = soma(s => s.passes.tentados);
+        const passesC = soma(s => s.passes.certos);
+        const noAlvo = soma(s => s.remates.noAlvo);
+
+        // As razões valem sempre — não dependem do tempo decorrido.
+        const pct = (parte, total) => (total > 0) ? (100 * parte / total) : null;
+        const razoes = {
+            pctPassesCertos: pct(passesC, passesT),
+            pctRematesNoAlvo: pct(noAlvo, remates),
+            xgPorRemate: (remates > 0) ? soma(s => s.xg) / remates : null
+        };
+
+        if (!(segundosJogados > this.MINIMO_PARA_ESCALAR)) {
+            return Object.assign({
+                segundosJogados: segundosJogados || 0, escalado: false,
+                golos: null, remates: null, cantos: null, amarelos: null,
+                vermelhos: null, faltas: null, impedimentos: null,
+                ataquesPerigosos: null, ataquesTotais: null, xg: null
+            }, razoes);
+        }
+
+        const k = this.SEGUNDOS_DE_UM_JOGO / segundosJogados;
+        return Object.assign({
+            segundosJogados: segundosJogados, escalado: true,
+            golos: soma(s => s.remates.golos) * k,
+            remates: remates * k,
+            cantos: soma(s => s.cantos) * k,
+            amarelos: soma(s => s.cartoes.amarelos) * k,
+            vermelhos: soma(s => s.cartoes.vermelhos) * k,
+            faltas: soma(s => s.faltas.cometidas) * k,
+            impedimentos: soma(s => s.impedimentos) * k,
+            ataquesPerigosos: soma(s => s.ataques.perigosos) * k,
+            ataquesTotais: soma(s => s.ataques.totais) * k,
+            xg: soma(s => s.xg) * k
+        }, razoes);
+    },
+
     resumo: function () {
         const pct = (a, b) => b > 0 ? Math.round((a / b) * 1000) / 10 : 0;
         const porEquipa = (s) => ({

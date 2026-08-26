@@ -324,18 +324,48 @@ const PassTypes = {
         return {
             progresso: a.progresso + (b.progresso - a.progresso) * t,
             espaco: a.espaco + (b.espaco - a.espaco) * t,
-            distancia: a.distancia + (b.distancia - a.distancia) * t
+            distancia: a.distancia + (b.distancia - a.distancia) * t,
+            linha: a.linha + (b.linha - a.linha) * t
         };
     },
 
     /*
-    Nota de um candidato a receber. Os três argumentos vêm normalizados a 0..1
-    por quem chama — o progresso pode ser negativo num passe para trás.
+    QUALIDADE DA LINHA DE PASSE, de 0 (alguém em cima da recta) a 1 (corredor
+    limpo), para a distância deste passe.
+
+    É a mesma conta do `findPassTarget` (player.js), e é a mesma de propósito:
+    ali a linha era medida e pesada, aqui — onde o receptor é mesmo decidido —
+    não era medida de todo, e as duas camadas julgavam a mesma linha por
+    réguas diferentes. O corredor cresce com a distância porque um defesa a
+    3 m da recta não chega a uma bola de 8 m e chega de sobra a uma de 35 m.
+
+    `alvoDirZ` é o avanço do PONTO DE MIRA no referencial de ataque: perto da
+    baliza o `factorUltimoTerco` perdoa a linha apertada, porque a área é o
+    sítio mais congestionado do campo e exigir linha limpa ali é exigir que
+    nunca se jogue para dentro dela.
     */
-    notaCandidato: function (progressoNorm, espacoNorm, distNorm, pesos) {
+    qualidadeDaLinha: function (folga, dist, alvoDirZ) {
+        if (typeof PassLineModel === 'undefined') return 1;
+        const PL = PassLineModel;
+        const corredor = Math.min(PL.corredorMax,
+            PL.corredorBase + dist * PL.corredorPorMetro);
+
+        let q = (folga - PL.bloqueioDuro) / Math.max(0.001, corredor - PL.bloqueioDuro);
+        q = Math.max(0, Math.min(1, q));
+
+        if (alvoDirZ > PL.ultimoTercoZ) q = 1 - (1 - q) * PL.factorUltimoTerco;
+        return q;
+    },
+
+    /*
+    Nota de um candidato a receber. Os quatro argumentos vêm normalizados a
+    0..1 por quem chama — o progresso pode ser negativo num passe para trás.
+    */
+    notaCandidato: function (progressoNorm, espacoNorm, distNorm, linhaNorm, pesos) {
         return progressoNorm * pesos.progresso
             + espacoNorm * pesos.espaco
-            - distNorm * pesos.distancia;
+            - distNorm * pesos.distancia
+            + linhaNorm * pesos.linha;
     },
 
     // Distância do portador ao adversário mais próximo. Infinity se não houver.
@@ -470,7 +500,34 @@ const PassTypes = {
             const espacoNorm = Math.min(1, pontos.length / this.maxPontosLeque());
             const distNorm = Math.max(0, Math.min(1, dist / E.distanciaMax));
 
-            let nota = this.notaCandidato(progressoNorm, espacoNorm, distNorm, pesos);
+            /*
+            A LINHA ATÉ AO PONTO DE MIRA — e não até ao companheiro: num passe
+            para o espaço a bola vai ao ponto, e é esse o caminho que alguém
+            corta. O guarda-redes fica de fora, como em todos os outros testes
+            de linha: ele não sai da baliza a intercetar passes no meio-campo.
+            */
+            const alvoX = res.ponto ? res.ponto.x : mx;
+            const folga = folgaDaLinha(cx, cz, alvoX, alvoZ,
+                opponents.filter(o => o && o.role !== 'gk').map(o => o.model.position));
+
+            /*
+            Corte DURO, e não mais um peso: com alguém literalmente em cima da
+            recta a bola não passa, e uma nota — por mais baixa que seja —
+            continua a competir e a poder ganhar por não haver melhor. Descarta
+            como o `findPassTarget` já descarta, com o mesmo `bloqueioDuro` e
+            sem excepção para o último terço: o `factorUltimoTerco` é apetite
+            de risco, e isto é geometria.
+
+            Sem ninguém que sobreviva, o `escolher` devolve null e o `actPass`
+            desce a cascata (atrasar a alguém perto, conduzir) — que é o que se
+            faz quando não há linha nenhuma, em vez de pôr a bola no adversário.
+            */
+            if (typeof PassLineModel !== 'undefined' && folga < PassLineModel.bloqueioDuro) continue;
+
+            const linhaNorm = this.qualidadeDaLinha(folga, dist, alvoZ * dirZ);
+
+            let nota = this.notaCandidato(progressoNorm, espacoNorm, distNorm,
+                linhaNorm, pesos);
             if (mate === sugerido) nota += E.bonusSugerido;
 
             if (nota > melhorNota) {
