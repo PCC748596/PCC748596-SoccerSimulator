@@ -497,7 +497,11 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
                     (opp.model.position.z * p.dirZ < p.model.position.z * p.dirZ + 12.0);
                 if (noFlanco && aFrente) { tapado = true; break; }
             }
-            if (tapado) targetX *= 0.5;
+            if (tapado) {
+                const lado = Math.sign(targetX) || ladoEst;
+                const minAberto = Math.max(8.0, Math.abs(p.baseTarget.x) * 0.75);
+                targetX = lado * Math.max(Math.abs(targetX) * 0.78, minAberto);
+            }
         }
 
         // `amplitudeZ`: estica ou encolhe o afastamento ao meio do bloco.

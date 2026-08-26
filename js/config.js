@@ -707,8 +707,8 @@ STRENGTH de quem repõe — ver `alcanceMaxFraco`/`alcanceMaxForte` mais abaixo.
 */
 const ThrowInModel = {
     alcanceMin: 9.0,
-    elevMin: 22 * Math.PI / 180,
-    elevMax: 34 * Math.PI / 180,
+    elevMin: 16 * Math.PI / 180,
+    elevMax: 26 * Math.PI / 180,
 
     /*
     ATÉ ONDE CHEGA UM LATERAL, POR STRENGTH — os dois extremos, escritos.
@@ -1786,14 +1786,14 @@ vinham so de decisao ma ou de dominio falhado.
                      documentado para sigmaMax sozinho
 */
 const PassErrorModel = {
-    sigmaMax: 0.16,        // ~9.2 graus
-    sigmaMin: 0.012,       // ~0.7 graus
+    sigmaMax: 0.13,        // ~7.5 graus
+    sigmaMin: 0.009,       // ~0.5 graus
     pesoTecnica: 0.35,
     raioPressao: 3.5,
-    pressaoMult: 1.8,
+    pressaoMult: 1.55,
     costasMult: 2.0,
     forcaMinPressao: 0.85,
-    sigmaTecto: 0.35
+    sigmaTecto: 0.26
 };
 
 /*
@@ -2102,8 +2102,8 @@ const GoalkeeperPose = {
         coxa: 0.05,
         abertura: 0.07,
         bracoZ: 0.05,
-        bracoX: -0.9,
-        cotovelo: -2.0,
+        bracoX: -0.76,
+        cotovelo: -1.82,
         altura: 0.0
     }
 };
@@ -2404,7 +2404,10 @@ function esperarPeloSlot(e) {
 }
 
 const GiroDeCostasModel = {
-    raio: 5.0,
+    // Distância a que um adversário invalida o giro de 180° (cone de
+    // meia-abertura atrás do jogador). Estava em 5.0; a 5 m um marcador nas
+    // costas ainda fecha mal, e o jogador acabava a girar em cima dele.
+    raio: 7.0,
     meiaAberturaGraus: 45,
     passoGiroGraus: 30,
 

@@ -794,24 +794,32 @@ function actPass(ctx) {
     }
 
     // 3. Voltar com a bola e esperar (Giro de 180 graus).
-    // O utilizador pediu para não girar 180 graus com marcadores próximos (< 3.5m).
-    // Se houver qualquer adversário a menos de 3.5m (ou sob pressão), NUNCA gira 180 graus; passa a bola.
+    // O utilizador pediu para não girar 180 graus com marcadores próximos (< 5m).
+    // Se houver qualquer adversário a menos de 5m (ou sob pressão), NUNCA gira 180 graus; passa a bola.
     if (escolha && escolha.mate) {
         let adversarioProximo = false;
         const allOpps = (p.team === 'TeamA') ? Match.opponents : Match.players;
         for (const o of allOpps) {
             if (o.role === 'gk') continue;
-            if (p.model.position.distanceToSquared(o.model.position) < 12.25) { // 3.5m
+            if (p.model.position.distanceToSquared(o.model.position) < 25.0) { // 5.0m
                 adversarioProximo = true;
                 break;
             }
         }
 
-        // Só pode recuar com a bola se tiver espaço limpo em redor (sem marcadores a menos de 3.5m)
+        // Só pode recuar com a bola se tiver espaço limpo em redor (sem marcadores a menos de 5m)
         if (!adversarioProximo && !ctx.underPressure) {
             p.carryRecuo = true;
             p.apoioAtivo = false;
             p.fsm.changeState('CARRY');
+            return;
+        }
+
+        // Com marcador perto: se existe escolha, passa em vez de girar.
+        if (adversarioProximo || ctx.underPressure) {
+            p.carryRecuo = false;
+            aplicarMiraDoPasse(p, escolha.tipo, escolha.ponto);
+            p.initiatePass(escolha.mate);
             return;
         }
     }
@@ -1905,6 +1913,10 @@ const PlayerBT = sel('PlayerRoot',
                     if (emZonaDeRemate(ctx)) return false;
                     let settling = ctx.underPressure ? CadenceModel.posseSobPressao : CadenceModel.posseBase;
                     settling *= 1.0 - (ctx.skillTec / 100) * 0.25;
+                    const naDefesa = (ctx.p.model.position.z * ctx.p.dirZ < 0) || ctx.p.role === 'def';
+                    if (naDefesa) {
+                        settling = Math.min(settling, ctx.underPressure ? 0.25 : 0.5);
+                    }
                     // Cadência do estilo: Target Man aguenta a bola (1.6),
                     // Fox in the Box resolve num toque (0.6).
                     settling *= estiloAtivoDe(ctx.p).cadencia;

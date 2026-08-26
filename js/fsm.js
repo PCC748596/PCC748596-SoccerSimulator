@@ -93,7 +93,8 @@ function executePassGameplay(p) {
         passSkill: passSkill,
         tecSkill: tecSkill,
         distAdversario: distAdversario,
-        cosCorpo: cosCorpo
+        cosCorpo: cosCorpo,
+        distPasse: distToTarget
     });
     const desvio = sigma * amostraGaussiana(Math.random);
     const rodado = rodarNoPlano(dxAlvo, dzAlvo, desvio);
@@ -196,13 +197,36 @@ function executePassGameplay(p) {
             Match.ballVel.y = 0;
         } else {
             /*
-            Cai um pouco ANTES do companheiro (`recuoPasseAlto`), para lhe
-            morrer à frente ou no peito, em vez de nas costas — aterrar em
-            cima dele obrigava-o a recuar, e como o alvo já vem adiantado do
-            `alvoDePasse` (que antecipa o movimento dele), somavam-se dois
-            avanços e a bola caía longe.
+            PASSE PELO ALTO. O alcance pedido é o ponto de encontro com o
+            colega, já antecipado por `alvoDePasse`. O recuo fixo de 1.5 m
+            fazia a bola aterrar ANTES desse encontro: quando o receptor corria
+            ao encontro da bola, chegava ao ponto de queda antes dela e via-a
+            passar por cima; quando fugia, a bola caía atrás dele.
+
+            O recuo passa a depender do movimento do receptor relativamente ao
+            sentido do passe:
+              - vem ao encontro da bola  -> recuo zero (encontram-se no ponto)
+              - afasta-se do passador     -> bola adiantada (recuo negativo)
+              - lateral/lento             -> pequeno recuo, como antes
             */
-            const alcancePasse = Math.max(1.0, distToTarget - PassModel.recuoPasseAlto);
+            let recuo = PassModel.recuoPasseAlto;
+            const receiver = p.passTarget;
+            if (receiver && receiver.velocity && distToTarget > 0.001) {
+                const udx = dxAlvo / distToTarget;
+                const udz = dzAlvo / distToTarget;
+                const dot = receiver.velocity.x * udx + receiver.velocity.z * udz;
+                if (dot > 1.0) {
+                    // Corre no sentido do passe: a bola tem de cair à frente.
+                    recuo = -PassModel.recuoPasseAlto * 0.7;
+                } else if (dot < -1.0) {
+                    // Vem ao encontro da bola: não encurtar.
+                    recuo = 0;
+                } else {
+                    recuo = PassModel.recuoPasseAlto * 0.4;
+                }
+            }
+
+            const alcancePasse = Math.max(1.0, distToTarget - recuo);
             const v = velocidadeParaAlcance(alcancePasse, elev);
             Match.ballVel.y = v * Math.sin(elev);
             forcaPasse = v * Math.cos(elev);

@@ -219,9 +219,11 @@ function sigmaDePasse(o) {
     escolhia pior, mas executava igualmente bem.
     */
     const d = o.distAdversario;
+    const passeCurto = (typeof o.distPasse === 'number' && o.distPasse <= 14.0);
+    const multPressao = passeCurto ? (1 + (M.pressaoMult - 1) * 0.45) : M.pressaoMult;
     if (typeof d === 'number' && d < M.raioPressao) {
         const aperto = 1 - Math.max(0, d) / M.raioPressao;
-        sigma *= 1 + (M.pressaoMult - 1) * aperto;
+        sigma *= 1 + (multPressao - 1) * aperto;
     }
 
     /*
@@ -1163,8 +1165,21 @@ function alvoDePasse(p) {
             return pos;
         }
 
-        // A velocidade de passe foi aumentada em 20% (14.0 * 1.2 = 16.8)
-        const vBall = 16.8;
+        /*
+        Estimativa da velocidade média horizontal do passe, por distância.
+        O valor fixo de 16.8 era uma média que falhava nos dois extremos:
+        passes rasteiros curtos são mais lentos, e os arcos de 15-30 m são
+        consideravelmente mais rápidos. Usar a velocidade certa faz o ponto de
+        encontro cair onde o receptor realmente alcança a bola.
+        */
+        let vBall;
+        if (dist <= 15.0) {
+            vBall = 12.0;
+        } else if (dist <= 30.0) {
+            vBall = 22.0 - (dist - 15.0) * (22.0 - 18.0) / 15.0;
+        } else {
+            vBall = Math.max(16.0, 18.0 - (dist - 30.0) * (18.0 - 16.0) / 30.0);
+        }
         
         let currentSpeed = p.velocity.length();
         let vx = 0;

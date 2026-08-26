@@ -1060,7 +1060,7 @@ function deslocamentoDeCorredor(o) {
     }
 
     if (pCorredor === -ballCorredor) {
-        return ballCorredor * (o.isLateral ? 2.0 : 1.5);
+        return ballCorredor * (o.isLateral ? 1.0 : 1.25);
     }
 
     // Mesmo lado da bola: o lateral abre para dar linha de passe pela ala, e

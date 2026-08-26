@@ -175,12 +175,18 @@ const RefereeModel = {
         velocidade relativa abaixo da qual o encontro é só um roçar. O
         `arrefecimento` impede que o mesmo par marque falta atrás de falta
         enquanto continua encostado — sem ele um único choque dava dezenas.
+
+        `raioDisputa` só deixa o contacto ser falta se a bola estiver perto
+        do lance. Sem isto dois jogadores a correr um contra o outro longe da
+        bola produziam falta só porque se encostaram — por exemplo após um
+        passe para trás em que já não há disputa.
         */
         contacto: {
             raio: 1.0,
             velRelMin: 4.5,
             prob: 0.035,
-            arrefecimento: 3.0
+            arrefecimento: 3.0,
+            raioDisputa: 3.5
         },
 
         /*
@@ -748,11 +754,12 @@ const Officials = {
             // A guinada do braco tem de ser desfeita, senao a passada seguinte
             // desenha-se com o braco torcido para o lado.
             if (arb.rig && arb.rig.rArm) arb.rig.rArm.rotation.y = 0;
+            if (arb.rig && arb.rig.lArm) arb.rig.lArm.rotation.y = 0;
             return;
         }
 
         const rig = arb.rig;
-        if (!rig || !rig.rArm) return;
+        if (!rig || !rig.rArm || !rig.lArm) return;
 
         /*
         O CORPO NAO SE MEXE AQUI. Quem o vira e o `mover`, que ja o poe a olhar
@@ -773,22 +780,39 @@ const Officials = {
         const dz = arb.sinal.z - arb.model.position.z;
 
         const k = RefereeModel.suavizacaoBraco;
-        rig.rArm.rotation.order = 'YXZ';
 
         if (Math.hypot(dx, dz) > 0.05) {
             let guinada = Math.atan2(dx, dz) - arb.model.rotation.y;
             // Ao menor dos dois caminhos: sem isto o braco dava a volta larga
             // quando o angulo passava por +/-PI.
             guinada = Math.atan2(Math.sin(guinada), Math.cos(guinada));
-            let actual = Math.atan2(Math.sin(rig.rArm.rotation.y),
-                Math.cos(rig.rArm.rotation.y));
-            let delta = Math.atan2(Math.sin(guinada - actual), Math.cos(guinada - actual));
-            rig.rArm.rotation.y = actual + delta * k;
+
+            // Escolhe o braco que fica do lado do ataque: direito se o alvo
+            // estiver a direita do corpo, esquerdo se estiver a esquerda.
+            // Assim o braco nao precisa de cruzar o tronco.
+            const useRight = guinada >= 0;
+            const signalArm = useRight ? rig.rArm : rig.lArm;
+            const otherArm = useRight ? rig.lArm : rig.rArm;
+
+            // Desfaz a guinada do braco que nao sinaliza.
+            otherArm.rotation.y = 0;
+            otherArm.rotation.x = lerpTo(otherArm.rotation.x, 0, k);
+
+            signalArm.rotation.order = 'YXZ';
+            // Braco direito com +PI/2 aponta para a direita; braco esquerdo,
+            // simetrico, aponta para a esquerda com -PI/2.
+            signalArm.rotation.y = useRight ? Math.PI / 2 : -Math.PI / 2;
+
+            // Infrações (falta livre) ficam paralelas ao chao.
+            const ehHorizontal = Math.abs(arb.sinal.elev - RefereeModel.elevacaoSinal) < 0.01;
+            signalArm.rotation.x = ehHorizontal
+                ? -Math.PI / 2
+                : lerpTo(signalArm.rotation.x, arb.sinal.elev, k);
         }
 
-        rig.rArm.rotation.x = lerpTo(rig.rArm.rotation.x, arb.sinal.elev, k);
         // Cotovelo esticado: um braco dobrado nao aponta nada.
         if (rig.rElbow) rig.rElbow.rotation.x = lerpTo(rig.rElbow.rotation.x, 0, k);
+        if (rig.lElbow) rig.lElbow.rotation.x = lerpTo(rig.lElbow.rotation.x, 0, k);
     },
 
     /*
@@ -1133,11 +1157,24 @@ const Officials = {
         }
 
         const raio2 = C.raio * C.raio;
+        const raioDisputa2 = C.raioDisputa * C.raioDisputa;
         for (const a of Match.players) {
             for (const b of Match.opponents) {
                 const dx = a.model.position.x - b.model.position.x;
                 const dz = a.model.position.z - b.model.position.z;
                 if (dx * dx + dz * dz > raio2) continue;
+
+                // So conta como falta se a bola estiver perto do contacto —
+                // senao e um choque longe do lance, nao uma disputa.
+                if (Match.ball) {
+                    const mx = (a.model.position.x + b.model.position.x) * 0.5;
+                    const mz = (a.model.position.z + b.model.position.z) * 0.5;
+                    const my = (a.model.position.y + b.model.position.y) * 0.5;
+                    const dbx = Match.ball.position.x - mx;
+                    const dby = Match.ball.position.y - my;
+                    const dbz = Match.ball.position.z - mz;
+                    if (dbx * dbx + dby * dby + dbz * dbz > raioDisputa2) continue;
+                }
 
                 const chave = a.model.id + ':' + b.model.id;
                 if (this._arrefecimento.has(chave)) continue;
