@@ -2489,10 +2489,17 @@ const MarkingModel = {
     terço de ataque marcar "à letra" pesa menos do que manter a forma —
     tecto mais folgado, quebra mais para não perder o homem.
     */
+    /*
+    Os valores pedidos, na coluna Balanced: 7 m no ataque, 5 no meio, 3 na
+    defesa. O Defensive Pressure abre e fecha à volta deles, e nenhum grau
+    chega ao `raioSetor` (12 m) — o raio é de PROCURA, não de deslocação, e um
+    marcador afastado do slot até ao raio já nem teria direito ao homem que foi
+    marcar.
+    */
     biasMaxPorSetor: {
-        atk: { low: 5.0, balanced: 7.0, high: 10.0 },
-        mid: { low: 4.0, balanced: 6.0, high: 8.0 },
-        def: { low: 3.0, balanced: 5.0, high: 6.0 }
+        atk: { low: 5.0, balanced: 7.0, high: 9.0 },
+        mid: { low: 3.5, balanced: 5.0, high: 6.5 },
+        def: { low: 2.0, balanced: 3.0, high: 4.0 }
     },
 
     /*
@@ -2508,21 +2515,19 @@ const MarkingModel = {
     },
 
     /*
-    Até onde o marcador SAI DO SLOT para ir ao seu homem.
+    NÃO É LIDO EM LADO NENHUM. Ficou de quando a folha `marcar` da árvore
+    abria o tecto até ao `raioSetor` e este número era a rédea que a devia
+    travar; nunca chegou a ser consultado, e a folha voltou a usar o
+    `biasMaxPorSetor` como as outras camadas.
 
-    Era o `biasMaxPorSetor` (3 a 10 m) a limitar isto, e o resultado medido
-    era que a marcação só existia por acaso: com o homem a 15 m do slot o
-    marcador ficava a 9.9 m dele; a 25 m, ficava a 19 m. Ou seja, marcava
-    apenas quem já lhe calhasse ao lado — em campo lia-se como "não há
-    marcação nenhuma, toda a gente corre atrás da bola".
+    Fica com o registo do que se aprendeu, porque o pêndulo já bateu nas duas
+    pontas: com tectos apertados de mais a marcação só existia por acaso (o
+    homem a 15 m e o marcador a ficar a 9.9 m dele, "não há marcação nenhuma");
+    com o tecto aberto aos 12 m do raio, a marcação passou a mandar mais do
+    que o bloco e os jogadores largavam o posto em qualquer terço.
 
-    Marcar é ACOMPANHAR O HOMEM: quem recebeu a incumbência vai atrás dele e
-    fica à distância que o Defensive Pressure manda. Este número existe só
-    para impedir travessias absurdas do campo — e quem pode ser designado já
-    está limitado pelo `corredorMax` no assignMarking.
-
-    O `biasMaxPorSetor` continua a servir os desvios que NÃO são marcação
-    (cobertura, basculação), onde a forma do bloco tem mesmo de mandar.
+    O tecto por SETOR é a resposta a isso — 3 m na própria defesa, 7 no ataque
+    — porque o custo de largar a forma não é o mesmo nos dois sítios.
     */
     /*
     25 e nao 22: e a mesma distancia a que o atribuirMarcacao deixa de

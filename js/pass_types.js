@@ -230,6 +230,37 @@ const PassTypes = {
         return pt ? { tipo: tipo, ponto: pt } : { tipo: this.DIRECT, ponto: null };
     },
 
+    /*
+    A BALÍSTICA PARA UM DESTINO JÁ DECIDIDO.
+
+    O `escolher` faz duas coisas ao mesmo tempo: escolhe QUEM recebe e COMO a
+    bola lá vai. Há decisões em que o "quem" já está tomado por cima — a saída
+    de jogo para os defesas é uma delas — e nessas o `escolher` não serve: o
+    alvo entra lá como SUGESTÃO, vale um `bonusSugerido` e concorre com todos
+    os outros numa nota dominada pelo progresso para a baliza. Um passe para
+    trás tem progresso negativo por definição, portanto perdia quase sempre e a
+    bola saía para a frente.
+
+    Isto é a segunda metade sozinha: mesmo leque, mesma mistura de tipos por
+    zona, mesmo sorteio — só sem votação nenhuma sobre o destino.
+    */
+    paraCompanheiro: function (carrier, mate, rnd) {
+        if (!carrier || !mate || typeof PassTypeModel === 'undefined') return null;
+
+        const dirZ = carrier.dirZ;
+        const golZ = carrier.targetGoalZ;
+        const opponents = (carrier.team === 'TeamA') ? Match.opponents : Match.players;
+
+        const origem = this.zonaDe(carrier.model.position.x, carrier.model.position.z * dirZ);
+        const destino = this.zonaDe(mate.model.position.x, mate.model.position.z * dirZ);
+
+        const pontos = this.pontosPorMate(carrier)[mate.id] || [];
+        const tipo = this.sortear(this.misturaPara(origem, destino), rnd);
+        const res = this.pontoPara(tipo, pontos, mate, golZ, opponents);
+
+        return { mate: mate, tipo: res.tipo, ponto: res.ponto };
+    },
+
     /* ---------------------------------------------------------------
        Escolha do receptor
        --------------------------------------------------------------- */

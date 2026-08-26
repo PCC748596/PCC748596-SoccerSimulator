@@ -636,8 +636,25 @@ function encontrarDefesaParaSaida(p) {
     if (typeof Match === 'undefined') return null;
     const teammates = (p.team === 'TeamA') ? Match.players : Match.opponents;
     const opponents = (p.team === 'TeamA') ? Match.opponents : Match.players;
-    const defs = (teammates || []).filter(m => m !== p && m.role === 'def');
+    let defs = (teammates || []).filter(m => m !== p && m.role === 'def');
     if (!defs.length) return null;
+
+    /*
+    ATRAS PRIMEIRO. A pontuacao la em baixo mede linha livre, adversario mais
+    perto e distancia — nenhum termo dizia ATRAS, e por isso um lateral subido
+    ganhava ao central que ficou. O toque para tras saia para a frente na
+    mesma, agora por escolha do alvo em vez do tipo de passe.
+
+    `zDir` e o referencial de ataque (z * dirZ): negativo e do lado da propria
+    baliza. Meio metro de folga para dois jogadores na mesma linha nao
+    dependerem do ruido da posicao.
+
+    Se nao houver nenhum atras joga-se no que houver — melhor um lateral subido
+    do que a bandeira a expirar e a saida a nao se ver de todo.
+    */
+    const zDirDoPortador = p.model.position.z * p.dirZ;
+    const atras = defs.filter(d => d.model.position.z * d.dirZ < zDirDoPortador - 0.5);
+    if (atras.length) defs = atras;
 
     const obstaculos = (opponents || []).filter(o => o.role !== 'gk').map(o => ({
         x: o.model.position.x,
@@ -677,14 +694,26 @@ function encontrarDefesaParaSaida(p) {
     return melhorDef || defs[0];
 }
 
+/*
+O DESTINO NAO ESTA EM VOTACAO.
+
+Chamava-se aqui o `PassTypes.escolher(p, defTarget)`, e ali o defesa entra como
+SUGESTAO: vale o `bonusSugerido` e concorre com todos os companheiros numa nota
+dominada pelo PROGRESSO para a baliza. Um passe para tras tem progresso
+negativo por definicao, portanto perdia quase sempre — a bola saia para a
+frente e o ramo da saida dava-se por cumprido na mesma.
+
+O `paraCompanheiro` e a segunda metade do `escolher` sozinha: mesma balistica,
+mesmo leque, mesmo sorteio de tipo por zona, sem escolher destino nenhum.
+*/
 function executarPasseSaidaParaDefesas(p, defTarget) {
     p.carryRecuo = false;
     p.apoioAtivo = false;
-    if (typeof PassTypes !== 'undefined' && PassTypes.escolher) {
-        const escolha = PassTypes.escolher(p, defTarget);
-        if (escolha && escolha.mate) {
+    if (typeof PassTypes !== 'undefined' && PassTypes.paraCompanheiro) {
+        const escolha = PassTypes.paraCompanheiro(p, defTarget);
+        if (escolha) {
             aplicarMiraDoPasse(p, escolha.tipo, escolha.ponto);
-            p.initiatePass(escolha.mate);
+            p.initiatePass(defTarget);
             return;
         }
     }
@@ -1464,11 +1493,19 @@ function actMarcar(ctx) {
 
     /*
     O ponto fica na recta homem->propria baliza, a `MarkingModel.distancia`
-    dele — e o mesmo pontoDeMarcacao da camada posicional, mas com o tecto
-    aberto ate ao raio do sector em vez do `biasMax` de poucos metros: aqui a
-    intencao E acompanhar o homem, nao inclinar o slot. O raio do sector
-    continua a ser o limite, portanto ninguem atravessa o campo atras de
-    ninguem.
+    dele — o mesmo pontoDeMarcacao E o mesmo tecto da camada posicional: o
+    `biasMaxPara` do SETOR onde esta o slot.
+
+    O tecto estava aberto ate ao `raioSetor` (12 m), e isso colava duas coisas
+    diferentes no mesmo numero: o raio e de PROCURA — a que distancia do slot
+    ainda se considera um homem — e nao de DESLOCACAO. Quem marcava saia ate
+    12 m do posto que o TeamBT lhe deu, em qualquer terco, incluindo dentro da
+    propria defesa; em campo lia-se como a marcacao a mandar mais do que o
+    bloco. Agora fecha na defesa (3 m) e folga no ataque (7 m), que e onde
+    perder o homem custa menos do que perder a forma.
+
+    A zona sai do SLOT (`base.z * p.dirZ`) e nao da posicao do homem, para os
+    dois passos darem o mesmo tecto ao mesmo jogador no mesmo frame.
 
     Meio segundo de antecipacao na posicao do homem, como na camada
     posicional — sem isso o marcador anda sempre atras dele.
@@ -1480,7 +1517,7 @@ function actMarcar(ctx) {
     const hz = homem.model.position.z + (v ? v.z * 0.5 : 0);
 
     const ponto = pontoDeMarcacao(base.x, base.z, hx, hz,
-        p.ownGoalZ, dist, MarkingModel.raioSetor);
+        p.ownGoalZ, dist, MarkingModel.biasMaxPara(base.z * p.dirZ));
 
     p.dynamicTarget.set(ponto.x, ALTURA_BASE_Y, ponto.z);
     p.speedMult = (5.8 + ((ctx.skillSpeed - 50) / 50) * 1.4) * 1.25 * 0.9;
@@ -1767,6 +1804,38 @@ const PlayerBT = sel('PlayerRoot',
                 cond('bolaFugiu', (ctx) => !ctx.p.hasBall),
                 act('correrParaBola', actCarry)
             ),
+            /*
+            SAÍDA DE JOGO: quem recebe a primeira bola toca para trás.
+
+            Está ACIMA do `Dominar` de propósito. Estava abaixo, e o `Dominar`
+            executa `actCarry` durante a cadência inteira de decisão (até ~3 s
+            no CadenceModel.posseBase): o receptor dominava e saía a conduzir
+            para a frente, e quando este ramo finalmente ganhava já ia no
+            meio-campo. É o contrário de sair a jogar de trás — que é o que se
+            quer poder ver.
+
+            Continua ABAIXO do `RecuperarControlo`: com a bola fugida do pé não
+            se passa a ninguém, vai-se buscá-la primeiro.
+
+            A bandeira apaga-se aqui, no acto, e não na condição — uma condição
+            que muda o mundo dispara na avaliação de um ramo que pode nem ser o
+            escolhido.
+            */
+            seq('PasseSaidaDeBola',
+                cond('precisaPassarAosDefesas', (ctx) => {
+                    if (typeof Match === 'undefined' || !Match.kickoffPendingPassToDef) return false;
+                    if (ctx.p.role === 'gk') return false;
+                    const defTarget = encontrarDefesaParaSaida(ctx.p);
+                    if (!defTarget) return false;
+                    ctx.kickoffDefTarget = defTarget;
+                    return true;
+                }),
+                act('passarAosDefesas', (ctx) => {
+                    Match.kickoffPendingPassToDef = false;
+                    executarPasseSaidaParaDefesas(ctx.p, ctx.kickoffDefTarget);
+                })
+            ),
+
             cond('CalculaDebug', (ctx) => {
                 let carryPts = 0;
                 if (ctx.campoAberto) carryPts += 100;
@@ -1824,22 +1893,6 @@ const PlayerBT = sel('PlayerRoot',
             seq('GuardaRedesJoga',
                 cond('souGR', ehGK),
                 act('sairAJogar', tratarGuardaRedes)
-            ),
-
-            // 0. Saída de bola: após o primeiro passe do kickoff, o receptor toca para os zagueiros ou laterais
-            seq('PasseSaidaDeBola',
-                cond('precisaPassarAosDefesas', (ctx) => {
-                    if (typeof Match === 'undefined' || !Match.kickoffPendingPassToDef) return false;
-                    if (ctx.p.role === 'gk') return false;
-                    const defTarget = encontrarDefesaParaSaida(ctx.p);
-                    if (!defTarget) return false;
-                    ctx.kickoffDefTarget = defTarget;
-                    return true;
-                }),
-                act('passarAosDefesas', (ctx) => {
-                    Match.kickoffPendingPassToDef = false;
-                    executarPasseSaidaParaDefesas(ctx.p, ctx.kickoffDefTarget);
-                })
             ),
 
             // 1. Verificar chute - chutar

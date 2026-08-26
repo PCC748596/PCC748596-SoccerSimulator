@@ -5,6 +5,154 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 26 de Agosto de 2026 — a fase manda
+
+Teste novo: `tests/marcacao_e_bloco_por_fase.test.js`. Suite: 36 ficheiros.
+
+Duas coisas que se viam no mesmo ecrã, com causas independentes e a mesma
+forma: uma regra que existia na árvore do jogador e faltava na camada
+posicional.
+
+#### Os atacantes a correr atrás dos defensores (js/bt/team_bt.js)
+
+A árvore do jogador tinha a guarda certa desde sempre — o `podeMarcar` sai já
+se `bb.isAttacking`. A camada posicional não tinha nenhuma: o `match.js` chama
+`atribuirMarcacoesDaEquipa` e `PosicionamentoAI.tickFinal` para as **duas**
+equipas em todos os frames, e o `aplicarMarcacaoPosicional` só olhava para o
+`p.marcRef`.
+
+Resultado: a equipa **com** a bola também recebia homem atribuído e cada
+jogador era puxado até 10 m (o `biasMaxPorSetor` no terço de ataque) na
+direcção do adversário mais perto do seu slot. Os avançados colavam-se aos
+centrais em vez de procurarem espaço — que é exactamente o que se lia no ecrã.
+
+A guarda entrou nos dois sítios, e não só no que desenha:
+
+- **`aplicarMarcacaoPosicional`** devolve o alvo intacto a atacar, e também sem
+  `bb` nenhum: não saber a fase e adivinhar uma é o próprio defeito.
+- **`atribuirMarcacoesDaEquipa`** limpa o `marcRef` e o `marcTimer` de quem
+  ataca, em vez de os deixar escritos. Não chega não usar a referência: ela é
+  lida pelo `podeMarcar` e pelo `estouAMarcar` (que tira o jogador das
+  intercepções). Um homem atribuído a quem está a atacar é lixo de estado, da
+  mesma família do `actionState` pendurado — e voltava a agir no instante da
+  troca de posse, com um alvo escolhido para uma jogada que já tinha acabado.
+
+#### A saída de jogo acaba nos defesas (e agora vê-se)
+
+O que se quer ver: dado o pontapé de saída, quem recebe a primeira bola toca
+para um central ou lateral, e só a partir daí o jogo segue normal — a construção
+desde trás.
+
+O ramo `PasseSaidaDeBola` já existia, e a maquinaria toda com ele
+(`Match.kickoffPendingPassToDef`, `encontrarDefesaParaSaida`,
+`executarPasseSaidaParaDefesas`). O que estava errado era a **posição na
+árvore**: vinha depois do `Dominar`, e o `Dominar` executa `actCarry` durante a
+cadência inteira de decisão — até ~3 s no `CadenceModel.posseBase`. O receptor
+dominava e saía a conduzir para a frente; quando o ramo do passe ganhava, já ia
+no meio-campo. O próprio comentário do ramo dizia "0." e ele era o quinto.
+
+Passou para logo a seguir ao `RecuperarControlo` — e não para antes dele: com a
+bola fugida do pé não se passa a ninguém, vai-se buscá-la primeiro.
+
+**E o passe saía para a frente à mesma.** Duas causas, ambas do lado do
+DESTINO e não do momento:
+
+- O `executarPasseSaidaParaDefesas` mandava o defesa ao `PassTypes.escolher(p,
+  defTarget)`, onde ele entra apenas como **sugestão**: vale um `bonusSugerido`
+  de 0,5 e concorre com todos os companheiros numa nota dominada pelo
+  **progresso** para a baliza. Um passe para trás tem progresso negativo por
+  definição, portanto perdia quase sempre — e o ramo da saída dava-se por
+  cumprido com a bola a ir para a frente. Nasceu o `PassTypes.paraCompanheiro`,
+  que é a segunda metade do `escolher` sozinha: mesmo leque, mesma mistura de
+  tipos por zona, mesmo sorteio da balística, sem votação nenhuma sobre quem
+  recebe.
+- O `encontrarDefesaParaSaida` media linha livre, adversário mais perto e
+  distância — **nenhum termo dizia atrás**. Um lateral subido ganhava ao central
+  que ficou. Agora filtra-se primeiro pelos que estão atrás no referencial de
+  ataque (`z * dirZ`, com meio metro de folga); só se não houver nenhum é que os
+  outros voltam a concorrer, porque é melhor jogar num lateral subido do que
+  deixar a bandeira expirar e não se ver saída nenhuma.
+
+**A bandeira passou a ter prazo** (`KICKOFF_PRAZO_PASSE_DEFESA`, 6 s). Apagava-se
+com o toque do adversário e com qualquer bola parada, mas faltava o caso normal
+— ninguém achar defesa livre, com o `encontrarDefesaParaSaida` a devolver null
+com a linha tapada. Sem prazo a bandeira ficava acesa e o toque para trás saía
+muito depois, no meio de outra jogada: um passe atrasado sem razão nenhuma, pior
+do que não o ter.
+
+Teste: `tests/saida_de_jogo_para_defesa.test.js` — fixa a ordem dos três ramos
+(`RecuperarControlo` < `PasseSaidaDeBola` < `Dominar`), o alvo ser um defesa que
+não é o próprio, e o prazo a correr só com a bandeira acesa.
+
+#### O tecto da marcação passou a ser o do SETOR, nas duas camadas
+
+O `biasMaxPorSetor` (def/mid/atk × low/balanced/high) já existia e já era
+respeitado pela camada posicional, mas a folha `marcar` da árvore passava o
+`MarkingModel.raioSetor` (12 m) como tecto de desvio. São duas coisas
+diferentes coladas no mesmo número: o raio é de **procura** — a que distância
+do slot ainda se considera um homem — e não de **deslocação**.
+
+Quem marcava saía até 12 m do posto que o TeamBT lhe tinha dado, em qualquer
+terço, incluindo dentro da própria defesa. Em campo lia-se como a marcação a
+mandar mais do que o bloco.
+
+A folha passou a usar o mesmo `biasMaxPara` da camada posicional, com a zona
+tirada do SLOT (`base.z * p.dirZ`) e não da posição do homem — senão os dois
+passos davam tectos diferentes ao mesmo jogador no mesmo frame.
+
+Valores novos (a coluna Balanced é a pedida: 7 / 5 / 3):
+
+| setor | low | balanced | high |
+|---|---|---|---|
+| atk | 5.0 | **7.0** | 9.0 |
+| mid | 3.5 | **5.0** | 6.5 |
+| def | 2.0 | **3.0** | 4.0 |
+
+O pêndulo já bateu nas duas pontas — tectos apertados de mais davam "não há
+marcação nenhuma", o tecto aos 12 m dava a marcação a comer o bloco. Fechar na
+própria defesa e folgar no ataque é a resposta: o custo de largar a forma não é
+o mesmo nos dois sítios. Nenhum grau chega ao `raioSetor`, senão o marcador
+acabava tão longe do slot que já nem tinha direito ao homem que foi marcar.
+
+O `MarkingModel.alcanceMarcacao` (25 m) **nunca foi lido por ninguém** — era a
+rédea do tecto aberto que entretanto desapareceu. O comentário passou a dizê-lo
+em vez de descrever uma regra que não existe.
+
+#### O comprimento do bloco por fase (`escolherProfundidade`)
+
+O rectângulo de quem defendia tinha os mesmos 50 m do de quem atacava. A fase
+entrava no **centro** do bloco (o ±5 do `targetOffsetZ`) mas nunca no
+**comprimento**: não havia caminho nenhum no código que levasse a `short` por
+ser fase defensiva — só a Mentalidade lá chegava, e essa é uma escolha para o
+jogo todo, não uma resposta ao momento.
+
+A escolha saiu do `computeBlock` para função própria, com a ordem escrita:
+
+    1. A FASE       a defender é sempre `short` (30 m), e nada por cima disso
+    2. A MENTALIDADE T.Defensiva e Defensiva impõem `short` também a atacar
+    3. O PAINEL     Length Compactness, para o resto
+
+**O painel deixa de mandar no comprimento a defender, e isso é de propósito:**
+o Length Compactness passa a ser o bloco COM bola, e o `<label>` no painel
+passou a dizê-lo. A largura fica de fora, como sempre esteve — fechar em
+largura entrega as alas e continua a ser escolha de quem joga.
+
+O `tests/linha_defensiva.test.js` passou a injectar a função nova no seu
+sandbox, para correr a regra a sério em vez de uma cópia dela.
+
+#### Simulação em lote: o tecto de 50 jogos
+
+O `Sim.run({ jogos: N })` pela consola nunca teve tecto; o limite estava só no
+painel, em dois sítios que tinham de concordar — o `max` do `<input>` e o
+`clamp` do `lerParametrosDoLote`, que cortava em silêncio. Passaram os dois
+para 100.
+
+O aviso de tempo real por baixo das caixas continua a sair de
+`SIM_SEG_REAIS_POR_SEG_SIMULADO = 0.025`, medido há muito (150 s simulados em
+3,8 s reais) e **por confirmar**: a árvore de comportamento e a mola de coesão
+engordaram o tick desde então. Vale a pena cronometrar um lote pequeno e
+reescrever a constante antes de confiar na estimativa de um lote grande.
+
 ### Sessão de 25 de Agosto de 2026 (noite) — a árvore de decisão
 
 Testes novos: `tests/passa_antes_de_conduzir.test.js`, `tests/arvore_sem_bola.test.js`,

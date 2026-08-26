@@ -756,20 +756,40 @@ CÁLCULO DO BLOCO / RETÂNGULO TÁTICO
    fase: com bola (T.Ataque/Ataque) é entre a bola e a baliza ATACADA (+5);
    sem bola (T.Defesa/Defesa) é entre a bola e a baliza DEFENDIDA (-5).
 */
+/*
+O COMPRIMENTO DO BLOCO — quem manda, e por que ordem.
+
+    1. A FASE. A defender é sempre `short` (30 m), e nada por cima disso.
+    2. A MENTALIDADE. T.Defensiva e Defensiva impõem `short` também a atacar.
+    3. O PAINEL (Length Compactness), para o resto.
+
+A fase entrava no CENTRO do bloco (o ±5 do targetOffsetZ) mas nunca no
+comprimento: a defender desenhava-se o mesmo rectângulo de 50 m que se desenha
+a atacar, e via-se no ecrã como uma equipa esticada sem bola. Não havia caminho
+nenhum no código que levasse a `short` por ser fase defensiva — só a
+Mentalidade lá chegava, e essa é uma escolha do utilizador para o jogo todo, não
+uma resposta ao momento.
+
+O PAINEL DEIXA DE MANDAR NO COMPRIMENTO A DEFENDER, e isso é de propósito: o
+Length Compactness passa a ser o bloco COM bola. A largura fica de fora, como
+sempre esteve — fechar em largura entrega as alas e isso continua a ser escolha
+de quem joga.
+*/
+function escolherProfundidade(bb) {
+    const B = BlockShape;
+    if (bb && !bb.isAttacking) return 'short';
+
+    const mental = (typeof MentalidadeModel !== 'undefined') ? MentalidadeModel[Tatics.estilo] : null;
+    const pedido = (mental && mental.profundidade) ? mental.profundidade : Tatics.lengthCompactness;
+    return B.profundidade[pedido] !== undefined ? pedido : 'median';
+}
+
 function computeBlock(bb) {
     const B = BlockShape;
     const modo = bb.isAttacking ? 'comBola' : 'semBola';
     const compac = B.amplitude[Tatics.compactness] !== undefined
         ? Tatics.compactness : 'median';
-    /*
-    A MENTALIDADE PODE MANDAR NO COMPRIMENTO. T.Defensiva e Defensiva impõem
-    `short` (30 m): uma equipa que se põe atrás joga curta, e um bloco de 50 m
-    contradizia a mentalidade que o utilizador acabou de escolher. As outras
-    três não têm `profundidade` e continuam a obedecer ao painel.
-    */
-    const mental = (typeof MentalidadeModel !== 'undefined') ? MentalidadeModel[Tatics.estilo] : null;
-    const pedido = (mental && mental.profundidade) ? mental.profundidade : Tatics.lengthCompactness;
-    const compacLength = B.profundidade[pedido] !== undefined ? pedido : 'median';
+    const compacLength = escolherProfundidade(bb);
 
     /* --- profundidade --------------------------------------------------- */
     const profundidade = CAMPO_COMP * B.profundidade[compacLength];
@@ -1415,6 +1435,20 @@ function aplicarMarcacaoPosicional(p, bb, targetX, targetZ) {
     if (typeof MarkingModel === 'undefined' || !p.marcRef) {
         return { x: targetX, z: targetZ };
     }
+    /*
+    SÓ A DEFENDER. A árvore do jogador já tinha esta guarda no `podeMarcar`;
+    esta camada não tinha nenhuma, e corria para as duas equipas todos os
+    frames. A equipa COM a bola era puxada até 10 m na direcção do adversário
+    mais perto de cada slot: os avançados colavam-se aos centrais em vez de
+    procurarem espaço, e em campo lia-se como "os atacantes correm atrás dos
+    defensores".
+
+    Sem `bb` também não se marca: não se sabe a fase, e adivinhar uma é
+    exactamente o defeito que isto vem corrigir.
+    */
+    if (!bb || bb.isAttacking) {
+        return { x: targetX, z: targetZ };
+    }
 
     const M = MarkingModel;
     let distancia = M.distanciaPorPressao[Tatics.pressaoDefensiva]
@@ -1453,6 +1487,25 @@ da referencia; a exclusividade e do `atribuirMarcacoes`, em config.js.
 function atribuirMarcacoesDaEquipa(lista, bb) {
     if (typeof MarkingModel === 'undefined' ||
         typeof atribuirMarcacoes !== 'function') return;
+
+    /*
+    A ATACAR NÃO SE ATRIBUI HOMEM, E LARGA-SE O QUE ESTAVA.
+
+    Não chega o `aplicarMarcacaoPosicional` não usar o `marcRef`: ele é lido
+    noutros sítios (o `podeMarcar` da árvore, o `estouAMarcar` que tira o
+    jogador das intercepções). Deixá-lo escrito em quem está a atacar é lixo de
+    estado, da mesma família do `actionState` pendurado — e volta a agir no
+    instante em que a posse muda, com um homem escolhido para uma jogada que já
+    acabou.
+    */
+    if (bb && bb.isAttacking) {
+        for (const p of lista) {
+            if (!p) continue;
+            p.marcRef = null;
+            p.marcTimer = 0;
+        }
+        return;
+    }
 
     const M = MarkingModel;
     const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;

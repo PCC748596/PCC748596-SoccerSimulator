@@ -1,3 +1,30 @@
+/*
+PRAZO DA SAÍDA DE JOGO.
+
+Quem recebe a primeira bola do pontapé de saída toca para um defesa (o ramo
+`PasseSaidaDeBola`, em js/bt/player_bt.js), para se poder ver a construção
+desde trás. Isto é o que garante que a intenção não sobrevive à jogada.
+
+A bandeira já se apagava com o toque do adversário e com qualquer bola parada,
+mas faltava o caso normal: ninguém achar defesa livre (o
+`encontrarDefesaParaSaida` devolve null com a linha toda tapada). Sem prazo, a
+bandeira ficava acesa e o toque para trás saía muito depois, no meio de outra
+jogada — um passe atrasado sem razão nenhuma, que é pior do que não o ter.
+
+Seis segundos: dá para receber, dominar e tocar sem pressa, e acaba muito antes
+de a jogada seguinte começar.
+*/
+const KICKOFF_PRAZO_PASSE_DEFESA = 6.0;
+
+function correrPrazoDaSaida(M, dt) {
+    if (!M.kickoffPendingPassToDef) return;
+    M.kickoffPassToDefTimer -= dt;
+    if (M.kickoffPassToDefTimer <= 0) {
+        M.kickoffPendingPassToDef = false;
+        M.kickoffPassToDefTimer = 0;
+    }
+}
+
 const Match = {
     scene: null, ball: null, ballVisual: null, ballVel: new THREE.Vector3(),
     players: [], opponents: [], ballCarrier: null, intendedReceiver: null, state: 'PLAY',
@@ -27,7 +54,7 @@ const Match = {
     crowdExcitement: 0, crowdTimer: 0,
     currentLookTarget: null, // Usado para interpolação da câmara
     kickoffActive: false, kickoffTimer: 0, kickoffTaker: null, kickoffApoio: null,
-    kickoffTeam: null, kickoffPendingPassToDef: false,
+    kickoffTeam: null, kickoffPendingPassToDef: false, kickoffPassToDefTimer: 0,
 
     // Migração por eventos (ver EventBus) — parte 1: GK. Substitui o polling
     // directo de gk.gkEstado === 'apanhar'/'segurando' espalhado por vários
@@ -1461,6 +1488,7 @@ const Match = {
         this.kickoffApoio = apoio;
         this.kickoffTeam = startA ? 'TeamA' : 'TeamB';
         this.kickoffPendingPassToDef = true;
+        this.kickoffPassToDefTimer = KICKOFF_PRAZO_PASSE_DEFESA;
     },
 
     /*
@@ -1700,6 +1728,7 @@ const Match = {
         // saíam de baixo dos pontos e parecia que os pontos desapareciam.
 
         if (typeof Perception !== 'undefined') Perception.tick(this, dt);
+        correrPrazoDaSaida(this, dt);
         this.runTeamAI();
 
         this.players.forEach(p => p.update(dt));

@@ -46,14 +46,25 @@ const recuoDaUltimaLinha = new Function(
     `${extrairFuncao(srcConfig, 'recuoDaUltimaLinha', 'js/config.js')}; return recuoDaUltimaLinha;`
 )();
 
+/*
+A escolha do comprimento saiu do computeBlock para funcao propria quando a FASE
+passou a mandar nela (a defender e sempre 'short'). Extrai-se do mesmo
+ficheiro, para o teste correr a regra a serio e nao uma copia dela.
+*/
+const Tatics = {
+    linhaDefensiva: 'medium', lengthCompactness: 'median',
+    compactness: 'median', pressaoDefensiva: 'balanced'
+};
+const escolherProfundidade = new Function(
+    'BlockShape', 'Tatics', 'MentalidadeModel',
+    `${extrairFuncao(srcTeam, 'escolherProfundidade', 'js/bt/team_bt.js')}; return escolherProfundidade;`
+)(BlockShape, Tatics, undefined);
+
 const sandbox = {
     CAMPO_LARG, CAMPO_COMP, AREA_GRANDE_PROF, BlockShape, TeamShape, MarkingModel,
-    seguirBola, recuoDaUltimaLinha,
+    seguirBola, recuoDaUltimaLinha, escolherProfundidade,
     Match: { delta: 0.016, state: 'PLAY' },
-    Tatics: {
-        linhaDefensiva: 'medium', lengthCompactness: 'median',
-        compactness: 'median', pressaoDefensiva: 'balanced'
-    }
+    Tatics
 };
 const computeBlock = new Function(
     ...Object.keys(sandbox),

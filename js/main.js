@@ -490,7 +490,7 @@ function lerParametrosDoLote() {
         if (!isFinite(v)) return omissao;
         return Math.max(min, Math.min(max, v));
     };
-    const jogos = limitar(elJogos, 2, 1, 50);
+    const jogos = limitar(elJogos, 2, 1, 100);
     const minutos = limitar(elMin, 25, 1, 90);
     return { jogos, minutos, duracaoSeg: minutos * 60 };
 }
