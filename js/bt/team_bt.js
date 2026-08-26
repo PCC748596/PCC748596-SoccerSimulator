@@ -554,12 +554,12 @@ function pickIntercetor(bb) {
     dele por `margemMelhor`, entrava em INTERCEPT e ia disputar a bola com quem
     a estava a conduzir. Dois do mesmo lado a tirar a bola um ao outro.
 
-    Mesma coisa num passe: o destinatário já vai lá, não é preciso um segundo.
-    O `intendedReceiver` é limpo quando o passe morre (a bola passou-lhe ao lado
-    e afasta-se — ver updateBall em match.js), por isso isto não tranca a equipa
-    numa bola realmente perdida.
+    Num passe normal o destinatário já vai lá, mas num lançamento alto errado
+    um colega por trás pode e deve cabecear a bola antes que ela caia no
+    adversário. O `escolherIntercetor` só o escolhe se for claramente melhor do
+    que o destinatário (margemMelhor), por isso passes normais não sofrem
+    interferência.
     */
-    if (Match.intendedReceiver && Match.intendedReceiver.team === bb.team) return;
     for (const p of bb.outfield) {
         if (p && p.carryTouchGrace > 0) return;
     }

@@ -12,7 +12,7 @@ sabe nada de quem está lá.
 
 A REGRA (pedida):
   - No CAMPO DE ATAQUE gira à vontade: perder a bola ali não custa golo.
-  - No próprio meio-campo só gira se o cone de saída estiver LIMPO: raio de 5 m,
+  - No próprio meio-campo só gira se o cone de saída estiver LIMPO: raio de 7 m,
     45 graus para cada lado da direcção oposta àquela de onde a bola vem.
   - Com o cone ocupado, sai em toques de 30 graus para o lado livre, em vez de
     rodar para cima do marcador.
@@ -71,10 +71,10 @@ const graus = (bx, bz) => Math.round(Math.atan2(bx, bz) * 180 / Math.PI);
 /* =====================================================================
    1 — OS NÚMEROS PEDIDOS
    ===================================================================== */
-console.log(LF + '1 — 5 metros, 45 graus para cada lado, toques de 30');
+console.log(LF + '1 — 7 metros, 45 graus para cada lado, toques de 30');
 {
-    if (G.raio !== 5.0) erro(`raio devia ser 5 m, é ${G.raio}`);
-    else ok('raio: 5 m');
+    if (G.raio !== 7.0) erro(`raio devia ser 7 m, é ${G.raio}`);
+    else ok('raio: 7 m');
 
     if (G.meiaAberturaGraus !== 45) erro(`abertura devia ser 45 graus, é ${G.meiaAberturaGraus}`);
     else ok('abertura: 45 graus para cada lado');

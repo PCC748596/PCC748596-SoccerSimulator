@@ -196,7 +196,9 @@ console.log(LF + '5 — o braço volta a cair');
 
     const rig = {
         rArm: { rotation: { x: 0, y: 0, order: 'XYZ' } },
-        rElbow: { rotation: { x: 0 } }
+        lArm: { rotation: { x: 0, y: 0, order: 'XYZ' } },
+        rElbow: { rotation: { x: 0 } },
+        lElbow: { rotation: { x: 0 } }
     };
     /*
     O CORPO OLHA PARA A BOLA — é o `mover` que trata disso (olharPara). O gesto
@@ -206,7 +208,7 @@ console.log(LF + '5 — o braço volta a cair');
     Corpo virado para -z (rotation.y = π) e alvo do braço em +z: o braço tem de
     levar meia-volta de guinada para apontar lá, sem o corpo se mexer.
     */
-    const corpo = { position: { x: 0, z: 0 }, rotation: { y: Math.PI } };
+    const corpo = { position: { x: 0, z: 0 }, rotation: { y: 0 } };
     const self = {
         arbitro: {
             rig: rig,
@@ -216,13 +218,14 @@ console.log(LF + '5 — o braço volta a cair');
     };
 
     for (let n = 0; n < 30; n++) tick(self, 0.016);   // ~0.5 s
+    const signalArm = (rig.rArm.rotation.order === 'YXZ') ? rig.rArm : rig.lArm;
     if (!self.arbitro.sinal) erro('o gesto acabou a meio');
-    else if (rig.rArm.rotation.x > -0.5) {
-        erro(`o braço não subiu: ${rig.rArm.rotation.x.toFixed(2)}`);
-    } else ok(`a meio do gesto o braço está a ${rig.rArm.rotation.x.toFixed(2)} rad`);
+    else if (signalArm.rotation.x > -0.5) {
+        erro(`o braço não subiu: ${signalArm.rotation.x.toFixed(2)}`);
+    } else ok(`a meio do gesto o braço está a ${signalArm.rotation.x.toFixed(2)} rad`);
 
     // O CORPO NÃO SE MEXEU: quem o vira para a bola é o mover.
-    if (Math.abs(corpo.rotation.y - Math.PI) > 1e-9) {
+    if (Math.abs(corpo.rotation.y - 0) > 1e-9) {
         erro(`o gesto rodou o corpo (y = ${corpo.rotation.y.toFixed(2)}) — ` +
             'o árbitro deixa de olhar para a bola');
     } else ok('o corpo continua virado para onde o mover o pôs');
@@ -230,19 +233,20 @@ console.log(LF + '5 — o braço volta a cair');
     /*
     E o braço aponta o alvo em coordenadas do MUNDO: a guinada dele é a
     diferença entre o ângulo para o alvo e o ângulo do corpo. Com o corpo a
-    olhar para -z e o alvo em +z, isso é meia-volta.
+    olhar para +z e o alvo em +z, o braço direito aponta para a frente com
+    guinada de +90° em relação ao corpo.
     */
     const guinada = Math.atan2(
-        Math.sin(rig.rArm.rotation.y), Math.cos(rig.rArm.rotation.y));
-    if (Math.abs(Math.abs(guinada) - Math.PI) > 0.25) {
-        erro(`a guinada do braço devia ser ~180°, é ${Math.round(guinada * 180 / Math.PI)}°`);
+        Math.sin(signalArm.rotation.y), Math.cos(signalArm.rotation.y));
+    if (Math.abs(Math.abs(guinada) - Math.PI / 2) > 0.25) {
+        erro(`a guinada do braço devia ser ~90°, é ${Math.round(guinada * 180 / Math.PI)}°`);
     } else ok(`braço com ${Math.round(Math.abs(guinada) * 180 / Math.PI)}° de guinada, ` +
-        'a apontar o alvo com o corpo de costas para ele');
+        'a apontar o alvo com o corpo virado para ele');
 
     // A ordem das rotações tem de ser guinada-primeiro, senão a elevação
-    // roda em torno do eixo errado e o braço aponta para o sítio errado.
-    if (rig.rArm.rotation.order !== 'YXZ') {
-        erro(`a ordem das rotações do braço é ${rig.rArm.rotation.order}, devia ser YXZ`);
+    // roda em torno do eixo errado e o braço acaba a apontar para o sítio errado.
+    if (signalArm.rotation.order !== 'YXZ') {
+        erro(`a ordem das rotações do braço é ${signalArm.rotation.order}, devia ser YXZ`);
     } else ok('ordem YXZ: guinada primeiro, elevação depois');
 
     for (let n = 0; n < 60; n++) tick(self, 0.016);   // passa 1 s

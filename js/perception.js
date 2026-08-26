@@ -206,31 +206,70 @@ const Perception = {
         A altura é o que faltava. Antes o ponto era escolhido em planta, sem
         olhar ao ar: escolhia-se o instante em que a bola ia estar por cima da
         cabeça dele, ele parava lá, e a bola quicava e seguia.
+
+        NOVO: tenta primeiro um cabeceio. Procuramos o instante em que a bola
+        DESCE pela altura da testa (ou pelo corredor de contacto da cabeça).
+        Assim um jogador que tem uma bola alta a passar por cima dele corre
+        para o ponto onde ela fica à altura da cabeça e cabeceia, em vez de
+        ficar parado à espera que ela caia no chão.
         */
-        const alturaMax = ALTURA_TESTA + (typeof HeaderModel !== 'undefined' ? HeaderModel.janelaContacto : 0.3);
+        const alturaTesta = ALTURA_TESTA;
+        const janelaCabeca = (typeof HeaderModel !== 'undefined' ? HeaderModel.janelaContacto : 0.22);
+        const alturaMaxJogavel = alturaTesta + janelaCabeca;
 
-        let found = false;
+        let melhor = null;
+
+        // PASSO 1 — cabeceio: primeira passagem em descida pela altura da testa
+        // a que o jogador chega a tempo.
         for (let a = 1; a < traj.length; a++) {
-            const t = a * this.passoAmostra;
-            const bx = traj[a].x, bz = traj[a].z, by = traj[a].y;
-            if (by > alturaMax) continue;          // ainda alta demais para ser jogada
+            const prev = traj[a - 1], curr = traj[a];
+            if (curr.y >= prev.y) continue;                 // só a descida
+            if (prev.y < alturaTesta - janelaCabeca) break; // já desceu demasiado
+            if (curr.y > alturaTesta + janelaCabeca) continue;
 
+            // Interpolação linear da altura para o instante exacto do contacto.
+            const dy = prev.y - curr.y;
+            const f = dy > 1e-6 ? (prev.y - alturaTesta) / dy : 0;
+            const t = (a - 1 + f) * this.passoAmostra;
+            if (t <= 0) continue;
+
+            const bx = prev.x + (curr.x - prev.x) * f;
+            const bz = prev.z + (curr.z - prev.z) * f;
             const reachDist = Math.hypot(bx - px, bz - pz);
             const playerReach = maxChase * t;
 
             if (playerReach >= reachDist) {
-                bb.interceptable = true;
-                bb.interceptionPoint = { x: bx, z: bz };
-                bb.timeToIntercept = t;
-                // Confiança: margem entre o quanto ele alcança e o quanto
-                // precisa — perto do limite (última hora) é baixa confiança.
-                bb.confidence = THREE.MathUtils.clamp((playerReach - reachDist) / (maxChase * 0.5), 0.1, 1.0);
-                found = true;
+                melhor = { x: bx, z: bz, t: t, tipo: 'cabeca' };
                 break;
             }
         }
 
-        if (!found) {
+        // PASSO 2 — se não der para cabecear, o ponto jogável normal (até à
+        // altura máxima do contacto com a cabeça; abaixo disso é peito/pé).
+        if (!melhor) {
+            for (let a = 1; a < traj.length; a++) {
+                const t = a * this.passoAmostra;
+                const bx = traj[a].x, bz = traj[a].z, by = traj[a].y;
+                if (by > alturaMaxJogavel) continue;          // ainda alta demais para ser jogada
+
+                const reachDist = Math.hypot(bx - px, bz - pz);
+                const playerReach = maxChase * t;
+
+                if (playerReach >= reachDist) {
+                    melhor = { x: bx, z: bz, t: t, tipo: 'jogavel' };
+                    break;
+                }
+            }
+        }
+
+        if (melhor) {
+            bb.interceptable = true;
+            bb.interceptionPoint = { x: melhor.x, z: melhor.z };
+            bb.timeToIntercept = melhor.t;
+            // Confiança: margem entre o quanto ele alcança e o quanto
+            // precisa — perto do limite (última hora) é baixa confiança.
+            bb.confidence = THREE.MathUtils.clamp((maxChase * melhor.t - Math.hypot(melhor.x - px, melhor.z - pz)) / (maxChase * 0.5), 0.1, 1.0);
+        } else {
             bb.interceptable = false;
             bb.interceptionPoint = null;
             bb.timeToIntercept = Infinity;

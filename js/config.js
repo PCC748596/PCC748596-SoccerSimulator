@@ -839,22 +839,55 @@ function distanciaMinimaNoLateral(pos) {
 
 const GoalkeeperThrowPower = 1.0;
 
+/*
+=============================================================================
+GOALKEEPER_THROW_CLIP — lançamento com a mão do guarda-redes, 12 keyframes
+=============================================================================
+Lançamento overhand com o braço direito. A sequência segue as fases da
+fotografia de referência:
+
+    1-2  Pose de espera, bola na mão direita, braço ligeiramente para trás
+    3-4  Armação: braço direito recua, cotovelo dobra, tronco inclina para trás
+    5-6  Transição: braço sobe por cima da cabeça, cotovelo começa a estender
+    7-8  Contacto: braço direito esticado para a frente/cima, bola sai
+    9-12 Follow-through e recuperação
+
+Convenção dos braços:
+    bracoX  > 0  braço para a FRENTE   (< 0 é para TRÁS)
+    bracoZ  > 0  braço para FORA do corpo (esquerdo) / < 0 para fora (direito)
+    cotovelo  0  braço esticado, valores negativos dobram
+
+O braço esquerdo contrabalança: começa à frente e sai para trás quando o
+direito acelera para a frente.
+=============================================================================
+*/
 const GoalkeeperThrowClip = {
     bracoLancamento: 'r', // Braço que lança a bola
     frames: [
-        // chest, coxaL, joelhoL, coxaR, joelhoR, bracoLx, bracoLz, bracoRx, bracoRz, cotoveloL, cotoveloR, altura
-        { chest: 0.05, coxaL: 0.05, joelhoL: 0.12, coxaR: 0.05, joelhoR: 0.12, bracoLx: -0.9, bracoLz: 0.05, bracoRx: -0.9, bracoRz: -0.05, cotoveloL: -2.0, cotoveloR: -2.0, altura: 0 },
-        { chest: 0.00, coxaL: 0.05, joelhoL: 0.12, coxaR: 0.20, joelhoR: 0.15, bracoLx: -0.9, bracoLz: 0.20, bracoRx: -0.2, bracoRz: -0.50, cotoveloL: -1.5, cotoveloR: -1.0, altura: 0 },
-        { chest: -0.10, coxaL: 0.10, joelhoL: 0.15, coxaR: 0.40, joelhoR: 0.20, bracoLx: -1.0, bracoLz: 0.30, bracoRx: 0.5, bracoRz: -1.00, cotoveloL: -1.0, cotoveloR: -0.5, altura: -0.02 },
-        { chest: -0.20, coxaL: 0.15, joelhoL: 0.20, coxaR: 0.60, joelhoR: 0.30, bracoLx: -1.1, bracoLz: 0.40, bracoRx: 1.2, bracoRz: -1.20, cotoveloL: -0.8, cotoveloR: -0.3, altura: -0.04 },
-        { chest: -0.10, coxaL: 0.10, joelhoL: 0.15, coxaR: 0.30, joelhoR: 0.20, bracoLx: -1.0, bracoLz: 0.30, bracoRx: -1.0, bracoRz: -0.80, cotoveloL: -0.5, cotoveloR: -0.2, altura: -0.02 },
-        { chest: 0.05, coxaL: 0.00, joelhoL: 0.10, coxaR: -0.10, joelhoR: 0.10, bracoLx: -0.8, bracoLz: 0.20, bracoRx: -1.8, bracoRz: -0.20, cotoveloL: -0.3, cotoveloR: -0.1, altura: 0.00 },
-        { chest: 0.15, coxaL: -0.10, joelhoL: 0.05, coxaR: -0.30, joelhoR: 0.05, bracoLx: -0.6, bracoLz: 0.10, bracoRx: -2.2, bracoRz: -0.10, cotoveloL: -0.2, cotoveloR: -0.05, altura: 0.02 },
-        { chest: 0.20, coxaL: -0.15, joelhoL: 0.00, coxaR: -0.40, joelhoR: 0.00, bracoLx: -0.4, bracoLz: 0.05, bracoRx: -2.5, bracoRz: 0.00, cotoveloL: -0.1, cotoveloR: 0.0, altura: 0.04 },
-        { chest: 0.25, coxaL: -0.20, joelhoL: 0.00, coxaR: -0.50, joelhoR: 0.00, bracoLx: -0.2, bracoLz: 0.05, bracoRx: -1.5, bracoRz: 0.00, cotoveloL: -0.1, cotoveloR: -0.2, altura: 0.02 },
-        { chest: 0.15, coxaL: -0.10, joelhoL: 0.05, coxaR: -0.30, joelhoR: 0.05, bracoLx: 0.0, bracoLz: 0.05, bracoRx: -0.5, bracoRz: 0.00, cotoveloL: -0.1, cotoveloR: -0.5, altura: 0.00 },
-        { chest: 0.10, coxaL: 0.00, joelhoL: 0.10, coxaR: -0.10, joelhoR: 0.10, bracoLx: 0.0, bracoLz: 0.05, bracoRx: 0.0, bracoRz: -0.05, cotoveloL: -0.5, cotoveloR: -1.0, altura: 0.00 },
-        { chest: 0.05, coxaL: 0.05, joelhoL: 0.12, coxaR: 0.05, joelhoR: 0.12, bracoLx: -0.2, bracoLz: 0.10, bracoRx: -0.2, bracoRz: -0.10, cotoveloL: -0.8, cotoveloR: -0.8, altura: 0.00 }
+        // 1  Pose de espera com a bola na mão direita
+        { chest: 0.05, coxaL: 0.05, joelhoL: 0.12, coxaR: 0.05, joelhoR: 0.12, bracoLx: -0.35, bracoLz: 0.35, bracoRx: -0.65, bracoRz: -0.15, cotoveloL: -0.45, cotoveloR: -1.35, altura: 0.00 },
+        // 2  Início do recuo do braço direito
+        { chest: -0.05, coxaL: -0.05, joelhoL: 0.15, coxaR: 0.15, joelhoR: 0.15, bracoLx: -0.45, bracoLz: 0.40, bracoRx: -0.90, bracoRz: -0.25, cotoveloL: -0.50, cotoveloR: -1.45, altura: 0.00 },
+        // 3  Armação máxima — braço direito bem atrás, tronco para trás
+        { chest: -0.15, coxaL: -0.10, joelhoL: 0.18, coxaR: 0.30, joelhoR: 0.20, bracoLx: -0.55, bracoLz: 0.45, bracoRx: -1.25, bracoRz: -0.40, cotoveloL: -0.55, cotoveloR: -1.30, altura: -0.02 },
+        // 4  Cintura descarrega, braço direito inicia aceleração para a frente
+        { chest: -0.10, coxaL: -0.15, joelhoL: 0.20, coxaR: 0.45, joelhoR: 0.28, bracoLx: -0.30, bracoLz: 0.35, bracoRx: -0.70, bracoRz: -0.30, cotoveloL: -0.60, cotoveloR: -1.10, altura: -0.02 },
+        // 5  Braço sobe por cima da cabeça, cotovelo a estender
+        { chest: 0.00, coxaL: -0.20, joelhoL: 0.22, coxaR: 0.55, joelhoR: 0.35, bracoLx: 0.10, bracoLz: 0.30, bracoRx: -0.20, bracoRz: -0.15, cotoveloL: -0.50, cotoveloR: -0.85, altura: 0.00 },
+        // 6  Aceleração balística — braço direito quase vertical
+        { chest: 0.10, coxaL: -0.25, joelhoL: 0.20, coxaR: 0.40, joelhoR: 0.30, bracoLx: 0.40, bracoLz: 0.25, bracoRx: 0.30, bracoRz: -0.05, cotoveloL: -0.40, cotoveloR: -0.55, altura: 0.00 },
+        // 7  Extensão máxima antes do contacto
+        { chest: 0.20, coxaL: -0.30, joelhoL: 0.15, coxaR: 0.20, joelhoR: 0.20, bracoLx: 0.65, bracoLz: 0.20, bracoRx: 0.85, bracoRz: 0.00, cotoveloL: -0.30, cotoveloR: -0.25, altura: 0.02 },
+        // 8  CONTACTO — bola sai da mão, braço esticado para a frente/cima
+        { chest: 0.25, coxaL: -0.35, joelhoL: 0.10, coxaR: 0.00, joelhoR: 0.12, bracoLx: 0.75, bracoLz: 0.15, bracoRx: 1.10, bracoRz: 0.05, cotoveloL: -0.25, cotoveloR: -0.10, altura: 0.03 },
+        // 9  Follow-through
+        { chest: 0.20, coxaL: -0.25, joelhoL: 0.10, coxaR: -0.10, joelhoR: 0.12, bracoLx: 0.50, bracoLz: 0.15, bracoRx: 0.60, bracoRz: 0.10, cotoveloL: -0.35, cotoveloR: -0.35, altura: 0.02 },
+        // 10 Follow-through continua, braço direito desce
+        { chest: 0.10, coxaL: -0.15, joelhoL: 0.12, coxaR: -0.05, joelhoR: 0.12, bracoLx: 0.25, bracoLz: 0.15, bracoRx: 0.20, bracoRz: 0.10, cotoveloL: -0.45, cotoveloR: -0.60, altura: 0.01 },
+        // 11 Desaceleração
+        { chest: 0.05, coxaL: -0.05, joelhoL: 0.12, coxaR: 0.00, joelhoR: 0.12, bracoLx: 0.00, bracoLz: 0.15, bracoRx: -0.20, bracoRz: 0.05, cotoveloL: -0.55, cotoveloR: -0.85, altura: 0.00 },
+        // 12 Recuperação para postura de jogo
+        { chest: 0.05, coxaL: 0.05, joelhoL: 0.12, coxaR: 0.05, joelhoR: 0.12, bracoLx: -0.20, bracoLz: 0.15, bracoRx: -0.25, bracoRz: -0.05, cotoveloL: -0.70, cotoveloR: -1.00, altura: 0.00 }
     ]
 };
 

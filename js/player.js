@@ -59,6 +59,8 @@ class FootballPlayer {
         this.passInertiaZDir = null;
         // Saída de bola sorteada para esta posse (ver decidirSaidaGK).
         this.gkSaida = null;
+        // Colega escolhido para o lançamento com as mãos (estado 'lancando').
+        this.gkThrowTarget = null;
         // Está a fazer FWR/AFT_SUPPORT neste momento (ver temVagaDeApoio).
         this.apoioAtivo = false;
         this.peitoTimer = 0;   // gesto de domínio no peito (ver CHEST_CONTROL)
@@ -380,6 +382,26 @@ class FootballPlayer {
         */
         _v1.y += (typeof LateralPose !== 'undefined' && LateralPose.bolaAcimaDasMaos)
             ? LateralPose.bolaAcimaDasMaos : 0;
+
+        Match.ball.position.copy(_v1);
+        Match.ballVel.set(0, 0, 0);
+    }
+
+    /*
+    Encosta a bola a UMA mão. Usado no lançamento com a mão do guarda-redes:
+    a bola segue o punho do braço de lançamento até ao contacto.
+    */
+    colarBolaAMao(lado) {
+        const rig = this.rig;
+        if (typeof Match === 'undefined' || !Match.ball) return;
+        if (!rig) return;
+        const hand = (lado === 'r') ? rig.rHand : rig.lHand;
+        if (!hand) return;
+
+        hand.updateWorldMatrix(true, false);
+        _v1.setFromMatrixPosition(hand.matrixWorld);
+        // O centro da bola fica ligeiramente acima do punho (a mão segura por baixo).
+        _v1.y += 0.06;
 
         Match.ball.position.copy(_v1);
         Match.ballVel.set(0, 0, 0);
@@ -1628,6 +1650,33 @@ class FootballPlayer {
 
         this.fsm.changeState('PASS');
     }
+    /*
+    Relançamento do GR com as mãos para um colega específico.
+
+    Reusa a balística do passe normal (executePassGameplay), mas a bola parte da
+    altura da mão e não do pé. Se não houver alvo, cai no chutão.
+    */
+    releaseFromHands(targetPlayer) {
+        if (!targetPlayer || !targetPlayer.model) {
+            this.puntBall();
+            return;
+        }
+
+        const alvo = alvoDePasse(targetPlayer);
+        this.passTarget = targetPlayer;
+        this.passTargetPos = alvo.clone();
+        this.isThroughBall = false;
+        this.isCross = false;
+        this.cosCorpoNoPasse = 1.0;
+
+        executePassGameplay(this);
+
+        // O executePassGameplay já limpa hasBall/ballCarrier; garantimos o
+        // destinatário e o evento específicos do GR.
+        Match.intendedReceiver = targetPlayer;
+        if (typeof EventBus !== 'undefined') EventBus.emit('GK_RELEASE_BALL', { team: this.team, gk: this });
+    }
+
     /*
     Relançamento do GR: chutão para a frente, com os ângulos sorteados a cada
     execução (pedido do utilizador).
@@ -3694,6 +3743,15 @@ class FootballPlayer {
             // reorganizam, antes de poder relançar (mão ou pontapé).
             this.gkTempoMergulho += dt;
             const t = this.gkTempoMergulho;
+
+            /*
+            O BT escolhe se se sai a jogar pelos laterais ou se chuta, e quem
+            é o alvo do lançamento com as mãos. A execução do gesto fica com o
+            updateGK; correr a árvore aqui evita duplicar a lógica de escolha
+            do lateral (acharLateralParaSaida) em player.js.
+            */
+            this.runBehaviorTree(dt);
+
             /*
             Pose única: `segurar` já É a pose de repouso (de pé, direito,
             pernas descontraídas) com os braços dobrados a fechar a bola no
@@ -3793,17 +3851,30 @@ class FootballPlayer {
                 this.gkProcuraTimer = 0;
                 this.gkTemLinha = !!this.findPassTarget();
             }
-            const lancarCedo = gkPodeLancar(t, this.gkTemLinha);
+            const lancarCedo = gkPodeLancar(t, this.gkTemLinha || this.gkThrowTarget);
 
             if (lancarCedo || t >= (this.gkSegurarDur ?? GoalkeeperPose.segurarDur)) {
-                this.gkEstado = 'chutando';
-                this.gkTempoMergulho = 0;
-                this.gkKickNorm = 0;
-                this.gkKickAction = new ActionState('gkPunt', {
-                    onContact: () => {
-                        this.puntBall();
-                    }
-                });
+                const alvoLancamento = (this.gkSaida === 'laterais') ? this.gkThrowTarget : null;
+                if (alvoLancamento && alvoLancamento.model) {
+                    this.gkEstado = 'lancando';
+                    this.gkTempoMergulho = 0;
+                    this.gkKickNorm = 0;
+                    this.gkKickAction = new ActionState('gkThrow', {
+                        onContact: () => {
+                            this.releaseFromHands(alvoLancamento);
+                        }
+                    });
+                } else {
+                    this.gkEstado = 'chutando';
+                    this.gkTempoMergulho = 0;
+                    this.gkKickNorm = 0;
+                    this.gkKickAction = new ActionState('gkPunt', {
+                        onContact: () => {
+                            this.puntBall();
+                        }
+                    });
+                }
+                this.gkThrowTarget = null;
             }
         } else if (this.gkEstado === 'chutando' || this.gkEstado === 'lancando') {
             const isThrow = (this.gkEstado === 'lancando');
@@ -3815,6 +3886,14 @@ class FootballPlayer {
                 const K = amostrarClipLancamentoGR(normK);
                 aplicarPoseLancamentoGR(gkRig, K);
                 gkCorpo.position.y = ALTURA_BASE_Y + K.altura;
+
+                /*
+                A bola segue a mão de lançamento até ao contacto. Depois do
+                contacto a velocidade já foi escrita e a bola voa livre.
+                */
+                if (this.gkKickAction && !this.gkKickAction.executed) {
+                    this.colarBolaAMao(GoalkeeperThrowClip.bracoLancamento);
+                }
             } else if (isGroundKick) {
                 // TIRO DE META / BOLA PARADA DO CHÃO (12 frames com pivô no pé de apoio)
                 const K = amostrarClipChuteChaoGR(normK);

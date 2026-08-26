@@ -519,7 +519,10 @@ function decidirSaidaGK(p) {
 }
 
 function limparSaidaGK(p) {
-    if (!p.hasBall && p.gkSaida) p.gkSaida = null;
+    if (!p.hasBall && p.gkSaida) {
+        p.gkSaida = null;
+        p.gkThrowTarget = null;
+    }
 }
 
 /*
@@ -1145,7 +1148,7 @@ function actReceivePass(ctx) {
         (SaltoCabeceio) disparava no último instante, com a bola já quase no
         chão. Só vale a pena se lá chegar a tempo; senão, ponto de queda.
         */
-        const cabeca = preverBolaEmAltura(ALTURA_BASE_Y + ALTURA_CABECA);
+        const cabeca = preverBolaEmAltura(ALTURA_BASE_Y + ALTURA_TESTA);
         if (cabeca) {
             const dCab = Math.hypot(p.model.position.x - cabeca.x, p.model.position.z - cabeca.z);
             if (dCab <= p.speedMult * cabeca.tempo * 0.95) {
@@ -1732,6 +1735,28 @@ function tratarGuardaRedes(ctx) {
     // Sorteada UMA vez por posse (ver decidirSaidaGK) — a cada frame seria
     // "o que calhar primeiro" em vez da proporção pedida.
     const saida = p.gkSaida || decidirSaidaGK(p);
+
+    /*
+    Quando o GR segura a bola nas mãos, o relançamento é tratado pelo estado
+    'segurando' do updateGK (lançamento com as mãos ou chutão). O BT aqui
+    limita-se a escolher o destinatário e deixar a mecânica do gesto fazer o
+    trabalho; chamar actPassParaAlvo/puntBall faria o passe sair do pé ou
+    disparava o chutão fora do timing do 'segurando'.
+    */
+    if (p.gkEstado === 'segurando') {
+        if (saida === 'laterais') {
+            const lateral = acharLateralParaSaida(ctx);
+            if (lateral) {
+                p.gkThrowTarget = lateral;
+                return;
+            }
+            // Sem lateral livre: desiste da saída curta e cai no chutão.
+            p.gkSaida = 'chuteFrente';
+        }
+        // No 'segurando' o próprio updateGK dispara o relançamento quando
+        // chegar a hora; não se chama puntBall aqui.
+        return;
+    }
 
     if (saida === 'laterais') {
         const lateral = acharLateralParaSaida(ctx);

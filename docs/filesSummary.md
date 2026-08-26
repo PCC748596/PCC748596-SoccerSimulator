@@ -11,7 +11,64 @@ Testes novos: `marcacao_e_bloco_por_fase`, `marcacao_por_setor`,
 `saida_de_jogo_para_defesa`, `passe_no_vazio_alcancavel`, `giro_de_costas`, 
 `passe_em_voo_nao_e_bola_solta`, `esperar_pelo_slot`, `saida_gk_pelos_laterais`, 
 `lateral_batedor_e_apoios`, `velocidade_de_conducao`, `forca_do_passe`, 
-`etiqueta_do_arbitro`, `sinal_do_arbitro`. Suite: **48 ficheiros**.
+`etiqueta_do_arbitro`, `sinal_do_arbitro`, `intercecao_bola_alta`. Suite: **49 ficheiros**.
+
+### Sessão de 26 de Agosto de 2026 (continuação 3) — interceptar bolas altas erradas
+
+O que se via: um lançamento ou passe alto a passar por cima do destinatário
+ia em direcção ao adversário e ninguém reagia — ficavam a ver a bola cair. Num
+jogo real, um defesa (ou um colega por trás do receptor) volta de costas e
+cabeceia a bola antes que ela toque no relvado.
+
+- **Percepção de cabeceio** (`js/perception.js`): `computeInterception` procura
+  primeiro o ponto onde a bola DESCE pela altura da testa (`ALTURA_TESTA` ±
+  `HeaderModel.janelaContacto`) e só depois recua para o ponto jogável normal.
+  Antes a bola alta só era interceptável quando chegasse ao topo da cabeça,
+  o que punha o ponto de encontro demasiado longe para quem tinha de voltar.
+- **Colega pode ajudar** (`js/bt/team_bt.js`): `pickIntercetor` deixou de
+  devolver `null` automaticamente quando o destinatário é da própria equipa.
+  Num lançamento alto errado, um companheiro melhor posicionado pode agora
+  cabecear a bola; passes normais continuam a não sofrer interferência porque
+  `escolherIntercetor` só escolhe quem bate o tempo do destinatário por
+  `PerceptionModel.margemMelhor`.
+- **Receptor mira a testa** (`js/bt/player_bt.js`): `actReceivePass` passou a
+  usar `ALTURA_BASE_Y + ALTURA_TESTA` em vez de `ALTURA_CABECA` no
+  `preverBolaEmAltura`, alinhando o ponto de encontro com a janela de contacto
+  do cabeceio.
+- **Teste novo**: `tests/intercecao_bola_alta.test.js` verifica que uma bola
+  alta a passar por cima de um defesa é interceptável, que bolas rasteiras
+  continuam a ser interceptáveis e que bolas impossíveis são ignoradas. A
+  suite completa passa (49/49).
+
+### Sessão de 26 de Agosto de 2026 (continuação 3) — interceptar bolas altas erradas
+
+Teste novo: `intercecao_bola_alta`. Suite: **49 ficheiros**.
+
+### Sessão de 26 de Agosto de 2026 (continuação 2) — lançamento com a mão do guarda-redes
+
+O guarda-redes já tinha um clip de lançamento com as mãos (`GoalkeeperThrowClip`) e
+um estado `lancando`, mas nunca eram usados: a saída curta passava por
+`actPassParaAlvo`, que fazia o passe sair do pé, e o relançamento automático do
+estado `segurando` disparava sempre o chutão.
+
+- **Animação overhand** (`js/config.js`, `GoalkeeperThrowClip`): 12 keyframes
+  repostos a partir da referência de um lançamento com a mão direita — armação,
+  aceleração por cima da cabeça, contacto com o braço esticado para a frente/cima e
+  follow-through. O braço esquerdo contrabalança o movimento.
+- **Bola segue a mão** (`js/player.js`): `colarBolaAMao` cola a bola ao punho do
+  braço de lançamento durante a fase de preparação; no contacto é largada com a
+  balística do passe normal via `releaseFromHands`.
+- **Saída curta com as mãos** (`js/player.js`, `js/bt/player_bt.js`): no estado
+  `segurando`, o BT escolhe o lateral de saída e guarda-o em `gkThrowTarget`; quando
+  chega a hora de relançar, se `gkSaida === 'laterais'` e houver alvo, o GR passa
+  para `lancando` e dispara o clip `gkThrow`; senão cai no chutão (`gkPunt`).
+- **BT não interfere nas mãos** (`js/bt/player_bt.js`): `tratarGuardaRedes` retorna
+  imediatamente quando `p.gkEstado === 'segurando'`, sem chamar `actPassParaAlvo` ou
+  `puntBall`, que fariam a bola sair do pé ou fora do timing do segurando.
+- **Testes ajustados**: `tests/giro_de_costas.test.js` (raio 5 → 7 m) e
+  `tests/sinal_do_arbitro.test.js` (mock com ambos os braços e verificação do braço
+  que efectivamente sinaliza, evitando caso limite de `atan2` em π). A suite completa
+  passa (48/48).
 
 ### Sessão de 26 de Agosto de 2026 (continuação) — passes pelo alto, árbitro e faltas
 
