@@ -7,13 +7,43 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ### Sessão de 26 de Agosto de 2026 — a fase manda
 
-Testes novos: `marcacao_e_bloco_por_fase`, `marcacao_por_setor`,
-`saida_de_jogo_para_defesa`, `passe_no_vazio_alcancavel`, `giro_de_costas`,
-`passe_em_voo_nao_e_bola_solta`, `esperar_pelo_slot`, `saida_gk_pelos_laterais`,
-`lateral_batedor_e_apoios`, `velocidade_de_conducao`, `forca_do_passe`,
+Testes novos: `marcacao_e_bloco_por_fase`, `marcacao_por_setor`, 
+`saida_de_jogo_para_defesa`, `passe_no_vazio_alcancavel`, `giro_de_costas`, 
+`passe_em_voo_nao_e_bola_solta`, `esperar_pelo_slot`, `saida_gk_pelos_laterais`, 
+`lateral_batedor_e_apoios`, `velocidade_de_conducao`, `forca_do_passe`, 
 `etiqueta_do_arbitro`, `sinal_do_arbitro`. Suite: **48 ficheiros**.
 
-O fio comum da sessão, e vale a pena lê-lo antes das secções: **quase todos os
+### Sessão de 26 de Agosto de 2026 (continuação) — passes pelo alto, árbitro e faltas
+
+Ajustes finos em vários sistemas, todos motivados por comportamentos que se liam 
+mal no ecrã.
+
+- **Goleiro com bola no pé** (`js/config.js`, `GoalkeeperPose.segurar`): mãos 
+  mais próximas da bola (`bracoX −0.76`, `cotovelo −1.82`).
+- **Zagueiros não conduzem tanto** (`js/bt/player_bt.js`): clamp do tempo de 
+  decisão defensivo — com pressão ou marcador perto, passam em vez de carregar.
+- **Braço do árbitro** (`js/officials.js`): escolhe o braço do lado do ataque 
+  (direito ou esquerdo) e fica horizontal (`−π/2`) para faltas livres.
+- **Fechamento do bloco** (`js/bt/team_bt.js`): lateral oposto e não-lateral 
+  oposto fechavam demasiado quando a bola estava do outro lado.
+- **Laterais mais baixos** (`js/config.js`, `ThrowInModel`): elevação mínima 
+  `16°`, máxima `26°`.
+- **LM/RM não encostam ao centro** (`js/playing_styles.js`): `roaming_flank` 
+  mantém largura mínima.
+- **Passes fáceis erravam menos** (`js/config.js`, `js/utils.js`, `js/fsm.js`): 
+  `PassErrorModel` afinado, pressão reduzida em passes curtos, e `distPasse` 
+  passado ao `sigmaDePasse`.
+- **Giro de 180° com marcador** (`js/config.js`, `js/bt/player_bt.js`): o cone 
+  de giro livre passou de 5 m para 7 m, e a restrição de não girar com marcador 
+  nas costas subiu de 3,5 m para 5 m.
+- **Falta só com disputa de bola** (`js/officials.js`): `detectarContactos` 
+  agora exige que a bola esteja a menos de `3.5 m` do contacto; choques longe 
+  do lance não dão falta.
+- **Passes pelo alto** (`js/fsm.js`, `js/utils.js`): o recuo fixo de 1,5 m foi 
+  adaptado ao movimento do receptor, e `alvoDePasse` passou a usar uma estimativa 
+  de velocidade de bola por distância em vez do 16,8 m/s fixo.
+
+#### O fio comum da sessão, e vale a pena lê-lo antes das secções: **quase todos os
 defeitos eram uma decisão com dois donos, ou um número que tapava outro.**
 
 - A marcação existia na árvore do jogador com a guarda de fase certa, e na
