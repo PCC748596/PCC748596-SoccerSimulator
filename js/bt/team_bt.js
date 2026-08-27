@@ -1295,7 +1295,7 @@ function otimizarSlotsPorPosicao(lista, bb) {
             const custoInvertido = d01 + d10;
 
             const HISTERESE = 4.0; // metros quadrados de folga para estabilidade dinâmica
-            const atualmenteDireto = (p0.slot === slots[0]);
+            const atualmenteDireto = (!p0.slot || (p0.slot.u === slots[0].u && p0.slot.v === slots[0].v));
 
             if (atualmenteDireto) {
                 if (custoInvertido < custoDireto - HISTERESE) {

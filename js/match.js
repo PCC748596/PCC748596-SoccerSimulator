@@ -1689,19 +1689,19 @@ const Match = {
                 if (takerFalta && takerFalta.model && FK &&
                     this.faltaAtraso < ESPERA_APOS_REPOSICAO / 3) {
                     const bx = this.ball.position.x, bz = this.ball.position.z;
-                    const dx = takerFalta.model.position.x - bx;
-                    const dz = takerFalta.model.position.z - bz;
+                    let alvoX = bx;
+                    let alvoZ = bz;
+                    if (takerFalta.alvoFalta) {
+                        alvoX = takerFalta.alvoFalta.x;
+                        alvoZ = takerFalta.alvoFalta.z;
+                    }
+                    
+                    const dx = takerFalta.model.position.x - alvoX;
+                    const dz = takerFalta.model.position.z - alvoZ;
                     const d = Math.hypot(dx, dz);
-                    /*
-                    Aproximação ANDADA. Escreve-se a VELOCIDADE e não a posição:
-                    é a velocidade que o `animateBones` lê para desenhar o passo,
-                    por isso teleportar a posição era um deslize sem pernas. O
-                    batedor é conduzido só por aqui (até `arranqueDoGesto`) e
-                    pelo gesto (ActionState no SHOOT) — a árvore de comportamento
-                    está fora do caminho (ver o freeze em player.js).
-                    */
-                    if (d > FK.arranqueDoGesto) {
-                        const passo = Math.min(d - FK.arranqueDoGesto, FK.velocidadeAproximacao * dt);
+                    
+                    if (d > 0.05) {
+                        const passo = Math.min(d, FK.velocidadeAproximacao * dt);
                         const v = passo / dt;
                         takerFalta.velocity.set(-(dx / d) * v, 0, -(dz / d) * v);
                     } else {
@@ -3690,15 +3690,24 @@ const Match = {
             const perpFK = new THREE.Vector3(-dirFK.z, 0, dirFK.x);
             
             if (takerFK) {
-                const sign = (bolaFK.x * perpFK.x > 0) ? -1 : 1;
-                const lateralOffX = perpFK.x * sign * (F.lateralBatedor || 2.0);
-                const lateralOffZ = perpFK.z * sign * (F.lateralBatedor || 2.0);
+                // perpFK aponta para a direita da direcção do remate.
+                // A animação do remate assume que o jogador aborda a bola pela esquerda
+                // (batedor destro), por isso o offset tem de ser negativo.
+                const lateralOffX = -perpFK.x * (F.lateralBatedor || 2.0);
+                const lateralOffZ = -perpFK.z * (F.lateralBatedor || 2.0);
 
                 takerFK.model.position.set(
                     bolaFK.x - dirFK.x * F.recuoBatedor + lateralOffX, ALTURA_BASE_Y,
                     bolaFK.z - dirFK.z * F.recuoBatedor + lateralOffZ);
                 lookAtBola(takerFK.model, bolaFK);
                 takerFK.fsm.changeState('SET_PIECE_WAIT');
+                
+                // Guarda o ponto onde o gesto de remate vai arrancar, para a aproximação andada
+                takerFK.alvoFalta = new THREE.Vector3(
+                    bolaFK.x - dirFK.x * F.arranqueDoGesto + lateralOffX,
+                    ALTURA_BASE_Y,
+                    bolaFK.z - dirFK.z * F.arranqueDoGesto + lateralOffZ
+                );
             }
 
             /*

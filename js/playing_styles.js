@@ -610,10 +610,12 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
                     (opp.model.position.z * p.dirZ < p.model.position.z * p.dirZ + 12.0);
                 if (noFlanco && aFrente) { tapado = true; break; }
             }
-            if (tapado) {
-                const lado = Math.sign(targetX) || ladoEst;
-                const minAberto = Math.max(8.0, Math.abs(p.baseTarget.x) * 0.75);
-                targetX = lado * Math.max(Math.abs(targetX) * 0.78, minAberto);
+            
+            const bolaLongeOuOposta = (Math.sign(bb.bolaXSuave) !== ladoEst && Math.abs(bb.bolaXSuave) > 8.0);
+            
+            if (tapado || bolaLongeOuOposta) {
+                // Se o corredor estiver tapado, ou a bola no flanco oposto, fecha para o meio
+                targetX = ladoEst * Math.abs(targetX) * (bolaLongeOuOposta ? 0.50 : 0.70);
             }
         }
 

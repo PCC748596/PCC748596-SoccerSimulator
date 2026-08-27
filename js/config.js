@@ -1378,8 +1378,8 @@ opção de passe na construção final.
 Valor em fracção de v (0..1 da última linha à frente do bloco).
 */
 const PositionDepthNudge = {
-    LB: { comBola: 0.04, semBola: 0.04 },
-    RB: { comBola: 0.04, semBola: 0.04 },
+    LB: { comBola: 0.04, semBola: 0.0 },
+    RB: { comBola: 0.04, semBola: 0.0 },
     RM: { comBola: 0.08, semBola: 0.0 },
     LM: { comBola: 0.08, semBola: 0.0 }
 };
@@ -3476,7 +3476,7 @@ que continua a travar a subida — mas o piso ganha-lhe, porque estar atrás do
 guarda-redes não é opção.
 */
 function recuoDaUltimaLinha(z0Dir, maisRecuadoDir, distancia, pisoDir, tectoDir) {
-    let z = (tectoDir !== null && tectoDir !== undefined) ? tectoDir : z0Dir;
+    let z = z0Dir;
     if (maisRecuadoDir !== null && maisRecuadoDir !== undefined) {
         const atrasDoHomem = maisRecuadoDir - distancia;
         if (atrasDoHomem < z) z = atrasDoHomem;
