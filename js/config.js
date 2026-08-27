@@ -3731,6 +3731,40 @@ Com estes valores a mesma mira a 22 m sai a ~13°, que é a trajectória tensa d
 um remate a sério.
 =============================================================================
 */
+/*
+=============================================================================
+JOGO DE PRIMEIRA — tocar sem dominar
+=============================================================================
+Um jogador de técnica alta com um adversário em cima não precisa de parar a
+bola: toca de primeira. Até aqui isso não existia — TODA a gente dominava
+sempre, e a seguir esperava a cadência do `Dominar` (CadenceModel.posseBase)
+antes de decidir o que fazer.
+
+Três condições, e a terceira é o que faz disto uma possibilidade e não uma
+regra:
+
+    TÉCNICA      >= `tecMin`. Abaixo disso não se joga de primeira, domina-se.
+    PRESSÃO      adversário a <= `distAdversario`. Sem ninguém por perto não
+                 há razão nenhuma para não dominar — e o primeiro toque com
+                 espaço é sempre a melhor opção.
+    SORTEIO      `chanceMin`..`chanceMax` conforme a técnica. PODE tocar de
+                 primeira, não TEM de: um TEC 100 fá-lo em `chanceMax` das
+                 vezes, e nas outras baixa a bola como toda a gente.
+
+O que muda quando sai: não há gesto de domínio (`iniciarDominioDireito`) nem
+espera de cadência — ele decide no mesmo frame em que a bola lhe chega, e o
+que sair daí é o passe ou o remate normal.
+=============================================================================
+*/
+const FirstTouchModel = {
+    tecMin: 85,             // técnica a partir da qual é opção
+    distAdversario: 4.0,    // e só com alguém a esta distância ou menos
+
+    // Probabilidade, interpolada entre `tecMin` e 100 de técnica.
+    chanceMin: 0.45,
+    chanceMax: 0.80
+};
+
 const ShotModel = {
     /*
     Subiu de 28/8 para 32/9 depois de se ver em campo: continuava a ler como

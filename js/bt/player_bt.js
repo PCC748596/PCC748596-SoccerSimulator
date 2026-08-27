@@ -2096,6 +2096,12 @@ const PlayerBT = sel('PlayerRoot',
                     // isto o jogador entrava na área de frente pro gol e ainda
                     // esperava a janela de cadência inteira antes de chutar.
                     if (emZonaDeRemate(ctx)) return false;
+                    /*
+                    De primeira: a bola nem chegou a ser dominada (ver
+                    FirstTouchModel e o `resolveBallContact`). Esperar aqui era
+                    exactamente o contrário do que a jogada é.
+                    */
+                    if (ctx.p.jogarDePrimeira) return false;
                     let settling = ctx.underPressure ? CadenceModel.posseSobPressao : CadenceModel.posseBase;
                     settling *= 1.0 - (ctx.skillTec / 100) * 0.25;
                     const naDefesa = (ctx.p.model.position.z * ctx.p.dirZ < 0) || ctx.p.role === 'def';

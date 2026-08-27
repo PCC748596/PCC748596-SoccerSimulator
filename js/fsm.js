@@ -432,6 +432,8 @@ function executePassGameplay(p) {
     // chute. Ver releaseFromHands (player.js).
     p.semSomDeChute = false;
 
+    // A bola saiu do pé: a autorização de primeira morre com ela.
+    p.jogarDePrimeira = false;
     p.hasBall = false;
     p.touchLock = BallControl.touchLock;
     if (p.role !== 'gk') {
@@ -618,6 +620,8 @@ function executeShotGameplay(p) {
         EfeitosSonoros.chute(Match.ball.position, 1.0);
     }
 
+    // A bola saiu do pé: a autorização de primeira morre com ela.
+    p.jogarDePrimeira = false;
     p.hasBall = false; p.touchLock = BallControl.touchLock;
     Match.ballCarrier = null;
     Match.lastTouchedTeam = p.team;

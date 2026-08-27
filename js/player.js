@@ -50,6 +50,12 @@ class FootballPlayer {
         conduzir.
         */
         this.carryHold = 0;
+        /*
+        Recebeu a bola para tocar DE PRIMEIRA (ver FirstTouchModel). Escrita no
+        resolveBallContact, consumida pelo ramo `Dominar` da árvore e apagada
+        quando a bola sai do pé.
+        */
+        this.jogarDePrimeira = false;
         // Direccao em que a bola vinha a viajar quando ele a dominou; escrita no
         // match.js e lida pelo eixoDeConducao (ver GiroDeCostasModel).
         this.dirEntradaBola = null;

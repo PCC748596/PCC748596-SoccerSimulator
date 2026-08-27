@@ -2390,6 +2390,7 @@ const Match = {
 
         this.ballCarrier = best;
         best.hasBall = true;
+
         /*
         O recuo morre no primeiro toque de outra pessoa: e o passe DELIBERADO
         do companheiro que proibe as maos, e ele acabou de ser jogado. Vale
@@ -2403,6 +2404,36 @@ const Match = {
         this.passTargetPos = null;
         this.lastTouchedTeam = best.team;
         this.lastTouchedPlayer = best;
+        /*
+        DE PRIMEIRA? Decidido aqui, no instante em que a bola lhe chega — é o
+        único sítio onde se sabe ao mesmo tempo quem a recebeu e com quanta
+        gente em cima. Ver FirstTouchModel (config.js) e `jogaDePrimeira`.
+
+        A flag é consumida em dois sítios: aqui em baixo, para não haver gesto
+        de domínio, e no ramo `Dominar` da árvore (player_bt.js), para não
+        haver espera de cadência.
+        */
+        best.jogarDePrimeira = false;
+        if (best.role !== 'gk' && typeof jogaDePrimeira === 'function') {
+            const advBest = (best.team === 'TeamA') ? this.opponents : this.players;
+            let distAdv = Infinity;
+            for (const o of advBest) {
+                if (o.role === 'gk' || !o.model) continue;
+                const d = Math.hypot(best.model.position.x - o.model.position.x,
+                    best.model.position.z - o.model.position.z);
+                if (d < distAdv) distAdv = d;
+            }
+            best.jogarDePrimeira = jogaDePrimeira(best.skillFor('TEC'), distAdv);
+            if (best.jogarDePrimeira) {
+                // Decide já: sem isto ficava à espera da cadência do
+                // `Dominar` na mesma, e "de primeira" era só um nome.
+                best.decisionTimer = 99;
+                if (typeof MatchStats !== 'undefined' && MatchStats[best.team] &&
+                    MatchStats[best.team].primeiraTocada !== undefined) {
+                    MatchStats[best.team].primeiraTocada++;
+                }
+            }
+        }
 
         /*
         DE ONDE VEIO A BOLA, guardado no instante do domínio.
@@ -2449,6 +2480,7 @@ const Match = {
             executa a animação de domínio orientado pela perna direita.
             */
             if (best.role !== 'gk' && best.jumpTimer <= 0 &&
+                !best.jogarDePrimeira &&
                 best.fsm.currentState !== 'SET_PIECE_TAKER' &&
                 best.fsm.currentState !== 'LATERAL' &&
                 best.fsm.currentState !== 'CHEST_CONTROL') {

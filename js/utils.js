@@ -2319,3 +2319,23 @@ function elevacaoComTectoDeApex(dist, elev, apexMax, elevMin) {
     }
     return lo;
 }
+
+/*
+JOGA DE PRIMEIRA? Ver o cabeçalho do FirstTouchModel (config.js).
+
+Pura e com `rnd` injectável: é sorteio, e um sorteio que não se pode varrer não
+se pode testar. `distAdversario` é a distância ao adversário mais próximo de
+QUEM RECEBE, no instante em que a bola lhe chega.
+*/
+function jogaDePrimeira(tec, distAdversario, rnd) {
+    const M = FirstTouchModel;
+    if (!(tec >= M.tecMin)) return false;
+    if (!(distAdversario <= M.distAdversario)) return false;
+
+    // Interpola a chance entre `tecMin` (chanceMin) e 100 (chanceMax).
+    const k = Math.max(0, Math.min(1, (tec - M.tecMin) / Math.max(1, 100 - M.tecMin)));
+    const chance = M.chanceMin + (M.chanceMax - M.chanceMin) * k;
+
+    const r = (rnd === undefined) ? Math.random() : rnd;
+    return r < chance;
+}

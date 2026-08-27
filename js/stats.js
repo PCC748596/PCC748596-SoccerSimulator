@@ -71,6 +71,8 @@ function novoContadorEquipa() {
         um adversário faltoso.
         */
         faltas: { cometidas: 0, sofridas: 0 },
+        // Bolas jogadas de primeira, sem domínio (ver FirstTouchModel).
+        primeiraTocada: 0,
         cartoes: { amarelos: 0, vermelhos: 0 },
         penaltis: 0,
         posseSegundos: 0,
