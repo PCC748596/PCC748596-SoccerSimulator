@@ -81,6 +81,25 @@ const PassCandidates = {
     alcanceMinimo: 3.0,
 
     /*
+    A CORRIDA AO PONTO — o filtro que faltava a seguir a esse.
+
+    O `raioAdversario` só pergunta se há um adversário JÁ em cima do ponto. Não
+    pergunta quem lá CHEGA primeiro, e era aí que os passes se perdiam: medido
+    num tempo de jogo, os lançamentos cortados eram-no a 96% do percurso — a
+    bola não era interceptada pelo caminho, chegava ao destino e era o
+    adversário que lá estava à espera dela. Um ponto vazio para onde o
+    defensor chega meio segundo antes do nosso avançado é um passe oferecido.
+
+    Agora compara-se tempo com tempo (`tempoDoJogadorAte`, utils.js), com a
+    velocidade de cada um projectada na direcção do ponto: quem já corre para
+    lá tem vantagem, quem tem de inverter paga-a.
+
+    `margemCorrida` é quanto o companheiro tem de chegar À FRENTE. Empatar não
+    chega: uma bola dividida a 50/50 não vale o risco de perder a posse.
+    */
+    margemCorrida: 0.30,
+
+    /*
     Até onde vale a pena pôr pontos à frente DESTE companheiro, dado onde a
     bola está agora.
 
@@ -169,12 +188,45 @@ const PassCandidates = {
                         pz - carrier.model.position.z);
                     if (!this.alcancaOPonto(mate, raio, distBola)) continue;
 
+                    // E chega lá ANTES do adversário mais rápido ao mesmo
+                    // ponto? Ver venceACorrida.
+                    if (!this.venceACorrida(mate, px, pz, opponents)) continue;
+
                     out.push({ x: px, z: pz, mate: mate });
                 }
             }
         }
 
         return out;
+    },
+
+    /*
+    O companheiro chega ao ponto antes de qualquer adversário, com
+    `margemCorrida` de folga? Ver a nota dessa constante.
+
+    O tempo de cada um sai do `tempoDoJogadorAte` (utils.js) — o mesmo modelo
+    de arranque que o `steerArrive` tem, portanto quem está parado paga o
+    arranque e quem corre ao contrário paga a inversão. A velocidade entra
+    projectada na direcção do ponto, a única componente que o aproxima dele.
+    */
+    venceACorrida: function (mate, px, pz, opponents) {
+        if (typeof tempoDoJogadorAte !== 'function') return true;
+
+        const tempoAte = (p) => {
+            const dx = px - p.model.position.x, dz = pz - p.model.position.z;
+            const d = Math.hypot(dx, dz);
+            if (d < 0.001) return 0;
+            const v = p.velocity ? (p.velocity.x * dx + p.velocity.z * dz) / d : 0;
+            const vMax = (p.speedMult && p.speedMult > 0.5) ? p.speedMult : 6.0;
+            return tempoDoJogadorAte(d, v, vMax);
+        };
+
+        const tMate = tempoAte(mate);
+        for (const o of opponents) {
+            if (o.role === 'gk' || !o.model) continue;
+            if (tempoAte(o) < tMate + this.margemCorrida) return false;
+        }
+        return true;
     },
 
     // `teammates` saiu da assinatura com a regra do "mais próximo": nenhuma

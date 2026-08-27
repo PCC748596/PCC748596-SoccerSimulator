@@ -908,13 +908,26 @@ function passeDeEncontro(o) {
     // 1 — a que chega a tempo.
     let v0 = velocidadeRasteiraEmTempo(distBola, tempoReceptor + folga, vSaidaMax);
 
-    // 2 — o tecto de velocidade de chegada, que manda quando há conflito.
+    /*
+    2 — TECTO DA CHEGADA, e o que conta é a velocidade RELATIVA.
+
+    Estava em absoluto, e isso partia o passe longo: com um receptor a 6 m/s o
+    tecto ficava em ~5 m/s, e para chegar a 5 m/s ao fim de 25 m a bola tem de
+    sair mansa. Medido em jogo: 2.38 s de voo para 25 m, com o homem a chegar
+    ao ponto em menos de 1 s — a bola ia tão devagar que era interceptada a
+    meio caminho. 60% dos passes no espaço acabavam cortados.
+
+    Quem recebe está a CORRER NO SENTIDO DA BOLA. Uma bola a 11 m/s apanhada
+    por quem corre a 6 chega-lhe com 5 m/s relativos, e é isso que ele tem de
+    dominar. O tecto é sobre a velocidade relativa, não sobre a do relvado.
+    */
+    const vRecNoPasse = (typeof o.vReceptorNoPasse === 'number') ? o.vReceptorNoPasse : 0;
     const tectoChegada = Math.min(vMaxChegada, Math.max(vMin, vMaxRec * frac));
     let vChegada = velocidadeDeChegadaRasteira(distBola, v0);
     let limitada = false;
 
-    if (vChegada > tectoChegada) {
-        v0 = velocidadeParaChegarA(distBola, tectoChegada, vSaidaMax);
+    if (vChegada - vRecNoPasse > tectoChegada) {
+        v0 = velocidadeParaChegarA(distBola, tectoChegada + vRecNoPasse, vSaidaMax);
         vChegada = velocidadeDeChegadaRasteira(distBola, v0);
         limitada = true;
     } else if (vChegada < vMin) {
@@ -2144,4 +2157,125 @@ function destinoDaEspalmada(o) {
     // Sem saída possível, a mesma qualidade decide entre afastar e largar.
     if (r < qualidade) return 'lateral';
     return (r < qualidade + (1 - qualidade) * 0.5) ? 'lateral' : 'meio';
+}
+
+/*
+=============================================================================
+REMATE — tipo, mira e erro
+=============================================================================
+Ver o cabeçalho do bloco novo do ShotModel (config.js) para o porquê: o remate
+passou a decidir a BOLA (que tipo, para que canto, com que erro) em vez de
+sortear o desfecho e encenar uma trajectória que o produzisse.
+
+Funções puras, sem tocar no jogo, para poderem ser varridas em teste
+(tests/remate_tipo_mira.test.js).
+*/
+
+/*
+TIPO DE REMATE. Testados por esta ordem — chapéu, rasteiro, colocado — e o que
+sobra é força. `rnd` injectável (uma amostra só; a ordem é que reparte).
+*/
+function tipoDeRemate(o) {
+    const E = ShotModel.escolha;
+    const dist = o.dist || 0;
+    const tec = (typeof o.tec === 'number') ? o.tec : 50;
+    const distAdversario = (typeof o.distAdversario === 'number') ? o.distAdversario : 99;
+    const gkAdiantado = o.gkAdiantado || 0;   // metros à frente da linha
+    const r = (o.rnd === undefined) ? Math.random() : o.rnd;
+
+    /*
+    ACUMULADOR, e não três testes contra o mesmo `r`. Com testes
+    independentes, uma opção mais abaixo na lista só saía na FRESTA que a de
+    cima deixasse — o colocado, com 55% de chance nominal, aparecia em 20% dos
+    remates porque o rasteiro já tinha ficado com tudo abaixo de 0.45.
+    Somando as fatias, cada chance quer dizer o que diz.
+    */
+    let acc = 0;
+
+    // Chapéu: só com o guarda-redes fora da linha, e a uma distância que dê
+    // para o passar por cima e ainda descer a tempo.
+    if (gkAdiantado >= E.chapeuGkAdiantado &&
+        dist >= E.chapeuDistMin && dist <= E.chapeuDistMax) {
+        acc += E.chanceChapeu;
+        if (r < acc) return 'chapeu';
+    }
+
+    // Rasteiro ao canto: mais provável de perto, onde levantar a bola é
+    // desperdiçar baliza.
+    acc += (dist <= E.distPerto) ? E.chanceRasteiraPerto : E.chanceRasteiraLonge;
+    if (r < acc) return 'rasteiro';
+
+    /*
+    Colocado precisa de tempo e de pé: cai sob pressão e não existe de longe.
+    A técnica é o que o torna uma opção — um TEC 20 não coloca, atira.
+    */
+    if (dist <= E.colocadoDistMax && distAdversario > E.colocadoPressao) {
+        acc += E.chanceColocado * (0.5 + (tec / 100));
+        if (r < acc) return 'colocado';
+    }
+
+    return 'forca';
+}
+
+/*
+PONTO MIRADO, no plano da baliza. O canto é o mais LONGE do guarda-redes —
+`gkX` é a posição dele em X. Devolve `{ x, y }` em metros.
+
+O ponto mirado é SEMPRE golo (fica `margemPoste` para dentro do poste): o que
+decide o desfecho é o erro que se soma por cima, não a mira.
+*/
+function miraDeRemate(o) {
+    const MI = ShotModel.mira;
+    const tipo = o.tipo || 'forca';
+    const maxC = (LARGURA_BALIZA / 2) - MI.margemPoste;
+    const gkX = (typeof o.gkX === 'number') ? o.gkX : 0;
+    const r = (o.rnd === undefined) ? Math.random() : o.rnd;
+
+    // Lado oposto ao guarda-redes; com ele ao meio, à sorte.
+    let lado;
+    if (Math.abs(gkX) > MI.gkCentradoMax) lado = -Math.sign(gkX);
+    else lado = (r < 0.5) ? -1 : 1;
+
+    let y;
+    if (tipo === 'rasteiro') y = MI.alturaRasteira;
+    else if (tipo === 'chapeu') y = MI.alturaChapeu;
+    else if (tipo === 'colocado') y = (r < 0.5) ? MI.alturaRasteira + 0.25 : MI.alturaAlta;
+    else y = (r < 0.5) ? MI.alturaMeia : MI.alturaAlta;
+
+    // O chapéu não vai ao canto: vai por cima dele, ao centro da baliza.
+    const x = (tipo === 'chapeu') ? lado * maxC * 0.35 : lado * maxC;
+    return { x: x, y: y, lado: lado };
+}
+
+/*
+SIGMA DA MIRA, em metros no plano da baliza. Devolve `{ lateral, vertical }`.
+
+É isto que produz golos, traves e bolas por cima — sem tabela de desfechos.
+Cresce com a distância, com a pressão e com o ângulo fechado; cai com a
+técnica e com o tipo de remate escolhido (colocar é mais preciso do que bater).
+*/
+function sigmaDeRemate(o) {
+    const E = ShotModel.erro;
+    const dist = Math.max(0, o.dist || 0);
+    const tec = (typeof o.tec === 'number') ? o.tec : 50;
+    const distAdversario = (typeof o.distAdversario === 'number') ? o.distAdversario : 99;
+    const tipo = ShotModel.tipos[o.tipo] || ShotModel.tipos.forca;
+
+    let s = E.base + Math.max(0, dist - E.distRef) * E.porMetro;
+
+    // Técnica: divide. TEC 100 -> 0.65x, TEC 0 -> 1.45x.
+    s *= E.tecMax - (E.tecMax - E.tecMin) * (Math.max(0, Math.min(100, tec)) / 100);
+
+    s *= tipo.sigma;
+    if (distAdversario < E.pressaoDist) s *= E.pressaoMult;
+
+    /*
+    Ângulo com a baliza: `o.angulo` é o ângulo entre a linha de remate e a
+    perpendicular à linha de fundo. Junto à linha de fundo a baliza é uma
+    fresta, e acertar-lhe é outra coisa.
+    */
+    if (typeof o.angulo === 'number' && Math.abs(o.angulo) > E.anguloFechado) s *= E.anguloMult;
+
+    s *= E.escalaGlobal;
+    return { lateral: s, vertical: s * E.fracVertical };
 }

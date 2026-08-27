@@ -3700,7 +3700,118 @@ const ShotModel = {
     (remate de muito longe). Era `Math.PI / 5` (36°) escrito à mão — um balão.
     A 20° a bola vai mais longe e mais tensa, e ainda tem hipótese de incomodar.
     */
-    elevacaoRecurso: 20 * Math.PI / 180
+    elevacaoRecurso: 20 * Math.PI / 180,
+
+    /*
+    =====================================================================
+    O REMATE DECIDE A BOLA, NÃO O DESFECHO
+    =====================================================================
+    Antes sorteava-se o RESULTADO — GOL, TRAVE_CAMPO, TRAVE_FORA,
+    TRAVESSAO_*, GOLEIRO_DEFENDE_* — por pesos de `attackRatio`, e só depois
+    se escolhia o ponto que o produzia. A bola era a encenação de um sorteio
+    já feito, e via-se: `alvoY = random() > 0.5 ? 2.0 : 0.4` (moeda ao ar
+    entre alto e baixo), `sinal = random()` para o canto sem olhar para onde
+    estava o guarda-redes, e potência sempre cheia — não havia remate
+    colocado nem rasteiro, havia um chutão com destino combinado.
+
+    Pior: o desfecho sorteado desligava o guarda-redes. `forcedGKDelay = 1.0`
+    nos remates marcados como golo (ele reagia um segundo tarde, de
+    propósito) e `0` nos marcados como defesa. Toda a fórmula do GkCatchModel
+    só era consultada depois de o sorteio já ter decidido que ia haver defesa.
+
+    Agora escolhe-se TIPO e MIRA, aplica-se o erro, e a bola voa. Quem
+    resolve é a física — a colisão com postes e travessão já existe
+    (`colidirComBaliza` em match.js) — e o guarda-redes, com o seu tempo de
+    reacção normal. Trave e "por cima" deixam de ser casos de uma tabela e
+    passam a ser consequência de a mira ter falhado por pouco.
+    */
+
+    /*
+    TIPOS DE REMATE. A potência é um multiplicador da `potenciaBase`: um
+    remate colocado sai a ~2/3 da força — é essa a troca, precisão contra
+    velocidade, e era ela que não existia.
+    */
+    tipos: {
+        forca: { potencia: 1.00, sigma: 1.35 },
+        colocado: { potencia: 0.68, sigma: 0.80 },
+        rasteiro: { potencia: 0.82, sigma: 0.95 },
+        chapeu: { potencia: 0.45, sigma: 1.20 }
+    },
+
+    /*
+    ESCOLHA DO TIPO, por situação. As chances são testadas por esta ordem
+    (chapéu, rasteiro, colocado) e o que sobra é força.
+    */
+    escolha: {
+        // Chapéu: só com o guarda-redes fora da linha e a uma distância que
+        // dê para o passar por cima.
+        chapeuGkAdiantado: 4.0,   // metros à frente da linha
+        chapeuDistMin: 8.0,
+        chapeuDistMax: 25.0,
+        chanceChapeu: 0.35,
+
+        // Rasteiro ao canto: a bola mais difícil de agarrar que há. Sobe de
+        // perto, onde levantar a bola é desperdiçar a baliza.
+        chanceRasteiraPerto: 0.32,   // até `distPerto`
+        chanceRasteiraLonge: 0.15,
+        distPerto: 12.0,
+
+        // Colocado: precisa de tempo e de pé. Cai sob pressão e com a
+        // distância — de 25 m ninguém coloca, bate.
+        chanceColocado: 0.40,
+        colocadoDistMax: 20.0,
+        colocadoPressao: 3.0      // adversário a menos disto tira a colocação
+    },
+
+    /*
+    MIRA. Aponta-se a um canto, com `margemPoste` de folga para dentro — o
+    ponto MIRADO é sempre golo, o que decide é o erro por cima dele.
+
+    O canto é o mais LONGE do guarda-redes. Era `random()`, e por isso não
+    havia a leitura mais básica do remate: bater onde ele não está.
+    */
+    mira: {
+        margemPoste: 0.85,
+        alturaRasteira: 0.30,
+        alturaMeia: 1.05,
+        alturaAlta: 1.90,
+        alturaChapeu: 2.15,
+        // Abaixo desta descentragem do GK o canto é escolhido à sorte: com
+        // ele ao meio, os dois lados valem o mesmo.
+        gkCentradoMax: 0.5
+    },
+
+    /*
+    ERRO DA MIRA, em METROS no plano da baliza — e é ele que produz golos,
+    traves e bolas por cima, sem tabela nenhuma. Mesma ideia do
+    `sigmaDePasse`: a bola sai na direcção pedida com um desvio gaussiano.
+
+    O desvio vertical é menor que o lateral (`fracVertical`): errar a altura
+    de um remate é menos comum do que errar o lado.
+    */
+    erro: {
+        base: 1.10,             // metros de sigma, a 6 m e TEC 50
+        porMetro: 0.110,        // cresce com a distância à baliza
+        distRef: 6.0,
+        fracVertical: 0.70,
+        // TEC divide o sigma: 0.65 a TEC 100, 1.45 a TEC 0.
+        tecMin: 0.65,
+        tecMax: 1.45,
+        // Pressão: adversário colado abre a mira.
+        pressaoDist: 3.0,
+        pressaoMult: 1.45,
+        // Ângulo fechado (junto à linha de fundo) também.
+        anguloMult: 1.30,
+        anguloFechado: 35 * Math.PI / 180,
+
+        /*
+        A ÚNICA MANÍPULA DE CALIBRAÇÃO. Multiplica todos os sigmas: acima de
+        1 saem mais remates para fora, abaixo de 1 mais no alvo. Existe para
+        acertar a taxa de conversão SEM voltar a impor desfechos — o
+        resultado continua a sair da bola, do guarda-redes e da madeira.
+        */
+        escalaGlobal: 1.0
+    }
 };
 
 const FreeKickModel = {

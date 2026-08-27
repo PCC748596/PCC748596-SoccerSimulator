@@ -156,10 +156,22 @@ function executePassGameplay(p) {
         const vMaxRec = (typeof receptor.speedMult === 'number' && receptor.speedMult > 0.5)
             ? receptor.speedMult : 6.0;
 
+        /*
+        Velocidade dele projectada na DIRECÇÃO DO PASSE (bola -> ponto): é a
+        que se desconta ao tecto de chegada, porque quem foge da bola não a
+        recebe à velocidade dela mas à diferença das duas. Positiva quando ele
+        vai no mesmo sentido que ela.
+        */
+        const px = _v1.x - Match.ball.position.x, pz = _v1.z - Match.ball.position.z;
+        const normP = Math.hypot(px, pz) || 1;
+        const vRecNoPasse = receptor.velocity
+            ? Math.max(0, (receptor.velocity.x * px + receptor.velocity.z * pz) / normP) : 0;
+
         return passeDeEncontro({
             distBola: distToTarget,
             distReceptor: distReceptor,
             vReceptor: vRec,
+            vReceptorNoPasse: vRecNoPasse,
             vMaxReceptor: vMaxRec
         });
     })();
@@ -499,113 +511,75 @@ function executeShotGameplay(p) {
     // acertar o corte no timing certo).
     const bloqueado = bloqueador && !venceuDuelo(p.skillFor('TEC'), bloqueador.skillFor('MARKING'), 0.6);
 
-    let maxC = (LARGURA_BALIZA / 2) - 0.5;
     let pow, alvoX, alvoY;
 
-    let forcedGKDelay = null;
     if (bloqueado) {
         // Bola desviada, curta e fraca — não mira a baliza.
         pow = 4.0 + Math.random() * 2.4;
         alvoX = p.model.position.x + (Math.random() - 0.5) * 4.0;
         alvoY = 0.3;
     } else {
+        /*
+        TIPO, MIRA E ERRO — ver o bloco novo do ShotModel (config.js) e as
+        funções em utils.js. O desfecho NÃO se sorteia: escolhe-se onde a bola
+        vai, erra-se por cima disso, e o resto resolve-se sozinho — a madeira
+        no `colidirComBaliza` (match.js), o guarda-redes no GkCatchModel.
+        */
         const gkDef = (p.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
-        let gkScore = 50; 
-        if (gkDef) {
-            gkScore = gkDef.skillFor('TEC') * 0.30 + gkDef.skillFor('GK') * 0.70;
-        }
-        
-        // Penalização por distância: a eficácia do rematador cai à medida que a distância aumenta
+
         _v1.set(0, 0, p.targetGoalZ);
         const distBaliza = p.model.position.distanceTo(_v1);
-        let distPenalty = 1.0;
-        if (distBaliza > 10.0) {
-            // Reduz gradualmente o score do chutador; ex: aos 20m cai para ~50%
-            distPenalty = Math.max(0.2, 1.0 - ((distBaliza - 10.0) / 20.0));
-        }
-        
-        const chutadorScore = p.skillFor('TEC') * distPenalty;
-        const attackRatio = chutadorScore / (chutadorScore + gkScore);
-        
-        const weights = [
-            { outcome: 'GOL', weight: Math.pow(attackRatio, 2) * 100 },
-            { outcome: 'TRAVE_CAMPO', weight: attackRatio * 15 },
-            { outcome: 'TRAVE_FORA', weight: attackRatio * 15 },
-            { outcome: 'TRAVESSAO_CAMPO', weight: attackRatio * 15 },
-            { outcome: 'TRAVESSAO_FORA', weight: attackRatio * 15 },
-            { outcome: 'GOLEIRO_DEFENDE_VOLTA', weight: Math.pow(1 - attackRatio, 2) * 50 },
-            { outcome: 'GOLEIRO_DEFENDE_FORA', weight: Math.pow(1 - attackRatio, 2) * 50 }
-        ];
-        
-        let totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
-        let roll = Math.random() * totalWeight;
-        let selectedOutcome = 'GOLEIRO_DEFENDE_VOLTA';
-        for (let w of weights) {
-            if (roll < w.weight) {
-                selectedOutcome = w.outcome;
-                break;
-            }
-            roll -= w.weight;
-        }
+
+        // Ângulo com a perpendicular à linha de fundo: junto à linha a baliza
+        // é uma fresta, e isso tem de pesar na mira.
+        const dzBaliza = Math.abs(p.targetGoalZ - p.model.position.z);
+        const anguloBaliza = Math.atan2(Math.abs(p.model.position.x), Math.max(0.1, dzBaliza));
+
+        // Quanto o guarda-redes está adiantado (para o chapéu ser opção).
+        const gkAdiantado = gkDef
+            ? Math.max(0, Math.abs(p.targetGoalZ) - Math.abs(gkDef.model.position.z))
+            : 0;
+
+        const tipoRemate = tipoDeRemate({
+            dist: distBaliza,
+            tec: p.skillFor('TEC'),
+            distAdversario: distBloqueio,
+            gkAdiantado: gkAdiantado
+        });
+
+        const mira = miraDeRemate({
+            tipo: tipoRemate,
+            gkX: gkDef ? gkDef.model.position.x : 0
+        });
+
+        const sigma = sigmaDeRemate({
+            dist: distBaliza,
+            tec: p.skillFor('TEC'),
+            distAdversario: distBloqueio,
+            angulo: anguloBaliza,
+            tipo: tipoRemate
+        });
+
+        alvoX = mira.x + sigma.lateral * amostraGaussiana(Math.random);
+        alvoY = Math.max(0.08, mira.y + sigma.vertical * amostraGaussiana(Math.random));
+
+        pow = Math.max(ShotModel.potenciaMin,
+            ShotModel.potenciaBase + ((p.skillFor('TEC') - 50) / 50) * ShotModel.potenciaPorSkill)
+            * ShotModel.tipos[tipoRemate].potencia;
 
         /*
-        NO ALVO: só o que ia mesmo à baliza — golo, ou defesa do guarda-redes.
-        Postes e travessões ficam de fora, como nos fornecedores de
-        estatística: sem o desvio da madeira a bola não entrava.
+        NO ALVO: agora é uma medida da bola e não uma etiqueta do sorteio —
+        o ponto visado, depois do erro, cai dentro da moldura?
 
-        Aqui e não no `initiateShoot`, porque é aqui que o desfecho existe. Um
-        remate bloqueado nem chega a este ramo (o `bloqueado` desvia acima), e
-        um `furado` não chega a executar nada — nenhum dos dois conta.
+        Postes e travessão ficam de fora por definição (a bola bate na madeira
+        e não entra), como nos fornecedores de estatística.
         */
         if (typeof MatchStats !== 'undefined' &&
-            (selectedOutcome === 'GOL' ||
-                selectedOutcome === 'GOLEIRO_DEFENDE_VOLTA' ||
-                selectedOutcome === 'GOLEIRO_DEFENDE_FORA')) {
+            Math.abs(alvoX) < LARGURA_BALIZA / 2 && alvoY < ALTURA_BALIZA) {
             MatchStats[p.team].remates.noAlvo++;
         }
 
-        let sinal = Math.random() > 0.5 ? 1 : -1;
-        pow = Math.max(ShotModel.potenciaMin,
-            ShotModel.potenciaBase + ((p.skillFor('TEC') - 50) / 50) * ShotModel.potenciaPorSkill);
-        
-        switch (selectedOutcome) {
-            case 'GOL':
-                alvoX = sinal * maxC * 0.9;
-                alvoY = Math.random() > 0.5 ? 2.0 : 0.4;
-                forcedGKDelay = 1.0; 
-                break;
-            case 'TRAVE_CAMPO':
-                alvoX = sinal * (LARGURA_BALIZA / 2 - 0.08);
-                alvoY = 0.5;
-                forcedGKDelay = 1.0;
-                break;
-            case 'TRAVE_FORA':
-                alvoX = sinal * (LARGURA_BALIZA / 2 + 0.08);
-                alvoY = 0.5;
-                forcedGKDelay = 1.0;
-                break;
-            case 'TRAVESSAO_CAMPO':
-                alvoX = (Math.random() - 0.5) * maxC;
-                alvoY = ALTURA_BALIZA - 0.08;
-                forcedGKDelay = 1.0;
-                break;
-            case 'TRAVESSAO_FORA':
-                alvoX = (Math.random() - 0.5) * maxC;
-                alvoY = ALTURA_BALIZA + 0.08;
-                forcedGKDelay = 1.0;
-                break;
-            case 'GOLEIRO_DEFENDE_VOLTA':
-                alvoX = (Math.random() - 0.5) * 1.5; 
-                alvoY = 1.0;
-                pow *= 0.7; // Reduz um pouco a força pro goleiro ter chance de espalmar pra frente ou encaixar
-                forcedGKDelay = 0; 
-                break;
-            case 'GOLEIRO_DEFENDE_FORA':
-                alvoX = sinal * maxC * 1.05; 
-                alvoY = 1.0;
-                forcedGKDelay = 0;
-                break;
-        }
+        p.ultimoRemateTipo = tipoRemate;
     }
 
     /*
@@ -656,7 +630,14 @@ function executeShotGameplay(p) {
         // Notifica o GK adversário via propriedade de instância.
         const gkDef = (p.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
         if (gkDef) {
-            gkDef.gkDelayReacao = (forcedGKDelay !== null) ? forcedGKDelay : (0.45 - ((TeamSkills[defendingTeam].gk - 50) / 50) * 0.35);
+            /*
+            TEMPO DE REACÇÃO NORMAL, sempre. Havia aqui um delay forçado
+            que o sorteio de desfechos escrevia: 1.0 s nos remates marcados
+            como golo (o guarda-redes ficava a ver) e 0 nos marcados como
+            defesa. Com o desfecho a sair da bola, isso deixou de existir —
+            e é o que faz o GkCatchModel valer alguma coisa.
+            */
+            gkDef.gkDelayReacao = 0.45 - ((TeamSkills[defendingTeam].gk - 50) / 50) * 0.35;
             gkDef.gkReagiu = false;
         }
         window.bolaChutada = true;
