@@ -65,9 +65,10 @@ const THREE = {
 };
 
 const nomes = ['velocidadeParaAlcance', 'resolverElevacaoPasse',
-    'tempoDeVooDoPasse', 'elevacaoParaTempoDeVoo'];
+    'tempoDeVooDoPasse', 'elevacaoParaTempoDeVoo', 'elevacaoComTectoDeApex'];
 const codigo = nomes.map(n => extrairFuncao(srcUtils, n)).join(LF + LF);
-const { resolverElevacaoPasse, tempoDeVooDoPasse, elevacaoParaTempoDeVoo } =
+const { resolverElevacaoPasse, tempoDeVooDoPasse, elevacaoParaTempoDeVoo,
+    elevacaoComTectoDeApex } =
     new Function('BallPhysics', 'PassModel', 'THREE',
         `${codigo}; return { ${nomes.join(', ')} };`)(BallPhysics, PassModel, THREE);
 
@@ -169,4 +170,59 @@ test('altura de um passe alto típico é de passe, não de chutão', () => {
         assert.ok(apex < tecto,
             `passe de ${d} m sobe a ${apex.toFixed(1)} m (tecto ${tecto.toFixed(1)} m) — isso é um chutão`);
     }
+});
+
+
+/* ---- tecto de altura ----------------------------------------------------- */
+
+/*
+O ÂNGULO SOZINHO NÃO CHEGA. A faixa de 25°-35° descreve o gesto e é a mesma a
+18 m e a 55 m — mas o apex vai com o QUADRADO da velocidade, e essa cresce com
+a distância. Medido em jogo antes deste tecto: um lançamento de 54.9 m saía a
+35° com vy = 18.5, ou seja 17 m de altura. Ângulo legal, bola de guarda-redes.
+*/
+const apexDe = (dist, elev) => {
+    const v = new Function('BallPhysics',
+        `${extrairFuncao(srcUtils, 'velocidadeParaAlcance')}; return velocidadeParaAlcance(${dist}, ${elev});`
+    )(BallPhysics);
+    const vy = v * Math.sin(elev);
+    return (vy * vy) / (2 * BallPhysics.gravidade);
+};
+
+test('nenhum passe pelo alto passa do tecto de apex', () => {
+    const A = PassModel.passeArco;
+    assert.ok(typeof A.apexMax === 'number', 'passeArco.apexMax em falta');
+
+    const fora = [];
+    for (let d = 16; d <= 60; d += 2) {
+        const elev = resolverElevacaoPasse(d, true);
+        if (elev === null) continue;
+        const corrigida = elevacaoComTectoDeApex(d, elev, A.apexMax, A.elevMinLonga);
+        const apex = apexDe(d, corrigida);
+        // Folga de 15%: `velocidadeParaAlcance` resolve com arrasto e o apex
+        // aqui é calculado sem ele, portanto sobrestima um pouco.
+        if (apex > A.apexMax * 1.15) fora.push(`${d}m -> ${apex.toFixed(1)}m`);
+    }
+    assert.strictEqual(fora.length, 0, `acima do tecto: ${fora.slice(0, 6).join(', ')}`);
+});
+
+test('o tecto só baixa a elevação quando é preciso', () => {
+    const A = PassModel.passeArco;
+    // Passe curto pelo alto: já cabe, não se mexe.
+    const elev = resolverElevacaoPasse(18, true);
+    if (elev !== null) {
+        assert.strictEqual(elevacaoComTectoDeApex(18, elev, A.apexMax, A.elevMinLonga), elev,
+            'o tecto mexeu num passe que já cabia');
+    }
+    // Passe muito longo: tem de sair mais tenso do que a faixa do gesto.
+    const longa = elevacaoComTectoDeApex(55, A.elevMax, A.apexMax, A.elevMinLonga);
+    assert.ok(longa < A.elevMin, `um passe de 55 m devia sair abaixo dos ${grau(A.elevMin)}°: ${grau(longa).toFixed(1)}°`);
+    assert.ok(longa >= A.elevMinLonga - 1e-9, 'passou abaixo do piso');
+});
+
+test('o lançamento deixou de ser um pontapé de baliza', () => {
+    // A distância máxima do lançamento tem de caber no que o tecto consegue
+    // manter baixo — senão volta a haver balões, só que autorizados.
+    assert.ok(PassModel.throughBallMaxDist <= 40,
+        `throughBallMaxDist a ${PassModel.throughBallMaxDist} m é distância de chutão`);
 });

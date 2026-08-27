@@ -1755,7 +1755,12 @@ const PassModel = {
 
     throughBallGap: 14.0,       // quão atrás da linha o colega pode estar
     throughBallDepth: 9.0,      // metros além da linha onde se põe a bola
-    throughBallMaxDist: 45.0,
+    /*
+    Baixou de 45: com o alvo posto `throughBallDepth` ALÉM do companheiro, um
+    limite de 45 m dava lançamentos medidos de 58 m — distância de pontapé de
+    baliza, não de passe em profundidade.
+    */
+    throughBallMaxDist: 38.0,
     // Nem sempre que há espaço se lança: senão o jogo torna-se todo directo.
     throughBallChance: 0.675, // 0.30 -> 0.45 -> 0.675 (+50% duas vezes)
 
@@ -1860,6 +1865,28 @@ const PassModel = {
         */
         elevMin: 25 * Math.PI / 180,
         elevMax: 35 * Math.PI / 180,
+
+        /*
+        TECTO DE ALTURA, em metros. A faixa de ângulos descreve o gesto e é a
+        mesma a 18 m e a 55 m — mas o apex cresce com a VELOCIDADE, que cresce
+        com a distância. Medido: um lançamento de 54.9 m a 35° saía com
+        vy = 18.5 e subia 17 m. Ângulo legal, bola de guarda-redes.
+
+        Ver `elevacaoComTectoDeApex` (utils.js): acima disto a elevação baixa
+        até caber.
+        */
+        apexMax: 7.0,
+
+        /*
+        E quando nem no mínimo da faixa o apex cabe — um passe de 55 m a 25°
+        ainda sobe 11 m — a bola sai MAIS TENSA do que a faixa do gesto
+        permite. É o que um jogador faz mesmo: a alternativa a um passe longo
+        tenso não é um passe longo alto, é não dar o passe.
+
+        A faixa de 25°-35° continua a mandar em tudo o resto; isto é só o piso
+        do tecto de altura.
+        */
+        elevMinLonga: 15 * Math.PI / 180,
 
         anguloLongoMin: 25 * Math.PI / 180,
         anguloLongoMax: 35 * Math.PI / 180

@@ -198,6 +198,10 @@ function executePassGameplay(p) {
                     encontro.tempoReceptor + PassModel.encontro.folgaTempo,
                     PassModel.encontro.elevMin, PassModel.encontro.elevMax);
             }
+            // E o tecto de altura: a faixa de ângulos sozinha deixava um
+            // lançamento de 55 m subir 17 m (ver elevacaoComTectoDeApex).
+            elevL = elevacaoComTectoDeApex(distToTarget, elevL,
+                PassModel.passeArco.apexMax, PassModel.passeArco.elevMinLonga);
             const vL = velocidadeParaAlcance(distToTarget, elevL);
             Match.ballVel.y = vL * Math.sin(elevL);
             forcaPasse = vL * Math.cos(elevL);
@@ -315,9 +319,12 @@ function executePassGameplay(p) {
                     PassModel.encontro.elevMin, PassModel.encontro.elevMax)
                 : elev;
 
-            const v = velocidadeParaAlcance(alcancePasse, elevFinal);
-            Match.ballVel.y = v * Math.sin(elevFinal);
-            forcaPasse = v * Math.cos(elevFinal);
+            const elevComTecto = elevacaoComTectoDeApex(alcancePasse, elevFinal,
+                PassModel.passeArco.apexMax, PassModel.passeArco.elevMinLonga);
+
+            const v = velocidadeParaAlcance(alcancePasse, elevComTecto);
+            Match.ballVel.y = v * Math.sin(elevComTecto);
+            forcaPasse = v * Math.cos(elevComTecto);
         }
         usouBalistica = true;
     }

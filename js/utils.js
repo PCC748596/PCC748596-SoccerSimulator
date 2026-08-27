@@ -2279,3 +2279,43 @@ function sigmaDeRemate(o) {
     s *= E.escalaGlobal;
     return { lateral: s, vertical: s * E.fracVertical };
 }
+
+/*
+TECTO DE ALTURA DO PASSE — a elevação que mantém o apex abaixo de `apexMax`.
+
+A faixa de 25°-35° do `passeArco` descreve o GESTO, e é a mesma a 18 m e a
+55 m. Só que o apex não depende do ângulo, depende do ângulo E da velocidade —
+e a velocidade sobe com a distância:
+
+    apex = (v·sen(elev))² / 2g
+
+Medido em jogo: um lançamento de 54.9 m saía a 32.3 m/s e 35°, com vy = 18.5,
+ou seja **17 m de altura**. O ângulo estava dentro da faixa e a bola era um
+balão de guarda-redes — que é exactamente o que se via.
+
+Aqui baixa-se a elevação até o apex caber. Quando nem no mínimo da faixa cabe,
+devolve-se o mínimo: a distância é que era demasiada, e isso resolve-se em quem
+escolhe o alvo, não aqui.
+*/
+function elevacaoComTectoDeApex(dist, elev, apexMax, elevMin) {
+    const g = BallPhysics.gravidade;
+    const tecto = (typeof apexMax === 'number') ? apexMax : 8.0;
+    const minimo = (typeof elevMin === 'number') ? elevMin : (12 * Math.PI / 180);
+
+    const apexDe = (e) => {
+        const v = velocidadeParaAlcance(dist, e);
+        const vy = v * Math.sin(e);
+        return (vy * vy) / (2 * g);
+    };
+
+    if (apexDe(elev) <= tecto) return elev;
+    if (apexDe(minimo) >= tecto) return minimo;
+
+    // Monótona em `elev` para alcance fixo: mais ângulo, mais altura.
+    let lo = minimo, hi = elev;
+    for (let i = 0; i < 20; i++) {
+        const mid = (lo + hi) / 2;
+        if (apexDe(mid) < tecto) lo = mid; else hi = mid;
+    }
+    return lo;
+}
