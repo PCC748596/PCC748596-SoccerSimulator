@@ -849,8 +849,34 @@ function computeBlock(bb) {
         bb.blocoZSuave = seguirBola(bb.blocoZSuave, targetOffsetZ, BlockShape.seguimentoBola, dtMatch, reposta);
     }
 
+    /*
+    A MENTALIDADE, que não estava aqui.
+
+    O `MentalidadeModel[estilo].blocoZ` existe desde sempre no config, com o
+    comentário "A Mentalidade fala uma vez, pelo blocoZ" — e NUNCA era lido. A
+    única coisa que a Mentalidade mexia era a `profundidade` (ver
+    escolherProfundidade), e essa, a defender, é forçada a 'short' para toda a
+    gente: ou seja, com a equipa sem bola, escolher Muito Defensiva ou Muito
+    Ofensiva dava exactamente o mesmo bloco.
+
+    Medido, com a equipa a defender (mediana da profundidade do alvo, no
+    referencial de ataque):
+
+                        Muito Defensiva   Muito Ofensiva
+        defesas              -16.1             -16.6
+        médios                -6.1              -7.0
+
+    Um metro de diferença, e no sentido errado. Agora o `blocoZ` desloca o
+    centro do bloco: negativo recua-o para o próprio meio-campo, positivo
+    empurra-o para o do adversário.
+    */
+    const mentalBloco = (typeof MentalidadeModel !== 'undefined' &&
+        MentalidadeModel[Tatics.estilo] &&
+        typeof MentalidadeModel[Tatics.estilo].blocoZ === 'number')
+        ? MentalidadeModel[Tatics.estilo].blocoZ : 0;
+
     const bolaZDir = bb.bolaZSuave * bb.dir;
-    let centroZ = bolaZDir + bb.blocoZSuave;
+    let centroZ = bolaZDir + bb.blocoZSuave + mentalBloco;
 
     let z0 = centroZ - (profundidade / 2);
     let z1 = centroZ + (profundidade / 2);
@@ -919,8 +945,27 @@ function computeBlock(bb) {
     */
     if (!bb.isAttacking && typeof TeamShape !== 'undefined' &&
         typeof Tatics !== 'undefined' && TeamShape.linhaDefensiva) {
-        const capLinha = TeamShape.linhaDefensiva[Tatics.linhaDefensiva]
+        /*
+        A LINHA DEFENSIVA É DO PAINEL, MAS A MENTALIDADE TAMBÉM FALA.
+
+        A âncora da traseira vinha só do botão Low/Medium/High, e é ela que tem
+        a última palavra sobre onde a última linha se põe. Resultado: o
+        `blocoZ` da Mentalidade movia o centro do bloco mas os DEFESAS ficavam
+        onde estavam — medido, um metro de diferença entre Muito Defensiva e
+        Muito Ofensiva, que é o mesmo que dizer que a Mentalidade não existia
+        para eles.
+
+        `pesoNaLinha` é a fracção do `blocoZ` que passa para a âncora. Não é 1:
+        o botão da Linha Defensiva continua a ser o controlo grosso, a
+        Mentalidade inclina-o. Com 0.5, Muito Defensiva recua a linha 5 m e
+        Muito Ofensiva sobe-a 6 m sobre o que o painel pediu.
+        */
+        const capBase = TeamShape.linhaDefensiva[Tatics.linhaDefensiva]
             ?? TeamShape.linhaDefensiva.medium;
+        const pesoMental = (typeof MentalidadeModel !== 'undefined' &&
+            typeof MentalidadeModel.pesoNaLinha === 'number')
+            ? MentalidadeModel.pesoNaLinha : 0;
+        const capLinha = capBase + mentalBloco * pesoMental;
 
         /*
         Adversário de campo mais recuado e piso do guarda-redes, ambos no

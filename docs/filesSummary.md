@@ -5,6 +5,136 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 27 de Agosto de 2026 (continuação) — constantes que ninguém lia
+
+Testes novos: `falta_cobranca`, `bola_parada_junto_ao_destinatario`,
+`mentalidade_bloco`. Suite: **64 ficheiros, 120 casos**.
+
+O tema desta metade da sessão foi esse: três constantes que descreviam
+comportamento no `config.js` e que o código nunca chegava a ler. Ficam aqui
+porque são o tipo de defeito que não dá erro, não aparece em teste nenhum, e só
+se encontra a medir.
+
+#### Jogadas combinadas: cara a cara, tabelinha, overlap
+
+Nenhuma existia. A tabelinha nunca existiu, o **overlap tinha sido desligado**
+(`overlapTimer = 0` no player.js, com o comentário "Disparadas / Overlap
+pós-passe desativadas") e o cara a cara não era uma categoria — saía por
+acidente quando a nota do `PassTypes.escolher` calhava.
+
+São um RAMO próprio (`tratarJogadaCombinada`, chamado do topo do `actPass`) e
+não um bónus na nota: um bónus continua a competir com o progresso para a
+baliza, e é isso que as faz perder. Ordem: devolução de tabelinha pedida, cara
+a cara, iniciar tabelinha, passe para quem faz overlap.
+
+As duas metades sem bola (`EsperarDevolucao`, `Overlap`) entraram na árvore
+ANTES do `Receber` — quem pede a tabelinha não é o destinatário do passe, o
+parceiro é, e o arranque tem de acontecer enquanto a bola vai e vem. O
+`tests/arvore_sem_bola.test.js` fixa essa ordem e falhou, como devia.
+
+Medido num tempo: 24 tabelinhas, 22 passes para overlap, 1 cara a cara — e os
+remates passaram de **4 para 18**, com 3 golos onde não havia nenhum.
+
+#### Fox in the Box: o estilo estava ligado 2% do tempo
+
+O gatilho pedia a bola a mais de 12 m dentro do meio-campo adversário. Medido:
+**2% dos frames em posse**. Nos outros 98% ele era um avançado normal no slot
+puro, a 25 m da área — era isto o "afasta-se muito da área".
+
+Passou a ligar a partir do meio-campo (`bolaAvanco > -5`), e a profundidade
+acompanha a bola (`PlayingStyleTuning.foxInTheBox`) em vez de o colar à linha
+da área desde o início — com o gatilho novo, isso punha-o na área com a bola
+ainda na defesa.
+
+O que o prende de facto é o FORA-DE-JOGO: medido, a linha adversária está a
+18.9 m antes da área e a bola a 39 m dela. Ele não pode estar na área a maior
+parte do tempo, e fica ~5 m atrás do limite legal, que é o correcto.
+
+#### Dummy Runner: a corrida não acabava
+
+A corrida de arrastamento era uma POSIÇÃO — enquanto a equipa atacasse, ele
+vivia aberto na ponta, longe das jogadas. Agora é um episódio de 6 s com 4 s de
+descanso (`PlayingStyleTuning.dummyRunner`).
+
+Duas coisas que só a medição mostrou:
+
+  - o relógio tem de correr no `avaliarEstilo`, que corre todos os frames, e
+    não no deslocamento, que só corre com o estilo activo: lá dentro, uma
+    corrida de 6 s esticava-se por 70 s de tempo real, congelada em cada pausa;
+  - `bb.carrier` não pode entrar na condição de continuação — **durante o voo
+    de um passe não há portador**, e a corrida morria a cada passe (0.5 s de
+    mediana).
+
+Resultado: 94 corridas por tempo, mediana 3.0 s, máximo 8.0 s. Menos de 6 na
+mediana porque a equipa perde a posse a meio, que é o correcto.
+
+#### A cobrança da falta
+
+Duas coisas: `FreeKickModel.recuoBatedor` era 1.4 m (o batedor em cima da bola)
+e o `baterFalta` executava tudo no mesmo frame — `hasBall = true` e
+`initiateShoot`/`initiatePass` de onde estava. Sem corrida e sem gesto, o que se
+via era a bola a saltar sozinha para o pé dele.
+
+Agora são três tempos: espera a `recuoBatedor` (4.8 m), **caminha** até
+`arranqueDoGesto` (2.6 m) durante o último terço da espera regulamentar, e o
+`ActionState` cobre os últimos metros com a bola a partir no `contactTime`. O
+`Match.state` só passa a `'PLAY'` nesse instante.
+
+Dois obstáculos pelo caminho, ambos encontrados a medir (13 de 14 cobranças não
+chegavam ao contacto):
+
+  - o `case 'PASS'` da FSM mata o gesto quando `!p.hasBall`, e durante a corrida
+    o batedor não tem a bola. A corrida usa o estado do REMATE mesmo quando a
+    falta acaba em passe curto; o gesto do passe é criado pelo `initiatePass`
+    no contacto.
+  - o `tratarBolaParada` forçava `SET_PIECE_WAIT` no batedor a meio do gesto, e
+    o `changeState` limpa o `actionState`. Mesma excepção que o penálti já
+    tinha.
+
+#### Bola parada JUNTO ao destinatário — a outra porta do mesmo deadlock
+
+O `passeMorreuParaODestinatario` (utils.js) começava por desistir quando a bola
+estava a menos de `passePerdidoDist` (4 m) dele: perto do destinatário o passe
+conta como entregue e o resto do teste nem corre.
+
+Só que "perto dele" não é "no pé dele". A bola pode parar a três metros sem ele
+lhe tocar — e aí ninguém a vai buscar, porque o `bolaSolta` do
+`deveMandarChaser` exige `!intendedReceiver`. Bola quieta com três jogadores à
+volta.
+
+`PerceptionModel.prazoBolaParada` (1.2 s): com a bola parada e sem dono, o
+Match conta o tempo e o passe caduca mesmo estando perto dele. Uma bola que
+ainda rola na direcção dele nunca caduca, e antes do prazo nada muda.
+
+A sessão anterior tinha corrigido o caso da bola parada LONGE do destinatário;
+este é o mesmo deadlock a entrar pelo outro lado.
+
+#### A Mentalidade não estava ligada ao bloco
+
+`MentalidadeModel[estilo].blocoZ` existia desde sempre, com o comentário "A
+Mentalidade fala uma vez, pelo `blocoZ`", e **nunca era lido**. O `computeBlock`
+usava só `bolaZDir + blocoZSuave` (o ±5 da fase). A única coisa que a
+Mentalidade mexia era a `profundidade` — e essa, sem posse, é forçada a `short`
+para toda a gente.
+
+Ou seja: com a equipa a defender, Muito Defensiva e Muito Ofensiva davam o mesmo
+bloco. Medido, mediana da profundidade do alvo no referencial de ataque:
+
+```
+                Muito Defensiva   Balanceado   Muito Ofensiva
+   antes: def        -16.1           -15.6         -16.6
+          mid         -6.1            -6.3          -7.0
+   agora: def        -19.6           -15.8         -14.6
+          mid         -8.5            -7.6          -5.3
+          atk          1.3             5.7           5.4
+```
+
+E ligar o `blocoZ` ao centro do bloco não chegou: os DEFESAS continuavam
+parados, porque a traseira é ancorada pela Linha Defensiva do painel, que tem a
+última palavra. `MentalidadeModel.pesoNaLinha` (0.5) inclina essa âncora — o
+botão continua a ser o controlo grosso. Medido relativo à bola, os defesas
+passaram de 5 m para 15 m de amplitude entre os extremos da escala.
+
 ### Sessão de 27 de Agosto de 2026 — o passe que não chegava, e o remate que já sabia o resultado
 
 Testes novos: `penalti_defesa`, `passe_encontro`, `passe_alto_angulo`,
@@ -3056,6 +3186,11 @@ tempo de jogo — 600 s simulados, 45 min de relógio — corre em ~16 s de CPU.
 - `receptor.js` — o destinatário corre para o ponto ou para o passador? Ângulo e distância ao ponto, meio segundo depois do passe.
 - `elevacoes.js` — elevação e apex REAIS de saída de tudo o que sai do pé.
 - `primeira.js` — jogo de primeira: situações elegíveis, quantas saem, e o que dá.
+- `jogadas.js` — cara a cara, tabelinhas e overlaps por tempo de jogo.
+- `estilos.js` — onde cada Playing Style REALMENTE está: distância à área, à bola, e abertura em x.
+- `bloco_defensivo.js <mentalidade>` — profundidade do bloco por função e por fase, absoluta e relativa à bola. Escreve no select do painel e chama o `Tatics.update()`, que é o caminho real: pôr `Tatics.estilo` à mão não chega, qualquer `update()` posterior relê o DOM.
+- `faltas.js` — cobranças: quantas chegam ao contacto, de que distância, com quanta corrida.
+- `bola_lateral.js` / `bola_morta.js` — bola parada em jogo: quanto dura o episódio, quem estava mais perto, e o que o travou.
 
 A instrumentação vive nestes scripts, a embrulhar as funções globais — o código
 de produção não leva contadores para os testes.
@@ -3498,9 +3633,25 @@ O catálogo (`PlayingStyles`, `EstiloBase`, `EstiloPorOmissao`) vive no
 - `PlayingStyleEvents.tick(bb)` — avalia as condições de cada estilo uma vez
   por equipa por frame e emite evento só quando o estado MUDA
   (`STYLE_ON`/`STYLE_OFF`), nunca todo frame.
+- `PlayingStyleTriggers` — o gatilho de cada estilo: "AGORA interessa?". É aqui
+  que se decide a FREQUÊNCIA com que um estilo existe, e por isso é o primeiro
+  sítio a medir quando um jogador "não faz o que o estilo diz". O
+  `fox_in_the_box` pedia a bola a 12 m dentro do meio-campo adversário e estava
+  ligado **2% do tempo em posse** — ver a sessão de 27/08 no topo.
+- `correCorridaDeArrasto(p, bb, s)` — a corrida do Dummy Runner como EPISÓDIO
+  (6 s, com descanso), e não como posição permanente. O relógio corre no
+  `avaliarEstilo`, que é chamado todos os frames: dentro do deslocamento — que
+  só corre com o estilo activo — uma corrida de 6 s esticava-se por 70 s,
+  congelada em cada pausa do estilo.
+- Histerese: `ESTILO_TEMPO_MINIMO` (1.2 s) segura o estilo depois de ligado.
+  Cuidado ao pendurar durações nos gatilhos — é ela que as corta.
 
-**Mexer aqui quando:** um estilo não liga/desliga quando devia, ou o toggle
-manual do painel não está a bloquear o desvio de estilo.
+Os números de afinação destes dois comportamentos vivem no
+`PlayingStyleTuning` (config.js).
+
+**Mexer aqui quando:** um estilo não liga/desliga quando devia, o toggle manual
+do painel não está a bloquear o desvio de estilo, ou um estilo está em vigor
+tempo a menos (mede-se primeiro o gatilho, não a colocação).
 
 ## `main.js` — arranque e loop
 
@@ -3604,6 +3755,12 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Colocação do penálti (fila, cobertura, árbitro) | `config.js` → `PenaltyModel`; `match.js` → ramo `PENALTY` do `setupSetPiece` |
 | Som (ambiente, apito, chute) | `ambiente_sonoro.js`, `efeitos_sonoros.js` |
 | Medir comportamento sem abrir o browser | `tools/headless/` |
+| Tabelinha, overlap, passe que isola com o guarda-redes | `config.js` → `JogadasCombinadas`; `bt/player_bt.js` → `tratarJogadaCombinada` |
+| Quanto tempo o Dummy Runner corre, e onde o Fox espera | `config.js` → `PlayingStyleTuning` |
+| Quando um Playing Style está em vigor | `playing_styles.js` → `PlayingStyleTriggers` |
+| Quão recuado o bloco fica com cada Mentalidade | `config.js` → `MentalidadeModel.blocoZ` e `.pesoNaLinha` |
+| A cobrança da falta (espera, corrida, contacto) | `config.js` → `FreeKickModel`; `player.js` → `baterFalta`/`executarFalta` |
+| Bola parada em jogo que ninguém vai buscar | `config.js` → `PerceptionModel.prazoBolaParada`; `utils.js` → `passeMorreuParaODestinatario` |
 | Física da bola, golo, linha lateral | `match.js` → `updateBall()` |
 | Guarda-redes | `player.js` → `updateGK()` |
 | Câmaras de TV | `match.js` → `updateCamera()` |

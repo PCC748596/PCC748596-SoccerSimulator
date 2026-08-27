@@ -4949,6 +4949,17 @@ const MolaDeCoesao = {
 
 const MentalidadeModel = {
     /*
+    Quanto do `blocoZ` passa para a ÂNCORA DA ÚLTIMA LINHA (ver computeBlock em
+    team_bt.js). O botão Linha Defensiva continua a ser o controlo grosso; isto
+    inclina-o com a Mentalidade.
+
+    Sem isto a Mentalidade não mexia nos defesas de todo: a âncora da traseira
+    vem do painel e tem a última palavra, e o `blocoZ` só movia o centro do
+    rectângulo.
+    */
+    pesoNaLinha: 0.5,
+
+    /*
     `tectoBloco` JÁ NÃO É LIDO pelo computeBlock: corria no fim e desfazia o
     seguimento da bola (era ele que prendia o bloco no meio-campo com a bola no
     terço de ataque). A Mentalidade fala uma vez, pelo `blocoZ`.
