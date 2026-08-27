@@ -99,6 +99,8 @@ const Match = {
     crowdExcitement: 0, crowdTimer: 0,
     currentLookTarget: null, // Usado para interpolação da câmara
     kickoffActive: false, kickoffTimer: 0, kickoffTaker: null, kickoffApoio: null,
+    // Já se apitou esta saída de bola? Ver APITO_ANTES_DA_SAIDA.
+    kickoffApitado: false,
     kickoffTeam: null, kickoffPendingPassToDef: false, kickoffPassToDefTimer: 0,
 
     // Migração por eventos (ver EventBus) — parte 1: GK. Substitui o polling
@@ -1530,6 +1532,14 @@ const Match = {
         // e aí o "taker" toca para o apoio — isso é que dá o pontapé de saída.
         this.kickoffActive = true;
         this.kickoffTimer = ESPERA_APOS_REPOSICAO;
+        /*
+        O apito da saída não é dado aqui: é dado `APITO_ANTES_DA_SAIDA`
+        segundos antes do toque, no update do kickoff. Apitar na montagem
+        punha-o os 3 s inteiros antes da bola sair — ouvia-se como um apito
+        solto, sem relação com o lance. O árbitro apita e a bola sai a
+        seguir.
+        */
+        this.kickoffApitado = false;
         this.kickoffTaker = taker;
         this.kickoffApoio = apoio;
         this.kickoffTeam = startA ? 'TeamA' : 'TeamB';
@@ -1565,6 +1575,17 @@ const Match = {
 
         if (this.kickoffActive) {
             this.kickoffTimer -= dt;
+
+            /*
+            APITO ANTES DA SAÍDA DE BOLA. Dado a `APITO_ANTES_DA_SAIDA` do
+            toque e não na montagem do kickoff: é o apito que autoriza a saída,
+            e tem de se ouvir logo antes da bola sair, não três segundos antes.
+            */
+            if (!this.kickoffApitado && this.kickoffTimer <= APITO_ANTES_DA_SAIDA) {
+                this.kickoffApitado = true;
+                if (typeof EfeitosSonoros !== 'undefined') EfeitosSonoros.apito(1.0);
+            }
+
             // Animação de idle continua (respiração/etc.), mas sem BT: os
             // alvos de movimento não mudam, por isso ninguém sai do lugar.
             this.players.forEach(p => p.update(dt));
@@ -2241,6 +2262,21 @@ const Match = {
             */
             if (typeof maosProibidasNoRecuo === 'function' &&
                 maosProibidasNoRecuo(this.recuoParaGR, gk.team)) continue;
+
+            /*
+            Bola ao alcance do CORPO. Agarrava sempre — e é quase sempre isso
+            que acontece, porque a `base.corpo` é alta e estas bolas vêm
+            mansas. Mas passa pela mesma decisão dos outros três tipos (ver
+            GkCatchModel): uma bola a 25 m/s ao corpo também escapa, e antes
+            era impossível.
+
+            `extensao` é a distância medida (`d`) sobre o alcance de 1.3 m que
+            este ramo já usa como filtro.
+            */
+            if (typeof resolverDefesaGK === 'function') {
+                gk.resolverDefesaComMaos('corpo', d / 1.3);
+                return true;
+            }
             gk.grabBall();
             return true;
         }
@@ -2924,6 +2960,8 @@ const Match = {
                     this.state = 'GOAL';
                     this.goalSequenceStage = 0;
                     this.tempoParada = 0;
+                    // Golo validado: o árbitro apita e aponta ao meio-campo.
+                    if (typeof EfeitosSonoros !== 'undefined') EfeitosSonoros.apito(1.0);
                     
                     // zSinal < 0 é a baliza do TeamA, então quem levou o golo (e sai com a bola) é o TeamA
                     this.nextKickoffTeam = (zSinal < 0) ? 'TeamA' : 'TeamB';
@@ -3211,6 +3249,16 @@ const Match = {
         Ver Officials.rotuloDaMarcacao — um estado sem nome de marcacao nao
         acende nada, e sem arbitros na cena isto nao faz nem rebenta.
         */
+        /*
+        APITO. Só o que o árbitro apita mesmo: falta e penálti. O canto, o
+        lateral e o pontapé de baliza são reposições que o jogo retoma sozinho
+        — apitar todas dava um apito a cada vinte segundos.
+        */
+        if (typeof EfeitosSonoros !== 'undefined' &&
+            (type === 'FREE_KICK' || type === 'PENALTY')) {
+            EfeitosSonoros.apito(1.0);
+        }
+
         if (typeof Officials !== 'undefined' && Officials.anunciar) {
             Officials.anunciar(Officials.rotuloDaMarcacao(type));
             // E o braco: a direccao do ataque de quem beneficia, ou a marca de

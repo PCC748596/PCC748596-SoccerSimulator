@@ -874,6 +874,9 @@ document.addEventListener("DOMContentLoaded", () => {
         actualizarAvisoDoLote();
 
         if (typeof AmbienteSonoro !== 'undefined') AmbienteSonoro.init();
+        // Apito e chute (assets/apito.mpeg, assets/chute.mpeg). Partilham o
+        // interruptor do ambiente — ver js/efeitos_sonoros.js.
+        if (typeof EfeitosSonoros !== 'undefined') EfeitosSonoros.init();
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);

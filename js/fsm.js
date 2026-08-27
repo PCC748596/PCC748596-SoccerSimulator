@@ -399,6 +399,20 @@ function executePassGameplay(p) {
 
     // `forcaPasse` é a componente HORIZONTAL; o y já foi posto acima.
     Match.ballVel.set(dirX * forcaPasse, Match.ballVel.y, dirZ * forcaPasse);
+
+    /*
+    SOM DO CHUTE. Aqui e não no `initiatePass`: este é o instante do CONTACTO
+    (o ActionState chama esta função no contactTime do clip), que é onde o som
+    tem de cair para casar com a pose. A força escala com a velocidade de
+    saída — um passe curto soa menos do que um lançamento.
+    */
+    if (typeof EfeitosSonoros !== 'undefined' && !p.semSomDeChute) {
+        EfeitosSonoros.chute(Match.ball.position, forcaPasse / 20.0);
+    }
+    // Relançamento à mão do guarda-redes: reusa esta balística mas não é um
+    // chute. Ver releaseFromHands (player.js).
+    p.semSomDeChute = false;
+
     p.hasBall = false;
     p.touchLock = BallControl.touchLock;
     if (p.role !== 'gk') {
@@ -618,6 +632,11 @@ function executeShotGameplay(p) {
         pow * Math.sin(eR),
         (distHR > 0.001 ? dzR / distHR : p.dirZ) * vhR
     );
+    // Remate: o chute mais forte que há, sempre no máximo do som.
+    if (typeof EfeitosSonoros !== 'undefined') {
+        EfeitosSonoros.chute(Match.ball.position, 1.0);
+    }
+
     p.hasBall = false; p.touchLock = BallControl.touchLock;
     Match.ballCarrier = null;
     Match.lastTouchedTeam = p.team;

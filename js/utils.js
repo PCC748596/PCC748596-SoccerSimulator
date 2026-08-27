@@ -960,7 +960,14 @@ function resolverElevacaoPasse(dist, forcarArco) {
         for (const banda of B.bandas) {
             if (dist <= banda.max) { alturaMax = banda.alturaMax; break; }
         }
-        return Math.min(Math.PI / 3, Math.atan(4 * alturaMax / dist));
+        /*
+        O tecto de altura da banda continua a mandar na FORMA, mas o ângulo
+        fica dentro da faixa de um passe (25°-35°, ver passeArco.elevMin/Max).
+        O tecto anterior eram 60°: um passe de 21 m pela banda dos 4.2 m saía
+        a 38.7°, com a parábola de um chutão.
+        */
+        return THREE.MathUtils.clamp(
+            Math.atan(4 * alturaMax / dist), B.elevMin, B.elevMax);
     }
 
     const t = THREE.MathUtils.clamp((dist - 30.0) / 30.0, 0, 1);
@@ -2028,4 +2035,113 @@ function semMarcacaoAFrente(p, opps, maxDist = 10.0, maxAngleDeg = 20.0) {
         }
     }
     return true;
+}
+
+/*
+=============================================================================
+DEFESA DO GUARDA-REDES — a decisão, num sítio só
+=============================================================================
+Ver o cabeçalho do GkCatchModel (config.js) para o porquê e para a fórmula.
+Aqui é só a conta, pura e sem dependências do jogo, para poder ser medida
+(tests/gk_defesa.test.js).
+
+    tipo        'corpo' | 'maos' | 'salto' | 'mergulho'
+    gk, tec     skills do guarda-redes
+    vChegada    velocidade da bola no instante do toque (m/s)
+    extensao    0 com a bola ao peito, 1 no limite do alcance da mão
+    altura      metros acima do peito (0 se ao peito ou abaixo)
+    rnd         injectável para os testes
+
+Devolve `{ resultado, pAgarra, pRoca, qualidade }` com resultado em
+'agarra' | 'espalma' | 'roca'.
+*/
+function resolverDefesaGK(o) {
+    const M = GkCatchModel;
+    const tipo = o.tipo || 'mergulho';
+    const base = (M.base[tipo] !== undefined) ? M.base[tipo] : M.base.mergulho;
+
+    const gk = (typeof o.gk === 'number') ? o.gk : 50;
+    const tec = (typeof o.tec === 'number') ? o.tec : 50;
+    const v = Math.max(0, o.vChegada || 0);
+    const ext = Math.max(0, Math.min(1, o.extensao || 0));
+    const alt = Math.max(0, o.altura || 0);
+
+    let pAgarra = base
+        + M.pesoGK * (gk - 50) / 50
+        + M.pesoTEC * (tec - 50) / 50
+        - M.custoVel * (v - M.vRef) / M.vRef
+        - M.custoExtensao * ext
+        - M.custoAltura * alt;
+    pAgarra = Math.max(M.minAgarra, Math.min(M.maxAgarra, pAgarra));
+
+    /*
+    ROÇAR: só em bolas rápidas e esticadas. O `rocarPesoExt` reparte a culpa
+    entre a velocidade e a extensão — uma bola a 26 m/s ao peito ainda se
+    espalma; a mesma bola na ponta dos dedos é que passa.
+    */
+    const acimaDoMin = Math.min(1, Math.max(0, v - M.rocarVMin) / M.rocarEscalaV);
+    /*
+    O `rocarMax` entra como ESCALA e não como clamp. Como clamp, tudo o que
+    fosse rápido e esticado saturava lá — e a redução por GK deixava de se
+    ver: um guarda-redes de 90 roçava tanto como um de 50.
+    */
+    let pRoca = M.rocarMax
+        * acimaDoMin
+        * ((1 - M.rocarPesoExt) + M.rocarPesoExt * ext)
+        * Math.max(0, 1 - M.rocarPorGK * (gk - 50) / 50);
+    pRoca = Math.max(0, Math.min(M.rocarMax, pRoca));
+
+    // O que sobra é espalmada. Se as duas primeiras já somam mais do que 1
+    // (guarda-redes excelente contra bola muito rápida), o roçar cede.
+    if (pAgarra + pRoca > 1) pRoca = Math.max(0, 1 - pAgarra);
+
+    const r = (o.rnd === undefined) ? Math.random() : o.rnd;
+    let resultado;
+    if (r < pAgarra) resultado = 'agarra';
+    else if (r < pAgarra + (1 - pAgarra - pRoca)) resultado = 'espalma';
+    else resultado = 'roca';
+
+    return {
+        resultado: resultado,
+        pAgarra: pAgarra,
+        pRoca: pRoca,
+        qualidade: qualidadeEspalmada(tec)
+    };
+}
+
+/*
+Qualidade da espalmada (0..1), pela TÉCNICA. É ela que decide PARA ONDE a bola
+vai — ver `destinoDaEspalmada`.
+*/
+function qualidadeEspalmada(tec) {
+    const M = GkCatchModel;
+    const t = (typeof tec === 'number') ? tec : 50;
+    return Math.max(0, Math.min(1,
+        M.qualidadeBase + M.qualidadePorTEC * (t - 50) / 50));
+}
+
+/*
+PARA ONDE VAI A ESPALMADA. Três destinos, e é isto que faz um rebote ler-se
+como rebote e uma espalmada ler-se como espalmada:
+
+    'canto'    para lá do poste ou do travessão — sai, dá canto. Só é opção
+               quando a bola já ia colocada; não se manda ao canto uma bola
+               que vem ao centro do peito.
+    'lateral'  volta ao campo mas para longe do miolo, aberta.
+    'meio'     rebote curto à frente da baliza, com o avançado a chegar. É o
+               que um guarda-redes de técnica fraca faz.
+
+O sorteio é uma escada na `qualidade`: técnica alta quase nunca larga a bola
+no meio, técnica fraca quase nunca a tira do perigo. Devolve só o NOME do
+destino — a geometria (postes, travessão) é de quem chama, que a conhece.
+*/
+function destinoDaEspalmada(o) {
+    const qualidade = Math.max(0, Math.min(1, o.qualidade || 0));
+    const podeSair = !!o.podeSair;
+    const r = (o.rnd === undefined) ? Math.random() : o.rnd;
+
+    if (podeSair && r < qualidade) return 'canto';
+    // Sem saída possível, a mesma qualidade decide entre afastar e largar.
+    if (r < qualidade) return 'lateral';
+    return (r < qualidade + (1 - qualidade) * 0.5) ? 'lateral' : 'meio';
 }

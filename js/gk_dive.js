@@ -284,47 +284,104 @@ const GkDive = {
         if (melhorMao === null || melhorDist > D.raioMao + BallPhysics.raio) return;
 
         d.tocou = true;
-        const skill = p.skillFor('GK');
-        if (Math.random() < D.apanhaBase + (skill - 50) / 100) {
+
+        /*
+        A decisão é do `resolverDefesaGK` (utils.js), a mesma para os quatro
+        tipos de defesa. O que este ramo sabe e os outros não é a EXTENSÃO: a
+        distância real da mão à bola, medida com o IK já resolvido, contra o
+        alcance de contacto. Bola no meio da luva = 0, bola na ponta dos dedos
+        = 1 — e é isso que separa agarrar de deixá-la passar a raspar.
+        */
+        const alcance = D.raioMao + BallPhysics.raio;
+        const extensao = Math.max(0, Math.min(1, melhorDist / Math.max(0.001, alcance)));
+        const decisao = resolverDefesaGK({
+            tipo: 'mergulho',
+            gk: p.skillFor('GK'),
+            tec: p.skillFor('TEC'),
+            vChegada: Match.ballVel.length(),
+            extensao: extensao,
+            altura: Math.max(0, Match.ball.position.y - GkCatchModel.alturaPeito)
+        });
+
+        Match.lastTouchedPlayer = p;
+        Match.lastTouchedTeam = p.team;
+
+        if (decisao.resultado === 'agarra') {
             d.agarrou = true;
             d.maoAgarrou = melhorMao;
             // Posse já; a pose continua a ser do mergulho até ele se levantar.
             p.grabBall(true);
-        } else {
-            /*
-            Espalmada. A colocação do remate decide para onde: encostado ao
-            poste ou por cima do ombro não há como devolver ao campo — vai
-            para fora, e é canto. Ver as notas de `espalmarForaMargem` em
-            GoalkeeperDive.
-            */
-            const bola = Match.ball.position;
-            const folgaPoste = (LARGURA_BALIZA / 2) - Math.abs(bola.x);
-            const alta = bola.y > D.espalmarAltaY;
-            const paraFora = alta || (folgaPoste < D.espalmarForaMargem);
-
-            if (paraFora) {
-                if (alta) {
-                    bola.y = ALTURA_BALIZA + D.espalmarFolga;
-                    Match.ballVel.y = Math.max(Match.ballVel.y, D.espalmarSubida);
-                } else {
-                    // Lado do poste onde ela ia: o do próprio remate, e não o
-                    // do mergulho — em bola central o `dirX` desempata.
-                    const ladoPoste = Math.sign(bola.x) || d.dirX || 1;
-                    bola.x = ladoPoste * ((LARGURA_BALIZA / 2) + D.espalmarFolga);
-                    Match.ballVel.x = ladoPoste * D.espalmarLateral;
-                    Match.ballVel.y = Math.max(Match.ballVel.y, 2.0);
-                }
-                // Sentido de z MANTIDO: atravessa a linha de fundo por fora.
-                Match.ballVel.z *= D.espalmarForaZ;
-            } else {
-                // Para o lado e para cima, de volta ao campo.
-                Match.ballVel.z *= -0.5;
-                Match.ballVel.x += d.dirX * (4 + Math.random() * 6);
-                Match.ballVel.y += 3;
-            }
-            Match.lastTouchedPlayer = p;
-            Match.lastTouchedTeam = p.team;
+            return;
         }
+
+        if (decisao.resultado === 'roca') {
+            /*
+            ROÇAR: tocou-lhe e ela segue. Trava-a um nada e desvia-a o mínimo —
+            o suficiente para o toque contar (é ele que decide canto ou tiro de
+            meta se ela sair), não para a tirar da baliza.
+            */
+            const M = GkCatchModel;
+            Match.ballVel.multiplyScalar(M.rocarTravagem);
+            Match.ballVel.x += d.dirX * (Math.random() * M.rocarDesvioMax);
+            Match.ballVel.y += Math.random() * M.rocarDesvioMax * 0.5;
+            return;
+        }
+
+        this.espalmar(p, d, decisao.qualidade);
+    },
+
+    /*
+    A ESPALMADA, e para onde ela vai — decidido pela TÉCNICA (ver
+    `destinoDaEspalmada` em utils.js), não à sorte como antes.
+
+        canto     bola já colocada perto do poste ou por cima do ombro: sai
+                  pela linha de fundo por fora da armação.
+        lateral   volta ao campo, mas aberta e longe do miolo.
+        meio      rebote curto à frente da baliza — o que um guarda-redes de
+                  técnica fraca deixa, e a razão de haver recargas.
+
+    No caso 'canto' a POSIÇÃO da bola é empurrada para fora da moldura no
+    mesmo instante: a mão está na linha de golo, e sem isso ela atravessava o
+    plano ainda dentro dos postes nos milissegundos seguintes — golo.
+    */
+    espalmar(p, d, qualidade) {
+        const D = GoalkeeperDive;
+        const bola = Match.ball.position;
+        const folgaPoste = (LARGURA_BALIZA / 2) - Math.abs(bola.x);
+        const alta = bola.y > D.espalmarAltaY;
+
+        const destino = destinoDaEspalmada({
+            qualidade: qualidade,
+            podeSair: alta || (folgaPoste < D.espalmarForaMargem)
+        });
+
+        if (destino === 'canto') {
+            if (alta) {
+                bola.y = ALTURA_BALIZA + D.espalmarFolga;
+                Match.ballVel.y = Math.max(Match.ballVel.y, D.espalmarSubida);
+            } else {
+                // Lado do poste onde ela ia: o do próprio remate, e não o do
+                // mergulho — em bola central o `dirX` desempata.
+                const ladoPoste = Math.sign(bola.x) || (d && d.dirX) || 1;
+                bola.x = ladoPoste * ((LARGURA_BALIZA / 2) + D.espalmarFolga);
+                Match.ballVel.x = ladoPoste * D.espalmarLateral;
+                Match.ballVel.y = Math.max(Match.ballVel.y, 2.0);
+            }
+            // Sentido de z MANTIDO: atravessa a linha de fundo por fora.
+            Match.ballVel.z *= D.espalmarForaZ;
+        } else if (destino === 'lateral') {
+            // Para o lado e para cima, de volta ao campo mas longe do miolo.
+            Match.ballVel.z *= -0.5;
+            Match.ballVel.x += (d ? d.dirX : 1) * (6 + Math.random() * 6);
+            Match.ballVel.y += 3;
+        } else {
+            // Rebote curto: fica à frente da baliza, disputável.
+            Match.ballVel.z *= -0.30;
+            Match.ballVel.x = Match.ballVel.x * 0.3 + (Math.random() - 0.5) * 3;
+            Match.ballVel.y += 1.5;
+        }
+        Match.lastTouchedPlayer = p;
+        Match.lastTouchedTeam = p.team;
     },
 
     // --- Poses ---------------------------------------------------------

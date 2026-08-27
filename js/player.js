@@ -939,6 +939,11 @@ class FootballPlayer {
 
                 Match.ballVel.set((dx / distH) * vh, pow * Math.sin(elev), (dz / distH) * vh);
 
+                // Penálti: chuta-se a matar, e o som acompanha.
+                if (typeof EfeitosSonoros !== 'undefined') {
+                    EfeitosSonoros.chute(Match.ball.position, 1.0);
+                }
+
                 this.hasBall = false;
                 this.touchLock = BallControl.touchLock;
                 Match.ballCarrier = null;
@@ -1918,6 +1923,9 @@ class FootballPlayer {
         this.isThroughBall = false;
         this.isCross = false;
         this.cosCorpoNoPasse = 1.0;
+        // A bola sai da MÃO: o executePassGameplay é partilhado, o som do
+        // chute não se aplica.
+        this.semSomDeChute = true;
 
         executePassGameplay(this);
 
@@ -1957,6 +1965,11 @@ class FootballPlayer {
         const horiz = v * Math.cos(elev);
         _v2.set(0, 0, this.dirZ).applyAxisAngle(_vUp, desvio);
         Match.ballVel.set(_v2.x * horiz, v * Math.sin(elev), _v2.z * horiz);
+
+        // Chutão do guarda-redes: pé cheio.
+        if (typeof EfeitosSonoros !== 'undefined') {
+            EfeitosSonoros.chute(Match.ball.position, 1.0);
+        }
 
         this.hasBall = false;
         this.touchLock = BallControl.touchLock;
@@ -3972,14 +3985,13 @@ class FootballPlayer {
 
             const jaEntrouM = (Match.state !== 'PLAY');
             if (!jaEntrouM && distMaoM < 1.3 && Match.ballVel.lengthSq() > 0) {
-                // Bola ao alcance do corpo é defesa mais fácil do que um
-                // mergulho esticado: agarra com mais frequência.
-                const catchChanceM = 0.55 + (gkSkillM - 50) / 100;
-                if (Math.random() < catchChanceM) {
-                    this.grabBall();
-                } else {
-                    Match.ballVel.z *= -0.4; Match.ballVel.x += (Math.random() - 0.5) * 6; Match.ballVel.y += 2;
-                }
+                /*
+                Bola ao alcance do corpo, de pé. A decisão sai do
+                `resolverDefesaGK` (utils.js), a mesma dos outros três tipos —
+                aqui estava `0.55 + (GK-50)/100`, sem saber a que velocidade a
+                bola vinha nem quão esticado ele estava.
+                */
+                this.resolverDefesaComMaos('maos', distMaoM / 1.3);
             }
 
             /*
@@ -4079,12 +4091,8 @@ class FootballPlayer {
             
             const jaEntrouSalto = (Match.state !== 'PLAY');
             if (!jaEntrouSalto && t < 0.7 && distMaoSalto < 1.4 && Match.ballVel.lengthSq() > 0) {
-                let catchChance = 0.4 + (gkSkill - 50) / 80;
-                if (Math.random() < catchChance) {
-                    this.grabBall();
-                } else {
-                    Match.ballVel.z *= -0.4; Match.ballVel.x += (Math.random() - 0.5) * 8; Match.ballVel.y += 2;
-                }
+                // No ar, a agarrar por cima: ver resolverDefesaComMaos.
+                this.resolverDefesaComMaos('salto', distMaoSalto / 1.4);
             }
         } else if (this.gkEstado === 'apanhar') {
             // Bola mansa/rolando: pára, agacha e apanha — sem deslizar.
@@ -4354,6 +4362,58 @@ class FootballPlayer {
             this.velocity.set(gkCorpo.position.x - prevX, 0, gkCorpo.position.z - prevZ).multiplyScalar(1 / dt);
         } else if (this.gkEstado !== 'idle') {
             this.velocity.set(0, 0, 0);
+        }
+    }
+
+    /*
+    DEFESA COM AS MÃOS, de pé ou em salto — a decisão e o que ela faz à bola.
+
+    Os dois ramos que chamam isto tinham cada um a sua fórmula (`0.55 +
+    (GK-50)/100` e `0.4 + (GK-50)/80`), nenhuma a olhar para a velocidade da
+    bola nem para a extensão do braço, e o rebote saía sempre na mesma
+    direcção aleatória. Agora é o `resolverDefesaGK` (utils.js), o mesmo do
+    mergulho, e o destino do rebote sai da TÉCNICA.
+
+    `extensao` 0..1: 0 com a bola no meio das luvas, 1 no limite do alcance.
+    */
+    resolverDefesaComMaos(tipo, extensao) {
+        const decisao = resolverDefesaGK({
+            tipo: tipo,
+            gk: this.skillFor('GK'),
+            tec: this.skillFor('TEC'),
+            vChegada: Match.ballVel.length(),
+            extensao: extensao,
+            altura: Math.max(0, Match.ball.position.y - GkCatchModel.alturaPeito)
+        });
+
+        Match.lastTouchedPlayer = this;
+        Match.lastTouchedTeam = this.team;
+
+        if (decisao.resultado === 'agarra') {
+            this.grabBall();
+            return;
+        }
+
+        if (decisao.resultado === 'roca') {
+            // Tocou-lhe e ela segue — ver GkCatchModel.
+            const M = GkCatchModel;
+            Match.ballVel.multiplyScalar(M.rocarTravagem);
+            Match.ballVel.x += (Math.random() - 0.5) * M.rocarDesvioMax;
+            Match.ballVel.y += Math.random() * M.rocarDesvioMax * 0.5;
+            return;
+        }
+
+        /*
+        Espalmada: a geometria é a mesma do mergulho, portanto reusa-se o
+        `GkDive.espalmar`. Sem `dive` (aqui ele está de pé) o lado sai do sinal
+        do x da bola, tratado lá dentro.
+        */
+        if (typeof GkDive !== 'undefined' && GkDive.espalmar) {
+            GkDive.espalmar(this, this.dive || null, decisao.qualidade);
+        } else {
+            Match.ballVel.z *= -0.4;
+            Match.ballVel.x += (Math.random() - 0.5) * 6;
+            Match.ballVel.y += 2;
         }
     }
 

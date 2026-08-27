@@ -829,15 +829,18 @@ const ThrowInModel = {
     sozinho com meio campo a frente.
 
     `apoioQuantos` mais proximos sao puxados para a faixa `apoioMin`..
-    `apoioMax` em volta dele. Tres e o numero que cobre as opcoes sem esvaziar
-    o resto do campo: perto de uma linha lateral sao tipicamente o central, o
-    medio e o extremo desse lado, que e quem la esta.
+    `apoioMax` em volta dele.
+
+    DOIS, e nao tres. A tres via-se meia equipa a convergir para a mesma linha
+    lateral — o batedor com tres companheiros a cinco metros e o resto do campo
+    vazio. Dois chegam para dar as duas opcoes que um lateral tem: o apoio
+    curto e a linha de fuga.
 
     A faixa e a distancia util de um lateral curto: abaixo de `apoioMin` estao
     em cima do batedor e nao abrem linha nenhuma; acima de `apoioMax` ja e um
     lancamento longo, que tem os seus proprios problemas de precisao.
     */
-    apoioQuantos: 3,
+    apoioQuantos: 2,
     apoioMin: 5.0,
     apoioMax: 10.0,
 
@@ -1013,6 +1016,14 @@ pequena área (ver golKickBolaAlvo em match.js) — antes disso a reposição ai
 não terminou.
 */
 const ESPERA_APOS_REPOSICAO = 3.0;
+
+/*
+Segundos entre o APITO do árbitro e a saída de bola. O apito autoriza a saída,
+portanto tem de vir ANTES dela — e perto: dado na montagem do kickoff ficava os
+3 s inteiros à frente do toque e lia-se como um apito solto, sem relação com o
+lance. Ver o ramo `kickoffActive` no Match.update.
+*/
+const APITO_ANTES_DA_SAIDA = 1.0;
 
 /*
 Duração e escala do relógio de jogo:
@@ -1774,7 +1785,9 @@ const PassModel = {
     elevacaoCurta: 24 * Math.PI / 180,
     elevacaoLonga: 25 * Math.PI / 180,
     elevacaoCruzamento: 22 * Math.PI / 180,
-    elevacaoLancamento: 24 * Math.PI / 180,
+    // Recurso do lançamento alto quando o resolverElevacaoPasse não dá ângulo:
+    // dentro da mesma faixa de 25°-35° (ver passeArco).
+    elevacaoLancamento: 25 * Math.PI / 180,
 
     /*
     --- Os três tipos de bola alta ------------------------------------------
@@ -1823,8 +1836,33 @@ const PassModel = {
             { max: 20.0, alturaMax: 1.5 },
             { max: 30.0, alturaMax: 4.2 }
         ],
-        anguloLongoMin: 32 * Math.PI / 180,
-        anguloLongoMax: 42 * Math.PI / 180
+
+        /*
+        FAIXA DE ELEVAÇÃO DE TODO O PASSE PELO ALTO — 25° a 35°.
+
+        Um passe pelo alto é um passe: sai do peito do pé com o corpo por cima
+        da bola. Acima dos ~35° já é um pontapé de recurso, e era isso que se
+        via — passes com a mesma parábola de um chutão de guarda-redes.
+
+        Havia três caminhos a escolher elevação e nenhum tinha esta faixa:
+
+          bandas (<=30 m)   `atan(4·alturaMax/dist)` com tecto de 60°. Um
+                            passe de 21 m pela banda dos 4.2 m dava 38.7°.
+          longo (>30 m)     interpolava entre 42° e 32°.
+          encontro          o `elevacaoParaTempoDeVoo` (utils.js) tinha
+                            limites próprios de 12° a 55°, e quando o receptor
+                            demorava a chegar ele ia buscar os 55° para
+                            atrasar a bola. É o mais alto dos três.
+
+        Agora os três apertam-se aqui. O tempo do encontro continua a resolver-
+        se pelo ângulo — só que dentro da faixa de um passe, e o que não couber
+        resolve-se onde deve, na força.
+        */
+        elevMin: 25 * Math.PI / 180,
+        elevMax: 35 * Math.PI / 180,
+
+        anguloLongoMin: 25 * Math.PI / 180,
+        anguloLongoMax: 35 * Math.PI / 180
     },
 
     /*
@@ -1903,8 +1941,16 @@ const PassModel = {
         rasteiro com pretensões; acima de 55° é uma bola que fica no ar tanto
         tempo que qualquer defesa lá chega.
         */
-        elevMin: 12 * Math.PI / 180,
-        elevMax: 55 * Math.PI / 180
+        /*
+        A faixa é a MESMA do resto dos passes pelo alto (passeArco.elevMin/Max,
+        25°-35°). Estava em 12°-55°, e era o pior dos três caminhos: quando o
+        receptor demorava a chegar, o encontro ia buscar os 55° para atrasar a
+        bola — o passe saía com a parábola de um chutão de guarda-redes. Dentro
+        da faixa o ângulo ainda ajusta o tempo; o que não couber resolve-se na
+        força, onde deve.
+        */
+        elevMin: 25 * Math.PI / 180,
+        elevMax: 35 * Math.PI / 180
     },
 
     /*
@@ -4263,7 +4309,8 @@ const GoalkeeperDive = {
 
     fracContacto: 0.55,    // fracção do voo em que a mão deve chegar ao alvo
     raioMao: 0.42,         // raio de contacto da mão com a bola
-    apanhaBase: 0.35,      // probabilidade base de AGARRAR (senão espalma)
+    // `apanhaBase` saiu daqui: quem decide agarrar/espalmar/roçar é o
+    // GkCatchModel (mais abaixo), para os quatro tipos de defesa.
 
     /*
     ESPALMADA PARA FORA. A espalmada devolvia SEMPRE a bola ao campo
@@ -4291,6 +4338,112 @@ const GoalkeeperDive = {
     coxaVoo: -0.25, joelhoVoo: 0.55, aberturaVoo: 0.18,
 
     pesoIK: 0.45           // suavização do IK dos braços por frame
+};
+
+/*
+=============================================================================
+DEFESA DO GUARDA-REDES — agarrar, espalmar, ou só roçar
+=============================================================================
+Havia TRÊS fórmulas para a mesma pergunta, cada uma escondida no seu ramo, com
+bases e declives diferentes:
+
+    mergulho (gk_dive.js)   0.35 + (GK − 50) / 100
+    mãos ao corpo (player)  0.55 + (GK − 50) / 100
+    salto alto (player)     0.40 + (GK − 50) /  80
+    corpo (match.js)        agarra SEMPRE
+
+Nenhuma sabia a que velocidade a bola vinha, nenhuma sabia se a mão estava ao
+peito ou na ponta dos dedos, e nenhuma usava a TÉCNICA. Um remate a 26 m/s na
+ponta dos dedos era tratado como um passe atrasado ao peito.
+
+    P(agarrar) = base[tipo]
+               + pesoGK  · (GK  − 50)/50
+               + pesoTEC · (TEC − 50)/50
+               − custoVel      · (v − vRef)/vRef
+               − custoExtensao · extensao
+               − custoAltura   · alturaAcimaDoPeito
+
+`extensao` é 0 com a bola ao peito e 1 no limite do alcance da mão. É a
+variável que mais faltava: uma bola na ponta dos dedos não se segura, por
+melhor que seja o guarda-redes.
+
+GK pesa pouco mais do dobro da TEC: a especialidade decide, a técnica é a mão
+que fecha em cima.
+
+TRÊS RESULTADOS, e o terceiro é o que faltava para o jogo ter rebotes a sério:
+
+    agarra    fica com ela, jogo parado
+    espalma   desvia-a; para onde depende da TÉCNICA (ver `qualidadeEspalmada`)
+    roça      toca-lhe e ela segue quase na mesma — a defesa que não chega a
+              ser defesa. Só aparece em bolas rápidas e no limite do alcance,
+              que é onde acontece mesmo.
+
+CALIBRAÇÃO: com um guarda-redes médio (GK 50, TEC 50) contra um remate médio
+(v = vRef, extensão 0.5), a média dos quatro tipos dá ~65% de bolas agarradas.
+Ver tests/gk_defesa.test.js, que mede isso e falha se sair da faixa.
+=============================================================================
+*/
+const GkCatchModel = {
+    /*
+    Probabilidade base por TIPO de defesa, a v = vRef e extensão 0. É a mesma
+    estrutura que as quatro fórmulas antigas tinham, agora explícita e com o
+    mesmo declive para todas.
+    */
+    base: {
+        corpo: 0.98,      // bola mansa ao corpo, dentro da área
+        maos: 0.90,       // de pé, bola perto do tronco
+        salto: 0.80,      // no ar, cruzamento ou bola alta
+        mergulho: 0.68    // esticado, o mais difícil de segurar
+    },
+
+    pesoGK: 0.30,         // amplitude entre GK 0 e GK 100
+    pesoTEC: 0.12,        // idem para a Técnica
+
+    /*
+    Velocidade de referência: um remate normal. Acima disto perde-se agarro,
+    abaixo ganha-se — é o que separa segurar um passe atrasado de segurar um
+    tiro.
+    */
+    vRef: 18.0,
+    custoVel: 0.22,
+
+    // Altura do peito do guarda-redes: é daqui para cima que a bola começa a
+    // custar a segurar (acima da cabeça agarra-se com as pontas dos dedos).
+    alturaPeito: 1.20,
+
+    // Extensão do braço (0 ao peito, 1 no limite) e altura acima do peito.
+    custoExtensao: 0.40,
+    custoAltura: 0.10,
+
+    // Nunca é certo nem impossível.
+    minAgarra: 0.05,
+    maxAgarra: 0.95,
+
+    /*
+    ROÇAR. Cresce com a velocidade acima de `rocarVMin` e com a extensão — a
+    bola que passa a raspar na luva. Um guarda-redes melhor transforma mais
+    roçares em espalmadas.
+    */
+    rocarVMin: 15.0,
+    rocarEscalaV: 14.0,   // m/s acima do mínimo para saturar
+    rocarPesoExt: 0.6,    // quanto a extensão pesa (o resto é a velocidade)
+    rocarMax: 0.35,
+    rocarPorGK: 0.60,     // reducao multiplicativa: GK 100 roca 60% menos
+
+    // Desvio que um roçar dá à bola: quase nada, é isso que o define.
+    rocarTravagem: 0.92,  // multiplicador da velocidade
+    rocarDesvioMax: 1.2,  // m/s de desvio lateral
+
+    /*
+    QUALIDADE DA ESPALMADA, pela TÉCNICA. Decide PARA ONDE ela vai:
+
+        alta   para fora (canto) ou para a lateral, longe do miolo
+        baixa  rebote curto para o meio da área, com o avançado a chegar
+
+    Era aleatória, e por isso não havia nem uma coisa nem outra de propósito.
+    */
+    qualidadeBase: 0.50,
+    qualidadePorTEC: 0.45
 };
 
 const SaltoCabeceio = {
