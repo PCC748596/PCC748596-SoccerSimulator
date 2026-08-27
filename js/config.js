@@ -2177,6 +2177,19 @@ const GoalkeeperPose = {
         altura: -0.05
     },
 
+    // Posição para defender o penálti (Match.state === 'PENALTY'):
+    // Um pouco agachado, joelhos para a frente, tronco direito (não inclinado).
+    penalti: {
+        chest: 0.0,
+        joelho: 0.60,
+        coxa: 0.30,
+        abertura: 0.15,
+        bracoZ: 0.75,
+        bracoX: -0.35,
+        cotovelo: -0.35,
+        altura: -0.15
+    },
+
     // Sem perigo: descontraído, praticamente direito.
     repouso: {
         chest: 0.05,

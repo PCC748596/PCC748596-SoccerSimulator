@@ -3634,7 +3634,12 @@ class FootballPlayer {
                 const balanco = Math.sin(t * Math.PI * 4) * 0.04;
                 gkCorpo.position.y = lerpTo(gkCorpo.position.y, ALTURA_BASE_Y + P.altura + balanco, 0.2);
             } else {
-                const P = emAlerta ? GoalkeeperPose.espera : GoalkeeperPose.repouso;
+                let P;
+                if (Match.state === 'PENALTY') {
+                    P = GoalkeeperPose.penalti;
+                } else {
+                    P = emAlerta ? GoalkeeperPose.espera : GoalkeeperPose.repouso;
+                }
 
                 gkRig.lLeg.rotation.x = lerpTo(gkRig.lLeg.rotation.x, P.coxa, 0.2);
                 gkRig.rLeg.rotation.x = lerpTo(gkRig.rLeg.rotation.x, P.coxa, 0.2);
