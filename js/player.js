@@ -764,143 +764,187 @@ class FootballPlayer {
     `gkDelayReacao = 0`, posto no setupSetPiece.
     */
     baterPenalti() {
-        const PM = PenaltyModel;
-        Match.state = 'PLAY';
-
-        // Oponentes e GK
-        const defendingPlayers = (this.team === 'TeamA') ? Match.opponents : Match.players;
-        const gk = defendingPlayers.find(p => p.role === 'gk');
-        const gkSkill = gk ? gk.skillFor('GK') : 50;
-        const tec = this.skillFor('TEC');
-
-        // Duelos de D10
-        const d10Taker = Math.floor(Math.random() * 10) + 1;
-        const d10GK = Math.floor(Math.random() * 10) + 1;
-        const diff = (tec + d10Taker) - (gkSkill + d10GK);
-
-        // Grid 9x5
-        const colsX = [4.16, 3.66, 2.928, 1.464, 0, -1.464, -2.928, -3.66, -4.16];
-        const rowsY = [0.406, 1.22, 2.033, 2.44, 2.94];
+        const shotDuration = (typeof ShotClip !== 'undefined' && ShotClip.duration) ? ShotClip.duration : 0.8;
+        const contactTime = (typeof ActionAnimClips !== 'undefined' && ActionAnimClips['shot']) 
+            ? ActionAnimClips['shot'].contactTime 
+            : (7 / 11);
         
-        const colsGol = [2, 3, 4, 5, 6];
-        const colsGolCantos = [2, 3, 5, 6]; // Sem o meio (4) para evitar defesas sempre ao centro
-        const rowsGol = [0, 1, 2];
-        const colsTrave = [1, 7];
-        const rowTrave = 3;
-        const colsFora = [0, 8];
-        const rowFora = 4;
+        const startZ = this.model.position.z;
+        const targetZ = Match.ball.position.z - this.dirZ * 0.5;
 
-        const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-        const oppositeCol = (c) => {
-            if (c <= 3) return pick([5, 6, 7, 8]);
-            if (c >= 5) return pick([0, 1, 2, 3]);
-            return pick([1, 2, 6, 7]);
-        };
+        this.actionState = new ActionState('shot', {
+            onPrepare: (ctx, norm) => {
+                const progress = norm / contactTime;
+                this.model.position.z = startZ + (targetZ - startZ) * progress;
+            },
+            onContact: () => {
+                const PM = PenaltyModel;
+                Match.state = 'PLAY';
 
-        let targetCol, targetRow, gkDiveCol;
+                // Oponentes e GK
+                const defendingPlayers = (this.team === 'TeamA') ? Match.opponents : Match.players;
+                const gk = defendingPlayers.find(p => p.role === 'gk');
+                const gkSkill = gk ? gk.skillFor('GK') : 50;
+                const tec = this.skillFor('TEC');
 
-        if (diff > 5) {
-            targetCol = pick([2, 6]);
-            targetRow = 2;
-            gkDiveCol = oppositeCol(targetCol);
-        } else if (diff >= 3 && diff <= 5) {
-            targetCol = (Math.random() < 0.15) ? 4 : pick(colsGolCantos);
-            targetRow = pick(rowsGol);
-            gkDiveCol = oppositeCol(targetCol);
-        } else if (diff === 1 || diff === 2) {
-            if (Math.random() < 0.25) {
-                targetCol = pick(colsGolCantos);
-                targetRow = rowTrave;
-            } else {
-                targetCol = pick(colsTrave);
-                targetRow = pick(rowsGol);
+                // Duelos de D10
+                const d10Taker = Math.floor(Math.random() * 10) + 1;
+                const d10GK = Math.floor(Math.random() * 10) + 1;
+                const diff = (tec + d10Taker) - (gkSkill + d10GK);
+
+                // Grid 9x5
+                const colsX = [4.16, 3.66, 2.928, 1.464, 0, -1.464, -2.928, -3.66, -4.16];
+                const rowsY = [0.406, 1.22, 2.033, 2.44, 2.94];
+                
+                const colsGol = [2, 3, 4, 5, 6];
+                const colsGolCantos = [2, 3, 5, 6]; // Sem o meio (4) para evitar defesas sempre ao centro
+                const rowsGol = [0, 1, 2];
+                const colsTrave = [1, 7];
+                const rowTrave = 3;
+                const colsFora = [0, 8];
+                const rowFora = 4;
+
+                const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+                const oppositeCol = (c) => {
+                    if (c <= 3) return pick([5, 6, 7, 8]);
+                    if (c >= 5) return pick([0, 1, 2, 3]);
+                    return pick([1, 2, 6, 7]);
+                };
+
+                let targetCol, targetRow, gkDiveCol;
+
+                if (diff > 5) {
+                    targetCol = pick([2, 6]);
+                    targetRow = 2;
+                    gkDiveCol = oppositeCol(targetCol);
+                } else if (diff >= 3 && diff <= 5) {
+                    targetCol = (Math.random() < 0.15) ? 4 : pick(colsGolCantos);
+                    targetRow = pick(rowsGol);
+                    gkDiveCol = oppositeCol(targetCol);
+                } else if (diff === 1 || diff === 2) {
+                    if (Math.random() < 0.25) {
+                        targetCol = pick(colsGolCantos);
+                        targetRow = rowTrave;
+                    } else {
+                        targetCol = pick(colsTrave);
+                        targetRow = pick(rowsGol);
+                    }
+                    gkDiveCol = oppositeCol(targetCol);
+                } else if (diff <= 0 && diff >= -2) {
+                    targetCol = pick(colsTrave);
+                    targetRow = pick(rowsGol);
+                    gkDiveCol = oppositeCol(targetCol);
+                    if (Math.random() < 0.25) {
+                        targetCol = pick(colsGolCantos);
+                        targetRow = rowTrave;
+                    }
+                } else if (diff === -3 || diff === -4) {
+                    if (Math.random() > 0.5) {
+                        targetCol = pick(colsFora);
+                        targetRow = pick([0, 1, 2, 3, 4]);
+                    } else {
+                        targetCol = pick(colsGolCantos.concat(colsTrave));
+                        targetRow = rowFora;
+                    }
+                    gkDiveCol = oppositeCol(targetCol);
+                } else {
+                    // Defesa do Guarda-redes (diff <= -5)
+                    // Muito menos defesas no meio do gol (15% de chance de ir ao meio)
+                    targetCol = (Math.random() < 0.15) ? 4 : pick(colsGolCantos);
+                    targetRow = pick(rowsGol);
+                    gkDiveCol = targetCol;
+                }
+
+                /*
+                DEFESA. Fora do ramo `diff <= -5` o `gkDiveCol` era SEMPRE o
+                lado contrário ao do remate: o guarda-redes atirava-se de
+                propósito para o lado errado e não havia defesa nenhuma abaixo
+                dos -5 de diferença. Um penálti bem batido acabava sempre em
+                golo, trave ou fora — nunca numa mão.
+
+                Agora cada banda de `diff` tem uma probabilidade de ele ir ao
+                sítio CERTO (PenaltyModel.chanceDefesa). Só conta quando o
+                remate ia mesmo para dentro da baliza: quem vai à trave ou por
+                cima resolve-se sozinho, e mandar o guarda-redes lá era
+                inventar uma defesa que não existiu.
+
+                Se ele lá chega e toca, o desfecho — agarrar ou espalmar, e a
+                espalmada para o campo ou para canto — é do GkDive.
+                */
+                const alvoNaBaliza = colsGol.includes(targetCol) && rowsGol.includes(targetRow);
+                if (alvoNaBaliza && gkDiveCol !== targetCol) {
+                    const CD = PM.chanceDefesa || {};
+                    let pDef = 0;
+                    if (diff > 5) pDef = CD.perfeito || 0;
+                    else if (diff >= 3) pDef = CD.bom || 0;
+                    else if (diff >= 1) pDef = CD.medio || 0;
+                    else pDef = CD.fraco || 0;
+                    if (Math.random() < pDef) gkDiveCol = targetCol;
+                }
+
+                let alvoX = colsX[targetCol];
+                let alvoY = rowsY[targetRow];
+
+                if (colsTrave.includes(targetCol)) {
+                    // A trave física está em 3.66. Para realmente bater nela e causar o impacto,
+                    // o alvo precisa estar quase exatamente em cima dela.
+                    if (diff > 0) {
+                        // Entra (rasando a trave por dentro)
+                        alvoX += (alvoX > 0) ? -0.14 : 0.14; 
+                    } else if (diff === 0) {
+                        // Bate em cheio na trave (chance de entrar ou sair)
+                        alvoX += (Math.random() * 0.08 - 0.04);
+                    } else {
+                        // Bate na trave por fora ou vai direto para fora
+                        alvoX += (alvoX > 0) ? (0.05 + Math.random() * 0.08) : -(0.05 + Math.random() * 0.08);
+                    }
+                }
+                
+                if (targetRow === rowTrave) {
+                    // O travessão físico está em 2.44.
+                    if (diff > 0) {
+                        // Entra (rasando o travessão por baixo)
+                        alvoY -= 0.14;
+                    } else if (diff === 0) {
+                        // Bate em cheio no travessão
+                        alvoY += (Math.random() * 0.08 - 0.04);
+                    } else {
+                        // Bate no travessão por cima ou vai direto para fora
+                        alvoY += (0.05 + Math.random() * 0.08);
+                    }
+                }
+
+                if (gk) {
+                    gk.isPenaltyDive = true;
+                    gk.penaltyDiveX = colsX[gkDiveCol];
+                    gk.penaltyDiveY = (gkDiveCol === targetCol) ? alvoY : rowsY[targetRow];
+                }
+
+                const golZ = this.targetGoalZ;
+                const dx = alvoX - Match.ball.position.x;
+                const dz = golZ - Match.ball.position.z;
+                const distH = Math.hypot(dx, dz) || 1;
+
+                const pow = PM.potencia;
+                const elev = (typeof elevacaoParaAlvo === 'function')
+                    ? elevacaoParaAlvo(distH, alvoY - BallPhysics.raio, pow)
+                    : Math.atan2(alvoY, distH);
+                const vh = pow * Math.cos(elev);
+
+                Match.ballVel.set((dx / distH) * vh, pow * Math.sin(elev), (dz / distH) * vh);
+
+                this.hasBall = false;
+                this.touchLock = BallControl.touchLock;
+                Match.ballCarrier = null;
+                Match.intendedReceiver = null;
+                Match.lastTouchedTeam = this.team;
+                Match.lastTouchedPlayer = this;
+                window.bolaChutada = true;
+                if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
+                if (typeof EventBus !== 'undefined') EventBus.emit('PENALTY_TAKEN', { team: this.team, p: this });
             }
-            gkDiveCol = oppositeCol(targetCol);
-        } else if (diff <= 0 && diff >= -2) {
-            targetCol = pick(colsTrave);
-            targetRow = pick(rowsGol);
-            gkDiveCol = oppositeCol(targetCol);
-            if (Math.random() < 0.25) {
-                targetCol = pick(colsGolCantos);
-                targetRow = rowTrave;
-            }
-        } else if (diff === -3 || diff === -4) {
-            if (Math.random() > 0.5) {
-                targetCol = pick(colsFora);
-                targetRow = pick([0, 1, 2, 3, 4]);
-            } else {
-                targetCol = pick(colsGolCantos.concat(colsTrave));
-                targetRow = rowFora;
-            }
-            gkDiveCol = oppositeCol(targetCol);
-        } else {
-            // Defesa do Guarda-redes (diff <= -5)
-            // Muito menos defesas no meio do gol (15% de chance de ir ao meio)
-            targetCol = (Math.random() < 0.15) ? 4 : pick(colsGolCantos);
-            targetRow = pick(rowsGol);
-            gkDiveCol = targetCol;
-        }
-
-        let alvoX = colsX[targetCol];
-        let alvoY = rowsY[targetRow];
-
-        if (colsTrave.includes(targetCol)) {
-            // A trave física está em 3.66. Para realmente bater nela e causar o impacto,
-            // o alvo precisa estar quase exatamente em cima dela.
-            if (diff > 0) {
-                // Entra (rasando a trave por dentro)
-                alvoX += (alvoX > 0) ? -0.14 : 0.14; 
-            } else if (diff === 0) {
-                // Bate em cheio na trave (chance de entrar ou sair)
-                alvoX += (Math.random() * 0.08 - 0.04);
-            } else {
-                // Bate na trave por fora ou vai direto para fora
-                alvoX += (alvoX > 0) ? (0.05 + Math.random() * 0.08) : -(0.05 + Math.random() * 0.08);
-            }
-        }
-        
-        if (targetRow === rowTrave) {
-            // O travessão físico está em 2.44.
-            if (diff > 0) {
-                // Entra (rasando o travessão por baixo)
-                alvoY -= 0.14;
-            } else if (diff === 0) {
-                // Bate em cheio no travessão
-                alvoY += (Math.random() * 0.08 - 0.04);
-            } else {
-                // Bate no travessão por cima ou vai direto para fora
-                alvoY += (0.05 + Math.random() * 0.08);
-            }
-        }
-
-        if (gk) {
-            gk.isPenaltyDive = true;
-            gk.penaltyDiveX = colsX[gkDiveCol];
-            gk.penaltyDiveY = (gkDiveCol === targetCol) ? alvoY : rowsY[targetRow];
-        }
-
-        const golZ = this.targetGoalZ;
-        const dx = alvoX - Match.ball.position.x;
-        const dz = golZ - Match.ball.position.z;
-        const distH = Math.hypot(dx, dz) || 1;
-
-        const pow = PM.potencia;
-        const elev = (typeof elevacaoParaAlvo === 'function')
-            ? elevacaoParaAlvo(distH, alvoY - BallPhysics.raio, pow)
-            : Math.atan2(alvoY, distH);
-        const vh = pow * Math.cos(elev);
-
-        Match.ballVel.set((dx / distH) * vh, pow * Math.sin(elev), (dz / distH) * vh);
-
-        this.hasBall = false;
-        this.touchLock = BallControl.touchLock;
-        Match.ballCarrier = null;
-        Match.intendedReceiver = null;
-        Match.lastTouchedTeam = this.team;
-        Match.lastTouchedPlayer = this;
-        window.bolaChutada = true;
-        if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
-        if (typeof EventBus !== 'undefined') EventBus.emit('PENALTY_TAKEN', { team: this.team, p: this });
+        });
+        this.fsm.changeState('SHOOT');
     }
 
     resetBonesToDefault() {
@@ -2289,6 +2333,23 @@ class FootballPlayer {
 
         if (Match.kickoffActive || Match.state === 'PENALTY') {
             this.velocity.set(0, 0, 0);
+
+            /*
+            EXCEPÇÃO: o batedor do penálti. O gesto passou a ser um ActionState
+            (corrida + contacto no contactTime do ShotClip), e quem o faz
+            avançar é a FSM — que este freeze nunca deixava correr. Sem isto o
+            onContact nunca disparava: a bola ficava na marca, o `Match.state`
+            só saía de PENALTY pelo timeout de 15 s do setPieceTimer, e nesse
+            instante o guarda-redes via PLAY com a bola solta na área e saía da
+            baliza a ir buscá-la — antes de alguém lhe ter tocado.
+
+            Só a FSM, e não o runBehaviorTree: o `tratarBolaParada` força
+            SET_PIECE_WAIT durante o PENALTY e matava o estado SHOOT.
+            */
+            if (Match.state === 'PENALTY' && this === Match.setPieceTaker && this.actionState) {
+                this.fsm.update(dt);
+                return;
+            }
             // Bola fica presa no centro (não gruda no pé do taker) — ele fica
             // só encostado. O lerp para o pé (usado no jogo normal) ia
             // arrastando a bola do centro pra fora durante os 4s de espera.

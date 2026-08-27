@@ -2582,17 +2582,14 @@ const Match = {
         if (d < -rB) return;
         if (Math.abs(b.x) > meiaLarg + rB + 1.0) return;
 
-        // Se a bola estiver completamente atrás da rede (mais de 0.5m), não tentamos puxá-la para dentro!
-        // Ela veio de fora.
         const a = ALTURA_BALIZA / (N.profBase - N.profTopo);
         const c = a * N.profBase;
         const norma = Math.hypot(a, 1);
-        const dist = (a * d + b.y - c) / norma;
-        if (dist > 0.8) return; 
 
         const dt = this.delta || 0.016;
         const prevX = b.x - v.x * dt;
         const prevY = b.y - v.y * dt;
+        const prevD = (b.z - v.z * dt) * zSinal - CAMPO_COMP / 2;
 
         // --- laterais -------------------------------------------------
         if (d >= 0 && d <= N.profBase && b.y <= ALTURA_BALIZA) {
@@ -2609,62 +2606,69 @@ const Match = {
             }
         }
 
-        // --- pano de cima ---------------------------------------------
-        if (d >= 0 && d <= N.profTopo && Math.abs(b.x) <= meiaLarg) {
+        // --- pano de cima (contínuo) ---------------------------------------------
+        if (Math.abs(b.x) <= meiaLarg) {
             if (Math.abs(b.y - ALTURA_BALIZA) < rB || (prevY < ALTURA_BALIZA && b.y > ALTURA_BALIZA) || (prevY > ALTURA_BALIZA && b.y < ALTURA_BALIZA)) {
-                if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.y);
-                if (v.y > 0) { b.y = ALTURA_BALIZA - rB; } else { b.y = ALTURA_BALIZA + rB; }
-                v.y = -v.y * N.restituicao;
-                v.x *= N.atrito; v.z *= N.atrito;
+                let t = 0;
+                if (b.y !== prevY) t = (ALTURA_BALIZA - prevY) / (b.y - prevY);
+                const dCross = prevD + t * (d - prevD);
+                if (dCross >= 0 && dCross <= N.profTopo) {
+                    if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.y);
+                    if (v.y > 0) { b.y = ALTURA_BALIZA - rB; } else { b.y = ALTURA_BALIZA + rB; }
+                    v.y = -v.y * N.restituicao;
+                    v.x *= N.atrito; v.z *= N.atrito;
+                    d = (b.z * zSinal) - CAMPO_COMP / 2;
+                }
             }
         }
 
-        // --- pano de trás, inclinado ----------------------------------
+        // --- pano de trás, inclinado (contínuo) ----------------------------------
         let res = N.restituicao;
         let atr = N.atrito;
         
-        // Efeito Visual de Golo: A rede ampara a bola
-        // Se a bola está dentro da baliza, a cair, e já perto da rede, 
-        // "puxamos" a bola contra a rede e anulamos o ressalto para que escorregue.
+        const dist = (a * d + b.y - c) / norma;
+        const prevDist = (a * prevD + prevY - c) / norma;
+
         if (d > 0.3 && v.y < 0 && Math.abs(b.x) <= meiaLarg && dist > -rB - 0.5 && dist <= 0) {
-            vd += 12.0 * (this.delta || 0.016); // empurra contra o pano
-            res = 0.0;  // anula ressalto
-            atr = 0.98; // retém energia para escorregar depressa
+            vd += 12.0 * (this.delta || 0.016);
+            res = 0.0;
+            atr = 0.98;
         }
 
        if (Math.abs(b.x) <= meiaLarg) {
-            if (Math.abs(dist) < 0.8) {
-                const nd = a / norma, ny = 1 / norma;
-                const vn = vd * nd + v.y * ny;
+            if (Math.abs(dist) < 0.8 || (prevDist <= 0 && dist > 0) || (prevDist > 0 && dist <= 0)) {
+                let tCross = 0;
+                if (dist !== prevDist) tCross = prevDist / (prevDist - dist);
+                const yCross = prevY + tCross * (b.y - prevY);
+                
+                if (yCross <= ALTURA_BALIZA) {
+                    const nd = a / norma, ny = 1 / norma;
+                    const vn = vd * nd + v.y * ny;
 
-                if (dist > 0 && vn < 0) { // Bola vem de fora para dentro
-                    // A rede abana: quanto mais forte a componente normal, mais.
-                    if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
-                    const correccao = rB - dist;
-                    if (correccao > 0) {
-                        d += nd * correccao; b.y += ny * correccao;
+                    if ((dist > 0 && vn < 0) || (prevDist > 0 && dist <= 0)) { // Bola vem de fora para dentro
+                        if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
+                        const correccao = rB - dist;
+                        if (correccao > 0) {
+                            d += nd * correccao; b.y += ny * correccao;
+                        }
+                        vd -= vn * nd * (1 + res);
+                        v.y -= vn * ny * (1 + res);
+                        vd *= atr; v.y *= atr; v.x *= atr;
+                    } else if ((dist <= 0 && vn > 0) || (prevDist <= 0 && dist > 0)) { // Bola vem de dentro para fora
+                        if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
+                        const correccao = -rB - dist;
+                        if (correccao < 0) {
+                            d += nd * correccao; b.y += ny * correccao;
+                            // Se a projecção atirar a bola para cima do travessão, trancamos na rede de cima
+                            if (b.y > ALTURA_BALIZA - rB) {
+                                b.y = ALTURA_BALIZA - rB;
+                                if (v.y > 0) v.y = -v.y * N.restituicao;
+                            }
+                        }
+                        vd -= vn * nd * (1 + res);
+                        v.y -= vn * ny * (1 + res);
+                        vd *= atr; v.y *= atr; v.x *= atr;
                     }
-                    vd -= vn * nd * (1 + res);
-                    v.y -= vn * ny * (1 + res);
-                    vd *= atr; v.y *= atr; v.x *= atr;
-                } else if (dist <= 0 && vn > 0) { // Bola vem de dentro para fora
-                    // Bateu pelo lado de dentro (Golo)
-                    if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
-                    const correccao = dist + rB;
-                    if (correccao > 0) {
-                        d -= nd * correccao; b.y -= ny * correccao;
-                    }
-                    vd -= vn * nd * (1 + res);
-                    v.y -= vn * ny * (1 + res);
-                    vd *= atr; v.y *= atr; v.x *= atr;
-                } else if (dist > 0 && vn > 0) { 
-                    // Bola passou o pano, ou teste que a lanca ja la
-                    if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, vn);
-                    const correccao = dist + rB;
-                    d -= nd * correccao; b.y -= ny * correccao;
-                    vd -= vn * nd * (1 + res);
-                    v.y -= vn * ny * (1 + res);
-                    vd *= atr; v.y *= atr; v.x *= atr;
                 }
             }
         }
@@ -3741,8 +3745,32 @@ const Match = {
             atacantes no outro: segregava por posição depois de se ter resolvido
             a segregação por equipa.
             */
+            /*
+            COBERTURA: quem NÃO vai ao ressalto. Dois defesas e um médio de
+            quem bate (a guardar as costas contra o contra-ataque) e dois
+            atacantes de quem defende (à espera dele). Estes saem da fila e
+            formam uma linha própria mais atrás e AO CENTRO — ver a colocação
+            no fim deste ramo.
+
+            Antes ficavam na fila com o x que lhes calhava e só recuavam: como
+            a fila tem 21 lugares a 2.2 m, os que sobram estão nas pontas, e o
+            que se via eram três jogadores encostados à linha lateral.
+            */
+            const cobertura = new Set();
+            {
+                const escolher = (lista, role, quantos) => lista
+                    .filter(p => p !== takerPen && p.role === role &&
+                        p.role !== 'gk' && !cobertura.has(p))
+                    .slice(0, quantos)
+                    .forEach(p => cobertura.add(p));
+                escolher(attackingPlayers, 'def', PM.coberturaDef);
+                escolher(attackingPlayers, 'mid', PM.coberturaMid);
+                escolher(defendingPlayers, 'ata', PM.coberturaAtaAdv);
+            }
+
             const naEntrada = lista => {
-                const restantes = lista.filter(p => p !== takerPen && p.role !== 'gk');
+                const restantes = lista.filter(
+                    p => p !== takerPen && p.role !== 'gk' && !cobertura.has(p));
                 const filas = {
                     ata: restantes.filter(p => p.role === 'ata'),
                     mid: restantes.filter(p => p.role === 'mid'),
@@ -3822,6 +3850,41 @@ const Match = {
                 lookAtBola(p.model, this.ball.position);
                 p.fsm.changeState('SET_PIECE_WAIT');
             });
+
+            /*
+            Linha da cobertura: `recuoCobertura` metros atrás da fila e
+            CENTRADA no eixo do campo, com espaçamento próprio — é gente a
+            cobrir o meio, não a fechar uma linha lateral.
+
+            Mesclada como a fila: quem defende o ressalto (os dois atacantes
+            adversários) alterna com quem o guarda, senão ficavam dois grupos
+            colados. E os atacantes ficam `avancoAtaAdv` metros À FRENTE dos
+            outros — estão à espera da bola, não a guardá-la.
+            */
+            const naCobertura = Array.from(cobertura);
+            {
+                const guardam = naCobertura.filter(p => attackingPlayers.includes(p));
+                const esperam = naCobertura.filter(p => !attackingPlayers.includes(p));
+                const mesclada = [];
+                let iG = 0, iE = 0;
+                while (mesclada.length < naCobertura.length) {
+                    if (iG < guardam.length) mesclada.push(guardam[iG++]);
+                    if (iE < esperam.length) mesclada.push(esperam[iE++]);
+                    if (iG >= guardam.length && iE >= esperam.length) break;
+                }
+
+                const zCobertura = filaZ - attDir * PM.recuoCobertura;
+                mesclada.forEach((p, i) => {
+                    const centrado = i - (mesclada.length - 1) / 2;
+                    const x = THREE.MathUtils.clamp(
+                        centrado * PM.espacamentoCobertura,
+                        -PM.limiteXCobertura, PM.limiteXCobertura);
+                    const avanco = attackingPlayers.includes(p) ? 0 : PM.avancoAtaAdv;
+                    p.model.position.set(x, ALTURA_BASE_Y, zCobertura + attDir * avanco);
+                    lookAtBola(p.model, this.ball.position);
+                    p.fsm.changeState('SET_PIECE_WAIT');
+                });
+            }
 
             // Guarda-redes que defende: SOBRE a linha de golo, pronto a reagir.
             const gkPen = defendingPlayers.find(p => p.role === 'gk');

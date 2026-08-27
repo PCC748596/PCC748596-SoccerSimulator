@@ -227,6 +227,7 @@ const AREA_GRANDE_MEIA_LARG = 20.16;
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
+const _v4 = new THREE.Vector3();
 const _m1 = new THREE.Matrix4();
 const _q1 = new THREE.Quaternion();
 const _line1 = new THREE.Line3();
@@ -3684,7 +3685,7 @@ const PenaltyModel = {
     marcaZ: 11.0,              // distância à linha de fundo
     raioMeiaLua: 9.15,         // ninguém dentro disto além do batedor
     margemArea: 16.5,          // linha da grande área
-    recuoBatedor: 2.6,         // onde ele espera, atrás da bola
+    recuoBatedor: 4.6,         // onde ele espera, atrás da bola
     areaX: 20.16,              // meia-largura da grande área
     folgaArco: 0.6,            // quanto ficam PARA LÁ da meia-lua
     folgaArea: 0.8,            // e para lá da linha da área
@@ -3707,10 +3708,62 @@ const PenaltyModel = {
     ressalto está ombro a ombro com o adversário, não em blocos separados.
     */
     recuoPorRole: { ata: 0.0, mid: 1.6, def: 3.2 },
+
+    /*
+    COBERTURA DO CONTRA-ATAQUE. Com toda a gente na entrada da área os vinte e
+    um jogadores liam-se como uma linha só, e ninguém guardava as costas de
+    quem bate — se a bola sair dali a correr, o campo atrás está vazio.
+
+    Dois defesas e um médio da equipa que BATE ficam `recuoCobertura` metros
+    mais atrás do que a sua posição na fila. É a equipa atacante e não a que
+    defende: quem arrisca o contra-ataque num penálti é quem tem toda a gente à
+    frente da bola.
+    */
+    coberturaDef: 2,           // defesas do batedor que ficam atrás
+    coberturaMid: 1,           // e médios
+    coberturaAtaAdv: 2,        // atacantes de quem DEFENDE, à espera da bola
+    recuoCobertura: 12.0,      // metros atrás da fila da entrada da área
+    /*
+    Eles saem da fila e formam uma linha PRÓPRIA, centrada no eixo. Deixá-los
+    na fila punha-os nas pontas — ela tem 21 lugares a 2.2 m, e quem sobra fica
+    encostado à linha lateral, que é o oposto de cobrir o meio.
+    */
+    espacamentoCobertura: 5.0, // entre eles, nessa linha
+    limiteXCobertura: 10.0,    // e nunca mais para fora do que isto
+    avancoAtaAdv: 3.0,         // os atacantes ficam à frente dos outros três
     potencia: 26.0,            // m/s à saída
     alturaMax: 1.9,            // não se coloca acima disto (trave a 2.44)
     margemPoste: 0.45,         // quanto se afasta do poste ao colocar
-    chanceGolo: 0.78           // enquadrado e colocado; o resto vai por fora
+    chanceGolo: 0.78,          // enquadrado e colocado; o resto vai por fora
+
+    /*
+    Probabilidade de o guarda-redes MERGULHAR PARA O SÍTIO CERTO, por banda do
+    duelo `diff = (TEC + d10) - (GK + d10)`. Só se aplica a remates que iam
+    para dentro da baliza (ver baterPenalti); trave e fora não passam por aqui.
+
+    Antes só o ramo `diff <= -5` o mandava ao sítio certo — abaixo disso o
+    mergulho era SEMPRE para o lado contrário, e um penálti bem batido nunca
+    dava defesa. A escala segue a real: ~25% de defesas no total, e quase
+    nenhuma nos remates perfeitos ao ângulo.
+    */
+    chanceDefesa: {
+        perfeito: 0.02,   // diff > 5   — ao ângulo, sem hipótese
+        bom: 0.12,        // diff 3..5
+        medio: 0.30,      // diff 1..2
+        fraco: 0.55       // diff <= 0  — mal batido
+    },
+
+    /*
+    ÁRBITRO no penálti: à ESQUERDA do batedor (ele olha para a baliza), no
+    cruzamento da linha lateral da pequena área com o alinhamento da marca —
+    ou seja x = ±(LARGURA_BALIZA/2 + 5.5) e z = o mesmo z da marca. Dali vê a
+    bola, o pé do batedor e a linha do guarda-redes sem estar no caminho de
+    ninguém, que é a colocação real.
+
+    A diagonal normal (ver pontoDoArbitro) punha-o algures a meio-campo, longe
+    do lance.
+    */
+    arbitroX: 9.16   // LARGURA_BALIZA/2 + 5.5, lateral da pequena área
 };
 
 const GoalkeeperDistribution = {
@@ -4138,6 +4191,27 @@ const GoalkeeperDive = {
     fracContacto: 0.55,    // fracção do voo em que a mão deve chegar ao alvo
     raioMao: 0.42,         // raio de contacto da mão com a bola
     apanhaBase: 0.35,      // probabilidade base de AGARRAR (senão espalma)
+
+    /*
+    ESPALMADA PARA FORA. A espalmada devolvia SEMPRE a bola ao campo
+    (`ballVel.z *= -0.5`, o sinal invertido), e por isso nunca havia um canto
+    ganho numa defesa — a saída mais comum de todas num remate colocado.
+
+    Agora há duas: a bola perto do poste ou por cima do ombro sai PELA LINHA DE
+    FUNDO (canto), o resto continua a voltar ao campo. Quem manda é a colocação
+    do remate, não um sorteio.
+
+    A posição da bola é empurrada para FORA da moldura no mesmo instante do
+    toque. Sem isso a mão fica na linha de golo e o que se via era golo: a bola
+    atravessava o plano da baliza nos milissegundos seguintes, ainda dentro dos
+    postes, antes da velocidade nova a tirar de lá.
+    */
+    espalmarForaMargem: 1.1,   // a menos disto do poste, a espalmada sai
+    espalmarAltaY: 1.70,       // acima disto sai por cima do travessão
+    espalmarFolga: 0.35,       // quanto passa por fora do poste/travessão
+    espalmarLateral: 5.0,      // m/s que leva para lá do poste
+    espalmarSubida: 5.0,       // m/s que leva por cima do travessão
+    espalmarForaZ: 0.45,       // trava o avanço, MANTENDO o sentido (sai)
     ombroY: 1.35,          // altura do ombro acima da origem, de pé
 
     // Pose das pernas em voo: estendidas e ligeiramente abertas.

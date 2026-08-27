@@ -291,10 +291,37 @@ const GkDive = {
             // Posse já; a pose continua a ser do mergulho até ele se levantar.
             p.grabBall(true);
         } else {
-            // Espalmada: sai para o lado e para cima, para longe da baliza.
-            Match.ballVel.z *= -0.5;
-            Match.ballVel.x += d.dirX * (4 + Math.random() * 6);
-            Match.ballVel.y += 3;
+            /*
+            Espalmada. A colocação do remate decide para onde: encostado ao
+            poste ou por cima do ombro não há como devolver ao campo — vai
+            para fora, e é canto. Ver as notas de `espalmarForaMargem` em
+            GoalkeeperDive.
+            */
+            const bola = Match.ball.position;
+            const folgaPoste = (LARGURA_BALIZA / 2) - Math.abs(bola.x);
+            const alta = bola.y > D.espalmarAltaY;
+            const paraFora = alta || (folgaPoste < D.espalmarForaMargem);
+
+            if (paraFora) {
+                if (alta) {
+                    bola.y = ALTURA_BALIZA + D.espalmarFolga;
+                    Match.ballVel.y = Math.max(Match.ballVel.y, D.espalmarSubida);
+                } else {
+                    // Lado do poste onde ela ia: o do próprio remate, e não o
+                    // do mergulho — em bola central o `dirX` desempata.
+                    const ladoPoste = Math.sign(bola.x) || d.dirX || 1;
+                    bola.x = ladoPoste * ((LARGURA_BALIZA / 2) + D.espalmarFolga);
+                    Match.ballVel.x = ladoPoste * D.espalmarLateral;
+                    Match.ballVel.y = Math.max(Match.ballVel.y, 2.0);
+                }
+                // Sentido de z MANTIDO: atravessa a linha de fundo por fora.
+                Match.ballVel.z *= D.espalmarForaZ;
+            } else {
+                // Para o lado e para cima, de volta ao campo.
+                Match.ballVel.z *= -0.5;
+                Match.ballVel.x += d.dirX * (4 + Math.random() * 6);
+                Match.ballVel.y += 3;
+            }
             Match.lastTouchedPlayer = p;
             Match.lastTouchedTeam = p.team;
         }

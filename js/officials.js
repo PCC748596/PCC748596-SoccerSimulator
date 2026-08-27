@@ -474,6 +474,23 @@ const Officials = {
     */
     pontoDoArbitro: function (bola) {
         const R = RefereeModel;
+
+        /*
+        PENÁLTI: posição fixa, não a diagonal. À esquerda do batedor, no
+        cruzamento da lateral da pequena área com o alinhamento da marca
+        (ver PenaltyModel.arbitroX).
+
+        Esquerda de quem olha para a baliza: o batedor ataca no sentido
+        `dirZ`, e com o Y para cima a mão esquerda aponta para x = +dirZ.
+        */
+        if (typeof Match !== 'undefined' && Match.state === 'PENALTY' &&
+            Match.setPieceTaker && typeof PenaltyModel !== 'undefined') {
+            const PM = PenaltyModel;
+            const attDir = Match.setPieceTaker.dirZ;
+            const linhaGol = attDir * (CAMPO_COMP / 2);
+            return { x: PM.arbitroX * attDir, z: linhaGol - attDir * PM.marcaZ };
+        }
+
         const ax = -(CAMPO_LARG / 2) * R.diagonalX, az = -(CAMPO_COMP / 2) * R.diagonalZ;
         const bx = (CAMPO_LARG / 2) * R.diagonalX, bz = (CAMPO_COMP / 2) * R.diagonalZ;
 

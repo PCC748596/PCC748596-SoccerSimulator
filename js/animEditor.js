@@ -25,7 +25,7 @@ const CLIPS = {
         duracao: () => ActionAnimClips.shot.duration,
         aplicar: (rig, corpo, K) => {
             aplicarPoseRemate(rig, K);
-            corpo.position.y = K.altura || 0;
+            corpo.position.set(K.posX || 0, K.altura || 0, K.posZ || 0);
         },
         amostrar: (t) => amostrarClipRemate(t)
     },
@@ -35,7 +35,7 @@ const CLIPS = {
         duracao: () => ActionAnimClips.gkPunt.duration,
         aplicar: (rig, corpo, K, t) => {
             aplicarPoseChutaoGR(rig, K, t);
-            corpo.position.y = K.altura || 0;
+            corpo.position.set(K.posX || 0, K.altura || 0, K.posZ || 0);
         },
         amostrar: (t) => amostrarClipChuteGR(t)
     },
@@ -45,7 +45,10 @@ const CLIPS = {
         duracao: () => ActionAnimClips.gkPuntChao.duration,
         // Sem `poseAnterior`: no editor não há corrida de onde misturar, o que
         // é o mesmo que uma mistura já terminada.
-        aplicar: (rig, corpo, K) => aplicarPoseChuteChaoGR(rig, K, corpo, {}),
+        aplicar: (rig, corpo, K) => {
+            aplicarPoseChuteChaoGR(rig, K, corpo, {});
+            corpo.position.set(K.posX || 0, K.altura || 0, K.posZ || 0);
+        },
         amostrar: (t) => amostrarClipChuteChaoGR(t)
     },
     GoalkeeperThrowClip: {
@@ -54,7 +57,7 @@ const CLIPS = {
         duracao: () => ActionAnimClips.gkThrow.duration,
         aplicar: (rig, corpo, K) => {
             aplicarPoseLancamentoGR(rig, K);
-            corpo.position.y = K.altura || 0;
+            corpo.position.set(K.posX || 0, K.altura || 0, K.posZ || 0);
         },
         amostrar: (t) => amostrarClipLancamentoGR(t)
     },
@@ -69,7 +72,7 @@ const CLIPS = {
         */
         aplicar: (rig, corpo, K) => {
             aplicarPoseLateral(rig, K, LateralPose.giroMax || 0.6);
-            corpo.position.y = K.altura || 0;
+            corpo.position.set(K.posX || 0, K.altura || 0, K.posZ || 0);
         },
         amostrar: (t) => amostrarClipLateral(t)
     },
@@ -79,7 +82,7 @@ const CLIPS = {
         duracao: () => ActionAnimClips.ballControlRight.duration,
         aplicar: (rig, corpo, K) => {
             aplicarPoseDominioDireito(rig, K);
-            corpo.position.y = K.altura || 0;
+            corpo.position.set(K.posX || 0, K.altura || 0, K.posZ || 0);
         },
         amostrar: (t) => amostrarClipDominioDireito(t)
     }
@@ -130,14 +133,16 @@ const LEGENDAS = {
     peRy: 'abre o pé direito para fora',
     cabecaX: '> 0 queixo desce (olha para o chão)',
     cabecaY: 'roda a cabeça para o lado',
-    altura: 'metros: sobe (> 0) ou baixa (< 0) o corpo todo'
+    altura: 'metros: sobe (> 0) ou baixa (< 0) o corpo todo',
+    posX: 'metros: move o corpo para os lados (eixo X)',
+    posZ: 'metros: move o corpo para a frente/trás (eixo Z)'
 };
 
 // Amplitude dos sliders. `altura` é em metros e não em radianos, portanto tem
 // escala própria — um slider de ±3.2 para um canal que anda nos centímetros
 // era inutilizável.
 const AMPLITUDE = {
-    altura: 0.5, giro: 1.2,
+    altura: 0.5, posX: 1.0, posZ: 1.0, giro: 1.2,
     // Pés e cabeça andam em ângulos pequenos; um slider de ±3.2 tornava-os
     // impossíveis de afinar.
     peLx: 1.0, peLy: 1.0, peRx: 1.0, peRy: 1.0, cabecaX: 1.2, cabecaY: 1.6
@@ -149,7 +154,7 @@ hoje. Aparecem no painel na mesma, a zero, e só passam a existir no clip
 quando se lhes mexe — é o que deixa controlá-los sem reescrever os cinco
 clips à mão.
 */
-const CANAIS_OPCIONAIS = ['peLx', 'peLy', 'peRx', 'peRy', 'cabecaX', 'cabecaY'];
+const CANAIS_OPCIONAIS = ['peLx', 'peLy', 'peRx', 'peRy', 'cabecaX', 'cabecaY', 'posX', 'posZ'];
 const AMPLITUDE_OMISSAO = 3.2;
 
 // Quebra de linha, escrita assim para nao haver escapes a partir-se nos
@@ -298,6 +303,7 @@ const Editor = {
         this.montarSelector();
         this.montarAbas();
         this.montarGizmo();
+        this.montarBotoesGizmo();
         this.actualizarUndo();
 
         document.getElementById('btn-undo').addEventListener('click', () => this.desfazer());
@@ -429,9 +435,10 @@ const Editor = {
     clip() { return this.def().clip(); },
     frames() { return this.clip().frames; },
     canais() {
-        // Os do keyframe, mais os opcionais que ainda lá não estão.
-        const presentes = Object.keys(this.frames()[0]);
-        return presentes.concat(CANAIS_OPCIONAIS.filter(c => presentes.indexOf(c) === -1));
+        const todas = new Set();
+        this.frames().forEach(f => Object.keys(f).forEach(k => todas.add(k)));
+        const presentes = Array.from(todas);
+        return presentes.concat(CANAIS_OPCIONAIS.filter(c => !presentes.includes(c)));
     },
 
     montarSelector() {
@@ -931,6 +938,25 @@ const Editor = {
         }
     },
 
+    modoGizmo: 'rotate',
+    montarBotoesGizmo() {
+        const btnRodar = document.getElementById('btn-rodar');
+        const btnMover = document.getElementById('btn-mover');
+        if (!btnRodar || !btnMover) return;
+        btnRodar.addEventListener('click', () => {
+            this.modoGizmo = 'rotate';
+            btnRodar.classList.add('activo');
+            btnMover.classList.remove('activo');
+            if (this.juntaSel) this.seleccionar(this.juntaSel);
+        });
+        btnMover.addEventListener('click', () => {
+            this.modoGizmo = 'translate';
+            btnMover.classList.add('activo');
+            btnRodar.classList.remove('activo');
+            if (this.juntaSel) this.seleccionar(this.juntaSel);
+        });
+    },
+
     montarGizmo() {
         if (typeof THREE.TransformControls === 'undefined') {
             document.getElementById('estado').textContent =
@@ -975,7 +1001,7 @@ const Editor = {
         let no = bate[0].object;
         while (no) {
             const nome = Object.keys(this.rig).find(k => this.rig[k] === no);
-            if (nome && this.canaisDaJunta(nome)) { this.seleccionar(nome); return; }
+            if (nome && (this.canaisDaJunta(nome) || this.modoGizmo === 'translate')) { this.seleccionar(nome); return; }
             no = no.parent;
         }
         this.seleccionar(null);
@@ -991,40 +1017,126 @@ const Editor = {
             return;
         }
 
-        const canais = this.canaisDaJunta(nomeJunta);
+        const canais = this.canaisDaJunta(nomeJunta) || {};
         this.gizmo.attach(this.rig[nomeJunta]);
-        /*
-        SÓ ROTAÇÃO nas juntas; a bacia leva também translação, porque essa o
-        clip guarda mesmo (o canal `altura`). Arrastar a posição de um joelho
-        esticava o osso — e os clips só têm ângulos, portanto isso perder-se-ia
-        ao exportar.
-        */
-        this.gizmo.setMode('rotate');
-        this.gizmo.showX = !!canais.x;
-        this.gizmo.showY = !!canais.y;
-        this.gizmo.showZ = !!canais.z;
 
-        const eixos = ['x', 'y', 'z'].filter(e => canais[e]).map(e => `${e}: ${canais[e]}`);
-        document.getElementById('estado').textContent = eixos.length
-            ? `${nomeJunta} — ${eixos.join(', ')}`
-            : `${nomeJunta} — sem canais neste clip`;
+        this.gizmo.setMode(this.modoGizmo || 'rotate');
+        if (this.modoGizmo === 'translate') {
+            this.gizmo.showX = true;
+            this.gizmo.showY = true;
+            this.gizmo.showZ = true;
+            document.getElementById('estado').textContent = `${nomeJunta} — mover livremente`;
+        } else {
+            this.gizmo.showX = !!canais.x;
+            this.gizmo.showY = !!canais.y;
+            this.gizmo.showZ = !!canais.z;
+
+            const eixos = ['x', 'y', 'z'].filter(e => canais[e]).map(e => `${e}: ${canais[e]}`);
+            document.getElementById('estado').textContent = eixos.length
+                ? `${nomeJunta} — ${eixos.join(', ')}`
+                : `${nomeJunta} — sem canais neste clip`;
+        }
+    },
+
+    // Resolve o Inverse Kinematics para pernas e braços
+    resolverIK(nome, K, no) {
+        let isLeg = false, isArm = false, upperName, lowerName;
+        let L1 = 1.0, L2 = 1.0;
+        
+        if (nome === 'lFoot' || nome === 'rFoot') {
+            isLeg = true; L2 = 0.9;
+            upperName = nome === 'lFoot' ? 'lLeg' : 'rLeg';
+            lowerName = nome === 'lFoot' ? 'lKnee' : 'rKnee';
+        } else if (nome === 'lHand' || nome === 'rHand') {
+            isArm = true; L2 = 1.0;
+            upperName = nome === 'lHand' ? 'lArm' : 'rArm';
+            lowerName = nome === 'lHand' ? 'lElbow' : 'rElbow';
+        } else if (nome === 'lKnee' || nome === 'rKnee' || nome === 'lElbow' || nome === 'rElbow') {
+            // Arrastar o joelho/cotovelo é mais complexo num 2-bone IK simples, ignoramos por agora.
+            no.position.set(0, isLeg ? -1.0 : -1.0, 0);
+            return false;
+        } else {
+            return false;
+        }
+        
+        const targetWorld = new THREE.Vector3();
+        no.getWorldPosition(targetWorld);
+        
+        // Repõe imediatamente o nó (Pé/Mão) para não o separar da malha
+        no.position.set(0, isLeg ? -0.9 : -1.0, 0);
+        
+        const upperNode = this.rig[upperName];
+        const parentNode = upperNode.parent; 
+        
+        const localTarget = targetWorld.clone();
+        parentNode.worldToLocal(localTarget);
+        
+        const T = localTarget.clone().sub(upperNode.position);
+        let dist = T.length();
+        const maxDist = L1 + L2 - 0.001;
+        
+        if (dist > maxDist) {
+            const offset = T.clone().normalize().multiplyScalar(dist - maxDist);
+            const offsetWorld = offset.clone().transformDirection(parentNode.matrixWorld);
+            const offsetCorpo = offsetWorld.clone().transformDirection(this.corpo.matrixWorld.clone().invert());
+            
+            if (isLeg) { 
+                K.altura = (K.altura || 0) + offsetCorpo.y;
+                K.posX = (K.posX || 0) + offsetCorpo.x;
+                K.posZ = (K.posZ || 0) + offsetCorpo.z;
+                // A posição visual será atualizada no desenhar()
+            }
+            T.normalize().multiplyScalar(maxDist);
+            dist = maxDist;
+        }
+
+        const cosKnee = (L1*L1 + L2*L2 - dist*dist) / (2*L1*L2);
+        const kneeInner = Math.acos(Math.max(-1, Math.min(1, cosKnee)));
+        let kneeRot = Math.PI - kneeInner;
+        if (isArm) kneeRot = -kneeRot; 
+        
+        const cosAlpha = (L1*L1 + dist*dist - L2*L2) / (2*L1*dist);
+        const alpha = Math.acos(Math.max(-1, Math.min(1, cosAlpha)));
+        
+        const up = new THREE.Vector3(0, -1, 0);
+        const dir = T.clone().normalize();
+        const q1 = new THREE.Quaternion().setFromUnitVectors(up, dir);
+        const q2 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), isLeg ? -alpha : alpha);
+        const euler = new THREE.Euler().setFromQuaternion(q1.multiply(q2), 'XYZ');
+        
+        const cUpper = this.canaisDaJunta(upperName) || {};
+        const cLower = this.canaisDaJunta(lowerName) || {};
+        
+        let mudou = false;
+        if (cUpper.x && Math.abs(K[cUpper.x] - euler.x) > 0.001) { K[cUpper.x] = euler.x; mudou = true; }
+        if (cUpper.z && Math.abs(K[cUpper.z] - euler.z) > 0.001) { K[cUpper.z] = euler.z; mudou = true; }
+        if (cLower.x && Math.abs(K[cLower.x] - kneeRot) > 0.001) { K[cLower.x] = kneeRot; mudou = true; }
+        
+        return mudou;
     },
 
     // Escreve no keyframe o que o gizmo pôs no rig.
     lerDoGizmo(aoVivo) {
         if (!this.juntaSel) return;
-        const canais = this.canaisDaJunta(this.juntaSel);
         const K = this.frames()[this.frame];
         const no = this.rig[this.juntaSel];
         let mudou = false;
 
-        for (const eixo of ['x', 'y', 'z']) {
-            if (!canais[eixo]) continue;
-            const v = no.rotation[eixo];
-            if (K[canais[eixo]] !== v) { K[canais[eixo]] = v; mudou = true; }
+        if (this.modoGizmo === 'translate') {
+            mudou = this.resolverIK(this.juntaSel, K, no);
+        } else {
+            const canais = this.canaisDaJunta(this.juntaSel) || {};
+            for (const eixo of ['x', 'y', 'z']) {
+                if (!canais[eixo]) continue;
+                const v = no.rotation[eixo];
+                if (K[canais[eixo]] !== v) { K[canais[eixo]] = v; mudou = true; }
+            }
         }
         if (mudou && !aoVivo) this.montarCanais();
-        if (mudou && aoVivo) this.actualizarValores();
+        if (mudou && aoVivo) {
+            this.actualizarValores();
+            if (this.modoGizmo === 'translate') this.desenhar(); // Força a atualização da malha com os novos ângulos
+        }
     },
 
     // Actualiza só os números dos sliders, sem reconstruir o painel: a meio de

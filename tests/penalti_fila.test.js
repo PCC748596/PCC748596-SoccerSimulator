@@ -45,8 +45,23 @@ function colocarFila(attDir) {
 
     const equipaA = onze('A'), equipaB = onze('B');
     const takerPen = equipaA[8];   // um dos atacantes bate
+    /*
+    Cobertura: dois defesas e um médio de quem BATE (equipa A) e dois
+    atacantes de quem defende. Saem da fila — o mesmo bloco do setupSetPiece.
+    */
+    const naCobertura = [];
+    const emCobertura = p => naCobertura.includes(p);
+    const escolher = (lista, role, quantos) => lista
+        .filter(p => p !== takerPen && p.role === role && !emCobertura(p))
+        .slice(0, quantos)
+        .forEach(p => naCobertura.push(p));
+    escolher(equipaA, 'def', PM.coberturaDef);
+    escolher(equipaA, 'mid', PM.coberturaMid);
+    escolher(equipaB, 'ata', PM.coberturaAtaAdv);
+
     const naEntrada = lista => {
-        const restantes = lista.filter(p => p !== takerPen && p.role !== 'gk');
+        const restantes = lista.filter(
+            p => p !== takerPen && p.role !== 'gk' && !emCobertura(p));
         const filas = {
             ata: restantes.filter(p => p.role === 'ata'),
             mid: restantes.filter(p => p.role === 'mid'),
@@ -80,7 +95,7 @@ function colocarFila(attDir) {
         naFila.push(p);
     }
 
-    return naFila.map((p, i) => {
+    const colocados = naFila.map((p, i) => {
         const centrado = i - (totalFila - 1) / 2;
         let x = clamp(centrado * PM.espacamentoFila, -(PM.areaX + 4.0), PM.areaX + 4.0);
         const recuo = (PM.recuoPorRole && PM.recuoPorRole[p.role] !== undefined)
@@ -95,8 +110,32 @@ function colocarFila(attDir) {
             x = dx * k;
             z = marcaZ + (d > 0.001 ? dz * k : -attDir * rMin);
         }
-        return { p, x, z, ordem: i };
+        return { p, x, z, ordem: i, cobertura: false };
     });
+
+    /*
+    Linha da cobertura: centrada no eixo, com espaçamento próprio, atrás da
+    fila. Os atacantes adversários ficam `avancoAtaAdv` à frente dos outros.
+    */
+    const guardam = naCobertura.filter(p => p.equipa === 'A');
+    const esperam = naCobertura.filter(p => p.equipa !== 'A');
+    const mesclada = [];
+    let iG = 0, iE = 0;
+    while (mesclada.length < naCobertura.length) {
+        if (iG < guardam.length) mesclada.push(guardam[iG++]);
+        if (iE < esperam.length) mesclada.push(esperam[iE++]);
+        if (iG >= guardam.length && iE >= esperam.length) break;
+    }
+    const zCobertura = filaZ - attDir * PM.recuoCobertura;
+    const atras2 = mesclada.map((p, i) => {
+        const centrado = i - (mesclada.length - 1) / 2;
+        const x = clamp(centrado * PM.espacamentoCobertura,
+            -PM.limiteXCobertura, PM.limiteXCobertura);
+        const avanco = (p.equipa === 'A') ? 0 : PM.avancoAtaAdv;
+        return { p, x, z: zCobertura + attDir * avanco, ordem: 100 + i, cobertura: true };
+    });
+
+    return colocados.concat(atras2);
 }
 
 let falhas = 0;
@@ -151,7 +190,7 @@ for (const attDir of [1, -1]) {
     */
     const atras = f => (f.z - (attDir * (CAMPO_COMP / 2) - attDir * PM.margemArea)) * -attDir;
     const media = r => {
-        const g = fila.filter(f => f.p.role === r);
+        const g = fila.filter(f => f.p.role === r && !f.cobertura);
         return g.reduce((s, f) => s + atras(f), 0) / Math.max(1, g.length);
     };
     const [mAta, mMid, mDef] = [media('ata'), media('mid'), media('def')];
@@ -160,6 +199,50 @@ for (const attDir of [1, -1]) {
     } else {
         console.log(`  profundidade média: ata=${mAta.toFixed(2)} mid=${mMid.toFixed(2)} ` +
             `def=${mDef.toFixed(2)} m atrás da linha`);
+    }
+
+    /*
+    2b — COBERTURA. Dois defesas e um médio da equipa que bate, e só dela,
+    ficam pelo menos `recuoCobertura` metros atrás do resto da sua função. É
+    isto que quebra a linha única de vinte e um jogadores.
+    */
+    const cobre = fila.filter(f => f.cobertura);
+    const esperados = PM.coberturaDef + PM.coberturaMid + PM.coberturaAtaAdv;
+    if (cobre.length !== esperados) {
+        erro(`cobertura: ${cobre.length} jogadores, esperados ${esperados}`);
+    }
+    if (cobre.filter(f => f.p.equipa === 'A' && f.p.role === 'def').length !== PM.coberturaDef ||
+        cobre.filter(f => f.p.equipa === 'A' && f.p.role === 'mid').length !== PM.coberturaMid ||
+        cobre.filter(f => f.p.equipa === 'B' && f.p.role === 'ata').length !== PM.coberturaAtaAdv) {
+        erro('cobertura com a mistura de equipas/funções errada');
+    }
+    // AO CENTRO: é para cobrir o meio, não a linha lateral.
+    const maisLateralDaFila = Math.max(...fila.filter(f => !f.cobertura).map(f => Math.abs(f.x)));
+    for (const f of cobre) {
+        if (Math.abs(f.x) > PM.limiteXCobertura + 0.01) {
+            erro(`${f.p.nome} (cobertura) demasiado na lateral: x=${f.x.toFixed(1)}`);
+        }
+        if (Math.abs(f.x) >= maisLateralDaFila) {
+            erro(`${f.p.nome} (cobertura) mais aberto do que a própria fila`);
+        }
+    }
+    /*
+    Margem fixa e não `recuoCobertura` exacto: a meia-lua empurra alguns da
+    fila para trás (o `rMin` mais acima), e os atacantes adversários ainda
+    ficam `avancoAtaAdv` à frente dos outros três. O que se exige é que a
+    cobertura fique claramente destacada de TODA a fila.
+    */
+    const margemCobertura = 4.0;
+    const maisAtrasDaFila = Math.max(...fila.filter(f => !f.cobertura).map(atras));
+    for (const f of cobre) {
+        if (atras(f) < maisAtrasDaFila + margemCobertura) {
+            erro(`${f.p.nome} (cobertura) não recuou o suficiente: ` +
+                `${atras(f).toFixed(2)} m contra ${maisAtrasDaFila.toFixed(2)} m da fila`);
+        }
+    }
+    if (falhas === 0) {
+        console.log('  cobertura: ' + cobre.map(f =>
+            `${f.p.equipa}/${f.p.role} x=${f.x.toFixed(1)} ${atras(f).toFixed(1)}m`).join('  '));
     }
 
     /*

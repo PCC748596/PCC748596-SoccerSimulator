@@ -34,7 +34,13 @@ const AmbienteSonoro = {
     descida: 2.5,
 
     _audio: null,
-    _ligado: true,
+    /*
+    ARRANCA DESLIGADO, e o botão do painel nasce em OFF a condizer
+    (index.html, `btn-som`). Quem quiser som liga-o; um separador a abrir
+    sozinho com estádio a tocar é intrusivo, e a política de autoplay dos
+    browsers ia recusá-lo na mesma até à primeira interacção.
+    */
+    _ligado: false,
     _alvo: 0.25,
     _actual: 0.25,
     _tentouTocar: false,
@@ -43,7 +49,9 @@ const AmbienteSonoro = {
         this._audio = new Audio('assets/SoccerStadium1.mp3');
         this._audio.loop = true;
         this._audio.preload = 'auto';
-        this._audio.volume = this._actual;
+        // Desligado nasce MESMO a zero: o `update` só corrige no frame
+        // seguinte, e esse frame chegava a sair com som.
+        this._audio.volume = this._ligado ? this._actual : 0;
 
         this.tentarTocar();
 
