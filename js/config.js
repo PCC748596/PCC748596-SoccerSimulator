@@ -1954,6 +1954,26 @@ const PassModel = {
     },
 
     /*
+    RECEPÇÃO NO ESPAÇO — ver o ramo novo do `actReceivePass` (player_bt.js).
+
+    O destinatário preferia SEMPRE o `interceptionPoint` (perception.js), que é
+    o primeiro ponto da trajectória a que ele chega — para uma bola que vem na
+    direcção dele, isso fica ATRÁS do sítio para onde o passe foi dado. Num
+    passe no espaço ele dava meia-volta e ia buscar a bola em vez de correr
+    para o espaço. Medido: meio segundo depois do passe, 56% dos lançamentos
+    tinham o destinatário MAIS LONGE do ponto (8.9 m -> 10.7 m).
+
+    `distEspaco`: acima desta distância ao ponto, o passe é para o ESPAÇO e não
+    para os pés — e aí corre-se para o ponto, desde que se lá chegue a tempo.
+    `folgaTempo`: quanto pode chegar depois da bola e ainda valer a pena (ela
+    continua a rolar).
+    */
+    recepcao: {
+        distEspaco: 2.5,
+        folgaTempo: 0.35
+    },
+
+    /*
     Erro máximo no PESO da bola, para skill de passe 0. Escala com
     (1 - PASS/100): a 80 de PASS o erro é ±3.6%, a 40 é ±10.8%. Substitui o
     antigo `passBoost`, que aumentava a força em vez da precisão — e com a

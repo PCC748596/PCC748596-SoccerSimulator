@@ -1131,6 +1131,32 @@ function actTackle(ctx) {
 
 function actChaseBall(ctx) {
     const p = ctx.p;
+
+    /*
+    O DESTINATÁRIO DE UM PASSE NÃO É UM PERSEGUIDOR.
+
+    `bb.chaser = Match.intendedReceiver` (team_bt.js): quem tem o passe a
+    caminho é quem vai buscá-lo, e faz sentido. O que não fazia sentido era a
+    folha: `dynamicTarget = Match.ball.position` manda-o para onde a bola ESTÁ
+    NESTE FRAME — e num passe no espaço, no instante em que ela sai, isso é
+    atrás dele, em cima do passador.
+
+    Era este o defeito que se via: o companheiro arrancava para o espaço, o
+    passe saía, e ele dava meia-volta para ir ao encontro da bola. Medido meio
+    segundo depois do passe: 56% dos lançamentos com o destinatário mais longe
+    do ponto do que estava (8.9 m -> 10.7 m).
+
+    Como o ramo `IrABola` corre ANTES do ramo `Receber` na árvore, corrigir só
+    o `actReceivePass` não chegava — nunca lá chegava. Aqui delega-se: se sou o
+    destinatário, a recepção é que sabe para onde ir (ponto do passe se chego a
+    tempo, ponto de intercepção se não chego).
+    */
+    if (typeof Match !== 'undefined' && Match.intendedReceiver === p &&
+        Match.lastTouchedPlayer !== p) {
+        actReceivePass(ctx);
+        return;
+    }
+
     p.speedMult = (5.8 + ((ctx.skillSpeed - 50) / 50) * 1.5) * 1.25 * 0.9;
     if (Match.counterAttackTeam === p.team) p.speedMult *= 1.25;
     p.dynamicTarget.copy(Match.ball.position);
@@ -1253,7 +1279,58 @@ function actReceivePass(ctx) {
         }
     } else {
         const bb = p.blackboard && p.blackboard.ball;
-        if (bb && bb.interceptionPoint) {
+
+        /*
+        O PONTO DO PASSE GANHA AO PONTO DE INTERCEPÇÃO — quando ele lá chega.
+
+        O `interceptionPoint` (perception.js) é o PRIMEIRO instante da
+        trajectória a que este jogador chega. Para uma bola que vem na direcção
+        dele, esse ponto está ATRÁS do sítio para onde o passe foi dado: entre
+        ele e o passador. Como este ramo o preferia sempre, o destinatário de um
+        passe no espaço dava meia-volta e ia BUSCAR a bola em vez de correr para
+        o espaço — exactamente o contrário do que o passe pedia.
+
+        Medido num tempo de jogo, meio segundo depois do passe sair: 56% dos
+        lançamentos e 60% dos passes no espaço tinham o destinatário MAIS LONGE
+        do ponto do que no instante do passe (8.9 m -> 10.7 m nos lançamentos).
+        No instante do passe ele ia na direcção certa (28°); era logo a seguir
+        que invertia.
+
+        A regra passa a ser uma corrida: se ele chega ao ponto pedido antes da
+        bola (mais `folgaTempo`), vai para lá. Só quando não chega é que o
+        ponto de intercepção — ir ao encontro dela — é a melhor opção que tem.
+
+        O passe AOS PÉS não muda: aí o ponto está a menos de `distEspaco` dele,
+        e ir ao encontro da bola continua a ser o certo.
+        */
+        const R = (typeof PassModel !== 'undefined') ? PassModel.recepcao : null;
+        let alvoDoEspaco = null;
+        if (R && Match.passTargetPos && Match.intendedReceiver === p &&
+            typeof tempoDoJogadorAte === 'function') {
+            const ax = Match.passTargetPos.x, az = Match.passTargetPos.z;
+            const dx = ax - p.model.position.x, dz = az - p.model.position.z;
+            const dJog = Math.hypot(dx, dz);
+
+            if (dJog > R.distEspaco) {
+                const vProj = dJog > 0.001
+                    ? (p.velocity.x * dx + p.velocity.z * dz) / dJog : 0;
+                const tJog = tempoDoJogadorAte(dJog, vProj, p.speedMult);
+
+                const dBola = Math.hypot(ax - bola.x, az - bola.z);
+                const tBola = (typeof tempoRasteiroDaBola === 'function')
+                    ? tempoRasteiroDaBola(dBola, Math.hypot(Match.ballVel.x, Match.ballVel.z))
+                    : null;
+
+                // `null` = a bola morre antes do ponto; aí ele tem todo o tempo.
+                if (tBola === null || tJog <= tBola + R.folgaTempo) {
+                    alvoDoEspaco = { x: ax, z: az };
+                }
+            }
+        }
+
+        if (alvoDoEspaco) {
+            p.dynamicTarget.set(alvoDoEspaco.x, ALTURA_BASE_Y, alvoDoEspaco.z);
+        } else if (bb && bb.interceptionPoint) {
             p.dynamicTarget.set(bb.interceptionPoint.x, ALTURA_BASE_Y, bb.interceptionPoint.z);
         } else if (typeof Match !== 'undefined' && Match.passTargetPos) {
             p.dynamicTarget.set(Match.passTargetPos.x, ALTURA_BASE_Y, Match.passTargetPos.z);
