@@ -796,9 +796,329 @@ function tratarSegurarBola(ctx) {
     return false;
 }
 
+/*
+=============================================================================
+JOGADAS COMBINADAS — cara a cara, tabelinha, overlap
+=============================================================================
+Ver o cabeçalho do `JogadasCombinadas` (config.js) para o porquê de serem um
+ramo próprio e não um bónus na nota do `PassTypes.escolher`.
+
+`tratarJogadaCombinada` devolve true quando resolveu o que fazer com a bola.
+Corre ANTES da escolha normal de passe, e testa por esta ordem:
+
+    1. devolução de tabelinha pedida (sou eu que a tenho de devolver AGORA)
+    2. cara a cara
+    3. tabelinha (iniciar)
+    4. passe para quem está a fazer overlap
+
+A CORRIDA do overlap e o arranque de quem pediu a tabelinha não se decidem
+aqui: vivem na parte da árvore de quem NÃO tem a bola (ver actOverlap e
+actEsperarDevolucao).
+=============================================================================
+*/
+
+// Adversário mais próximo de um jogador, no plano.
+function distAoAdversarioMaisPerto(p) {
+    const advs = (p.team === 'TeamA') ? Match.opponents : Match.players;
+    let d = Infinity;
+    for (const o of advs) {
+        if (o.role === 'gk' || !o.model) continue;
+        const dd = Math.hypot(p.model.position.x - o.model.position.x,
+            p.model.position.z - o.model.position.z);
+        if (dd < d) d = dd;
+    }
+    return d;
+}
+
+/*
+Corredor livre entre dois PONTOS: nenhum adversário a menos de `meiaLargura` da
+recta que os une, contando só quem está entre um e outro.
+
+É a mesma pergunta da linha de passe, escrita aqui para poder ser feita com
+pontos e não só com jogadores — o cara a cara precisa dela entre o ponto do
+passe e a baliza.
+*/
+function corredorLivre(ax, az, bx, bz, adversarios, meiaLargura, ignorarGK) {
+    const lx = bx - ax, lz = bz - az;
+    const len2 = lx * lx + lz * lz;
+    if (len2 < 0.01) return true;
+    for (const o of adversarios) {
+        if (!o.model) continue;
+        if (ignorarGK && o.role === 'gk') continue;
+        const t = ((o.model.position.x - ax) * lx + (o.model.position.z - az) * lz) / len2;
+        if (t < 0.02 || t > 0.98) continue;
+        const px = ax + t * lx, pz = az + t * lz;
+        if (Math.hypot(o.model.position.x - px, o.model.position.z - pz) < meiaLargura) return false;
+    }
+    return true;
+}
+
+/*
+CARA A CARA. Companheiro que, recebendo no espaço, fica isolado com o
+guarda-redes: à frente do último defensor, com o corredor até à baliza livre e
+a ganhar a corrida ao ponto.
+
+A corrida ao ponto é a mesma pergunta do `PassCandidates.venceACorrida` — o
+critério do resto do jogo, não um inventado aqui.
+
+Devolve `{ mate, ponto }` ou null.
+*/
+function procurarCaraACara(p) {
+    const C = (typeof JogadasCombinadas !== 'undefined') ? JogadasCombinadas.caraACara : null;
+    if (!C) return null;
+
+    const colegas = (p.team === 'TeamA') ? Match.players : Match.opponents;
+    const advs = (p.team === 'TeamA') ? Match.opponents : Match.players;
+
+    // Último defensor adversário, no nosso referencial de ataque.
+    let ultimoDef = null;
+    for (const o of advs) {
+        if (o.role === 'gk' || !o.model) continue;
+        const z = o.model.position.z * p.dirZ;
+        if (ultimoDef === null || z > ultimoDef) ultimoDef = z;
+    }
+
+    const bb = (typeof TeamAI !== 'undefined') ? TeamAI.get(p.team) : null;
+    const golZ = p.targetGoalZ;
+    let melhor = null, melhorDist = Infinity;
+
+    for (const mate of colegas) {
+        if (mate === p || mate.role === 'gk' || !mate.model) continue;
+
+        const mz = mate.model.position.z * p.dirZ;
+        if (ultimoDef !== null && mz < ultimoDef - C.margemUltimoDefensor) continue;
+
+        // O ponto do passe: à frente dele, na direcção da baliza.
+        const dx = 0 - mate.model.position.x, dz = golZ - mate.model.position.z;
+        const d = Math.hypot(dx, dz) || 1;
+        const ponto = {
+            x: mate.model.position.x + (dx / d) * C.avancoDoPasse,
+            z: mate.model.position.z + (dz / d) * C.avancoDoPasse
+        };
+
+        const distBaliza = Math.hypot(0 - ponto.x, golZ - ponto.z);
+        if (distBaliza > C.distBalizaMax) continue;
+
+        // Fora-de-jogo: o ponto não pode estar além da linha.
+        if (bb && bb.offsideLimitDir !== null && bb.offsideLimitDir !== undefined &&
+            ponto.z * p.dirZ > bb.offsideLimitDir - 0.5) continue;
+
+        /*
+        Do ponto à baliza sem defensores. O guarda-redes NÃO conta: é
+        exactamente ele o duelo que se quer criar.
+        */
+        if (!corredorLivre(ponto.x, ponto.z, 0, golZ, advs, C.corredorMeiaLargura, true)) continue;
+
+        // E a linha do passe também tem de estar livre.
+        if (!corredorLivre(Match.ball.position.x, Match.ball.position.z, ponto.x, ponto.z,
+            advs, 1.6, true)) continue;
+
+        if (typeof PassCandidates !== 'undefined' && PassCandidates.venceACorrida &&
+            !PassCandidates.venceACorrida(mate, ponto.x, ponto.z, advs)) continue;
+
+        if (distBaliza < melhorDist) { melhorDist = distBaliza; melhor = { mate: mate, ponto: ponto }; }
+    }
+    return melhor;
+}
+
+/*
+TABELINHA — a metade que INICIA. Passa curto ao parceiro e deixa-lhe o pedido
+de devolução; o arranque para o espaço é do `actEsperarDevolucao`.
+
+Só sob pressão: sem ninguém em cima não há razão nenhuma para dar e receber —
+com espaço, o passe normal (ou a condução) é melhor.
+*/
+function procurarTabelinha(p) {
+    const T = (typeof JogadasCombinadas !== 'undefined') ? JogadasCombinadas.tabelinha : null;
+    if (!T) return null;
+    if (distAoAdversarioMaisPerto(p) > T.distAdversario) return null;
+
+    const colegas = (p.team === 'TeamA') ? Match.players : Match.opponents;
+    const advs = (p.team === 'TeamA') ? Match.opponents : Match.players;
+
+    // Há espaço à frente para onde arrancar? Sem isso a tabelinha não tem
+    // segundo tempo.
+    const golZ = p.targetGoalZ;
+    const dirParaGolo = Math.sign(golZ - p.model.position.z) || p.dirZ;
+    const alvoArranque = {
+        x: p.model.position.x,
+        z: p.model.position.z + dirParaGolo * T.avancoDaDevolucao
+    };
+    if (!corredorLivre(p.model.position.x, p.model.position.z,
+        alvoArranque.x, alvoArranque.z, advs, T.espacoAFrente * 0.5, true)) return null;
+
+    let melhor = null, melhorDist = Infinity;
+    for (const mate of colegas) {
+        if (mate === p || mate.role === 'gk' || !mate.model) continue;
+        const d = p.model.position.distanceTo(mate.model.position);
+        if (d < T.distParceiroMin || d > T.distParceiroMax) continue;
+        if (!corredorLivre(Match.ball.position.x, Match.ball.position.z,
+            mate.model.position.x, mate.model.position.z, advs, 1.4, true)) continue;
+        if (d < melhorDist) { melhorDist = d; melhor = mate; }
+    }
+    if (!melhor) return null;
+    return { mate: melhor, alvo: alvoArranque };
+}
+
+/*
+O ramo, chamado do topo do `actPass`. Devolve true se a bola foi jogada.
+*/
+function tratarJogadaCombinada(ctx) {
+    const p = ctx.p;
+    if (typeof JogadasCombinadas === 'undefined' || typeof PassTypes === 'undefined') return false;
+    const J = JogadasCombinadas;
+
+    /*
+    1. DEVOLUÇÃO DE TABELINHA. Alguém me passou a pedir a devolução e o pedido
+    ainda está de pé. Vem antes de tudo: é o segundo tempo de uma jogada já
+    começada, e hesitar aqui é o mesmo que não a ter começado.
+    */
+    if (p.devolverPara && p.devolverPara.timer > 0 && p.devolverPara.mate &&
+        p.devolverPara.mate.model) {
+        const pedido = p.devolverPara;
+        p.devolverPara = null;
+        aplicarMiraDoPasse(p, PassTypes.LEADING, pedido.alvo);
+        p.initiatePass(pedido.mate);
+        return true;
+    }
+
+    // 2. CARA A CARA.
+    const isolado = procurarCaraACara(p);
+    if (isolado) {
+        p.carryRecuo = false;
+        p.carryHold = 0;
+        aplicarMiraDoPasse(p, PassTypes.LEADING, isolado.ponto);
+        p.initiatePass(isolado.mate);
+        if (typeof MatchStats !== 'undefined' && MatchStats[p.team] &&
+            MatchStats[p.team].caraACara !== undefined) MatchStats[p.team].caraACara++;
+        return true;
+    }
+
+    // 3. TABELINHA (iniciar).
+    const tab = procurarTabelinha(p);
+    if (tab) {
+        p.carryRecuo = false;
+        p.carryHold = 0;
+
+        tab.mate.devolverPara = {
+            mate: p, alvo: tab.alvo, timer: J.tabelinha.duracaoPedido
+        };
+        p.esperarDevolucao = { alvo: tab.alvo, timer: J.tabelinha.duracaoPedido };
+
+        aplicarMiraDoPasse(p, PassTypes.DIRECT, null);
+        p.initiatePass(tab.mate);
+        if (typeof MatchStats !== 'undefined' && MatchStats[p.team] &&
+            MatchStats[p.team].tabelinhas !== undefined) MatchStats[p.team].tabelinhas++;
+        return true;
+    }
+
+    // 4. PASSE PARA QUEM ESTÁ EM OVERLAP.
+    const colegas = (p.team === 'TeamA') ? Match.players : Match.opponents;
+    const advs = (p.team === 'TeamA') ? Match.opponents : Match.players;
+    for (const mate of colegas) {
+        if (mate === p || !mate.model || !(mate.overlapTimer > 0)) continue;
+        if (!corredorLivre(Match.ball.position.x, Match.ball.position.z,
+            mate.model.position.x, mate.model.position.z, advs, 1.5, true)) continue;
+        aplicarMiraDoPasse(p, PassTypes.LEADING, {
+            x: mate.model.position.x,
+            z: mate.model.position.z + p.dirZ * 4.0
+        });
+        p.initiatePass(mate);
+        if (typeof MatchStats !== 'undefined' && MatchStats[p.team] &&
+            MatchStats[p.team].overlaps !== undefined) MatchStats[p.team].overlaps++;
+        return true;
+    }
+
+    return false;
+}
+
+/*
+QUEM NÃO TEM A BOLA — as duas metades que faltam.
+
+`actEsperarDevolucao`: pedi a tabelinha, arranco para o espaço. O alvo é o
+ponto que ficou combinado no pedido, e a velocidade é de desmarque.
+
+`actOverlap`: corro por fora de quem tem a bola, pelo corredor do meu lado.
+O `overlapTimer` é o que diz a quem tem a bola que eu sou opção (ver o ramo 4
+do tratarJogadaCombinada) — e era ele que estava permanentemente a zero desde
+que o overlap foi desligado.
+*/
+function podeEsperarDevolucao(ctx) {
+    const p = ctx.p;
+    return !!(p.esperarDevolucao && p.esperarDevolucao.timer > 0 && p !== Match.ballCarrier);
+}
+
+function actEsperarDevolucao(ctx) {
+    const p = ctx.p;
+    const T = JogadasCombinadas.tabelinha;
+    p.dynamicTarget.set(p.esperarDevolucao.alvo.x, ALTURA_BASE_Y, p.esperarDevolucao.alvo.z);
+    p.speedMult = T.velocidadeArranque;
+    p.fsm.changeState('RUN_INTO_SPACE');
+}
+
+function podeCorrerOverlap(ctx) {
+    const p = ctx.p;
+    const O = (typeof JogadasCombinadas !== 'undefined') ? JogadasCombinadas.overlap : null;
+    if (!O || p.role === 'gk') return false;
+
+    // Já a correr: mantém-se até o tempo acabar.
+    if (p.overlapTimer > 0) return true;
+
+    const portador = Match.ballCarrier;
+    if (!portador || portador === p || portador.team !== p.team) return false;
+    if (p.model.position.z * p.dirZ < O.avancoMin) return false;
+
+    // Só quem está do MESMO lado e ATRÁS do portador ultrapassa por fora.
+    const ladoDele = Math.sign(p.model.position.x) || 1;
+    if (Math.sign(portador.model.position.x) !== ladoDele) return false;
+    if (p.model.position.z * p.dirZ > portador.model.position.z * p.dirZ) return false;
+
+    // Corredor de fora livre à frente dele.
+    const advs = (p.team === 'TeamA') ? Match.opponents : Match.players;
+    const alvo = alvoDoOverlap(p, portador, O);
+    if (!corredorLivre(p.model.position.x, p.model.position.z, alvo.x, alvo.z,
+        advs, 2.5, true)) return false;
+
+    p.overlapTimer = O.duracao;
+    return true;
+}
+
+// Ponto do overlap: à frente do portador, no corredor lateral do lado dele.
+function alvoDoOverlap(p, portador, O) {
+    const lado = Math.sign(p.model.position.x) || 1;
+    return {
+        x: lado * O.larguraDoCorredor,
+        z: portador.model.position.z + p.dirZ * O.avancoDaCorrida
+    };
+}
+
+function actOverlap(ctx) {
+    const p = ctx.p;
+    const O = JogadasCombinadas.overlap;
+    const portador = Match.ballCarrier;
+    const alvo = portador && portador.model
+        ? alvoDoOverlap(p, portador, O)
+        : { x: p.model.position.x, z: p.model.position.z + p.dirZ * O.avancoDaCorrida };
+
+    p.dynamicTarget.set(
+        THREE.MathUtils.clamp(alvo.x, -(CAMPO_LARG / 2 - 2), CAMPO_LARG / 2 - 2),
+        ALTURA_BASE_Y,
+        THREE.MathUtils.clamp(alvo.z, -(CAMPO_COMP / 2 - 2), CAMPO_COMP / 2 - 2));
+    p.speedMult = O.velocidade;
+    p.fsm.changeState('RUN_INTO_SPACE');
+}
+
 function actPass(ctx) {
     const p = ctx.p;
     if (p.aguardarPassada()) return true;
+
+    /*
+    JOGADAS COMBINADAS primeiro — cara a cara, tabelinha, overlap. Ver
+    `tratarJogadaCombinada` e o `JogadasCombinadas` (config.js): na nota do
+    `PassTypes.escolher` estas jogadas competem com o progresso para a baliza
+    e perdem, por isso são um ramo à frente e não um bónus.
+    */
+    if (tratarJogadaCombinada(ctx)) return;
     if (typeof PassTypes === 'undefined') {
         p.passAimPoint = null;
         p.passTipo = 'direct';
@@ -1861,8 +2181,16 @@ function tratarBolaParada(p) {
             fsm.changeState('SET_PIECE_WAIT');
         }
     } else if (Match.state === 'FREE_KICK' || Match.state === 'PENALTY') {
-        // Posições impostas pelo setupSetPiece (barreira, meia-lua): ninguém
-        // decide nada até a bola sair.
+        /*
+        Posições impostas pelo setupSetPiece (barreira, meia-lua): ninguém
+        decide nada até a bola sair.
+
+        EXCEPÇÃO: o batedor a meio do gesto. A falta e o penálti passaram a ter
+        corrida (um `ActionState` que só joga a bola no `contactTime`), e o
+        `changeState` limpa o `actionState` — mandá-lo para SET_PIECE_WAIT aqui
+        apagava o gesto e a bola nunca era batida.
+        */
+        if (p === Match.setPieceTaker && p.actionState) return;
         if (s !== 'SET_PIECE_WAIT') fsm.changeState('SET_PIECE_WAIT');
     } else if (Match.state === 'THROW_IN') {
         // O batedor está em LATERAL (pose + gesto) e não passa por aqui.
@@ -2397,6 +2725,23 @@ const PlayerBT = sel('PlayerRoot',
                 cond('souEuAIr', (ctx) =>
                     (Match.chaserA === ctx.p || Match.chaserB === ctx.p)),
                 act('perseguir', actChaseBall)
+            ),
+
+            /*
+            Pedi a tabelinha: arranco para o espaço combinado. Antes do
+            `Receber` porque quem pede a tabelinha NÃO é o destinatário do
+            passe — o parceiro é —, e o movimento tem de acontecer enquanto a
+            bola vai e volta.
+            */
+            seq('EsperarDevolucao',
+                cond('pediTabelinha', podeEsperarDevolucao),
+                act('arrancar', actEsperarDevolucao)
+            ),
+
+            // Ultrapassar por fora quem tem a bola.
+            seq('Overlap',
+                cond('vouPorFora', podeCorrerOverlap),
+                act('overlap', actOverlap)
             ),
 
             // Sou o destinatário do passe.

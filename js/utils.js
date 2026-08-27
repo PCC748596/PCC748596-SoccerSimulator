@@ -1936,7 +1936,28 @@ function passeMorreuParaODestinatario(o) {
     const dx = o.bolaX - o.alvoX;
     const dz = o.bolaZ - o.alvoZ;
 
-    if (Math.hypot(dx, dz) <= o.distPerdido) return false;
+    const vy0 = o.velY || 0;
+    const parada = (o.velX * o.velX + o.velZ * o.velZ + vy0 * vy0) <= o.paradaV2;
+
+    /*
+    PERTO DELE, MAS PARADA HÁ MUITO TEMPO, também é passe morto.
+
+    Este `return false` era incondicional: dentro de `distPerdido` o passe
+    contava como entregue e a bola ficava presa ao destinatário para sempre.
+    Se ele não lhe tocasse — parou à espera da queda, o alvo dele era outro
+    ponto, alguém se meteu no meio — mais ninguém a ia buscar, porque o
+    `bolaSolta` do deveMandarChaser exige `!intendedReceiver`. Resultado: bola
+    quieta a poucos metros de três jogadores e o jogo à espera.
+
+    `tempoParada` é opcional: sem ele o comportamento é o antigo.
+    */
+    if (Math.hypot(dx, dz) <= o.distPerdido) {
+        if (parada && typeof o.tempoParada === 'number' &&
+            typeof o.prazoParada === 'number' && o.tempoParada >= o.prazoParada) {
+            return true;
+        }
+        return false;
+    }
 
     const vy = o.velY || 0;
     const v2 = o.velX * o.velX + o.velZ * o.velZ + vy * vy;

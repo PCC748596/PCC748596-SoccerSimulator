@@ -1445,6 +1445,45 @@ Campos (todos opcionais, `EstiloBase` dá os valores neutros):
   posicoes      onde o estilo pode ser escolhido (validação/UI)
 =============================================================================
 */
+/*
+=============================================================================
+AFINAÇÃO DE ESTILOS COM COMPORTAMENTO PRÓPRIO
+=============================================================================
+Dois estilos deixaram de ser só modificadores de posição e passaram a ter
+dinâmica no tempo. Os números vivem aqui.
+
+FOX IN THE BOX. O gatilho pedia a bola a mais de 12 m dentro do meio-campo
+adversário, e medido em jogo isso é **2% dos frames em posse**: o estilo quase
+nunca estava ligado, e ele ficava no slot puro a 25 m da área. Agora liga a
+partir do meio-campo, e a profundidade acompanha a bola — espera
+`esperaAtras` metros à frente dela, nunca aquém da entrada da área, nunca além
+de `avancoMax` (senão ficava em cima do guarda-redes).
+
+DUMMY RUNNER. A corrida de desmarque não tinha fim: enquanto a equipa
+atacasse, ele ficava permanentemente aberto na ponta a `largura` metros do
+slot, longe de tudo. Uma corrida de arrastamento é um GESTO, não uma posição:
+dura `duracao` segundos e depois ele volta às acções normais, com `descanso`
+segundos antes de a poder repetir.
+=============================================================================
+*/
+const PlayingStyleTuning = {
+    foxInTheBox: {
+        entradaArea: 30.0,   // nunca espera mais atrás do que isto
+        esperaAtras: 8.0,    // metros à frente da bola, enquanto ela não chega
+        avancoMax: 46.0      // e nunca além disto (linha de fundo aos 53)
+    },
+
+    dummyRunner: {
+        duracao: 6.0,        // segundos de corrida
+        descanso: 4.0,       // e antes de poder arrancar outra
+        /*
+        Só arranca com a jogada viva à frente dele — uma corrida de
+        arrastamento com a bola na própria defesa não arrasta ninguém.
+        */
+        bolaAvancoMin: -15.0
+    }
+};
+
 const EstiloBase = {
     avanco: 0, largura: 0, avancoComBola: 0, amplitudeZ: 1.0,
     passe: 1.0, remate: 1.0, cruzar: 1.0, lancar: 1.0, conduzir: 1.0,
@@ -3765,6 +3804,76 @@ const FirstTouchModel = {
     chanceMax: 0.80
 };
 
+/*
+=============================================================================
+JOGADAS COMBINADAS — o que tem prioridade sobre o passe normal
+=============================================================================
+O `PassTypes.escolher` pontua todos os companheiros por uma nota dominada pelo
+progresso para a baliza. Nessa nota, três jogadas que decidem jogos ou não
+existiam, ou saíam por acidente:
+
+  CARA A CARA   o passe que isola um companheiro com o guarda-redes. Na nota
+                normal vale tanto como qualquer outro passe para a frente.
+  TABELINHA     dar e receber de volta no espaço que se abre ao arrancar. Não
+                existia de todo — não há memória entre o passe e a devolução.
+  OVERLAP       correr por fora de quem tem a bola. Existiu e foi DESLIGADO
+                (`overlapTimer = 0` no player.js, "Disparadas / Overlap
+                pós-passe desativadas").
+
+Nenhuma delas se resolve com um bónus na nota: um bónus continua a competir com
+o progresso, e é isso que as faz perder. São um RAMO próprio, testado antes do
+passe normal, por esta ordem — cara a cara primeiro porque é a que acaba a
+jogada.
+=============================================================================
+*/
+const JogadasCombinadas = {
+    caraACara: {
+        // O companheiro tem de estar dentro desta distância à baliza para o
+        // passe valer a pena — de 45 m ninguém fica "isolado com o guarda-redes".
+        distBalizaMax: 34.0,
+        // Corredor entre ele e a baliza livre de defensores, com esta
+        // meia-largura.
+        corredorMeiaLargura: 3.5,
+        // E ele tem de estar À FRENTE de toda a defesa (ou a ganhar-lhe a
+        // corrida) — margem em metros sobre o último defensor.
+        margemUltimoDefensor: 0.5,
+        // Ponto do passe: metros à frente dele, na direcção da baliza.
+        avancoDoPasse: 7.0
+    },
+
+    tabelinha: {
+        // Só sob pressão: sem ninguém em cima não há razão para dar e receber.
+        distAdversario: 4.5,
+        // O parceiro tem de estar nesta faixa: perto que chegue para devolver
+        // de primeira, longe que chegue para a bola sair do aperto.
+        distParceiroMin: 5.0,
+        distParceiroMax: 16.0,
+        // Espaço à frente de quem inicia, para haver para onde arrancar.
+        espacoAFrente: 6.0,
+        // Quanto tempo o pedido fica de pé, e onde a devolução é posta.
+        duracaoPedido: 2.5,
+        avancoDaDevolucao: 8.0,
+        // Velocidade de quem arranca para receber a devolução.
+        velocidadeArranque: 7.9
+    },
+
+    overlap: {
+        // Quem passa por dentro corre por fora se o corredor do seu lado
+        // estiver livre até esta distância.
+        corredorLivre: 12.0,
+        // Só a partir do meio-campo: um overlap na própria defesa é um risco
+        // sem prémio.
+        avancoMin: -5.0,
+        duracao: 5.0,
+        // Metros à frente do portador, na linha lateral do lado dele.
+        avancoDaCorrida: 12.0,
+        larguraDoCorredor: 21.0,
+        velocidade: 7.9,
+        // Enquanto corre, o passe para ele vale isto a mais na nota.
+        bonusNota: 220
+    }
+};
+
 const ShotModel = {
     /*
     Subiu de 28/8 para 32/9 depois de se ver em campo: continuava a ler como
@@ -3923,7 +4032,26 @@ const FreeKickModel = {
     barreiraMax: 4,            // e perto dela
     barreiraZonaZ: 30.0,       // no referencial de ataque: daqui p/ a frente é barreira cheia
     espacamentoBarreira: 0.85, // ombro com ombro
-    recuoBatedor: 1.4,         // atrás da bola, na linha bola->baliza
+    /*
+    ATRÁS DA BOLA, na linha bola->baliza. Estava em 1.4 m — praticamente em
+    cima dela, sem espaço nenhum para a corrida, e como o gesto era instantâneo
+    o que se via era a bola a saltar sozinha para o pé dele.
+
+    A `corridaMin` é o que sobra depois de descontar a passada final: o
+    `ActionState` leva-o de `recuoBatedor` até junto da bola durante a fase de
+    preparação do clip, e a bola só parte no `contactTime`.
+    */
+    recuoBatedor: 4.8,         // onde ESPERA, atrás da bola
+    /*
+    A corrida do gesto cobre só os últimos metros: o `contactTime` do ShotClip
+    são ~0.32 s, e atravessar os 4.8 m nesse tempo dava 15 m/s — um teletransporte.
+    Os primeiros metros são andados durante a espera regulamentar (ver o ramo
+    `faltaPendente` no Match.update), e o gesto arranca daqui.
+    */
+    arranqueDoGesto: 2.6,
+    velocidadeAproximacao: 2.4,   // m/s a caminhar para a bola, antes do gesto
+    // Onde o pé fica no instante do contacto: um passo atrás da bola.
+    paragemNoContacto: 0.55,
     afastaAdversarios: 9.15,   // ninguém da defesa mais perto do que isto da bola
 
     /*
@@ -4730,7 +4858,27 @@ const PerceptionModel = {
     margemMelhor: 0.15,
     // Distância a partir da qual se considera que a bola JÁ passou o
     // destinatário do passe e ele deixa de ser dono da jogada.
-    passePerdidoDist: 4.0
+    passePerdidoDist: 4.0,
+
+    /*
+    PRAZO DA BOLA PARADA JUNTO AO DESTINATÁRIO.
+
+    O `passeMorreuParaODestinatario` (utils.js) começa por desistir quando a
+    bola está a menos de `passePerdidoDist` dele: perto do destinatário o passe
+    conta como entregue, e o resto do teste nem corre. Só que "perto dele" não
+    é "no pé dele" — a bola pode parar a três metros e ele não lhe tocar (ficou
+    à espera da queda, o alvo dele era outro ponto, um adversário meteu-se pelo
+    meio).
+
+    E aí ninguém a vai buscar: `bolaSolta` exige `!intendedReceiver`
+    (deveMandarChaser, team_bt.js), portanto a equipa não designa perseguidor —
+    e o destinatário, esse, já parou. Bola quieta no relvado com gente à volta,
+    que é o que se via junto à linha lateral.
+
+    Passado este prazo com a bola parada e sem ninguém lhe tocar, o passe
+    caduca e ela volta a ser uma bola solta como outra qualquer.
+    */
+    prazoBolaParada: 1.2
 };
 
 // Segundos que a equipa SEM bola espera, depois de a perder, antes de

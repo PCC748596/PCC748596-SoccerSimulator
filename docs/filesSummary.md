@@ -5,6 +5,222 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 27 de Agosto de 2026 — o passe que não chegava, e o remate que já sabia o resultado
+
+Testes novos: `penalti_defesa`, `passe_encontro`, `passe_alto_angulo`,
+`gk_defesa`, `remate_tipo_mira`, `primeira_tocada`. Suite: **61 ficheiros,
+104 casos**.
+
+Ferramenta nova: `tools/headless/` — o jogo REAL a correr em Node (jsdom +
+three r128 do `node_modules`, sem renderer). Um tempo de jogo em ~16 s de CPU,
+com a instrumentação a embrulhar as funções globais em vez de sujar o código de
+produção. Foi ela que encontrou quase tudo o que está aqui em baixo; sem
+medição, três destes bugs eram invisíveis.
+
+#### O penálti que ninguém batia
+
+O `baterPenalti` passou a usar um `ActionState` (corrida + contacto no
+`contactTime` do clip), mas o freeze do `player.update` fazia `return` antes do
+`fsm.update` para TODOS enquanto `Match.state === 'PENALTY'`. O `actionState`
+nunca avançava, o `onContact` nunca disparava, e o PENALTY só acabava pelo
+timeout de 15 s do `setPieceTimer` — com a bola ainda na marca. Nesse instante
+o guarda-redes via `PLAY` com uma bola solta na área e saía da baliza a ir
+buscá-la: era o "goleiro sai antes do cobrador tocar na bola".
+
+Excepção no freeze para o `setPieceTaker` com `actionState`: corre só o
+`fsm.update`, nunca o `runBehaviorTree` — o `tratarBolaParada` força
+`SET_PIECE_WAIT` durante o PENALTY e mataria o estado `SHOOT`.
+
+#### E o resto do penálti
+
+- **Árbitro** (`officials.js`): posição fixa no penálti, à esquerda do batedor,
+  no cruzamento da lateral da pequena área com o alinhamento da marca
+  (`PenaltyModel.arbitroX`). A diagonal normal punha-o a meio-campo.
+- **Cobertura** (`match.js`): dois defesas e um médio de quem bate, mais dois
+  atacantes de quem defende, saem da fila e formam uma linha própria
+  `recuoCobertura` metros atrás e **centrada no eixo**. Ficarem na fila punha-os
+  nas pontas — 21 lugares a 2.2 m deixam quem sobra encostado à linha lateral.
+- **Defesas** (`player.js`): fora do ramo `diff <= -5` o `gkDiveCol` era SEMPRE
+  o lado contrário — o guarda-redes atirava-se de propósito para o lado errado e
+  um penálti bem batido acabava sempre em golo, trave ou fora, nunca numa mão.
+  `PenaltyModel.chanceDefesa` dá a cada banda de `diff` uma probabilidade de ele
+  ir ao sítio certo (2% no remate perfeito, 55% no mal batido), e só quando o
+  remate ia mesmo para dentro da baliza.
+
+#### Espalmada com direcção (`gk_dive.js`)
+
+A espalmada devolvia SEMPRE a bola ao campo (`ballVel.z *= -0.5`, sinal
+invertido): nunca havia um canto ganho numa defesa, a saída mais comum de todas
+num remate colocado. Agora a colocação decide, e a POSIÇÃO da bola é empurrada
+para fora da moldura no instante do toque — sem isso a mão está na linha de
+golo e a bola atravessava o plano ainda dentro dos postes nos milissegundos
+seguintes, ou seja golo.
+
+#### Som
+
+- `AmbienteSonoro` arranca **desligado** (`_ligado: false`), com o botão do
+  painel a condizer e o `volume` a zero já na `init` — o `update` só corrigia no
+  frame seguinte, e esse frame chegava a sair com som.
+- `efeitos_sonoros.js` (novo): apito e chute, com pool de 4 vozes por som (um
+  único `Audio` não se sobrepõe a si próprio — `play()` numa amostra a tocar
+  reinicia-a), cadência mínima por som e atenuação do chute pela distância à
+  câmara. Partilha o interruptor do ambiente: um botão, um som.
+- O apito da saída é dado `APITO_ANTES_DA_SAIDA` (1 s) antes do toque e não na
+  montagem do kickoff, onde ficava os 3 s inteiros à frente da bola.
+
+#### Passe de encontro — a fórmula que faltava (`utils.js`)
+
+O passe aos pés estava certo e o passe no espaço não, e a razão era sempre a
+mesma: a força saía SÓ da distância. `velocidadeRasteiraPara(dist, vChegada)`
+responde "que velocidade põe a bola ali ainda jogável" e nunca soube QUANDO o
+companheiro lá chega. Aos pés não se nota; num lançamento o alvo está 10-15 m à
+frente dele.
+
+A física rasteira já estava escrita (`dv/dt = −(k·v² + μg)`) e tem solução
+fechada. Daí saem as funções novas:
+
+```
+velocidadeDeChegadaRasteira(d, v0)   com que velocidade lá chega
+tempoRasteiroDaBola(d, v0)           t = (atan(v0/V) − atan(v(d)/V)) / w
+velocidadeRasteiraEmTempo(d, T)      a saída que a faz demorar T (bissecção)
+velocidadeParaChegarA(d, vCh)        inverso exacto, sem os ajustes de jogo
+tempoDoJogadorAte(d, v0, vMax)       modelo de arranque do próprio steerArrive
+passeDeEncontro({...})               junta tudo
+elevacaoParaTempoDeVoo(d, T)         passe alto: mesmo alcance, outro tempo
+elevacaoComTectoDeApex(d, elev, max) e o tecto de altura
+```
+
+Duas condições: a bola chega ao ponto `folgaTempo` depois dele, e chega a
+`fracVelReceptor` da velocidade a que ele corre.
+
+**O tecto tem de ser em velocidade RELATIVA.** Em absoluto — como estava — com
+um receptor a 6 m/s o tecto ficava em ~5 m/s, e para chegar a 5 m/s ao fim de
+25 m a bola tem de sair mansa: medido, **2.38 s de voo para 25 m** com o homem
+a chegar ao ponto em menos de 1 s. Ia tão devagar que era interceptada a meio.
+Quem recebe corre no sentido da bola; é a diferença das duas velocidades que
+ele tem de dominar.
+
+#### Ângulo e altura do passe pelo alto
+
+Havia três caminhos a escolher elevação e nenhum tinha faixa: as bandas
+(`atan(4·alturaMax/dist)`, tecto de 60° — um passe de 21 m dava 38.7°), o longo
+(42°→32°) e o encontro (12°-55°, que ia buscar os 55° para atrasar a bola).
+Todos apertados em **25°-35°** (`passeArco.elevMin/elevMax`).
+
+Mas o ângulo sozinho não chega: o apex vai com o QUADRADO da velocidade, e essa
+cresce com a distância. Medido, um lançamento de 54.9 m saía a 35° com
+`vy = 18.5` — **17 m de altura**, ângulo legal e bola de guarda-redes. Daí o
+`apexMax: 7.0` e o piso `elevMinLonga: 15°` para quando nem no mínimo da faixa
+cabe: a alternativa a um passe longo tenso não é um passe longo alto, é não dar
+o passe. E o `throughBallMaxDist` desceu de 45 para 38 m — com o alvo posto
+`throughBallDepth` além do companheiro, 45 dava lançamentos de 58 m.
+
+#### O destinatário corria PARA O PASSADOR (`bt/player_bt.js`)
+
+O bug mais caro dos três, e o mais escondido. `bb.chaser =
+Match.intendedReceiver` (`team_bt.js`): quem tem o passe a caminho é designado
+perseguidor, e faz sentido. O que não fazia sentido era a folha:
+
+```js
+p.dynamicTarget.copy(Match.ball.position);   // onde a bola ESTÁ neste frame
+```
+
+No instante em que o passe sai, "onde a bola está" é em cima do passador —
+atrás dele. Ele arrancava para o espaço, o passe saía, e dava meia-volta para
+ir buscá-la. E como o ramo `IrABola` corre ANTES do ramo `Receber`, corrigir só
+o `actReceivePass` não chegava: nunca lá chegava.
+
+Por baixo havia um segundo problema: mesmo no `actReceivePass`, o
+`interceptionPoint` (o primeiro ponto da trajectória a que ele chega — atrás,
+na direcção do passador) ganhava sempre ao ponto do passe. Agora é uma corrida:
+`tempoDoJogadorAte` contra `tempoRasteiroDaBola`, com `PassModel.recepcao`.
+
+Medido meio segundo depois do passe, na fracção que ficou MAIS LONGE do ponto:
+
+```
+             antes    depois
+direct        23%       3%
+space         60%       9%
+leading       50%       8%
+lançamento    56%       0%
+```
+
+E a fracção de passes que chegaram ao destinatário: `direct` 46%→80%, `space`
+44%→78%, `leading` 31%→80%, `lançamento` 45%→71%.
+
+#### A corrida ao ponto, na escolha do alvo (`pass_candidates.js`)
+
+O `raioAdversario` só pergunta se há um adversário JÁ em cima do ponto. Medido,
+os lançamentos cortados eram-no a **96% do percurso**: a bola não era
+interceptada pelo caminho, chegava ao destino e era o adversário que lá estava.
+`venceACorrida` compara tempo com tempo, com `margemCorrida: 0.30` s — empatar
+não chega.
+
+#### Parar e recuar com a bola (`CarryModel.segurar`)
+
+O portador só sabia ir para a frente. O `carryRecuo` existia mas estava atrás de
+três condições DEPOIS de dois ramos que passam a bola: nunca corria. Parar com
+ela não existia de todo. `tratarSegurarBola` é agora o ramo 0 do `actPass` — sem
+passe bom e sem ninguém a 6 m, 35% fica com ela (`carryHold`, com timer próprio
+para o BT não redecidir no frame seguinte), 30% recua.
+
+#### Defesa do guarda-redes: uma fórmula, três resultados (`GkCatchModel`)
+
+Havia três fórmulas em três ramos, com bases e declives diferentes
+(`0.35 + (GK−50)/100`, `0.55 + (GK−50)/100`, `0.4 + (GK−50)/80`) e uma quarta
+situação que agarrava sempre. Nenhuma sabia a que velocidade a bola vinha nem
+se a mão estava ao peito ou na ponta dos dedos, e nenhuma usava a TÉCNICA.
+
+```
+P(agarrar) = base[tipo] + 0.30·(GK−50)/50 + 0.12·(TEC−50)/50
+           − 0.22·(v−vRef)/vRef − 0.40·extensao − 0.10·altura
+```
+
+Calibrado em ~64% de bolas agarradas para um guarda-redes médio contra remate
+médio (corpo 78%, mãos 70%, salto 60%, mergulho 48%). O terceiro resultado é o
+`roca` — toca-lhe e ela segue —, que só aparece com bola rápida E braço
+esticado: 0% num cruzamento, 31% num tiro na ponta dos dedos. E a espalmada
+deixou de ser aleatória: `qualidadeEspalmada(TEC)` escolhe entre canto, lateral
+e o rebote curto ao meio da área, que é o caso que faltava.
+
+#### O remate decide a bola, não o desfecho (`ShotModel`)
+
+Sorteava-se o RESULTADO (`GOL`, `TRAVE_CAMPO`, `TRAVESSAO_FORA`,
+`GOLEIRO_DEFENDE_*`) por pesos de `attackRatio` e só depois se escolhia o ponto
+que o produzisse. Não havia remate colocado nem rasteiro — havia potência
+sempre cheia com `alvoY = random() > 0.5 ? 2.0 : 0.4` e o canto de `random()`,
+sem olhar para o guarda-redes.
+
+E o desfecho DESLIGAVA o guarda-redes: `forcedGKDelay = 1.0` nos remates
+marcados como golo. Todo o `GkCatchModel` só era consultado depois de o sorteio
+já ter decidido que ia haver defesa.
+
+Agora há quatro tipos (`colocado` 0.68× potência e 0.80× sigma, `rasteiro`,
+`forca`, `chapeu` só com o guarda-redes adiantado), mira ao canto CONTRÁRIO ao
+guarda-redes, e um erro gaussiano em metros no plano da baliza
+(`sigmaDeRemate`). Trave e "por cima" deixaram de ser casos de tabela: são a
+mira a falhar por pouco, e a colisão real com a armação faz o resto.
+`erro.escalaGlobal` (1.0) é a única manípula de calibração — o teste falha se
+sair de 1.0, para os números medidos não passarem a mentir.
+
+```
+precisão medida:   6 m: 64% no alvo   12 m: 52%   18 m: 42%   25 m: 31%
+```
+
+#### Jogo de primeira (`FirstTouchModel`)
+
+Toda a gente dominava sempre e depois esperava ~3 s de cadência. Um jogador com
+TEC >= 85 e um adversário a <= 4 m PODE tocar de primeira: 45% das vezes a TEC
+85, 80% a TEC 100. Duas ligações, sem as quais era só uma constante no config —
+o `resolveBallContact` decide e salta o gesto de domínio, e o ramo `Dominar`
+consome a flag para não haver espera. Medido: 59% das situações elegíveis, com
+o passe a sair 0.23 s depois em vez de 3 s.
+
+#### Lateral
+
+`ThrowInModel.apoioQuantos` de 3 para 2: a três, meia equipa convergia para a
+mesma linha lateral.
+
 ### Sessão de 26 de Agosto de 2026 (continuação 6) — a bola parada que ninguém ia buscar
 
 Testes novos: `passe_morto_bola_parada`, `sim_amostragem`. Suite: **52 ficheiros**.
@@ -1814,7 +2030,7 @@ three.min.js (CDN)
        → bt/action_state.js → perception.js
        → spatial_grid.js → pass_candidates.js
        → bt/core.js → bt/team_bt.js → bt/position_bt.js → bt/player_bt.js
-       → match.js → ambiente_sonoro.js → pose.js → player.js → fsm.js → simulate.js
+       → match.js → ambiente_sonoro.js → efeitos_sonoros.js → pose.js → player.js → fsm.js → simulate.js
        → minimap.js → officials.js → crowd.js
        → bt/btDebug.js
        → main.js
@@ -2740,7 +2956,33 @@ Funções puras, sem estado de jogo.
 - `OptimizedAnimations` — dados de animação pré-gravados usados pela função acima.
 - **`velocidadeRasteiraPara(dist, vChegada)`** — calcula a velocidade inicial de saída de um passe rasteiro com base na distância, aplicando boost nos passes curtos (<12m) para rapidez e agilidade e redução progressiva em passes longos (>15m) com teto seguro (18.5 m/s).
 - **`velocidadeParaAlcance(dist, elev)`** — calcula a velocidade inicial necessária para uma bola aérea alcançar a distância desejada contra o arrasto quadrático do ar.
-- **`resolverElevacaoPasse(dist, forcarArco)`** — determina se o passe é rasteiro ou com arco/elevação parabólica suave e realista (entre 32° e 42° para longos).
+- **`resolverElevacaoPasse(dist, forcarArco)`** — determina se o passe é rasteiro ou pelo alto. A elevação de TODO o passe alto vive na faixa `passeArco.elevMin`..`elevMax` (25°-35°).
+
+**Passe de encontro** — a bola e o receptor no mesmo ponto ao mesmo tempo. A
+força de um passe no espaço não pode sair só da distância: tem de saber quando
+é que o companheiro lá chega (ver a sessão de 27/08 no topo).
+
+- **`velocidadeDeChegadaRasteira(d, v0)`** — com que velocidade a bola lá chega; 0 se morrer antes.
+- **`tempoRasteiroDaBola(d, v0)`** — tempo exacto, por solução fechada do arrasto + atrito; `null` se não chegar.
+- **`velocidadeRasteiraEmTempo(d, T)`** — o inverso, por bissecção.
+- **`velocidadeParaChegarA(d, vChegada)`** — inverso EXACTO do primeiro, sem os ajustes de jogo do `velocidadeRasteiraPara` (que reforça o curto e amansa o longo).
+- **`tempoDoJogadorAte(d, v0, vMax)`** — quanto tempo um jogador leva ao ponto, com o mesmo modelo de arranque do `steerArrive` (`v(t) = vMax + (v0−vMax)·e^(−t/τ)`). Usado também pelo `venceACorrida` e pela recepção.
+- **`passeDeEncontro({...})`** — junta tudo: tempo e velocidade de chegada, esta última em RELATIVO ao receptor.
+- **`tempoDeVooDoPasse(d, elev)`** e **`elevacaoParaTempoDeVoo(d, T)`** — para o passe alto o alcance é o mesmo em duas elevações; usa-se essa liberdade para casar o tempo sem mexer no sítio onde a bola cai.
+- **`elevacaoComTectoDeApex(d, elev, apexMax)`** — o ângulo sozinho não chega: o apex vai com o quadrado da velocidade. Baixa a elevação até a bola caber no tecto de altura.
+
+**Defesa do guarda-redes** (ver `GkCatchModel` em config.js):
+
+- **`resolverDefesaGK({tipo, gk, tec, vChegada, extensao, altura})`** — `'agarra' | 'espalma' | 'roca'`, a mesma conta para os quatro tipos de defesa.
+- **`qualidadeEspalmada(tec)`** e **`destinoDaEspalmada({...})`** — para onde vai o rebote: canto, lateral, ou curto ao meio da área.
+
+**Remate** (ver `ShotModel`):
+
+- **`tipoDeRemate({...})`** — `colocado` / `rasteiro` / `forca` / `chapeu`, por acumulador de fatias.
+- **`miraDeRemate({tipo, gkX})`** — o canto CONTRÁRIO ao guarda-redes; o ponto mirado é sempre golo.
+- **`sigmaDeRemate({...})`** — o erro em metros no plano da baliza, que é o que produz golos, traves e bolas por cima.
+
+- **`jogaDePrimeira(tec, distAdversario, rnd)`** — ver `FirstTouchModel`.
 
 > **Havia uma animação só.** O `getRunPose` devolvia sempre a mesma amplitude
 > (anca ±63°, braços ±57°, cotovelo fixo em −69°, tronco sempre a 17°), e a
@@ -2800,6 +3042,25 @@ partir nada):
 - `resumo()` — relatório agregado, consumido por `simulate.js`.
 
 **Mexer aqui quando:** quiser medir alguma coisa nova sobre a partida.
+
+## `tools/headless/` — o jogo a correr em Node
+
+O `Sim.run` corre no browser. Para medir sem abrir o browser há o
+`tools/headless/harness.js`: carrega os ficheiros de produção por ordem num
+jsdom (com o body real do `index.html`, porque o jogo lê dezenas de elementos
+por id) e usa o `three` do `node_modules` (r128, a mesma versão do CDN). Um
+tempo de jogo — 600 s simulados, 45 min de relógio — corre em ~16 s de CPU.
+
+- `simular.js [segundos]` — resultado, remates, passes, faltas, tipos de remate, defesas do guarda-redes e ocupação dos estados da FSM.
+- `passes.js` — por TIPO de passe (direct/space/leading/lançamento): quem lhe tocou primeiro, erro ao alvo, e onde os cortes acontecem ao longo do percurso.
+- `receptor.js` — o destinatário corre para o ponto ou para o passador? Ângulo e distância ao ponto, meio segundo depois do passe.
+- `elevacoes.js` — elevação e apex REAIS de saída de tudo o que sai do pé.
+- `primeira.js` — jogo de primeira: situações elegíveis, quantas saem, e o que dá.
+
+A instrumentação vive nestes scripts, a embrulhar as funções globais — o código
+de produção não leva contadores para os testes.
+
+**Mexer aqui quando:** precisar de medir comportamento em vez de o observar.
 
 ## `simulate.js` — simulação em lote (sem ecrã)
 
@@ -3331,6 +3592,18 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Passa-se de menos, circula-se de menos | `config.js` → `PassTypeModel.escolha.notaMinima` (anda com o peso `linha`) |
 | Como o portador escolhe por onde conduzir | `config.js` → `DribbleModel` |
 | Mudar como um remate é executado | `fsm.js` → `case 'SHOOT'` |
+| Tipo de remate (colocado/rasteiro/força/chapéu) e pontaria | `config.js` → `ShotModel.tipos`, `.mira`, `.erro`; funções em `utils.js` |
+| Mais/menos golos sem voltar a impor desfechos | `config.js` → `ShotModel.erro.escalaGlobal` |
+| Guarda-redes agarra/espalma/roça, e para onde vai o rebote | `config.js` → `GkCatchModel`; `resolverDefesaGK` em `utils.js` |
+| Força de um passe no espaço ou lançamento | `config.js` → `PassModel.encontro`; `passeDeEncontro` em `utils.js` |
+| Altura/ângulo dos passes pelo alto | `config.js` → `PassModel.passeArco` (`elevMin/elevMax`, `apexMax`) |
+| Para onde o destinatário corre quando o passe sai | `bt/player_bt.js` → `actReceivePass` e `actChaseBall`; `config.js` → `PassModel.recepcao` |
+| Passes no espaço para pontos que o adversário ganha | `pass_candidates.js` → `venceACorrida` e `margemCorrida` |
+| Parar ou recuar com a bola | `config.js` → `CarryModel.segurar` |
+| Tocar de primeira sem dominar | `config.js` → `FirstTouchModel` |
+| Colocação do penálti (fila, cobertura, árbitro) | `config.js` → `PenaltyModel`; `match.js` → ramo `PENALTY` do `setupSetPiece` |
+| Som (ambiente, apito, chute) | `ambiente_sonoro.js`, `efeitos_sonoros.js` |
+| Medir comportamento sem abrir o browser | `tools/headless/` |
 | Física da bola, golo, linha lateral | `match.js` → `updateBall()` |
 | Guarda-redes | `player.js` → `updateGK()` |
 | Câmaras de TV | `match.js` → `updateCamera()` |

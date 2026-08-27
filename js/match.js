@@ -101,6 +101,8 @@ const Match = {
     kickoffActive: false, kickoffTimer: 0, kickoffTaker: null, kickoffApoio: null,
     // Já se apitou esta saída de bola? Ver APITO_ANTES_DA_SAIDA.
     kickoffApitado: false,
+    // Segundos com a bola parada e sem dono (ver PerceptionModel.prazoBolaParada).
+    tempoBolaParada: 0,
     kickoffTeam: null, kickoffPendingPassToDef: false, kickoffPassToDefTimer: 0,
 
     // Migração por eventos (ver EventBus) — parte 1: GK. Substitui o polling
@@ -1670,6 +1672,33 @@ const Match = {
             this.setPieceTimer += dt;
             if (this.faltaPendente) {
                 this.faltaAtraso -= dt;
+
+                /*
+                APROXIMAÇÃO ANDADA. O batedor espera `recuoBatedor` metros atrás
+                da bola e caminha até `arranqueDoGesto` durante o último terço da
+                espera; o gesto (a corrida curta e o contacto) parte daí.
+
+                Sem isto os 4.8 m tinham de ser cobertos dentro do `contactTime`
+                do ShotClip — 0.32 s, ou seja 15 m/s, um teletransporte com pose
+                de remate. E com o batedor colado à bola desde o início (era o
+                que havia, `recuoBatedor` de 1.4 m) não há cobrança nenhuma para
+                ver: a bola parecia saltar-lhe para o pé.
+                */
+                const takerFalta = this.setPieceTaker;
+                const FK = (typeof FreeKickModel !== 'undefined') ? FreeKickModel : null;
+                if (takerFalta && takerFalta.model && FK &&
+                    this.faltaAtraso < ESPERA_APOS_REPOSICAO / 3) {
+                    const bx = this.ball.position.x, bz = this.ball.position.z;
+                    const dx = takerFalta.model.position.x - bx;
+                    const dz = takerFalta.model.position.z - bz;
+                    const d = Math.hypot(dx, dz);
+                    if (d > FK.arranqueDoGesto) {
+                        const passo = Math.min(d - FK.arranqueDoGesto, FK.velocidadeAproximacao * dt);
+                        takerFalta.model.position.x -= (dx / d) * passo;
+                        takerFalta.model.position.z -= (dz / d) * passo;
+                    }
+                }
+
                 if (this.faltaAtraso <= 0) {
                     this.faltaPendente = false;
                     const t = this.setPieceTaker;
@@ -2179,13 +2208,26 @@ const Match = {
             voltava a mexer-se — o deadlock alimentava-se a si próprio. Ver
             tests/passe_morto_bola_parada.test.js.
             */
+            /*
+            Há quanto tempo é que a bola está parada sem dono. Alimenta o
+            prazo do `passeMorreuParaODestinatario` — ver PerceptionModel.
+            prazoBolaParada.
+            */
+            if (!this.ballCarrier && this.ballVel.lengthSq() <= 0.5) {
+                this.tempoBolaParada = (this.tempoBolaParada || 0) + this.delta;
+            } else {
+                this.tempoBolaParada = 0;
+            }
+
             const alvo = this.intendedReceiver;
             if (alvo && passeMorreuParaODestinatario({
                 bolaX: ballPos.x, bolaZ: ballPos.z,
                 alvoX: alvo.model.position.x, alvoZ: alvo.model.position.z,
                 velX: this.ballVel.x, velZ: this.ballVel.z, velY: this.ballVel.y,
                 distPerdido: PerceptionModel.passePerdidoDist,
-                paradaV2: 0.5
+                paradaV2: 0.5,
+                tempoParada: this.tempoBolaParada || 0,
+                prazoParada: PerceptionModel.prazoBolaParada
             })) {
                 this.intendedReceiver = null;
                 this.passTargetPos = null;

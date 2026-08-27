@@ -3,7 +3,8 @@ A DECISAO SEM BOLA, DIVIDIDA POR FASE.
 
 PORQUE. A lista era de onze ramos com as duas fases INTERCALADAS:
 
-    1 Desarme (D)   2 Intercetar   3 IrABola   4 Receber   5 GuardaRedes
+    1 Desarme (D)   2 Intercetar   3 IrABola   4 EsperarDevolucao   5 Overlap
+    6 Receber   7 GuardaRedes
     6 Marcar (D)    7 EsperarNaArea            8 ApoioCirculacao (A)
     9 CorrerNoEspaco (A)          10 AtacarArea (A)       11 ocuparPosicao
 
@@ -62,7 +63,16 @@ console.log(LF + '1 — a ordem das folhas nao mudou');
     (SemBolaDefendendo/SemBolaAtacando) nao contam: nao decidem, agrupam.
     */
     const esperada = [
-        'Desarme', 'Intercetar', 'IrABola', 'Receber', 'GuardaRedes',
+        /*
+        EsperarDevolucao e Overlap entraram aqui (jogadas combinadas, ver
+        JogadasCombinadas em config.js) e é de propósito que estão ANTES do
+        Receber: quem pede a tabelinha não é o destinatário do passe — o
+        parceiro é —, e o arranque tem de acontecer enquanto a bola vai e vem.
+        O mesmo para quem ultrapassa por fora: se o posicionamento normal
+        falasse primeiro, a corrida nunca chegava a existir.
+        */
+        'Desarme', 'Intercetar', 'IrABola', 'EsperarDevolucao', 'Overlap',
+        'Receber', 'GuardaRedes',
         'Marcar', 'EsperarNaArea',
         'ApoioDeCirculacao', 'CorrerNoEspaco', 'AtacarArea',
         'ocuparPosicao'
@@ -100,7 +110,8 @@ console.log(LF + '2 — cada fase tem a sua guarda, uma vez');
 console.log(LF + '3 — os ramos de bola ficam fora das duas fases');
 {
     /*
-    Desarme, Intercetar, IrABola, Receber e GuardaRedes valem nas DUAS fases:
+    Desarme, Intercetar, IrABola, EsperarDevolucao, Overlap, Receber e
+    GuardaRedes valem nas DUAS fases:
     uma bola solta persegue-se com posse nominal ou sem ela, e o guarda-redes
     posiciona-se sempre. Meter qualquer um deles dentro de uma fase tirava-o
     da outra em silencio.

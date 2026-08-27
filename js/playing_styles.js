@@ -94,15 +94,99 @@ ver avaliarEstilo). Um estilo sem gatilho fica sempre ligado — é o caso dos
 traços puramente defensivos, que não fazem sentido "desligar".
 =============================================================================
 */
+/*
+CORRIDA DE ARRASTO DO DUMMY RUNNER — o episódio, no tempo.
+
+Chamada do DESLOCAMENTO (`atraiDefesa` no aplicarEstiloPosicional) e não do
+gatilho: o gatilho tem histerese própria (ESTILO_TEMPO_MINIMO) e ligava/
+desligava com a posse, cortando o episódio em 1.2 s. Aqui a corrida tem mesmo
+princípio e fim.
+
+Máquina de dois estados por jogador, guardada nele próprio:
+
+    _dummyRun     segundos que ainda faltam da corrida
+    _dummyPausa   segundos até poder arrancar outra
+
+Corre uma vez por frame, a partir do gatilho. O `dt` sai do `Match.delta`, que
+é o mesmo relógio de todo o resto — usar um contador de frames tornava a
+duração dependente do FPS, que é o defeito que o `chancePorSegundo` existe
+para evitar.
+*/
+function correCorridaDeArrasto(p, bb, s) {
+    const D = (typeof PlayingStyleTuning !== 'undefined')
+        ? PlayingStyleTuning.dummyRunner
+        : { duracao: 6.0, descanso: 4.0, bolaAvancoMin: -15.0 };
+    const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 1 / 60;
+
+    if (p._dummyRun === undefined) { p._dummyRun = 0; p._dummyPausa = 0; }
+
+    /*
+    Sem jogada para arrastar (perdeu-se a bola, ou sou eu que a tenho): a
+    corrida MORRE aqui, não fica em pausa à espera de retomar.
+
+    Esta condição vive dentro da função e não no gatilho de propósito: no
+    gatilho, o `&&` fazia curto-circuito e a função nem chegava a correr — o
+    contador congelava a meio da corrida e ela retomava minutos depois, do
+    ponto onde tinha ficado.
+    */
+    /*
+    `bb.carrier` NÃO entra aqui: durante o voo de um passe não há portador
+    nenhum, e com ele na condição a corrida morria a cada passe — medido, 0.5 s
+    de mediana. O que importa é a EQUIPA manter a posse (`s.atacando`) e a bola
+    não ser minha.
+    */
+    if (!s.atacando || bb.carrier === p) {
+        if (p._dummyRun > 0) { p._dummyRun = 0; p._dummyPausa = D.descanso; }
+        else if (p._dummyPausa > 0) p._dummyPausa -= dt;
+        return false;
+    }
+
+    // A correr: conta e mantém-se ligado até acabar.
+    if (p._dummyRun > 0) {
+        p._dummyRun -= dt;
+        if (p._dummyRun <= 0) {
+            p._dummyRun = 0;
+            p._dummyPausa = D.descanso;
+        }
+        return true;
+    }
+
+    // Em descanso: nada de corrida, e o estilo fica desligado — que é o que o
+    // devolve às acções normais.
+    if (p._dummyPausa > 0) {
+        p._dummyPausa -= dt;
+        return false;
+    }
+
+    // Parado: arranca uma nova se a jogada justificar.
+    if (s.bolaAvanco < D.bolaAvancoMin) return false;
+    p._dummyRun = D.duracao;
+    return true;
+}
+
 const PlayingStyleTriggers = {
     // Corre na linha do último defensor — só quando há ataque para atacar.
     goal_poacher: (p, bb, s) => s.atacando && s.bolaAvanco > 5,
 
     // Puxa marcação para abrir espaço a outro: qualquer companheiro com bola no ataque.
+    // A DURAÇÃO da corrida não se decide aqui — ver `correCorridaDeArrasto`,
+    // chamado do deslocamento (o gatilho tem histerese própria de 1.2 s e
+    // cortava o episódio antes do fim).
     dummy_runner: (p, bb, s) => s.atacando && bb.carrier && bb.carrier !== p,
 
-    // Espreita na área: só a partir do momento em que a bola pode lá chegar.
-    fox_in_the_box: (p, bb, s) => s.atacando && s.bolaAvanco > 12,
+    /*
+    Espreita na área. O limiar era `bolaAvanco > 12` — a bola a mais de 12 m
+    dentro do meio-campo adversário — e medido em jogo isso acontece em **2%**
+    dos frames em posse. Ou seja o Fox in the Box era um avançado normal 98% do
+    tempo, parado no slot puro a 25 m da área: era isto o "afasta-se muito da
+    área".
+
+    A partir do meio-campo já vale a pena ele ocupar a área — é o estilo
+    inteiro. A que distância ele espera é problema da colocação (ver
+    `dentroArea` no aplicarEstiloPosicional), que agora acompanha a bola em vez
+    de o colar à linha da área desde o início.
+    */
+    fox_in_the_box: (p, bb, s) => s.atacando && s.bolaAvanco > -5,
 
     // Ponto de apoio: interessa na CONSTRUÇÃO (bola atrás), para dar saída.
     // Com a bola já lá à frente ele não tem de segurar nada.
@@ -195,6 +279,16 @@ function avaliarEstilo(p, bb, dt) {
     };
 
     let quer = !!gatilho(p, bb, s);
+
+    /*
+    A corrida de arrasto do Dummy Runner conta o tempo AQUI, e não no
+    deslocamento: o `avaliarEstilo` corre todos os frames, o deslocamento só
+    corre com o estilo activo. Com o relógio lá dentro, uma corrida de 6 s
+    esticava-se por 70 s de tempo real, congelada em cada pausa do estilo.
+    */
+    if (p.playingStyle === 'dummy_runner') {
+        p._dummyAtivo = correCorridaDeArrasto(p, bb, s);
+    }
 
     // REGRA DE ESTADOS TÁTICOS
     // Se não estiver no estado ofensivo (posse estabelecida), desliga os estilos de movimentação
@@ -419,7 +513,25 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
         caixa.
         */
         if (est.dentroArea && bb && bb.isAttacking) {
-            if (targetZ * p.dirZ < CrossModel.areaZ) targetZ = CrossModel.areaZ * p.dirZ;
+            /*
+            A PROFUNDIDADE ACOMPANHA A BOLA. Era `targetZ >= CrossModel.areaZ`
+            fixo: com o gatilho a ligar já a partir do meio-campo, isso colava-o
+            à área com a bola ainda na defesa — um jogador a menos na jogada
+            durante metade do campo.
+
+            Agora espera `esperaAtras` metros à frente da bola e nunca aquém da
+            entrada da área; quando a jogada chega, ele já lá está dentro. O
+            tecto é `avancoMax`, para não ficar em cima do guarda-redes.
+            */
+            const F = (typeof PlayingStyleTuning !== 'undefined' && PlayingStyleTuning.foxInTheBox)
+                ? PlayingStyleTuning.foxInTheBox
+                : { entradaArea: 30.0, esperaAtras: 8.0, avancoMax: 46.0 };
+
+            const bolaAvancoFox = bb.ballZ * bb.dir;
+            const zDesejado = THREE.MathUtils.clamp(
+                bolaAvancoFox + F.esperaAtras, F.entradaArea, F.avancoMax);
+
+            if (targetZ * p.dirZ < zDesejado) targetZ = zDesejado * p.dirZ;
             targetX = melhorVaoX(p, bb, targetZ,
                 [-16, -11, -6.5, -2, 2, 6.5, 11, 16]);
         }
@@ -429,7 +541,8 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
         e diagonal (puxa o zagueiro/marcador para a ponta/corredor), abrindo o
         corredor central para o condutor da bola ou jogadores de 2ª linha.
         */
-        if (est.atraiDefesa && bb && bb.isAttacking && bb.carrier && bb.carrier !== p) {
+        if (est.atraiDefesa && p._dummyAtivo &&
+            bb && bb.isAttacking && bb.carrier && bb.carrier !== p) {
             const ladoEst = Math.sign(p.baseTarget.x) || 1;
             const carrierX = bb.carrier.model ? bb.carrier.model.position.x : 0;
             const carrierZ = bb.carrier.model ? bb.carrier.model.position.z : 0;

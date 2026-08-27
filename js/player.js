@@ -56,6 +56,13 @@ class FootballPlayer {
         quando a bola sai do pé.
         */
         this.jogarDePrimeira = false;
+        /*
+        Tabelinha: `esperarDevolucao` é o pedido de quem a iniciou (e arranca
+        para o espaço), `devolverPara` é o pedido que o parceiro recebeu (e tem
+        de devolver). Ver JogadasCombinadas.
+        */
+        this.esperarDevolucao = null;
+        this.devolverPara = null;
         // Direccao em que a bola vinha a viajar quando ele a dominou; escrita no
         // match.js e lida pelo eixoDeConducao (ver GiroDeCostasModel).
         this.dirEntradaBola = null;
@@ -703,8 +710,6 @@ class FootballPlayer {
     isso era garantir que divergiam.
     */
     baterFalta() {
-        Match.state = 'PLAY';
-
         /*
         A decisão sai de `decisaoDeFalta` (utils.js), que é geometria pura:
         trapézio de remate directo, mini-canto ao lado da área, ou passe.
@@ -717,6 +722,60 @@ class FootballPlayer {
             ? decisaoDeFalta(Match.ball.position.x, Match.ball.position.z, this.dirZ)
             : 'passe';
 
+        /*
+        A CORRIDA. Isto executava tudo no mesmo frame, a partir de onde ele
+        estava (1.4 m da bola): não havia corrida, não havia gesto, e o que se
+        via era a bola a saltar sozinha para o pé do batedor.
+
+        Agora é o mesmo padrão do penálti — um `ActionState` cujo `onPrepare`
+        leva o corpo do ponto de espera até junto da bola, e cujo `onContact`,
+        no `contactTime` do clip, é que a joga. O `Match.state` só passa a
+        'PLAY' nesse instante: até lá é bola parada, e ninguém lhe toca.
+
+        A CORRIDA usa sempre o clip e o estado do REMATE, mesmo quando a falta
+        vai acabar em passe curto. Não é preguiça: o `case 'PASS'` da FSM mata o
+        gesto no primeiro frame em que `!p.hasBall` — e durante a corrida o
+        batedor não tem a bola, ela está parada no relvado. Medido: 13 de 14
+        cobranças nunca chegavam ao contacto.
+
+        O gesto do passe continua a existir; é o `initiatePass`, disparado no
+        contacto, que o cria com o seu próprio ActionState.
+        */
+        const clip = 'shot';
+        const dur = (typeof ActionAnimClips !== 'undefined' && ActionAnimClips[clip])
+            ? ActionAnimClips[clip].contactTime : (7 / 11);
+
+        const F = (typeof FreeKickModel !== 'undefined') ? FreeKickModel : {};
+        const paragem = (typeof F.paragemNoContacto === 'number') ? F.paragemNoContacto : 0.55;
+
+        const inicio = { x: this.model.position.x, z: this.model.position.z };
+        const bolaFalta = { x: Match.ball.position.x, z: Match.ball.position.z };
+        const dx = bolaFalta.x - inicio.x, dz = bolaFalta.z - inicio.z;
+        const distCorrida = Math.hypot(dx, dz) || 1;
+        const fim = {
+            x: bolaFalta.x - (dx / distCorrida) * paragem,
+            z: bolaFalta.z - (dz / distCorrida) * paragem
+        };
+
+        this.actionState = new ActionState(clip, {
+            onPrepare: (ctx, norm) => {
+                const k = Math.min(1, norm / dur);
+                this.model.position.x = inicio.x + (fim.x - inicio.x) * k;
+                this.model.position.z = inicio.z + (fim.z - inicio.z) * k;
+            },
+            onContact: () => {
+                Match.state = 'PLAY';
+                this.executarFalta(decisao);
+            }
+        });
+        this.fsm.changeState('SHOOT');
+    }
+
+    /*
+    O CONTACTO da falta: o que já existia, agora disparado no `contactTime` do
+    clip em vez de no mesmo frame da decisão. Ver `baterFalta`.
+    */
+    executarFalta(decisao) {
         if (decisao === 'remate') {
             this.hasBall = true;          // o remate exige posse (ver executeShotGameplay)
             Match.ballCarrier = this;
@@ -2340,6 +2399,21 @@ class FootballPlayer {
     update(dt) {
         if (this.touchLock > 0) this.touchLock = Math.max(0, this.touchLock - dt);
         if (this.overlapTimer > 0) this.overlapTimer = Math.max(0, this.overlapTimer - dt);
+
+        /*
+        JOGADAS COMBINADAS (ver JogadasCombinadas em config.js). Os dois pedidos
+        expiram sozinhos: um passe que não chega, ou um parceiro que perdeu a
+        bola no meio, não podem deixar ninguém preso a uma jogada que já não
+        existe.
+        */
+        if (this.esperarDevolucao) {
+            this.esperarDevolucao.timer -= dt;
+            if (this.esperarDevolucao.timer <= 0) this.esperarDevolucao = null;
+        }
+        if (this.devolverPara) {
+            this.devolverPara.timer -= dt;
+            if (this.devolverPara.timer <= 0) this.devolverPara = null;
+        }
         if (this.passInertiaTimer > 0) this.passInertiaTimer = Math.max(0, this.passInertiaTimer - dt);
         // Arrefecimento da corrida ao espaco (ver RunIntoSpaceModel). Corre
         // aqui e nao na FSM: a FSM so mexe no estado corrente, e o

@@ -73,6 +73,8 @@ function novoContadorEquipa() {
         faltas: { cometidas: 0, sofridas: 0 },
         // Bolas jogadas de primeira, sem domínio (ver FirstTouchModel).
         primeiraTocada: 0,
+        // Jogadas combinadas (ver JogadasCombinadas em config.js).
+        caraACara: 0, tabelinhas: 0, overlaps: 0,
         cartoes: { amarelos: 0, vermelhos: 0 },
         penaltis: 0,
         posseSegundos: 0,
