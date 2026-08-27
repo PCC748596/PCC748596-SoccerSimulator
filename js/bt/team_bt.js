@@ -882,18 +882,15 @@ function computeBlock(bb) {
     let z1 = centroZ + (profundidade / 2);
 
     /* --- limites em Z (Regra 2 e Regra 3) -------------------------------
-       O rectângulo do bloco vai até à LINHA DA GRANDE ÁREA das duas balizas,
-       e não até à marca de penálti (11 m) como ia antes:
-       - Linha da grande área da defesa: -(CAMPO_COMP / 2 - 16.5) = -36.5 m
-       - Linha da grande área do ataque: +(CAMPO_COMP / 2 - 16.5) = +36.5 m
+       O rectângulo do bloco vai até perto da linha de fundo das duas balizas:
+       - Linha de fundo da defesa: -(CAMPO_COMP / 2 - 1.5) = -51.5 m
+       - Linha de fundo do ataque: +(CAMPO_COMP / 2 - 1.5) = +51.5 m
 
-       São 5.5 m de recuo em cada ponta face aos ±42.0 anteriores. A área é a
-       borda que se lê no campo, e é o slot da última linha que ali encosta —
-       um defensor não se põe dentro da própria grande área a organizar o
-       bloco, nem o bloco avança para dentro da área adversária.
+       O pisoDir (guarda-redes) e o empurraZ evitam que os jogadores saiam do campo
+       ou entrem pela baliza adentro.
     */
-    const minZ = -(CAMPO_COMP / 2 - AREA_GRANDE_PROF);
-    const maxZ = (CAMPO_COMP / 2 - AREA_GRANDE_PROF);
+    const minZ = -(CAMPO_COMP / 2 - 1.5);
+    const maxZ = (CAMPO_COMP / 2 - 1.5);
 
     if (z0 < minZ) {
         z0 = minZ;

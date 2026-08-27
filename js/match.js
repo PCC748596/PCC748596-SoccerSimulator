@@ -3687,10 +3687,16 @@ const Match = {
             });
             this.setPieceTaker = takerFK || null;
 
+            const perpFK = new THREE.Vector3(-dirFK.z, 0, dirFK.x);
+            
             if (takerFK) {
+                const sign = (bolaFK.x * perpFK.x > 0) ? -1 : 1;
+                const lateralOffX = perpFK.x * sign * (F.lateralBatedor || 2.0);
+                const lateralOffZ = perpFK.z * sign * (F.lateralBatedor || 2.0);
+
                 takerFK.model.position.set(
-                    bolaFK.x - dirFK.x * F.recuoBatedor, ALTURA_BASE_Y,
-                    bolaFK.z - dirFK.z * F.recuoBatedor);
+                    bolaFK.x - dirFK.x * F.recuoBatedor + lateralOffX, ALTURA_BASE_Y,
+                    bolaFK.z - dirFK.z * F.recuoBatedor + lateralOffZ);
                 lookAtBola(takerFK.model, bolaFK);
                 takerFK.fsm.changeState('SET_PIECE_WAIT');
             }
@@ -3701,7 +3707,6 @@ const Match = {
             */
             const avancoFK = bolaFK.z * attDir;
             const nBarreira = (avancoFK > F.barreiraZonaZ) ? F.barreiraMax : F.barreiraMin;
-            const perpFK = new THREE.Vector3(-dirFK.z, 0, dirFK.x);
 
             const defesaOrdenada = defendingPlayers
                 .filter(p => p.role !== 'gk')

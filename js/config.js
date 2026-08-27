@@ -2679,7 +2679,7 @@ trata de nunca chegar a haver a inversão, que é a metade barata do problema.
 =============================================================================
 */
 const EsperaPeloSlotModel = {
-    distanciaMax: 8.0,
+    distanciaMax: 2.0,
     velocidadeMin: 0.5
 };
 
@@ -3057,6 +3057,7 @@ cobrir — têm de tapar o caminho da baliza. A linha fechava 30.3 m com a bola 
 centro contra 31.6 m com ela na ala, ou seja praticamente nada.
 */
 const MarkingModel = {
+    histerese: 1.5,
     /*
     Distância de marcação, em metros: a que o marcador fica do homem, do lado
     da PRÓPRIA baliza (ver goalSide). É também o raio do círculo em que o
@@ -4042,6 +4043,7 @@ const FreeKickModel = {
     preparação do clip, e a bola só parte no `contactTime`.
     */
     recuoBatedor: 4.8,         // onde ESPERA, atrás da bola
+    lateralBatedor: 2.0,       // desvio lateral para não alinhar com a barreira
     /*
     A corrida do gesto cobre só os últimos metros: o `contactTime` do ShotClip
     são ~0.32 s, e atravessar os 4.8 m nesse tempo dava 15 m/s — um teletransporte.
