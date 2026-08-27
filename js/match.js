@@ -2590,14 +2590,18 @@ const Match = {
         const dist = (a * d + b.y - c) / norma;
         if (dist > 0.8) return; 
 
+        const dt = this.delta || 0.016;
+        const prevX = b.x - v.x * dt;
+        const prevY = b.y - v.y * dt;
+
         // --- laterais -------------------------------------------------
         if (d >= 0 && d <= N.profBase && b.y <= ALTURA_BALIZA) {
-            if (Math.abs(b.x - meiaLarg) < rB) {
+            if (Math.abs(b.x - meiaLarg) < rB || (prevX < meiaLarg && b.x > meiaLarg) || (prevX > meiaLarg && b.x < meiaLarg)) {
                 if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.x);
                 if (v.x > 0) { b.x = meiaLarg - rB; } else { b.x = meiaLarg + rB; }
                 v.x = -v.x * N.restituicao;
                 v.z *= N.atrito; v.y *= N.atrito;
-            } else if (Math.abs(b.x + meiaLarg) < rB) {
+            } else if (Math.abs(b.x + meiaLarg) < rB || (prevX > -meiaLarg && b.x < -meiaLarg) || (prevX < -meiaLarg && b.x > -meiaLarg)) {
                 if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.x);
                 if (v.x < 0) { b.x = -meiaLarg + rB; } else { b.x = -meiaLarg - rB; }
                 v.x = -v.x * N.restituicao;
@@ -2607,7 +2611,7 @@ const Match = {
 
         // --- pano de cima ---------------------------------------------
         if (d >= 0 && d <= N.profTopo && Math.abs(b.x) <= meiaLarg) {
-            if (Math.abs(b.y - ALTURA_BALIZA) < rB) {
+            if (Math.abs(b.y - ALTURA_BALIZA) < rB || (prevY < ALTURA_BALIZA && b.y > ALTURA_BALIZA) || (prevY > ALTURA_BALIZA && b.y < ALTURA_BALIZA)) {
                 if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.y);
                 if (v.y > 0) { b.y = ALTURA_BALIZA - rB; } else { b.y = ALTURA_BALIZA + rB; }
                 v.y = -v.y * N.restituicao;

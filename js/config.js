@@ -178,7 +178,7 @@ window.PositionalTendencies = {
     'GK': { shoot: 0.10, dribble: 0.10, pass: 1.00, forwardPass: 1.00, cross: 0.10, clearance: 1.50 }
 };
 
-window.getPositionalTendency = function(pos, action) {
+window.getPositionalTendency = function (pos, action) {
     if (typeof PositionalTendencies !== 'undefined' && PositionalTendencies[pos]) {
         if (typeof PositionalTendencies[pos][action] === 'number') {
             return PositionalTendencies[pos][action];
@@ -2180,14 +2180,14 @@ const GoalkeeperPose = {
     // Posição para defender o penálti (Match.state === 'PENALTY'):
     // Um pouco agachado, joelhos para a frente, tronco direito (não inclinado).
     penalti: {
-        chest: 0.0,
-        joelho: 0.60,
-        coxa: 0.30,
-        abertura: 0.15,
-        bracoZ: 0.75,
+        chest: 0.05,
+        joelho: 0.80,
+        coxa: -0.80,
+        abertura: 0.25,
+        bracoZ: 0.90,
         bracoX: -0.35,
         cotovelo: -0.35,
-        altura: -0.15
+        altura: 0.0
     },
 
     // Sem perigo: descontraído, praticamente direito.
@@ -4470,10 +4470,10 @@ const Tatics = {
     /*
     Retorna a prioridade (0 a 1) do setor, baseada em quantos estão ativos.
     */
-    prioridadeSector: function(sector) {
+    prioridadeSector: function (sector) {
         const activeCount = this.setores.length;
         if (activeCount === 0 || activeCount === 3) return 0.333;
-        
+
         const isActive = this.setores.includes(sector);
         if (activeCount === 1) {
             return isActive ? 0.60 : 0.20;

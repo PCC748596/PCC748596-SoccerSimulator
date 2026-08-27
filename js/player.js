@@ -778,16 +778,17 @@ class FootballPlayer {
         const d10GK = Math.floor(Math.random() * 10) + 1;
         const diff = (tec + d10Taker) - (gkSkill + d10GK);
 
-        // Grid 9x4
+        // Grid 9x5
         const colsX = [4.16, 3.66, 2.928, 1.464, 0, -1.464, -2.928, -3.66, -4.16];
-        const rowsY = [0.406, 1.22, 2.033, 2.94];
+        const rowsY = [0.406, 1.22, 2.033, 2.44, 2.94];
         
         const colsGol = [2, 3, 4, 5, 6];
         const colsGolCantos = [2, 3, 5, 6]; // Sem o meio (4) para evitar defesas sempre ao centro
         const rowsGol = [0, 1, 2];
         const colsTrave = [1, 7];
+        const rowTrave = 3;
         const colsFora = [0, 8];
-        const rowFora = 3;
+        const rowFora = 4;
 
         const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
         const oppositeCol = (c) => {
@@ -803,12 +804,17 @@ class FootballPlayer {
             targetRow = 2;
             gkDiveCol = oppositeCol(targetCol);
         } else if (diff >= 3 && diff <= 5) {
-            targetCol = pick(colsGolCantos);
+            targetCol = (Math.random() < 0.15) ? 4 : pick(colsGolCantos);
             targetRow = pick(rowsGol);
             gkDiveCol = oppositeCol(targetCol);
         } else if (diff === 1 || diff === 2) {
-            targetCol = pick(colsTrave);
-            targetRow = pick(rowsGol);
+            if (Math.random() < 0.25) {
+                targetCol = pick(colsGolCantos);
+                targetRow = rowTrave;
+            } else {
+                targetCol = pick(colsTrave);
+                targetRow = pick(rowsGol);
+            }
             gkDiveCol = oppositeCol(targetCol);
         } else if (diff <= 0 && diff >= -2) {
             targetCol = pick(colsTrave);
@@ -816,12 +822,12 @@ class FootballPlayer {
             gkDiveCol = oppositeCol(targetCol);
             if (Math.random() < 0.25) {
                 targetCol = pick(colsGolCantos);
-                targetRow = rowFora;
+                targetRow = rowTrave;
             }
         } else if (diff === -3 || diff === -4) {
             if (Math.random() > 0.5) {
                 targetCol = pick(colsFora);
-                targetRow = pick([0, 1, 2, 3]);
+                targetRow = pick([0, 1, 2, 3, 4]);
             } else {
                 targetCol = pick(colsGolCantos.concat(colsTrave));
                 targetRow = rowFora;
@@ -853,9 +859,18 @@ class FootballPlayer {
             }
         }
         
-        if (targetRow === rowFora && diff >= -2 && diff <= 0) {
-            // Força a bater no travessão (altura do travessão é 2.44)
-            alvoY = 2.44 + (Math.random() * 0.08 - 0.04);
+        if (targetRow === rowTrave) {
+            // O travessão físico está em 2.44.
+            if (diff > 0) {
+                // Entra (rasando o travessão por baixo)
+                alvoY -= 0.14;
+            } else if (diff === 0) {
+                // Bate em cheio no travessão
+                alvoY += (Math.random() * 0.08 - 0.04);
+            } else {
+                // Bate no travessão por cima ou vai direto para fora
+                alvoY += (0.05 + Math.random() * 0.08);
+            }
         }
 
         if (gk) {
@@ -2281,7 +2296,10 @@ class FootballPlayer {
             // de campo — chamá-lo aqui deixava o guarda-redes preso na pose
             // de mergulho/salto anterior (ajoelhado, de costas).
             if (this.role === 'gk') {
-                if (!headless) this.resetBonesToDefault();
+                if (!headless) {
+                    if (Match.state === 'PENALTY') this.updateGK(dt);
+                    else this.resetBonesToDefault();
+                }
             } else {
                 if (!headless) this.animateBones(dt);
                 else this.model.position.y = ALTURA_BASE_Y;
@@ -3635,7 +3653,7 @@ class FootballPlayer {
                 gkCorpo.position.y = lerpTo(gkCorpo.position.y, ALTURA_BASE_Y + P.altura + balanco, 0.2);
             } else {
                 let P;
-                if (Match.state === 'PENALTY') {
+                if (Match.state === 'PENALTY' && this.team !== Match.setPieceTeam) {
                     P = GoalkeeperPose.penalti;
                 } else {
                     P = emAlerta ? GoalkeeperPose.espera : GoalkeeperPose.repouso;
