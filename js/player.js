@@ -44,6 +44,12 @@ class FootballPlayer {
         em vez de a atirar para a lateral. Ver o case CARRY em fsm.js.
         */
         this.carryRecuo = false;
+        /*
+        Segundos que ainda fica PARADO com a bola no pé (ver
+        CarryModel.segurar e o case CARRY em fsm.js). Zero é o normal:
+        conduzir.
+        */
+        this.carryHold = 0;
         // Direccao em que a bola vinha a viajar quando ele a dominou; escrita no
         // match.js e lida pelo eixoDeConducao (ver GiroDeCostasModel).
         this.dirEntradaBola = null;

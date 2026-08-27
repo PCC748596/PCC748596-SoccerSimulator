@@ -126,6 +126,44 @@ function executePassGameplay(p) {
     let forcaPasse = 18.0;
     let usouBalistica = false;
 
+    /*
+    ENCONTRO. Quando o alvo é um PONTO à frente do companheiro — lançamento,
+    passe no espaço, passe em profundidade — a força deixa de sair só da
+    distância e passa a resolver o encontro: a bola chega ao ponto quando ele
+    lá chega e a uma velocidade que ele consiga aceitar (ver `passeDeEncontro`
+    em utils.js e PassModel.encontro).
+
+    `null` quando o alvo é o próprio companheiro (passe aos pés): aí não há
+    encontro nenhum para resolver, e é o caminho que já estava certo.
+    */
+    const encontro = (function () {
+        const E = PassModel.encontro;
+        const receptor = p.passTarget;
+        if (!E || !receptor || !receptor.model) return null;
+
+        const rx = receptor.model.position.x, rz = receptor.model.position.z;
+        const distReceptor = Math.hypot(_v1.x - rx, _v1.z - rz);
+        if (distReceptor < E.distMinAlvo) return null;
+
+        // Velocidade dele NA DIRECÇÃO do ponto: quem vai para lá já está a
+        // caminho, quem vai ao contrário tem de inverter, e isso é tempo.
+        const ux = (_v1.x - rx) / distReceptor, uz = (_v1.z - rz) / distReceptor;
+        const vRec = receptor.velocity
+            ? receptor.velocity.x * ux + receptor.velocity.z * uz : 0;
+
+        // A que ele CORRE, não a que vai agora: o speedMult é a velocidade
+        // que o steerArrive persegue.
+        const vMaxRec = (typeof receptor.speedMult === 'number' && receptor.speedMult > 0.5)
+            ? receptor.speedMult : 6.0;
+
+        return passeDeEncontro({
+            distBola: distToTarget,
+            distReceptor: distReceptor,
+            vReceptor: vRec,
+            vMaxReceptor: vMaxRec
+        });
+    })();
+
     if (ehLancamento) {
         /*
         TIPO 2 — LANÇAMENTO. A bola vai para o ESPAÇO à frente do companheiro,
@@ -137,15 +175,31 @@ function executePassGameplay(p) {
         recebe-a a correr.
         */
         if (lancamentoAlto) {
-            const elevL = resolverElevacaoPasse(distToTarget, true) ?? PassModel.elevacaoLancamento;
+            let elevL = resolverElevacaoPasse(distToTarget, true) ?? PassModel.elevacaoLancamento;
+            /*
+            O alcance é o mesmo para duas elevações; usa-se essa liberdade para
+            casar o TEMPO com a corrida do companheiro, sem mexer no sítio onde
+            a bola cai (ver elevacaoParaTempoDeVoo).
+            */
+            if (encontro) {
+                elevL = elevacaoParaTempoDeVoo(distToTarget,
+                    encontro.tempoReceptor + PassModel.encontro.folgaTempo,
+                    PassModel.encontro.elevMin, PassModel.encontro.elevMax);
+            }
             const vL = velocidadeParaAlcance(distToTarget, elevL);
             Match.ballVel.y = vL * Math.sin(elevL);
             forcaPasse = vL * Math.cos(elevL);
         } else {
-            // Sem o reforco do passe curto: aqui o alvo ja e o espaco a frente
-            // de quem corre, e chegar vivo ao ponto e passar-lhe para la.
-            forcaPasse = velocidadeRasteiraPara(distToTarget,
-                PassModel.vChegadaLancamento, { reforcoCurto: false });
+            /*
+            O encontro manda quando existe: é exactamente para isto que ele
+            serve — bola e homem no mesmo ponto ao mesmo tempo. Sem receptor
+            conhecido cai no cálculo antigo, só pela distância, sem o reforço
+            do passe curto (aqui o alvo já é o espaço à frente de quem corre).
+            */
+            forcaPasse = encontro
+                ? encontro.v0
+                : velocidadeRasteiraPara(distToTarget,
+                    PassModel.vChegadaLancamento, { reforcoCurto: false });
             Match.ballVel.y = 0;
         }
         usouBalistica = true;
@@ -192,8 +246,18 @@ function executePassGameplay(p) {
         const elev = resolverElevacaoPasse(distToTarget, forcarArco);
 
         if (elev === null) {
-            // Passe rasteiro: chega jogável, não morto nem a queimar.
-            forcaPasse = velocidadeRasteiraPara(distToTarget, PassModel.vChegadaRasteira);
+            /*
+            Passe rasteiro: chega jogável, não morto nem a queimar.
+
+            Com alvo à frente do companheiro (passe no espaço, `passAimPoint`)
+            é o encontro que decide — e é aí que estava o erro: a mesma conta
+            do passe aos pés aplicada a um ponto 10 m à frente dele punha a
+            bola no sítio muito antes dele. Aos pés, `encontro` é null e nada
+            muda.
+            */
+            forcaPasse = encontro
+                ? encontro.v0
+                : velocidadeRasteiraPara(distToTarget, PassModel.vChegadaRasteira);
             Match.ballVel.y = 0;
         } else {
             /*
@@ -227,9 +291,21 @@ function executePassGameplay(p) {
             }
 
             const alcancePasse = Math.max(1.0, distToTarget - recuo);
-            const v = velocidadeParaAlcance(alcancePasse, elev);
-            Match.ballVel.y = v * Math.sin(elev);
-            forcaPasse = v * Math.cos(elev);
+
+            /*
+            Com alvo à frente do companheiro, a elevação passa a sair do TEMPO
+            que ele leva ao ponto — mesma queda, outro tempo de voo. Aos pés
+            (`encontro` null) fica a elevação que o resolverElevacaoPasse deu.
+            */
+            const elevFinal = encontro
+                ? elevacaoParaTempoDeVoo(alcancePasse,
+                    encontro.tempoReceptor + PassModel.encontro.folgaTempo,
+                    PassModel.encontro.elevMin, PassModel.encontro.elevMax)
+                : elev;
+
+            const v = velocidadeParaAlcance(alcancePasse, elevFinal);
+            Match.ballVel.y = v * Math.sin(elevFinal);
+            forcaPasse = v * Math.cos(elevFinal);
         }
         usouBalistica = true;
     }
@@ -1010,6 +1086,33 @@ class PlayerFSM {
                     // sem abrandar nem hesitar até re-adquirir o controlo!
                     p.dynamicTarget.copy(Match.ball.position);
                     p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult * 1.05, 0);
+                } else if (p.carryHold > 0) {
+                    /*
+                    PARADO COM A BOLA. Não é um estado novo: é o CARRY sem
+                    direcção nenhuma escolhida — a bola fica no pé (o bloco
+                    `hasBall` do player.update continua a colá-la lá) e ele
+                    espera que a linha de passe apareça.
+
+                    Faltava por completo: entre conduzir e passar não havia
+                    nada, e por isso o portador ou ia para a frente ou largava
+                    a bola. Quem decide entrar e sair daqui é o
+                    `tratarSegurarBola` (player_bt.js); aqui só se conta o
+                    tempo e se trava.
+
+                    Vira-se para a BALIZA que ataca e não para onde ia: quem
+                    segura a bola fica de frente para o jogo, à espera.
+                    */
+                    p.carryHold = Math.max(0, p.carryHold - dt);
+                    p.velocity.multiplyScalar(Math.max(0, 1 - 8.0 * dt));
+
+                    _v1.set(p.model.position.x, p.model.position.y,
+                        p.model.position.z + p.dirZ * 10);
+                    _v2.set(p.model.position.x * 2 - _v1.x, p.model.position.y,
+                        p.model.position.z * 2 - _v1.z);
+                    _m1.lookAt(p.model.position, _v2, p.model.up);
+                    _q1.setFromRotationMatrix(_m1);
+                    const giroHold = (typeof TurnModel !== 'undefined') ? TurnModel.comBola : 5.5;
+                    p.model.quaternion.slerp(_q1, Math.min(1.0, giroHold * dt));
                 } else {
                     // Escolhe a melhor direcção de condução (leque de ângulos adaptativo pela Técnica)
                     {

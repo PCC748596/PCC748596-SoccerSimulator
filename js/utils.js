@@ -680,6 +680,256 @@ function velocidadeRasteiraPara(dist, vChegada, opcoes) {
 }
 
 /*
+=============================================================================
+PASSE DE ENCONTRO — a bola e o receptor no mesmo ponto, ao mesmo tempo
+=============================================================================
+O passe aos pés funcionava e o passe no espaço não, e a razão é sempre a
+mesma: a força saía SÓ da distância. `velocidadeRasteiraPara(dist, vChegada)`
+responde "que velocidade põe a bola ali ainda jogável" e ignora QUANDO é que
+o companheiro lá chega. Num passe aos pés isso não se nota — o alvo é ele, e
+ele já lá está. Num lançamento o alvo está 10-15 m à frente dele, e a bola
+chegava lá 1.5 s antes, parava, e ele corria atrás de uma bola morta; ou
+chegava viva de mais e passava-lhe pela frente.
+
+O que falta é resolver o ENCONTRO, e é isso que estas quatro funções fazem:
+
+    tempoRasteiroDaBola(d, v0)      quanto tempo a bola leva a percorrer d
+    velocidadeRasteiraEmTempo(d, T) a saída que a faz demorar T
+    velocidadeDeChegadaRasteira     com que velocidade ela lá chega
+    tempoDoJogadorAte(...)          quanto tempo o receptor leva ao ponto
+
+A física rasteira já estava escrita no `velocidadeRasteiraPara`: arrasto
+quadrático mais atrito de rolamento,
+
+    dv/dt = −(k·v² + a),    a = μ·g
+
+que tem solução fechada. Com V = √(a/k) e w = √(k·a):
+
+    v(t) = V·tan( atan(v0/V) − w·t )
+    v(d)² = ((k·v0² + a)·e^(−2kd) − a) / k        (o mesmo do velocidadeRasteiraPara)
+    t(d)  = ( atan(v0/V) − atan(v(d)/V) ) / w
+
+Ou seja o tempo sai exacto, sem integrar frame a frame.
+=============================================================================
+*/
+
+/*
+Velocidade da bola DEPOIS de percorrer `dist` no chão, partindo a `v0`.
+Devolve 0 quando ela pára antes de lá chegar — é a resposta certa e é o que
+o `tempoRasteiroDaBola` usa para dizer "nunca chega".
+*/
+function velocidadeDeChegadaRasteira(dist, v0) {
+    const k = BallPhysics.kArrasto;
+    const a = BallPhysics.atritoRolamento * BallPhysics.gravidade;
+    const restante = (k * v0 * v0 + a) * Math.exp(-2 * k * Math.max(0, dist)) - a;
+    return (restante <= 0) ? 0 : Math.sqrt(restante / k);
+}
+
+/*
+Inverso EXACTO do anterior: a saída que põe a bola a `vChegada` ao fim de
+`dist`.
+
+    v0 = √( ((k·v_ch² + a)·e^(2kd) − a) / k )
+
+Não é o mesmo que `velocidadeRasteiraPara`: essa mexe no alvo antes de
+inverter (reforça o passe curto, amansa o longo — regras de JOGO, não de
+física), e por isso um pedido de 3 m/s aos 28 m sai a 1.5. Aqui pede-se o
+número e recebe-se o número, que é o que o encontro precisa para os seus
+tectos e pisos valerem mesmo.
+*/
+function velocidadeParaChegarA(dist, vChegada, vSaidaMax) {
+    const k = BallPhysics.kArrasto;
+    const a = BallPhysics.atritoRolamento * BallPhysics.gravidade;
+    const v = Math.max(0, vChegada);
+    const bruto = ((k * v * v + a) * Math.exp(2 * k * Math.max(0, dist)) - a) / k;
+    const tecto = (typeof vSaidaMax === 'number') ? vSaidaMax : 18.5;
+    return Math.min(tecto, Math.sqrt(Math.max(0, bruto)));
+}
+
+/*
+Tempo que a bola leva a percorrer `dist` rasteira. `null` se ela morrer pelo
+caminho — quem chama tem de tratar isso como "força insuficiente", não como
+tempo infinito.
+*/
+function tempoRasteiroDaBola(dist, v0) {
+    dist = Math.max(0, dist);
+    if (dist < 0.001) return 0;
+    if (v0 <= 0) return null;
+
+    const k = BallPhysics.kArrasto;
+    const a = BallPhysics.atritoRolamento * BallPhysics.gravidade;
+    const V = Math.sqrt(a / k);
+    const w = Math.sqrt(k * a);
+
+    const vd = velocidadeDeChegadaRasteira(dist, v0);
+    if (vd <= 0) return null;
+
+    return (Math.atan(v0 / V) - Math.atan(vd / V)) / w;
+}
+
+/*
+Inverso do anterior: a velocidade de SAÍDA que faz a bola demorar `tempo` a
+percorrer `dist`.
+
+Por bissecção e não por fórmula: `t(d, v0)` é monótona decrescente em v0 (mais
+força, menos tempo) mas não se inverte em forma fechada — o `atan` do tempo e
+o `exp` da distância não se separam. Trinta iterações num intervalo de 0.5 a
+30 m/s dão precisão de ~3e-8 m/s, e isto corre uma vez por passe.
+*/
+function velocidadeRasteiraEmTempo(dist, tempo, vMax) {
+    const tecto = (typeof vMax === 'number') ? vMax : 30.0;
+    dist = Math.max(0, dist);
+    if (dist < 0.001 || !(tempo > 0)) return tecto;
+
+    let lo = 0.5, hi = tecto;
+
+    // Nem à força toda chega a tempo: devolve o melhor que consegue.
+    const tMin = tempoRasteiroDaBola(dist, hi);
+    if (tMin === null || tMin >= tempo) return hi;
+
+    for (let i = 0; i < 30; i++) {
+        const mid = (lo + hi) / 2;
+        const t = tempoRasteiroDaBola(dist, mid);
+        // `null` = morre pelo caminho, que conta como demorar demais.
+        if (t === null || t > tempo) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+}
+
+/*
+Tempo que um jogador leva a percorrer `dist` até ao ponto de encontro.
+
+O modelo é o do próprio `steerArrive`: a velocidade persegue a desejada por
+lerp exponencial (`velocity.lerp(desired, 5*dt)`), o que dá
+
+    v(t) = vMax + (v0 − vMax)·e^(−t/tau),   tau = 1/5 s
+    x(t) = vMax·t − tau·(vMax − v0)·(1 − e^(−t/tau))
+
+Usar `dist / vMax` em vez disto parece igual e não é: quem está PARADO perde
+~0.2 s no arranque, e num lançamento 0.2 s são 2 m de bola.
+
+`v0` é a componente da velocidade dele NA DIRECÇÃO do ponto — quem corre para
+o lado contrário tem de inverter primeiro, e isso é tempo.
+*/
+function tempoDoJogadorAte(dist, v0, vMax, tau) {
+    dist = Math.max(0, dist);
+    if (dist < 0.001) return 0;
+    vMax = Math.max(0.1, vMax);
+    tau = (typeof tau === 'number') ? tau : 0.2;
+    v0 = Math.max(-vMax, Math.min(vMax, v0 || 0));
+
+    const x = (t) => vMax * t - tau * (vMax - v0) * (1 - Math.exp(-t / tau));
+
+    // Tecto generoso: a distância a dividir pela velocidade, mais o arranque.
+    let lo = 0, hi = dist / vMax + 4 * tau + 0.5;
+    for (let i = 0; i < 30; i++) {
+        const mid = (lo + hi) / 2;
+        if (x(mid) < dist) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+}
+
+/*
+Tempo de voo de um passe pelo alto que cai a `dist`, saído com a elevação
+`elev`. A velocidade sai da mesma balística do passe (velocidadeParaAlcance),
+e o tempo é o do tiro: t = 2·v·sen(elev)/g.
+*/
+function tempoDeVooDoPasse(dist, elev) {
+    const v = velocidadeParaAlcance(dist, elev);
+    return (2 * v * Math.sin(elev)) / BallPhysics.gravidade;
+}
+
+/*
+ELEVAÇÃO QUE FAZ O PASSE DEMORAR O TEMPO PEDIDO.
+
+O alcance é o mesmo para duas elevações diferentes — uma rasa e rápida, outra
+alta e lenta. É essa liberdade que se usa aqui: em vez de mudar o sítio onde a
+bola cai (isso estragava o passe), muda-se QUANTO TEMPO ela demora a lá chegar,
+para chegar quando o companheiro chega.
+
+Monótona em `elev` dentro dos limites — mais ângulo, mais tempo de voo —, por
+isso bissecção. Se nem no extremo se consegue o tempo pedido, devolve o extremo
+mais próximo: melhor um passe um pouco fora de tempo do que um passe fora do
+sítio.
+*/
+function elevacaoParaTempoDeVoo(dist, tempoAlvo, elevMin, elevMax) {
+    let lo = (typeof elevMin === 'number') ? elevMin : THREE.MathUtils.degToRad(12);
+    let hi = (typeof elevMax === 'number') ? elevMax : THREE.MathUtils.degToRad(55);
+    if (!(tempoAlvo > 0)) return lo;
+
+    if (tempoDeVooDoPasse(dist, lo) >= tempoAlvo) return lo;
+    if (tempoDeVooDoPasse(dist, hi) <= tempoAlvo) return hi;
+
+    for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        if (tempoDeVooDoPasse(dist, mid) < tempoAlvo) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+}
+
+/*
+O PASSE DE ENCONTRO propriamente dito: junta as quatro contas e devolve a
+velocidade de saída rasteira.
+
+    distBola        da bola ao ponto de encontro
+    distReceptor    do receptor ao MESMO ponto
+    vReceptor       velocidade dele na direcção do ponto (pode ser negativa)
+    vMaxReceptor    a que ele corre
+
+Duas condições, e a segunda é a que o utilizador pediu:
+
+  1. a bola chega ao ponto quando ele chega (mais `folgaTempo`, para ele
+     chegar primeiro e não ter de travar);
+  2. e chega mais DEVAGAR do que ele corre (`fracVelReceptor`) — uma bola que
+     lá chega a 14 m/s com ele a 7 passa-lhe pela frente por muito bem
+     sincronizada que esteja.
+
+Quando as duas se mordem, manda a segunda: mais vale a bola esperar meio
+segundo por ele do que fugir-lhe. O piso `vChegadaMin` existe para o caso
+oposto — não deixar a bola morrer antes do ponto.
+
+Devolve `{ v0, vChegada, tempoBola, tempoReceptor, limitada }`.
+*/
+function passeDeEncontro(o) {
+    const E = (typeof PassModel !== 'undefined' && PassModel.encontro)
+        ? PassModel.encontro : {};
+    const folga = (typeof E.folgaTempo === 'number') ? E.folgaTempo : 0.15;
+    const frac = (typeof E.fracVelReceptor === 'number') ? E.fracVelReceptor : 0.85;
+    const vMin = (typeof E.vChegadaMin === 'number') ? E.vChegadaMin : 3.5;
+    const vMaxChegada = (typeof E.vChegadaMax === 'number') ? E.vChegadaMax : 11.0;
+    const vSaidaMax = (typeof E.vSaidaMax === 'number') ? E.vSaidaMax : 18.5;
+
+    const distBola = Math.max(0.5, o.distBola || 0);
+    const vMaxRec = Math.max(1.0, o.vMaxReceptor || 6.0);
+
+    const tempoReceptor = tempoDoJogadorAte(
+        o.distReceptor || 0, o.vReceptor || 0, vMaxRec, o.tau);
+
+    // 1 — a que chega a tempo.
+    let v0 = velocidadeRasteiraEmTempo(distBola, tempoReceptor + folga, vSaidaMax);
+
+    // 2 — o tecto de velocidade de chegada, que manda quando há conflito.
+    const tectoChegada = Math.min(vMaxChegada, Math.max(vMin, vMaxRec * frac));
+    let vChegada = velocidadeDeChegadaRasteira(distBola, v0);
+    let limitada = false;
+
+    if (vChegada > tectoChegada) {
+        v0 = velocidadeParaChegarA(distBola, tectoChegada, vSaidaMax);
+        vChegada = velocidadeDeChegadaRasteira(distBola, v0);
+        limitada = true;
+    } else if (vChegada < vMin) {
+        // Bola a morrer antes do ponto: garante-lhe pelo menos o piso.
+        v0 = velocidadeParaChegarA(distBola, vMin, vSaidaMax);
+        vChegada = velocidadeDeChegadaRasteira(distBola, v0);
+        limitada = true;
+    }
+
+    const tempoBola = tempoRasteiroDaBola(distBola, v0);
+    return { v0: v0, vChegada: vChegada, tempoBola: tempoBola,
+        tempoReceptor: tempoReceptor, limitada: limitada };
+}
+
+/*
 Decide a FORMA do passe normal (rasteiro vs arco) pela distância ao alvo, e
 devolve a elevação a usar — ver PassModel.passeArco em config.js.
 

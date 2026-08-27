@@ -1865,6 +1865,49 @@ const PassModel = {
     vChegadaLancamento: 2.5,
 
     /*
+    PASSE DE ENCONTRO — ver `passeDeEncontro` em utils.js.
+
+    O `vChegadaLancamento` acima resolve a força SÓ pela distância: "quero que
+    a bola chegue ali a 2.5 m/s". Não sabe quando é que o companheiro lá chega,
+    e é essa a falha que se via — o passe aos pés certo, o passe no espaço e o
+    lançamento sempre errados. A bola chegava ao ponto mais de um segundo antes
+    dele e ficava lá parada, ou chegava viva e passava-lhe pela frente.
+
+    Aqui pede-se as duas coisas ao mesmo tempo:
+
+      TEMPO      a bola chega ao ponto `folgaTempo` DEPOIS dele — ele chega
+                 primeiro, não trava à espera dela.
+      CHEGADA    e chega a `fracVelReceptor` da velocidade a que ele corre. Uma
+                 bola que aterra a 14 m/s à frente de quem corre a 7 é
+                 impossível de aceitar por muito bem sincronizada que esteja.
+
+    Quando as duas se mordem manda a chegada: mais vale a bola esperar por ele
+    do que fugir-lhe.
+    */
+    encontro: {
+        folgaTempo: 0.15,       // s que a bola chega depois dele
+        fracVelReceptor: 0.85,  // chegada, em fracção da velocidade dele
+        vChegadaMin: 3.0,       // piso: não morrer antes do ponto
+        vChegadaMax: 11.0,      // tecto absoluto, mesmo com um receptor rápido
+        vSaidaMax: 18.5,        // o mesmo tecto do velocidadeRasteiraPara
+        /*
+        Só entra quando o alvo está mesmo À FRENTE do companheiro. Abaixo
+        disto o passe é aos pés, e aí o alvo é ele: sincronizar não muda nada
+        e só arriscava mexer no que já estava certo.
+        */
+        distMinAlvo: 3.0,
+
+        /*
+        Limites da elevação quando o passe vai pelo alto e o tempo é resolvido
+        pelo ângulo (ver elevacaoParaTempoDeVoo). Abaixo de 12° já é um passe
+        rasteiro com pretensões; acima de 55° é uma bola que fica no ar tanto
+        tempo que qualquer defesa lá chega.
+        */
+        elevMin: 12 * Math.PI / 180,
+        elevMax: 55 * Math.PI / 180
+    },
+
+    /*
     Erro máximo no PESO da bola, para skill de passe 0. Escala com
     (1 - PASS/100): a 80 de PASS o erro é ±3.6%, a 40 é ±10.8%. Substitui o
     antigo `passBoost`, que aumentava a força em vez da precisão — e com a
@@ -2757,6 +2800,36 @@ const CarryModel = {
     velocidadePorSkill: 1.2,  // ± isto entre SPEED 0 e SPEED 100
     recuoMult: 0.75,
     contraAtaqueMult: 1.25,
+
+    /*
+    SEGURAR E RECUAR COM A BOLA.
+
+    O portador só sabia ir para a frente. O `carryRecuo` existia mas estava
+    escondido atrás de três condições dentro do `actPass` (ter candidato, sem
+    adversário a 5 m, sem pressão) e vinha DEPOIS de dois ramos que passam a
+    bola — na prática nunca corria. Parar com a bola não existia de todo: não
+    havia estado nenhum entre conduzir e passar.
+
+    Agora, quando não há passe bom E não há ninguém em cima dele, sorteia-se o
+    que um jogador real faz nesse momento: fica com ela à espera que a linha
+    apareça, ou dá meia-volta e recua para reconstruir. O resto do tempo passa,
+    como antes.
+
+    As duas percentagens somam menos de 1 de propósito — o que sobra continua a
+    ser o caminho antigo (passe de recuo / circulação).
+    */
+    segurar: {
+        distSemPressao: 6.0,   // adversário mais perto tem de estar além disto
+        chanceParar: 0.35,     // fica com a bola, de frente para o jogo
+        chanceRecuar: 0.30,    // dá meia-volta e leva-a para trás
+        duracaoMin: 0.6,       // quanto tempo fica parado, antes de rever
+        duracaoMax: 1.6,
+        /*
+        Corta a paragem no instante em que alguém entra dentro disto — segurar
+        a bola com um adversário a chegar é como se perde a bola.
+        */
+        distCorte: 4.0
+    },
 
     // Toques de condução — distância do toque depende do espaço à frente
     touchLong: 2.8,       // toque longo (campo aberto, adversário > 15m)

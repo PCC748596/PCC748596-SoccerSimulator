@@ -734,6 +734,68 @@ function executarPasseSaidaParaDefesas(p, defTarget) {
     p.initiatePass(defTarget);
 }
 
+/*
+Distância ao adversário mais próximo (sem contar guarda-redes), no plano.
+*/
+function distAdversarioMaisPerto(p) {
+    const advs = (p.team === 'TeamA') ? Match.opponents : Match.players;
+    let d = Infinity;
+    for (const o of advs) {
+        if (o.role === 'gk' || !o.model) continue;
+        const dd = Math.hypot(p.model.position.x - o.model.position.x,
+            p.model.position.z - o.model.position.z);
+        if (dd < d) d = dd;
+    }
+    return d;
+}
+
+/*
+SEGURAR A BOLA ou RECUAR COM ELA — ver CarryModel.segurar.
+
+Corre antes dos ramos que passam a bola para trás, e só quando NÃO há passe
+bom e ninguém está em cima dele. Devolve true se tratou do assunto.
+
+A paragem tem duração própria (`carryHold`) e é reavaliada quando acaba: sem
+isso, o BT voltava a decidir no frame seguinte e a "paragem" durava 16 ms.
+*/
+function tratarSegurarBola(ctx) {
+    const p = ctx.p;
+    const S = (typeof CarryModel !== 'undefined') ? CarryModel.segurar : null;
+    if (!S) return false;
+
+    // Já está a segurar: mantém-se até o tempo acabar ou alguém chegar perto.
+    if (p.carryHold > 0) {
+        if (ctx.underPressure || distAdversarioMaisPerto(p) < S.distCorte) {
+            p.carryHold = 0;
+            return false;
+        }
+        p.carryRecuo = false;
+        p.apoioAtivo = false;
+        p.fsm.changeState('CARRY');
+        return true;
+    }
+
+    if (ctx.underPressure) return false;
+    if (distAdversarioMaisPerto(p) < S.distSemPressao) return false;
+
+    const r = Math.random();
+    if (r < S.chanceParar) {
+        p.carryHold = S.duracaoMin + Math.random() * (S.duracaoMax - S.duracaoMin);
+        p.carryRecuo = false;
+        p.apoioAtivo = false;
+        p.fsm.changeState('CARRY');
+        return true;
+    }
+    if (r < S.chanceParar + S.chanceRecuar) {
+        p.carryHold = 0;
+        p.carryRecuo = true;
+        p.apoioAtivo = false;
+        actCarry(ctx);      // condução, com o recuoMult da velocidade
+        return true;
+    }
+    return false;
+}
+
 function actPass(ctx) {
     const p = ctx.p;
     if (p.aguardarPassada()) return true;
@@ -752,6 +814,7 @@ function actPass(ctx) {
 
     if (boa) {
         p.carryRecuo = false;
+        p.carryHold = 0;
         aplicarMiraDoPasse(p, escolha.tipo, escolha.ponto);
         p.initiatePass(escolha.mate);
         return;
@@ -768,6 +831,13 @@ function actPass(ctx) {
     */
     const tec = p.skillFor ? p.skillFor('TEC') : 50;
     const naDefesa = (p.model.position.z * p.dirZ < 0) || p.role === 'def';
+
+    /*
+    0. Parar com ela ou recuar com ela. Vem ANTES dos ramos de passe atrasado:
+    se ficasse depois nunca corria — o `melhorRecuo` quase sempre existe, e a
+    bola saía do pé antes de ele sequer considerar segurá-la.
+    */
+    if (tratarSegurarBola(ctx)) return;
 
     // 1. Atrasar / circular a alguém perto, para reiniciar a jogada e circular o jogo
     const recuo = PassTypes.melhorRecuo(p);
