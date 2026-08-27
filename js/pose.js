@@ -312,6 +312,42 @@ function aplicarPoseLancamentoGR(rig, K) {
 }
 
 /*
+POSE DO DOMÍNIO DE BOLA ORIENTADO PELA DIREITA — BallControlRightClip.
+Perna esquerda (apoio) ligeiramente atrás e fletida.
+Perna direita (controlo) à frente, abrindo para amortecer e orientar o toque de saída.
+*/
+function aplicarPoseDominioDireito(rig, K) {
+    if (!rig) return;
+    rig.chest.rotation.x = K.chest || 0;
+    rig.chest.rotation.y = K.chestY || 0;
+    rig.chest.rotation.z = 0;
+
+    rig.pelvis.rotation.x = 0;
+    rig.pelvis.rotation.y = K.pelvisY || 0;
+    rig.pelvis.rotation.z = K.leanZ || 0;
+
+    rig.lLeg.rotation.x = K.coxaL || 0;
+    rig.lLeg.rotation.y = 0;
+    rig.lLeg.rotation.z = 0;
+    rig.lKnee.rotation.x = K.joelhoL || 0;
+
+    rig.rLeg.rotation.x = K.coxaR || 0;
+    rig.rLeg.rotation.y = 0;
+    rig.rLeg.rotation.z = K.coxaRz || 0;
+    rig.rKnee.rotation.x = K.joelhoR || 0;
+
+    rig.lArm.rotation.x = K.bracoLx || 0;
+    rig.lArm.rotation.z = K.bracoLz || 0;
+    rig.rArm.rotation.x = K.bracoRx || 0;
+    rig.rArm.rotation.z = K.bracoRz || 0;
+
+    rig.lElbow.rotation.x = K.cotoveloL || 0;
+    rig.rElbow.rotation.x = K.cotoveloR || 0;
+
+    aplicarPesECabeca(rig, K);
+}
+
+/*
 POSE DO CHUTÃO DO GUARDA-REDES — GoalkeeperKickClip.
 
 `norm` é o tempo normalizado 0..1 do clip, e serve só para os braços abrirem
@@ -555,6 +591,37 @@ function amostrarClipLancamentoGR(norm) {
         joelhoL: mix('joelhoL'),
         coxaR: mix('coxaR'),
         joelhoR: mix('joelhoR'),
+        bracoLx: mix('bracoLx'),
+        bracoLz: mix('bracoLz'),
+        bracoRx: mix('bracoRx'),
+        bracoRz: mix('bracoRz'),
+        cotoveloL: mix('cotoveloL'),
+        cotoveloR: mix('cotoveloR'),
+        altura: mix('altura')
+    };
+}
+
+/*
+Amostra o clip do domínio orientado pela direita (BallControlRightClip) num tempo normalizado 0..1.
+*/
+function amostrarClipDominioDireito(norm) {
+    const fr = BallControlRightClip.frames;
+    const n = fr.length;
+    const pos = THREE.MathUtils.clamp(norm, 0, 1) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    const u = pos - i;
+    const a = fr[i], b = fr[i + 1];
+    const mix = (k) => (a[k] !== undefined && b[k] !== undefined) ? a[k] + (b[k] - a[k]) * u : 0;
+    return {
+        chest: mix('chest'),
+        chestY: mix('chestY'),
+        pelvisY: mix('pelvisY'),
+        leanZ: mix('leanZ'),
+        coxaL: mix('coxaL'),
+        joelhoL: mix('joelhoL'),
+        coxaR: mix('coxaR'),
+        joelhoR: mix('joelhoR'),
+        coxaRz: mix('coxaRz'),
         bracoLx: mix('bracoLx'),
         bracoLz: mix('bracoLz'),
         bracoRx: mix('bracoRx'),

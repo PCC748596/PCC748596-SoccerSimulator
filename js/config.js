@@ -158,6 +158,37 @@ window.Config = {
 };
 
 /*
+MULTIPLICADORES DE TENDÊNCIA POR POSIÇÃO
+Permite separar a "capacidade técnica" da "mentalidade". 
+Por exemplo, um CF com passe 80 prefere chutar do que passar, enquanto um CM com o mesmo atributo prefere o passe.
+*/
+window.PositionalTendencies = {
+    'CB': { shoot: 0.50, dribble: 0.40, pass: 1.00, forwardPass: 0.80, cross: 0.20, clearance: 1.30 },
+    'LB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
+    'RB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
+    'DM': { shoot: 0.70, dribble: 0.70, pass: 1.30, forwardPass: 1.10, cross: 0.50, clearance: 1.10 },
+    'CM': { shoot: 0.80, dribble: 0.90, pass: 1.20, forwardPass: 1.20, cross: 0.80, clearance: 0.90 },
+    'LM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
+    'RM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
+    'AM': { shoot: 1.00, dribble: 1.10, pass: 1.10, forwardPass: 1.40, cross: 0.90, clearance: 0.50 },
+    'LW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
+    'RW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
+    'CF': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
+    'ST': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
+    'GK': { shoot: 0.10, dribble: 0.10, pass: 1.00, forwardPass: 1.00, cross: 0.10, clearance: 1.50 }
+};
+
+window.getPositionalTendency = function(pos, action) {
+    if (typeof PositionalTendencies !== 'undefined' && PositionalTendencies[pos]) {
+        if (typeof PositionalTendencies[pos][action] === 'number') {
+            return PositionalTendencies[pos][action];
+        }
+    }
+    return 1.0;
+};
+
+
+/*
 Altura da TESTA acima da base do modelo.
 
 `model.position` está nos PÉS (y = ALTURA_BASE_Y). O rig, à escala 1.8/5.5,
@@ -201,6 +232,7 @@ const _q1 = new THREE.Quaternion();
 const _line1 = new THREE.Line3();
 const _vUp = new THREE.Vector3(0, 1, 0);   // eixo vertical, para rodar direcções no plano do campo
 const _vFrenteCorpo = new THREE.Vector3();  // frente local (+Z) do jogador que passa, para o ângulo do corpo no erro do passe (executePassGameplay)
+const _vDireitaCorpo = new THREE.Vector3(); // direita local (+X) do jogador, para detecção de recepções laterais
 
 /*
 =============================================================================
@@ -310,7 +342,11 @@ const ActionAnimClips = {
     // Remate (ver ShotClip). Contacto no frame 8 de 12 (t = 7/11 ≈ 0.64),
     // ou seja ~0.32 s depois de o BT decidir rematar — tempo real de armar a
     // perna. Antes o remate inteiro durava 0.2 s e eram duas poses.
-    shot: { duration: 0.50, contactTime: 7 / 11 }
+    shot: { duration: 0.50, contactTime: 7 / 11 },
+    // Domínio de bola orientado pela direita (ver BallControlRightClip)
+    // Contacto e toque de saída no frame 5 de 8 (t = 4/7 ≈ 0.57)
+    ballControlRight: { duration: 0.36, contactTime: 4 / 7 },
+    ball_control_right: { duration: 0.36, contactTime: 4 / 7 }
 };
 
 /*
@@ -891,6 +927,50 @@ const GoalkeeperThrowClip = {
     ]
 };
 
+/*
+=============================================================================
+BALL_CONTROL_RIGHT — Domínio orientado de bola pelo lado direito, 8 keyframes
+=============================================================================
+Quando a bola é recebida de frente pelo lado direito do jogador:
+- Perna esquerda (apoio) vai um pouco para trás e flete ligeiramente o joelho
+- Perna direita (domínio) vai um pouco à frente e abre para amortecer com a chapa/pé direito
+- Tronco inclina ligeiramente à frente para amortecer o impacto
+- Braços abrem em contrabalanço
+- No frame de contacto, dá o toque orientado na direcção de saída do lance
+
+     1  preparação: peso assenta no apoio, perna esquerda recua ligeiramente
+     2  perna direita avança e abre ligeiramente para receber a bola
+     3  aproximação máxima do pé à trajectória da bola
+     4  amortecimento inicial: o pé direito recebe a bola
+     5  CONTACTO / TOQUE ORIENTADO: toque de saída para onde vai jogar
+     6  continuação do toque e transferência de peso para a frente
+     7  recuperação postural: perna esquerda avança para arrancar
+     8  transição fluida para a corrida / condução
+=============================================================================
+*/
+const BallControlRightClip = {
+    pernaControlo: 'r',
+    contactFrame: 5,
+    frames: [
+        // 1  preparação: peso assenta no apoio, perna esquerda recua ligeiramente
+        { chest: 0.12, chestY: -0.08, pelvisY: 0.08, leanZ: -0.05, coxaL: 0.18, joelhoL: 0.22, coxaR: -0.15, joelhoR: 0.35, coxaRz: -0.10, bracoLx: -0.25, bracoLz: 0.35, bracoRx: 0.20, bracoRz: -0.35, cotoveloL: -0.50, cotoveloR: -0.50, altura: 0.00 },
+        // 2  perna direita avança e abre ligeiramente para receber a bola
+        { chest: 0.18, chestY: -0.15, pelvisY: 0.14, leanZ: -0.08, coxaL: 0.28, joelhoL: 0.32, coxaR: -0.32, joelhoR: 0.42, coxaRz: -0.18, bracoLx: -0.35, bracoLz: 0.42, bracoRx: 0.28, bracoRz: -0.42, cotoveloL: -0.55, cotoveloR: -0.55, altura: -0.01 },
+        // 3  aproximação máxima do pé à trajectória da bola
+        { chest: 0.22, chestY: -0.18, pelvisY: 0.18, leanZ: -0.10, coxaL: 0.34, joelhoL: 0.38, coxaR: -0.45, joelhoR: 0.38, coxaRz: -0.22, bracoLx: -0.40, bracoLz: 0.45, bracoRx: 0.32, bracoRz: -0.45, cotoveloL: -0.58, cotoveloR: -0.58, altura: -0.02 },
+        // 4  amortecimento inicial: o pé direito recebe a bola
+        { chest: 0.20, chestY: -0.16, pelvisY: 0.16, leanZ: -0.08, coxaL: 0.30, joelhoL: 0.34, coxaR: -0.50, joelhoR: 0.28, coxaRz: -0.20, bracoLx: -0.36, bracoLz: 0.40, bracoRx: 0.26, bracoRz: -0.40, cotoveloL: -0.55, cotoveloR: -0.55, altura: -0.01 },
+        // 5  CONTACTO / TOQUE ORIENTADO: toque de saída para onde vai jogar
+        { chest: 0.16, chestY: -0.10, pelvisY: 0.12, leanZ: -0.05, coxaL: 0.22, joelhoL: 0.26, coxaR: -0.55, joelhoR: 0.18, coxaRz: -0.15, bracoLx: -0.28, bracoLz: 0.32, bracoRx: 0.18, bracoRz: -0.32, cotoveloL: -0.48, cotoveloR: -0.48, altura: 0.00 },
+        // 6  continuação do toque e transferência de peso para a frente
+        { chest: 0.12, chestY: -0.05, pelvisY: 0.06, leanZ: -0.02, coxaL: 0.12, joelhoL: 0.18, coxaR: -0.40, joelhoR: 0.12, coxaRz: -0.08, bracoLx: -0.18, bracoLz: 0.25, bracoRx: 0.10, bracoRz: -0.25, cotoveloL: -0.40, cotoveloR: -0.40, altura: 0.00 },
+        // 7  recuperação postural: perna esquerda avança para arrancar
+        { chest: 0.08, chestY: 0.00, pelvisY: 0.02, leanZ: 0.00, coxaL: 0.05, joelhoL: 0.12, coxaR: -0.20, joelhoR: 0.10, coxaRz: -0.03, bracoLx: -0.08, bracoLz: 0.20, bracoRx: 0.04, bracoRz: -0.20, cotoveloL: -0.30, cotoveloR: -0.30, altura: 0.00 },
+        // 8  transição fluida para a corrida / condução
+        { chest: 0.04, chestY: 0.00, pelvisY: 0.00, leanZ: 0.00, coxaL: 0.00, joelhoL: 0.10, coxaR: 0.00, joelhoR: 0.10, coxaRz: 0.00, bracoLx: 0.00, bracoLz: Math.PI / 16, bracoRx: 0.00, bracoRz: -Math.PI / 16, cotoveloL: 0.00, cotoveloR: 0.00, altura: 0.00 }
+    ]
+};
+
 // window.goleiroEstado, window.goleiroReagiu e window.delayReacaoCalculado
 // foram movidos para propriedades de instância de FootballPlayer (gkEstado,
 // gkReagiu, gkDelayReacao). Cada GK tem o seu próprio estado independente.
@@ -917,6 +997,7 @@ travar só quem corre.
     0.912963 +15% sobre o 0.793881 (pedido)
     1.00     de volta ao ritmo original (pedido)
     0.90     -10% sobre o ritmo original (pedido)
+    0.90     definido para 0.9 no PC (pedido)
 */
 const GAME_SPEED = 0.9;
 
@@ -1929,16 +2010,16 @@ function gkAnchor(ballX, ballZ, ownGoalZ, dirZ, style) {
 
     const dx = ballX;
     const dz = ballZ - ownGoalZ;
-    const d = Math.hypot(dx, dz);
+    const d = Math.max(0.000001, Math.hypot(dx, dz));
 
-    let t = (d - GK_D_NEAR) / (GK_D_FAR - GK_D_NEAR);
+    let t = (d - GK_D_NEAR) / Math.max(0.000001, GK_D_FAR - GK_D_NEAR);
     t = Math.max(0, Math.min(1, t));
     const depth = e.depthMin + (e.depthMax - e.depthMin) * t * t;
 
     // d === 0 é a bola em cima do centro da baliza: sem direção definida, fica
     // no eixo. Sem esta guarda, depth/d dava NaN.
     const limitGKX = (LARGURA_BALIZA / 2) - 0.5;
-    let x = (d > 0.0001) ? (ballX * (depth / d)) : 0;
+    let x = ballX * (depth / d);
     x = Math.max(-limitGKX, Math.min(limitGKX, x));
 
     return { x: x, z: ownGoalZ + depth * dirZ };
@@ -2952,7 +3033,7 @@ const MarkingModel = {
     Medido do jogador mais próximo ao portador. `high` é praticamente sem
     limite, que é o que "pressão alta" quer dizer.
     */
-    raioDeAccionamento: { low: 9.0, balanced: 15.0, high: 999 },
+    raioDeAccionamento: { low: 5.0, balanced: 8.0, high: 999 },
 
     /*
     E DENTRO DO PRÓPRIO TERÇO DEFENSIVO PERSEGUE-SE SEMPRE, seja qual for a
@@ -4249,18 +4330,21 @@ const MentalidadeModel = {
         agressao: 0.20,
         blocoZ: -10.0,
         tectoBloco: -(CAMPO_COMP / 2) / 3,
-        profundidade: 'short'
+        profundidade: 'short',
+        pressao: 'low'
     },
     defesa: {
         agressao: 0.35,
         blocoZ: -5.0,
         tectoBloco: -(CAMPO_COMP / 2) / 6,
-        profundidade: 'short'
+        profundidade: 'short',
+        pressao: 'low'
     },
     balanceado: {
         agressao: 0.50,
         blocoZ: 0.0,
-        tectoBloco: 0.0
+        tectoBloco: 0.0,
+        pressao: 'balanced'
     },
     ataque: {
         agressao: 0.65,
@@ -4441,10 +4525,17 @@ const Tatics = {
         que corre serem a mesma coisa.
         */
         const mental = MentalidadeModel[this.estilo];
-        if (mental && mental.profundidade) {
-            this.lengthCompactness = mental.profundidade;
-            const el = document.getElementById('t-length-compactness');
-            if (el) el.value = mental.profundidade;
+        if (mental) {
+            if (mental.profundidade) {
+                this.lengthCompactness = mental.profundidade;
+                const el = document.getElementById('t-length-compactness');
+                if (el) el.value = mental.profundidade;
+            }
+            if (mental.pressao) {
+                this.pressaoDefensiva = mental.pressao;
+                const el = document.getElementById('t-pressao-def');
+                if (el) el.value = mental.pressao;
+            }
         }
 
         Match.assignFormations();
@@ -4784,7 +4875,7 @@ function pontoDeCanto(bolaX, attDir) {
     // entre ele e a area, que e o que lhe da o gesto de centrar.
     let dx = bola.x - alvo.x;
     let dz = bola.z - alvo.z;
-    const d = Math.hypot(dx, dz) || 1;
+    const d = Math.max(0.000001, Math.hypot(dx, dz));
     dx /= d; dz /= d;
 
     const batedor = { x: bola.x + dx * 1.6, z: bola.z + dz * 1.6 };

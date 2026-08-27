@@ -90,13 +90,13 @@ console.log(LF + '2 — a Defensive Pressure muda o raio');
         erro(`os raios deviam crescer com a pressão: ${JSON.stringify(RAIO)}`);
     } else ok(`low ${RAIO.low} m < balanced ${RAIO.balanced} m < high ${RAIO.high} m`);
 
-    // A 12 m: pressão baixa contém-se, pressão média sai.
-    const d = 12;
+    // A 6 m: pressão baixa contém-se, pressão média sai.
+    const d = 6;
     const baixa = deveMandarChaser(cenario({ distAoPortador: d, raioAccionamento: RAIO.low }));
     const media = deveMandarChaser(cenario({ distAoPortador: d, raioAccionamento: RAIO.balanced }));
-    if (baixa) erro('pressão baixa não devia sair a 12 m');
-    else if (!media) erro('pressão média devia sair a 12 m');
-    else ok('a 12 m: pressão baixa contém-se, pressão média sai');
+    if (baixa) erro('pressão baixa não devia sair a 6 m');
+    else if (!media) erro('pressão média devia sair a 6 m');
+    else ok('a 6 m: pressão baixa contém-se, pressão média sai');
 }
 
 /*
@@ -180,7 +180,7 @@ console.log(LF + '5 — T.Defensiva e Defensiva jogam curtas (30 m)');
     }
     ok('a largura continua a ser escolha do painel');
 
-    // As outras três não impõem nada — o painel continua a mandar nelas.
+    // As outras não impõem profundidade nem largura.
     for (const m of ['balanceado', 'ataque', 'muito_ofensiva']) {
         if (MentalidadeModel[m].profundidade !== undefined) {
             erro(`${m} não devia impor comprimento; o Length Compactness é do utilizador`);
@@ -189,7 +189,7 @@ console.log(LF + '5 — T.Defensiva e Defensiva jogam curtas (30 m)');
             erro(`${m} não devia impor largura; o Width Compactness é do utilizador`);
         }
     }
-    ok('as outras três continuam a obedecer ao painel');
+    ok('as outras três continuam a obedecer ao painel em comprimento e largura');
 
     /*
     E TEM DE SE VER NO PAINEL. O computeBlock obedecia, mas o dropdown ficava
@@ -204,6 +204,12 @@ console.log(LF + '5 — T.Defensiva e Defensiva jogam curtas (30 m)');
     } else if (!/getElementById\('t-length-compactness'\)[\s\S]{0,120}\.value\s*=/.test(corpoUpdate)) {
         erro('o dropdown do Length Compactness não é actualizado — o painel mente');
     } else ok('o dropdown do Length Compactness passa a mostrar Small (30m)');
+
+    if (!/mental\.pressao/.test(corpoUpdate)) {
+        erro('o Tatics.update não aplica a pressão da mentalidade');
+    } else if (!/getElementById\('t-pressao-def'\)[\s\S]{0,120}\.value\s*=/.test(corpoUpdate)) {
+        erro('o dropdown do Defensive Pressure não é actualizado — o painel mente');
+    } else ok('o dropdown do Defensive Pressure passa a mostrar a pressão forçada');
 
 
     // As chaves do MentalidadeModel têm de existir no <select> do HTML, senão

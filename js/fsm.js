@@ -547,6 +547,15 @@ function executeShotGameplay(p) {
     Match.lastTouchedTeam = p.team;
     Match.lastTouchedPlayer = p;
 
+    // Impede que jogadores colados (colegas ou adversários) dominem o remate
+    // no frame imediatamente a seguir, travando a bola.
+    const allPlayers = Match.players.concat(Match.opponents);
+    for (const other of allPlayers) {
+        if (other !== p && other.model.position.distanceTo(p.model.position) < 2.0) {
+            other.touchLock = Math.max(other.touchLock || 0, 0.4);
+        }
+    }
+
     if (!bloqueado) {
         let defendingTeam = (p.team === 'TeamA') ? 'TeamB' : 'TeamA';
         // Notifica o GK adversário via propriedade de instância.
@@ -589,13 +598,14 @@ class PlayerFSM {
         chamar o changeState, e limpa-lo aqui apagava-o no mesmo instante.
         */
         if (this.p.actionState &&
-            newState !== 'PASS' && newState !== 'SHOOT' && newState !== 'CROSS') {
+            newState !== 'PASS' && newState !== 'SHOOT' && newState !== 'CROSS' && newState !== 'BALL_CONTROL_RIGHT') {
             this.p.actionState = null;
         }
 
         this.currentState = newState; this.timer = 0;
         if (newState === 'CARRY') this.p.showActionBanner('CARRY');
         if (newState === 'DRIBBLE') this.p.showActionBanner('DRIBBLE');
+        if (newState === 'BALL_CONTROL_RIGHT') this.p.showActionBanner('CONTROL');
         if (newState === 'TACKLE') this.p.showActionBanner('TACKLE');
         if (newState === 'SLIDE_TACKLE') this.p.showActionBanner('S.TACKLE');
         if (newState === 'INTERCEPT') {
@@ -727,7 +737,7 @@ class PlayerFSM {
                     p.velocity.set(0, 0, 0);
                 }
                 if (Match.ball) {
-                    let lookPos = Match.ball.position.clone();
+                    let lookPos = _v2.copy(Match.ball.position);
                     lookPos.y = p.model.position.y;
                     lookAtBola(p.model, lookPos);
                 }
@@ -810,11 +820,11 @@ class PlayerFSM {
                 paradas continua a olhar para a bola.
                 */
                 if (Match.state === 'CORNER_KICK' && Match.cornerAlvo) {
-                    let lookPos = Match.cornerAlvo.clone();
+                    let lookPos = _v2.copy(Match.cornerAlvo);
                     lookPos.y = p.model.position.y;
                     lookAtBola(p.model, lookPos);
                 } else if (Match.ball) {
-                    let lookPos = Match.ball.position.clone();
+                    let lookPos = _v2.copy(Match.ball.position);
                     lookPos.y = p.model.position.y;
                     lookAtBola(p.model, lookPos);
                 }
@@ -1151,7 +1161,7 @@ class PlayerFSM {
                 if (p.hasBall && p.velocity.lengthSq() > 2.0 && this.timer > CarryModel.touchCooldown
                     && !pertoDaLinhaDeFundo(p) && !emZonaDeFinalizacao(p)
                     && p.gkEstado !== 'segurando') {
-                    let forward = p.velocity.clone().normalize();
+                    let forward = _v1.copy(p.velocity).normalize();
                     let allOpps = (p.team === 'TeamA') ? Match.opponents : Match.players;
 
                     // Adversário mais perto no cone frontal de visão (VisionModel).
@@ -1166,7 +1176,7 @@ class PlayerFSM {
                         if (opp.role === 'gk') continue;
                         let dist = p.model.position.distanceTo(opp.model.position);
                         if (dist > visionRange) continue;
-                        let dirToOpp = new THREE.Vector3().subVectors(opp.model.position, p.model.position).normalize();
+                        let dirToOpp = _v2.subVectors(opp.model.position, p.model.position).normalize();
                         let dotFwd = dirToOpp.dot(forward);
                         if (dotFwd >= minDot && dist < nearestOppDist) {
                             nearestOppDist = dist;
@@ -1291,11 +1301,11 @@ class PlayerFSM {
                     }
 
                     let forward = p.velocity.lengthSq() > 0.1
-                        ? p.velocity.clone().normalize()
-                        : new THREE.Vector3(0, 0, p.dirZ);
+                        ? _v2.copy(p.velocity).normalize()
+                        : _v2.set(0, 0, p.dirZ);
 
                     // Calcular de que lado o adversário está
-                    let toOpp = new THREE.Vector3().subVectors(opp.model.position, p.model.position);
+                    let toOpp = _v3.subVectors(opp.model.position, p.model.position);
                     toOpp.y = 0;
                     // Produto cruzado: positivo = adversário à direita, negativo = à esquerda
                     let cross = forward.x * toOpp.z - forward.z * toOpp.x;
@@ -1305,7 +1315,7 @@ class PlayerFSM {
                     // Toque lateral (30-45°) para o lado oposto
                     let angle = DribbleModel.angleSide * escapeSide;
                     let cosA = Math.cos(angle), sinA = Math.sin(angle);
-                    let pushDir = new THREE.Vector3(
+                    let pushDir = _v4.set(
                         forward.x * cosA - forward.z * sinA,
                         0,
                         forward.x * sinA + forward.z * cosA
@@ -1445,21 +1455,21 @@ class PlayerFSM {
                 // --- NOVA ANIMAÇÃO PERPENDICULAR ---
                 // Se estamos na fase inicial, calculamos a orientação perpendicular à trajetória do portador
                 if (Match.ballCarrier && tTackle < 0.3) {
-                    let carrierFwd;
+                    let carrierFwd = _v1;
                     if (Match.ballCarrier.velocity && Match.ballCarrier.velocity.lengthSq() > 0.1) {
-                        carrierFwd = Match.ballCarrier.velocity.clone().normalize();
+                        carrierFwd.copy(Match.ballCarrier.velocity).normalize();
                     } else {
-                        carrierFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(Match.ballCarrier.model.quaternion);
+                        carrierFwd.set(0, 0, 1).applyQuaternion(Match.ballCarrier.model.quaternion);
                     }
                     
-                    const toDef = new THREE.Vector3().subVectors(p.model.position, Match.ballCarrier.model.position);
+                    const toDef = _v2.subVectors(p.model.position, Match.ballCarrier.model.position);
                     toDef.y = 0;
                     
-                    const lateral = new THREE.Vector3(-carrierFwd.z, 0, carrierFwd.x); // direção perpendicular 90 graus
+                    const lateral = _v3.set(-carrierFwd.z, 0, carrierFwd.x); // direção perpendicular 90 graus
                     const isRightSide = toDef.dot(lateral) > 0;
-                    const lookDir = isRightSide ? lateral.clone().negate() : lateral.clone(); // vira para o portador
+                    const lookDir = isRightSide ? lateral.negate() : lateral; // vira para o portador
                     
-                    const lookPos = p.model.position.clone().add(lookDir);
+                    const lookPos = _vFrenteCorpo.copy(p.model.position).add(lookDir);
                     lookPos.y = p.model.position.y;
                     lookAtBola(p.model, lookPos); // encara o cruzamento da trajetória
                 }
@@ -1494,13 +1504,13 @@ class PlayerFSM {
                             const carrier = Match.ballCarrier;
 
                             // Bloqueio por ângulo: defensor atrás do portador (>90°) não rouba.
-                            let carrierFwd;
+                            let carrierFwd = _v1;
                             if (carrier.velocity && carrier.velocity.lengthSq() > 0.1) {
-                                carrierFwd = carrier.velocity.clone().normalize();
+                                carrierFwd.copy(carrier.velocity).normalize();
                             } else {
-                                carrierFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(carrier.model.quaternion);
+                                carrierFwd.set(0, 0, 1).applyQuaternion(carrier.model.quaternion);
                             }
-                            const toDefender = new THREE.Vector3().subVectors(p.model.position, carrier.model.position);
+                            const toDefender = _v2.subVectors(p.model.position, carrier.model.position);
                             toDefender.y = 0;
                             toDefender.normalize();
                             const dotAngle = carrierFwd.x * toDefender.x + carrierFwd.z * toDefender.z;
@@ -1579,13 +1589,13 @@ class PlayerFSM {
                         // Bloqueio por ângulo: carrinho por trás (>90°) não rouba.
                         let slideAngleOk = true;
                         if (alvoValido) {
-                            let cFwd;
+                            let cFwd = _v1;
                             if (carrierSlide.velocity && carrierSlide.velocity.lengthSq() > 0.1) {
-                                cFwd = carrierSlide.velocity.clone().normalize();
+                                cFwd.copy(carrierSlide.velocity).normalize();
                             } else {
-                                cFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(carrierSlide.model.quaternion);
+                                cFwd.set(0, 0, 1).applyQuaternion(carrierSlide.model.quaternion);
                             }
-                            const toDef = new THREE.Vector3().subVectors(p.model.position, carrierSlide.model.position);
+                            const toDef = _v2.subVectors(p.model.position, carrierSlide.model.position);
                             toDef.y = 0;
                             toDef.normalize();
                             slideAngleOk = (cFwd.x * toDef.x + cFwd.z * toDef.z) >= 0;
@@ -1681,10 +1691,24 @@ class PlayerFSM {
                     this.changeState('IDLE');
                 }
                 break;
+            case 'BALL_CONTROL_RIGHT':
+                p.velocity.multiplyScalar(0.85);
+                if (p.actionState) {
+                    const normC = p.actionState.update(dt, p);
+                    p.aplicarFrameDominioDireito(amostrarClipDominioDireito(normC));
+                    if (p.actionState.isDone()) {
+                        p.actionState = null;
+                        p.resetBonesToDefault();
+                        this.changeState('CARRY');
+                    }
+                } else {
+                    this.changeState('CARRY');
+                }
+                break;
             case 'WATCH_CORNER':
                 p.velocity.set(0, 0, 0);
                 if (Match.ball) {
-                    let lookPos = Match.ball.position.clone();
+                    let lookPos = _v2.copy(Match.ball.position);
                     lookPos.y = p.model.position.y;
                     lookAtBola(p.model, lookPos);
                 }

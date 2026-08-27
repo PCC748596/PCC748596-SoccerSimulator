@@ -43,9 +43,9 @@ const mod = new Function(...Object.keys(amb),
      ${ler('js/pose.js')}
      return { construirCorpo, escolherAparencia,
               aplicarPoseRemate, aplicarPoseLateral, aplicarPoseChutaoGR,
-              aplicarPoseChuteChaoGR, aplicarPoseLancamentoGR,
+              aplicarPoseChuteChaoGR, aplicarPoseLancamentoGR, aplicarPoseDominioDireito,
               ShotClip, ThrowInClip, GoalkeeperKickClip,
-              GoalkeeperGroundKickClip, GoalkeeperThrowClip };`)(...Object.values(amb));
+              GoalkeeperGroundKickClip, GoalkeeperThrowClip, BallControlRightClip };`)(...Object.values(amb));
 const { construirCorpo, escolherAparencia } = mod;
 
 let falhas = 0;
@@ -230,9 +230,9 @@ console.log(String.fromCharCode(10) + '6 — as poses dos clips');
 {
     const {
         aplicarPoseRemate, aplicarPoseLateral, aplicarPoseChutaoGR,
-        aplicarPoseChuteChaoGR, aplicarPoseLancamentoGR,
+        aplicarPoseChuteChaoGR, aplicarPoseLancamentoGR, aplicarPoseDominioDireito,
         ShotClip, ThrowInClip, GoalkeeperKickClip,
-        GoalkeeperGroundKickClip, GoalkeeperThrowClip
+        GoalkeeperGroundKickClip, GoalkeeperThrowClip, BallControlRightClip
     } = mod;
 
     // Um rig novo por pose: assim uma pose não herda o que a anterior escreveu.
@@ -243,7 +243,8 @@ console.log(String.fromCharCode(10) + '6 — as poses dos clips');
         ['lateral', ThrowInClip, (rig, K) => aplicarPoseLateral(rig, K, 0.4)],
         ['chutão GR', GoalkeeperKickClip, (rig, K) => aplicarPoseChutaoGR(rig, K, 0.5)],
         ['tiro de meta', GoalkeeperGroundKickClip, (rig, K) => aplicarPoseChuteChaoGR(rig, K, null, {})],
-        ['lançamento GR', GoalkeeperThrowClip, (rig, K) => aplicarPoseLancamentoGR(rig, K)]
+        ['lançamento GR', GoalkeeperThrowClip, (rig, K) => aplicarPoseLancamentoGR(rig, K)],
+        ['domínio de bola (direita)', BallControlRightClip, (rig, K) => aplicarPoseDominioDireito(rig, K)]
     ];
 
     for (const [nome, clip, aplicar] of casos) {

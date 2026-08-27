@@ -72,6 +72,16 @@ const CLIPS = {
             corpo.position.y = K.altura || 0;
         },
         amostrar: (t) => amostrarClipLateral(t)
+    },
+    BallControlRightClip: {
+        rotulo: 'Domínio de bola (Direita)',
+        clip: () => BallControlRightClip,
+        duracao: () => ActionAnimClips.ballControlRight.duration,
+        aplicar: (rig, corpo, K) => {
+            aplicarPoseDominioDireito(rig, K);
+            corpo.position.y = K.altura || 0;
+        },
+        amostrar: (t) => amostrarClipDominioDireito(t)
     }
 };
 
@@ -101,8 +111,9 @@ const LEGENDAS = {
     joelhoTras: '> 0 joelho de trás dobra',
     coxaL: '> 0 coxa esquerda recua',
     joelhoL: '> 0 joelho esquerdo dobra',
-    coxaR: '> 0 coxa direita recua',
+    coxaR: '> 0 coxa direita recua (< 0 avança para a frente)',
     joelhoR: '> 0 joelho direito dobra',
+    coxaRz: '> 0 coxa direita fecha para dentro (< 0 abre para fora)',
     bracoX: '> 0 braços recuam (ambos)',
     bracoZ: '> 0 braços abrem para fora',
     bracoLx: '> 0 braço esquerdo recua',
@@ -874,6 +885,7 @@ const Editor = {
                 return ((lado === 'r') === frenteR) ? { x: 'coxaFrente' } : { x: 'coxaTras' };
             }
             if (c === 'GoalkeeperThrowClip') return { x: lado === 'l' ? 'coxaL' : 'coxaR' };
+            if (c === 'BallControlRightClip') return lado === 'l' ? { x: 'coxaL' } : { x: 'coxaR', z: 'coxaRz' };
             return null;
         };
         const joelho = (lado) => {
@@ -883,7 +895,7 @@ const Editor = {
             if (c === 'ThrowInClip') {
                 return ((lado === 'r') === frenteR) ? { x: 'joelhoFrente' } : { x: 'joelhoTras' };
             }
-            if (c === 'GoalkeeperThrowClip') return { x: lado === 'l' ? 'joelhoL' : 'joelhoR' };
+            if (c === 'GoalkeeperThrowClip' || c === 'BallControlRightClip') return { x: lado === 'l' ? 'joelhoL' : 'joelhoR' };
             return null;
         };
         const braco = (lado) => {
@@ -898,12 +910,12 @@ const Editor = {
 
         switch (nomeJunta) {
             case 'pelvis':
-                if (c === 'ShotClip') return { y: 'pelvisY', z: 'leanZ', posY: 'altura' };
+                if (c === 'ShotClip' || c === 'BallControlRightClip') return { y: 'pelvisY', z: 'leanZ', posY: 'altura' };
                 if (c === 'GoalkeeperGroundKickClip') return { x: 'pitchX', z: 'leanZ', posY: 'altura' };
                 if (c === 'ThrowInClip') return { x: 'pelvisX', posY: 'altura' };
                 return { posY: 'altura' };
             case 'chest':
-                return (c === 'ShotClip') ? { x: 'chest', y: 'chestY' } : { x: 'chest' };
+                return (c === 'ShotClip' || c === 'BallControlRightClip') ? { x: 'chest', y: 'chestY' } : { x: 'chest' };
             case 'neck': return { x: 'cabecaX', y: 'cabecaY' };
             case 'lLeg': return perna('l');
             case 'rLeg': return perna('r');

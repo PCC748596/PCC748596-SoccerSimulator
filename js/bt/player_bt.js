@@ -180,7 +180,7 @@ class PlayerContext {
     }
 
     get livreAFrente10m20g() {
-        return semMarcacaoAFrente(this.p, this.opponents, 10.0, 20.0);
+        return semMarcacaoAFrente(this.p, this.opponents, 20.0, 45.0);
     }
 
     get opponents() { return (this.p.team === 'TeamA') ? Match.opponents : Match.players; }
@@ -837,9 +837,17 @@ function podeDriblar(ctx) {
     const p = ctx.p;
     if (p.role === 'gk') return false;
 
+    const mult = typeof getPositionalTendency === 'function' ? getPositionalTendency(p.pos, 'dribble') : 1.0;
+
+    // Se a tendência for menor que 1.0, o jogador pode "desistir" da ideia do drible por mentalidade
+    if (mult < 1.0 && Math.random() > mult) return false;
+
     // Regra 4: Adversário próximo, espaço atrás do adversário, técnica >= 75 - Driblar
+    // Jogadores com tendência alta (ex: Pontas) arriscam driblar mesmo com técnica ligeiramente menor
+    let baseTec = 75 / Math.max(0.5, mult);
     const tec = p.skillFor ? p.skillFor('TEC') : ctx.skillTec;
-    if (tec < 75) return false;
+    if (tec < baseTec) return false;
+
     if (p.fsm.currentState === 'DRIBBLE') return false;
     if (p.model.position.z * p.dirZ < 0) return false; // Na defesa, prioriza o passe em vez do drible
     // Um defesa não dribla, em zona nenhuma do campo: tira a bola da zona a
@@ -1438,9 +1446,9 @@ function actHoldPosition(ctx) {
         p.apoioAtivo = false;
         
         // O blocker quer ficar entre o carrier e o gol, cercando o carrier para atrasá-lo
-        const goalPos = new THREE.Vector3(0, 0, ctx.bb.ownGoalZ);
+        const goalPos = _v1.set(0, 0, ctx.bb.ownGoalZ);
         const ballPos = Match.ball.position;
-        const ballToGoal = new THREE.Vector3().subVectors(goalPos, ballPos);
+        const ballToGoal = _v2.subVectors(goalPos, ballPos);
         ballToGoal.y = 0;
         
         if (ballToGoal.lengthSq() > 0.001) {
@@ -1451,9 +1459,7 @@ function actHoldPosition(ctx) {
         
         // Fica a uma distância de "cercar" (jockey) da bola na direção do gol
         const jockeyDist = 5.0; // metros
-        const projPos = new THREE.Vector3().copy(ballPos).add(ballToGoal.multiplyScalar(jockeyDist));
-        
-        p.dynamicTarget.copy(projPos);
+        p.dynamicTarget.copy(ballPos).add(ballToGoal.multiplyScalar(jockeyDist));
         p.fsm.changeState('BLOCKING');
     } else if (p.isCovering) {
         p.apoioAtivo = false;
@@ -1588,6 +1594,11 @@ const ehGK = (ctx) => ctx.p.role === 'gk';
 function emZonaDeRemate(ctx) {
     const p = ctx.p;
 
+    const mult = typeof getPositionalTendency === 'function' ? getPositionalTendency(p.pos, 'shoot') : 1.0;
+    
+    // Se a tendência for menor que 1.0 (ex: Zagueiro ou Meia armador), pode preferir não finalizar logo de cara
+    if (mult < 1.0 && Math.random() > mult) return false;
+
     /*
     DENTRO DA GRANDE ÁREA remata-se, e mais nada tem voto.
 
@@ -1615,7 +1626,9 @@ function emZonaDeRemate(ctx) {
     if (ctx.zoneAhead <= 15) return false;
     _v1.set(0, 0, p.targetGoalZ);
     const dist = p.model.position.distanceTo(_v1);
-    if (!(dist < p.shootingRange() && Math.abs(p.model.position.x) < ShootingModel.maxOffsetX)) return false;
+    const range = p.shootingRange() * mult;
+    const maxOffset = ShootingModel.maxOffsetX * mult;
+    if (!(dist < range && Math.abs(p.model.position.x) < maxOffset)) return false;
 
     // Grid espacial (camada CHUTE): fora das zonas autoradas (valor 0) não remata.
     if (typeof SpatialGrid !== 'undefined' && SpatialGrid.cells) {
@@ -1978,7 +1991,10 @@ const PlayerBT = sel('PlayerRoot',
                 cond('valeCruzar', (ctx) => {
                     ctx.cross = findCross(ctx);
                     if (!ctx.cross) return false;
-                    const mult = estiloAtivoDe(ctx.p).cruzar;
+                    let mult = estiloAtivoDe(ctx.p).cruzar;
+                    if (typeof getPositionalTendency === 'function') {
+                        mult *= getPositionalTendency(ctx.p.pos, 'cross');
+                    }
                     return Math.random() < Math.min(CrossModel.chanceMax, ctx.cross.chance * mult);
                 }),
                 act('cruzar', actCross)
@@ -2124,7 +2140,20 @@ const PlayerBT = sel('PlayerRoot',
             // 7. Não tem passe viável e está sob pressão - chute para a lateral
             seq('ChuteLateral',
                 cond('semOpcoesSeguras', (ctx) => {
-                    return ctx.underPressure || ctx.p.decisionTimer > 1.2;
+                    let timeThreshold = 1.2;
+                    let isUnderPressure = ctx.underPressure;
+                    
+                    if (typeof getPositionalTendency === 'function') {
+                        const tendMult = getPositionalTendency(ctx.p.pos, 'clearance');
+                        timeThreshold /= Math.max(0.5, tendMult);
+                        
+                        // Zagueiros (tendência > 1.0) dão chutão sem pestanejar se pressionados
+                        // Atacantes (tendência < 1.0) hesitam em dar chutão e podem tentar segurar a bola
+                        if (isUnderPressure && tendMult < 1.0 && Math.random() > tendMult) {
+                            isUnderPressure = false; // hesita
+                        }
+                    }
+                    return isUnderPressure || ctx.p.decisionTimer > timeThreshold;
                 }),
                 act('chutarParaLateral', actClearance)
             ),
@@ -2159,13 +2188,13 @@ const PlayerBT = sel('PlayerRoot',
                     
                     // Bloqueio por ângulo: se o defensor estiver bem atrás do portador (ângulo < -0.3), 
                     // não vale a pena fazer carrinho/desarme porque vai falhar e a animação não rouba a bola.
-                    let carrierFwd;
+                    let carrierFwd = _v1;
                     if (carrier.velocity && carrier.velocity.lengthSq() > 0.1) {
-                        carrierFwd = carrier.velocity.clone().normalize();
+                        carrierFwd.copy(carrier.velocity).normalize();
                     } else {
-                        carrierFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(carrier.model.quaternion);
+                        carrierFwd.set(0, 0, 1).applyQuaternion(carrier.model.quaternion);
                     }
-                    const toDefender = new THREE.Vector3().subVectors(ctx.p.model.position, carrier.model.position);
+                    const toDefender = _v2.subVectors(ctx.p.model.position, carrier.model.position);
                     toDefender.y = 0;
                     if (toDefender.lengthSq() > 0) toDefender.normalize();
                     const dotAngle = carrierFwd.x * toDefender.x + carrierFwd.z * toDefender.z;

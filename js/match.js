@@ -398,7 +398,7 @@ const Match = {
                 if(this.defLineB) this.defLineB.visible = this.showOffsideLines;
             }
             if (e.key === 'f' || e.key === 'F') this.setSpeed('frame');
-            if (e.key === '1') this.setSpeed(0.7);
+            if (e.key === '1') this.setSpeed(0.9);
             if (e.key === '2') this.setSpeed(1.0);
             if (e.key === '3') this.setSpeed(1.2);
             if (e.key === '4') this.setSpeed(10);
@@ -1599,7 +1599,7 @@ const Match = {
             */
             if (this.cantoBolaAlvo) {
                 if (this.cantoAguardaChao) {
-                    if (this.ball.position.y <= BallPhysics.raio + 0.01) {
+                    if (this.ball.position.y <= BallPhysics.raio + 0.01 || this.ballVel.lengthSq() < 0.1) {
                         this.cantoAguardaChao = false;
                     }
                 } else {
@@ -1732,7 +1732,7 @@ const Match = {
             */
             if (this.golKickBolaAlvo) {
                 if (this.golKickAguardaChao) {
-                    if (this.ball.position.y <= BallPhysics.raio + 0.01) {
+                    if (this.ball.position.y <= BallPhysics.raio + 0.01 || this.ballVel.lengthSq() < 0.1) {
                         this.golKickAguardaChao = false;
                     }
                 } else {
@@ -2209,7 +2209,26 @@ const Match = {
         for (const gk of gks) {
             if (!gk || gk.role !== 'gk' || gk.touchLock > 0) continue;
             if (this.state !== 'PLAY') continue;
-            const d = gk.model.position.distanceTo(this.ball.position);
+            
+            // CCD
+            let d;
+            if (this.prevBallPos) {
+                const P1 = this.prevBallPos;
+                const P2 = this.ball.position;
+                const dx = P2.x - P1.x;
+                const dz = P2.z - P1.z;
+                const lenSq = dx * dx + dz * dz;
+                let t = 0;
+                if (lenSq > 0.000001) {
+                    const dot = (gk.model.position.x - P1.x) * dx + (gk.model.position.z - P1.z) * dz;
+                    t = Math.max(0, Math.min(1, dot / lenSq));
+                }
+                _v3.set(P1.x + t * dx, P1.y + t * (P2.y - P1.y), P1.z + t * dz);
+                d = gk.model.position.distanceTo(_v3);
+            } else {
+                d = gk.model.position.distanceTo(this.ball.position);
+            }
+            
             if (d > 1.3) continue;
             const dentroArea = Math.abs(this.ball.position.x) < 20.16 &&
                 (this.ball.position.z - gk.ownGoalZ) * gk.dirZ < 16.5 &&
@@ -2240,7 +2259,24 @@ const Match = {
             if (this.ballCarrier && p !== this.ballCarrier && p.team === this.ballCarrier.team) return;
             // Distância ao CORPO (pés..testa), não à origem do modelo — ver
             // distanciaAoCorpo em utils.js.
-            const r = distanciaAoCorpo(p, this.ball.position);
+            // CCD: raycasting contínuo (segmento de reta entre a posição anterior e atual)
+            let r;
+            if (this.prevBallPos) {
+                const P1 = this.prevBallPos;
+                const P2 = this.ball.position;
+                const dx = P2.x - P1.x;
+                const dz = P2.z - P1.z;
+                const lenSq = dx * dx + dz * dz;
+                let t = 0;
+                if (lenSq > 0.000001) {
+                    const dot = (p.model.position.x - P1.x) * dx + (p.model.position.z - P1.z) * dz;
+                    t = Math.max(0, Math.min(1, dot / lenSq));
+                }
+                _v3.set(P1.x + t * dx, P1.y + t * (P2.y - P1.y), P1.z + t * dz);
+                r = distanciaAoCorpo(p, _v3);
+            } else {
+                r = distanciaAoCorpo(p, this.ball.position);
+            }
             if (r.dist < bestDist) { bestDist = r.dist; bestAltura = r.alturaContacto; best = p; }
         };
         this.players.forEach(considerar);
@@ -2370,6 +2406,27 @@ const Match = {
         } else {
             window.bolaChutada = false;
             [Match.players[0], Match.opponents[0]].forEach(gk => { if (gk) { gk.gkReagiu = false; } });
+
+            /*
+            DOMÍNIO DE BOLA ORIENTADO PELA DIREITA (ball_control_right).
+            Quando a bola é recebida no solo por jogador de linha,
+            executa a animação de domínio orientado pela perna direita.
+            */
+            if (best.role !== 'gk' && best.jumpTimer <= 0 &&
+                best.fsm.currentState !== 'SET_PIECE_TAKER' &&
+                best.fsm.currentState !== 'LATERAL' &&
+                best.fsm.currentState !== 'CHEST_CONTROL') {
+
+                let dirSaida = _v1;
+                if (best.dynamicTarget) {
+                    dirSaida.subVectors(best.dynamicTarget, best.model.position);
+                    dirSaida.y = 0;
+                }
+                if (!best.dynamicTarget || dirSaida.lengthSq() < 0.01) {
+                    dirSaida.set(0, 0, best.dirZ || 1);
+                }
+                best.iniciarDominioDireito(dirSaida);
+            }
         }
         return true;
     },
@@ -2741,6 +2798,9 @@ const Match = {
 
         if (this.ball.position.y > r + 0.001) this.ballVel.y -= B.gravidade * dt;
 
+        if (!this.prevBallPos) this.prevBallPos = new THREE.Vector3();
+        this.prevBallPos.copy(this.ball.position);
+
         this.ball.position.addScaledVector(this.ballVel, dt);
 
         if (this.ball.position.y <= r) {
@@ -2849,6 +2909,7 @@ const Match = {
 
         if (Math.abs(this.ball.position.z) - BallPhysics.raio > CAMPO_COMP / 2) {
             let zSinal = Math.sign(this.ball.position.z);
+            this.colidirComRede(zSinal);
             if (Math.abs(this.ball.position.x) < (LARGURA_BALIZA / 2 - 0.1) && this.ball.position.y < ALTURA_BALIZA) {
 
                 if (this.state === 'PLAY') {
@@ -2939,6 +3000,7 @@ const Match = {
                         this.setupSetPiece('GOAL_KICK', donoDaBaliza);
                     }
                 } else if (!(this.state === 'GOAL_KICK' && this.golKickBolaAlvo) &&
+                           !(this.state === 'CORNER_KICK' && this.cantoBolaAlvo) &&
                            !this.dentroDaArmacao(zSinal)) {
                     /*
                     Jogo já parado (GOAL/OUT/bola parada) e a bola volta a
@@ -2969,7 +3031,6 @@ const Match = {
                     this.ballVel.set(0, 0, 0);
                 }
             }
-            this.colidirComRede(zSinal);
         }
 
         if (this.state === 'GOAL') {
@@ -3761,12 +3822,13 @@ const Match = {
             // Guarda-redes que defende: SOBRE a linha de golo, pronto a reagir.
             const gkPen = defendingPlayers.find(p => p.role === 'gk');
             if (gkPen) {
-                gkPen.model.position.set(0, ALTURA_BASE_Y, linhaGolPen - attDir * 0.05);
+                gkPen.model.position.set(0, ALTURA_BASE_Y, linhaGolPen);
                 gkPen.gkEstado = 'idle';
                 gkPen.gkReagiu = false;
                 gkPen.gkDelayReacao = 0;
                 gkPen.dive = null;
                 lookAtBola(gkPen.model, this.ball.position);
+                gkPen.resetBonesToDefault();
             }
 
             this.penaltiPendente = true;

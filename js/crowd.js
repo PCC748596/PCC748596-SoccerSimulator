@@ -656,67 +656,37 @@ void crowdPesos(out float dePe, out float w1, out float w2,
 
         const geos = this.geometrias();
         const canais = Object.keys(geos);
-        const n = Math.min(CrowdModel.total, lugares.length);
+        const nTotal = Math.min(CrowdModel.total, lugares.length);
 
         const dummy = new THREE.Object3D();
         const cor = new THREE.Color();
-        const meshes = {};
         const uniforms = this._criarUniforms();
 
-        /*
-        Atributos por instância. Um adepto tem de ter os MESMOS valores nos
-        quatro canais — senão a camisa levantava-se e a cabeça ficava sentada —
-        portanto os arrays são preenchidos uma vez e partilhados pelas quatro
-        geometrias.
-        */
-        const aAdepto = new Float32Array(n * 4);
-
-        for (const canal of canais) {
-            const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.0 });
-            this._aplicarShader(mat, uniforms);
-            const m = new THREE.InstancedMesh(geos[canal], mat, n);
-            m.castShadow = false;
-            m.receiveShadow = false;
-            /*
-            As matrizes continuam estáticas: TODO o movimento é no shader, e
-            nenhum frame reescreve uma matriz de instância.
-            */
-            m.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-            /*
-            O público anima-se no vertex shader, portanto a caixa envolvente
-            que o THREE calcula da pose sentada mente — um adepto de pé sai
-            dela e o frustum culling fazia bancadas inteiras desaparecer quando
-            a câmara se afastava. Desligar o teste é mais barato do que manter
-            a caixa certa.
-            */
-            m.frustumCulled = false;
-            geos[canal].setAttribute('aAdepto', new THREE.InstancedBufferAttribute(aAdepto, 4));
-            meshes[canal] = m;
-        }
-
-        /*
-        Gerador com semente: a multidão tem de ser a MESMA em cada arranque.
-        Com `Math.random` o estádio mudava de cor a cada refresh, e qualquer
-        comparação visual entre duas execuções passava a ser impossível.
-        */
         let semente = 20260824;
         const rnd = () => {
             semente = (semente * 1103515245 + 12345) & 0x7fffffff;
             return semente / 0x7fffffff;
         };
 
-        // Extremos em Z, para saber onde ficam as duas pontas do estádio.
+        // Extremos em Z
         let zMin = Infinity, zMax = -Infinity;
         for (const l of lugares) { if (l.z < zMin) zMin = l.z; if (l.z > zMax) zMax = l.z; }
         const spanZ = Math.max(1e-6, zMax - zMin);
 
-        // Baralha os lugares, para os que sobram (quando há mais lugares do
-        // que adeptos) ficarem espalhados em vez de concentrados numa ponta.
+        // Baralha os lugares
         const ordem = lugares.map((_, i) => i);
         for (let i = ordem.length - 1; i > 0; i--) {
             const j = Math.floor(rnd() * (i + 1));
             const tmp = ordem[i]; ordem[i] = ordem[j]; ordem[j] = tmp;
         }
+
+        // Corta os lugares para o total pedido (nTotal), e ORDENA POR ANGULO
+        // Agrupa os lugares em 'fatias' espaciais. Assim o frustum culling de um chunk funciona!
+        const lugaresEscolhidos = [];
+        for (let i = 0; i < nTotal; i++) {
+            lugaresEscolhidos.push(lugares[ordem[i]]);
+        }
+        lugaresEscolhidos.sort((a, b) => Math.atan2(a.z, a.x) - Math.atan2(b.z, b.x));
 
         const variar = (hex) => {
             cor.set(hex);
@@ -725,82 +695,107 @@ void crowdPesos(out float dePe, out float w1, out float w2,
             return cor;
         };
 
-        for (let i = 0; i < n; i++) {
-            const l = lugares[ordem[i]];
-            const t = (l.z - zMin) / spanZ;
-            const claque = this.claqueEm(t, rnd);
-            const eq = CrowdModel.equipas[claque];
-
-            const escala = CrowdModel.escalaMin +
-                rnd() * (CrowdModel.escalaMax - CrowdModel.escalaMin);
-
-            dummy.position.set(l.x, l.y, l.z);
-            dummy.rotation.set(0, l.rotY + (rnd() - 0.5) * 2 * CrowdModel.variacaoRotacao, 0);
-            dummy.scale.set(escala, escala, escala);
-            dummy.updateMatrix();
-
-            for (const canal of canais) meshes[canal].setMatrixAt(i, dummy.matrix);
-
-            /*
-            O limiar é o que decide se este adepto se levanta: com fracção 0.5
-            levantam-se os de limiar abaixo de 0.5. Sorteado uma vez, portanto
-            é sempre a MESMA metade — e dispersa pela bancada, porque o sorteio
-            não tem nada que ver com o lugar.
-
-            A fase e o ritmo dessincronizam: sem eles 7 500 pessoas saltavam
-            exactamente ao mesmo tempo, que lê como um único objecto a pulsar.
-            */
-            aAdepto[i * 4 + 0] = rnd();
-            aAdepto[i * 4 + 1] = rnd() * Math.PI * 2;
-            aAdepto[i * 4 + 2] = 0.85 + rnd() * 0.30;
-            aAdepto[i * 4 + 3] = (claque === 'A') ? 0 : 1;
-
-            meshes.camisa && meshes.camisa.setColorAt(i, variar(eq.camisa));
-            meshes.calcao && meshes.calcao.setColorAt(i, variar(eq.calcao));
-            meshes.pele && meshes.pele.setColorAt(i,
-                variar(CrowdModel.peles[Math.floor(rnd() * CrowdModel.peles.length)]));
-            meshes.cabelo && meshes.cabelo.setColorAt(i,
-                variar(CrowdModel.cabelos[Math.floor(rnd() * CrowdModel.cabelos.length)]));
-        }
-
+        // Aumenta a bounding sphere base para compensar o facto de eles se levantarem no shader
         for (const canal of canais) {
-            meshes[canal].instanceMatrix.needsUpdate = true;
-            if (meshes[canal].instanceColor) meshes[canal].instanceColor.needsUpdate = true;
-            const g = meshes[canal].geometry;
-            g.attributes.aAdepto.needsUpdate = true;
-            meshes[canal].count = n;
-            scene.add(meshes[canal]);
+            if (!geos[canal].boundingSphere) geos[canal].computeBoundingSphere();
         }
 
-        /*
-        Diz quantos adeptos entraram mesmo. Se o estádio tiver menos lugares do
-        que `CrowdModel.total`, a multidão fica pelo número de lugares — e sem
-        isto isso passava despercebido, com o estádio a parecer meio vazio sem
-        se saber porquê.
-        */
+        // 4 InstancedMesh (um por canal de cor) para o total de adeptos
+        const TAMANHO_CHUNK = nTotal;
+        const numChunks = Math.ceil(nTotal / TAMANHO_CHUNK);
+        this._grupos = [];
+
+        for (let c = 0; c < numChunks; c++) {
+            const inicio = c * TAMANHO_CHUNK;
+            const fim = Math.min(inicio + TAMANHO_CHUNK, nTotal);
+            const nChunk = fim - inicio;
+
+            // Calcular bounding sphere real do chunk
+            const chunkBox = new THREE.Box3();
+            for (let i = 0; i < nChunk; i++) {
+                const l = lugaresEscolhidos[inicio + i];
+                chunkBox.expandByPoint(new THREE.Vector3(l.x, l.y, l.z));
+            }
+            const chunkSphere = new THREE.Sphere();
+            chunkBox.getBoundingSphere(chunkSphere);
+            chunkSphere.radius += 3.0; // Dar folga para quando se levantam/festejam
+
+            const aAdepto = new Float32Array(nChunk * 4);
+            const meshes = {};
+
+            for (const canal of canais) {
+                // CLONAR A GEOMETRIA POR CHUNK!
+                // Se não clonarmos, o aAdepto atributo partilhado vai sobescrever-se a cada loop, e só o último chunk é que desenha.
+                const geoChunk = geos[canal].clone();
+                
+                geoChunk.boundingSphere = chunkSphere;
+
+                const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.0 });
+                this._aplicarShader(mat, uniforms);
+                const m = new THREE.InstancedMesh(geoChunk, mat, nChunk);
+                m.castShadow = false;
+                m.receiveShadow = false;
+                m.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+                
+                m.frustumCulled = true;
+                
+                geoChunk.setAttribute('aAdepto', new THREE.InstancedBufferAttribute(aAdepto, 4));
+                meshes[canal] = m;
+            }
+
+            for (let i = 0; i < nChunk; i++) {
+                const l = lugaresEscolhidos[inicio + i];
+                const t = (l.z - zMin) / spanZ;
+                const claque = this.claqueEm(t, rnd);
+                const eq = CrowdModel.equipas[claque];
+                const escala = CrowdModel.escalaMin + rnd() * (CrowdModel.escalaMax - CrowdModel.escalaMin);
+
+                dummy.position.set(l.x, l.y, l.z);
+                dummy.rotation.set(0, l.rotY + (rnd() - 0.5) * 2 * CrowdModel.variacaoRotacao, 0);
+                dummy.scale.set(escala, escala, escala);
+                dummy.updateMatrix();
+
+                for (const canal of canais) meshes[canal].setMatrixAt(i, dummy.matrix);
+
+                aAdepto[i * 4 + 0] = rnd();
+                aAdepto[i * 4 + 1] = rnd() * Math.PI * 2;
+                aAdepto[i * 4 + 2] = 0.85 + rnd() * 0.30;
+                aAdepto[i * 4 + 3] = (claque === 'A') ? 0 : 1;
+
+                meshes.camisa && meshes.camisa.setColorAt(i, variar(eq.camisa));
+                meshes.calcao && meshes.calcao.setColorAt(i, variar(eq.calcao));
+                meshes.pele && meshes.pele.setColorAt(i, variar(CrowdModel.peles[Math.floor(rnd() * CrowdModel.peles.length)]));
+                meshes.cabelo && meshes.cabelo.setColorAt(i, variar(CrowdModel.cabelos[Math.floor(rnd() * CrowdModel.cabelos.length)]));
+            }
+
+            for (const canal of canais) {
+                meshes[canal].instanceMatrix.needsUpdate = true;
+                if (meshes[canal].instanceColor) meshes[canal].instanceColor.needsUpdate = true;
+                meshes[canal].geometry.attributes.aAdepto.needsUpdate = true;
+                meshes[canal].count = nChunk;
+                scene.add(meshes[canal]);
+            }
+            
+            this._grupos.push(meshes);
+        }
+
         if (typeof console !== 'undefined' && console.log) {
-            console.log(`Crowd: ${n} adeptos em ${lugares.length} lugares ` +
-                `(pedidos ${CrowdModel.total}), ${canais.length} InstancedMesh`);
+            console.log(`Crowd: ${nTotal} adeptos em ${lugares.length} lugares particionados em ${numChunks} chunks com frustum culling ativo!`);
         }
 
-        this._meshes = meshes;
+        this._meshes = this._grupos[0]; 
         this._uniforms = uniforms;
         this._tempo = 0;
         this._frac = { A: -1, B: -1 };
         CrowdTrigger.reset();
 
-        // Estado inicial: a bancada em repouso, já com a minoria de pé.
         this.setFraccao('A', CrowdModel.fraccaoRepouso, false);
         this.setFraccao('B', CrowdModel.fraccaoRepouso, false);
-        return meshes;
+        return this._meshes;
     },
 
     /*
     Muda a fracção de uma claque que está de pé.
-
-    Guarda a fracção ANTIGA e o instante da troca, e é o shader que interpola
-    entre as duas — por isso é que isto pode ser chamado a meio de uma
-    transição sem saltar: quem já estava de pé continua de pé.
     */
     setFraccao(claque, fraccao, festa) {
         if (!this._uniforms) return;
@@ -841,7 +836,11 @@ void crowdPesos(out float dePe, out float w1, out float w2,
     },
 
     setVisivel(on) {
-        if (!this._meshes) return;
-        for (const canal in this._meshes) this._meshes[canal].visible = on;
+        if (!this._grupos) return;
+        for (const meshes of this._grupos) {
+            for (const canal in meshes) {
+                meshes[canal].visible = on;
+            }
+        }
     }
 };

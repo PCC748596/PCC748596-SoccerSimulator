@@ -762,6 +762,21 @@ function animate(time) {
         let fps = Math.round((fpsFrames * 1000) / (time - fpsLastTime));
         let titleEl = document.getElementById('app-title');
         if (titleEl) titleEl.innerText = 'SOCCER SIM | FPS: ' + fps;
+        
+        if (fps < 40 && window.Config && window.Config.enableCrowd && !window.crowdDisabledByFps) {
+            window.consecutiveLowFps = (window.consecutiveLowFps || 0) + 1;
+            if (window.consecutiveLowFps >= 4) { // 4 segundos consecutivos abaixo de 40 FPS
+                window.crowdDisabledByFps = true;
+                if (typeof Crowd !== 'undefined') Crowd.setVisivel(false);
+                let uiToggle = document.getElementById('toggle-fans');
+                if (uiToggle) uiToggle.checked = false; // atualiza a interface
+                console.warn("Performance Mode: Crowd automatically disabled due to low FPS (< 40).");
+                titleEl.innerText = 'SOCCER SIM | FPS: ' + fps + ' (Crowd Disabled)';
+            }
+        } else {
+            window.consecutiveLowFps = 0;
+        }
+        
         fpsFrames = 0;
         fpsLastTime = time;
     }
@@ -926,6 +941,11 @@ document.addEventListener("DOMContentLoaded", () => {
         scene.add(ambientLight);
 
         Match.init(scene);
+        
+        if (isTouchDevice) {
+            Match.setSpeed(0.9);
+        }
+        
         if (typeof Minimap !== 'undefined') Minimap.init();
         if (typeof Officials !== 'undefined') Officials.init(scene);
         Tatics.updateSkills();

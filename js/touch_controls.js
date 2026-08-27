@@ -132,11 +132,11 @@ const TouchControls = {
             });
         }
 
-        // Botão Speed (alterna entre 0.7x, 1.0x e 1.2x)
+        // Botão Speed (alterna entre 0.9x, 1.0x e 1.2x)
         const btnSpeed = document.getElementById('btn-touch-speed');
         if (btnSpeed) {
             btnSpeed.addEventListener('click', () => {
-                const speeds = [0.7, 1.0, 1.2];
+                const speeds = [0.9, 1.0, 1.2];
                 const current = typeof window.speedMultiplier === 'number' ? window.speedMultiplier : 1.0;
                 let nextIdx = (speeds.indexOf(current) + 1) % speeds.length;
                 if (nextIdx < 0) nextIdx = 1; // Default to 1.0x

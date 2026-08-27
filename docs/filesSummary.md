@@ -3412,3 +3412,11 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Pose da matada no peito / cabeceio de pé | `player.js` → `aplicarCamadaPeito()` / `aplicarCamadaCabeceioDePe()` |
 | Cabeçada com salto (fase subida/contacto/descida) | `player.js` → `animateBones()`, bloco do `jumpTimer` |
 | Passe chegando atrás/à frente de quem corre (lead) | `player.js` → `initiatePass()` — `pesoVel`/`travelTime`/`maxLeadTotal` |
+
+### Sessão de 26 de Agosto de 2026 (continuação 7) — afinações nos penáltis
+
+Ajustes matemáticos focados na balística e distribuição dos penáltis no ficheiro `js/player.js`.
+
+- **Mais impacto nos postes e no travessão:** O remate foi afinado para apontar exatamente para o espaço físico dos postes (`x = ±3.66m`) e do travessão (`y = 2.44m`) quando a decisão cai em `colsTrave` ou num remate ligeiramente alto. Isto corrige a mecânica anterior onde um remate direcionado à trave podia passar perfeitamente ao lado ou entrar limpo por causa de um desvio aleatório demasiado generoso (`±0.12`).
+- **Menos defesas "paradas" ao centro:** Quando o guarda-redes ganha categoricamente o duelo de habilidade (`diff <= -5`), o batedor escolhia frequentemente a coluna central (`coluna 4`). Criou-se o vetor `colsGolCantos` (sem o centro) para forçar o remate para os lados 85% das vezes, obrigando o guarda-redes a realizar defesas de mergulho mais espetaculares, reservando apenas 15% de probabilidade para remates ao centro.
+- *(Nota)*: Foi testada uma alteração temporária à corrida para a bola (aumentando `recuoBatedor` para 3,4 m e ativando um *ActionState* com o clip de remate), mas foi revertida por tornar a ação excessivamente lenta (parecendo demorar 10 segundos) e usar a perna errada do boneco. A versão final mantém a cobrança imediata mas com a balística corrigida.

@@ -372,7 +372,7 @@ function molaParaABola(alvoX, alvoZ, bolaX, bolaZ, forca, distMin, puxaoMax) {
     if (!(forca > 0)) return { x: alvoX, z: alvoZ };
 
     const dx = bolaX - alvoX, dz = bolaZ - alvoZ;
-    const d = Math.hypot(dx, dz);
+    const d = Math.max(0.000001, Math.hypot(dx, dz));
     if (!(d > distMin)) return { x: alvoX, z: alvoZ };
 
     const puxao = Math.min((d - distMin) * forca, puxaoMax);
@@ -540,8 +540,8 @@ function cruzamentoParaArea(bolaPos, ownGoalZ, dirZ, lado, rnd) {
 
     let dx = targetX - bolaPos.x;
     let dz = targetZ - bolaPos.z;
-    const d = Math.hypot(dx, dz);
-    if (d > 0.0001) { dx /= d; dz /= d; }
+    const d = Math.max(0.000001, Math.hypot(dx, dz));
+    dx /= d; dz /= d;
 
     return { x: dx * 24.0, y: 9.6, z: dz * 24.0 };
 }
