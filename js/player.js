@@ -2468,6 +2468,24 @@ class FootballPlayer {
         }
 
         /*
+        Batedor da falta: é conduzido pela aproximação andada (escrita em
+        Match.update, que lhe põe a velocidade de caminhada) e pelo gesto
+        (ActionState criado no `baterFalta`, que corre no estado SHOOT). A
+        árvore de comportamento NÃO o mexe — senão reposiona-o para o slot e a
+        corrida não acontece como devia. Só a FSM corre (para o SHOOT aplicar o
+        clip e o `onPrepare` o levar até à bola) e o `animateBones` desenha o
+        passo a partir da velocidade que a aproximação lhe deu — por isso já não
+        há deslize.
+        */
+        if (Match.state === 'FREE_KICK' && this === Match.setPieceTaker) {
+            this.fsm.update(dt);
+            this.model.position.addScaledVector(this.velocity, dt);
+            if (!headless) this.animateBones(dt);
+            else this.model.position.y = ALTURA_BASE_Y;
+            return;
+        }
+
+        /*
         decisionTimer só reinicia numa posse NOVA (bola perdida para o
         adversário, ou primeira vez que a apanha) — não a cada toque de
         condução do CARRY. O toque solta hasBall por um instante

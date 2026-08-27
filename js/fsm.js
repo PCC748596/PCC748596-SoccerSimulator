@@ -820,7 +820,10 @@ class PlayerFSM {
                     const o = offsetInquietacao(p.jostleAngulo, p.jostleRaio || 0);
                     _v1.set(p.jostleAncora.x + o.x, ALTURA_BASE_Y, p.jostleAncora.z + o.z);
                     p.velocity = p.steerArrive(_v1, J.velocidade, 0);
-                } else {
+                } else if (!(p === Match.setPieceTaker && Match.state === 'FREE_KICK' && Match.faltaPendente)) {
+                    // O batedor da falta é conduzido pela aproximação andada
+                    // (Match.update escreve-lhe a velocidade de caminhada) — não
+                    // se anula aqui, senão a corrida desaparecia.
                     p.velocity.set(0, 0, 0);
                 }
                 if (Match.ball) {

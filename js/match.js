@@ -1692,10 +1692,21 @@ const Match = {
                     const dx = takerFalta.model.position.x - bx;
                     const dz = takerFalta.model.position.z - bz;
                     const d = Math.hypot(dx, dz);
+                    /*
+                    Aproximação ANDADA. Escreve-se a VELOCIDADE e não a posição:
+                    é a velocidade que o `animateBones` lê para desenhar o passo,
+                    por isso teleportar a posição era um deslize sem pernas. O
+                    batedor é conduzido só por aqui (até `arranqueDoGesto`) e
+                    pelo gesto (ActionState no SHOOT) — a árvore de comportamento
+                    está fora do caminho (ver o freeze em player.js).
+                    */
                     if (d > FK.arranqueDoGesto) {
                         const passo = Math.min(d - FK.arranqueDoGesto, FK.velocidadeAproximacao * dt);
-                        takerFalta.model.position.x -= (dx / d) * passo;
-                        takerFalta.model.position.z -= (dz / d) * passo;
+                        const v = passo / dt;
+                        takerFalta.velocity.set(-(dx / d) * v, 0, -(dz / d) * v);
+                    } else {
+                        // Chegou ao ponto de arranque do gesto: pára e espera.
+                        takerFalta.velocity.set(0, 0, 0);
                     }
                 }
 
