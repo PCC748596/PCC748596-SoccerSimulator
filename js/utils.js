@@ -513,38 +513,99 @@ function decisaoDeFalta(bolaX, bolaZ, attDir) {
     // 2 — mini-canto: ao lado da área e perto da linha de fundo.
     if (ax >= F.miniCornerXMin && dFundo <= F.miniCornerProfundidade) return 'cruzamento';
 
+    /*
+    2b — FALTA LATERAL JUNTO À ÁREA. Mais para dentro e mais funda do que o
+    mini-canto: `cruzXMin` do eixo para fora, até `cruzProfundidade` da linha de
+    fundo. Vem depois do trapézio, portanto de frente continua a rematar-se.
+
+    Sem esta zona a falta a 14-20 m do eixo caía no ramo do passe e saía dali um
+    passe curto para a frente — no sítio de onde, em campo, se cruza.
+    */
+    if (ax >= F.cruzXMin && dFundo <= F.cruzProfundidade) return 'cruzamento';
+
     // 3 — o resto.
     return 'passe';
 }
 
 /*
-Velocidade de um CRUZAMENTO PARA A ÁREA — o do canto, e o do mini-canto de uma
-falta ao lado da área.
+=============================================================================
+O CRUZAMENTO DA FALTA LATERAL — quatro alvos
+=============================================================================
+Primeira trave, segunda trave, marca do penálti (os três pelo alto, para a
+cabeça) e entrada da área a MEIA ALTURA, para quem chega a rematar de primeira.
+Os alvos e as formas estão em `FreeKickModel.cruzamentos`.
 
-Mira o primeiro pau e a entrada da pequena área, que é onde as jogadas
-ensaiadas convergem: `zDepth` 6 a 10 m da linha de fundo, `targetX` 1 a 4.5 m
-do lado de onde vem a bola.
+Substituiu o `cruzamentoParaArea`: um alvo único, velocidade fixa de 24 m/s e
+altura de saída fixa. Duas coisas que ele não fazia e que são a razão desta
+função existir:
 
-Estava escrito à mão dentro do `case 'SET_PIECE_TAKER'` da fsm.js. Saiu para
-aqui quando a falta passou a precisar do mesmo cruzamento — dois sítios com a
-mesma balística escrita duas vezes divergem à primeira afinação. Os números
-são os mesmos que lá estavam.
+  - a ALTURA DE CHEGADA é o que se pede, não a força de saída. Uma bola para a
+    cabeça e uma bola para o pé não se distinguem pela potência; distinguem-se
+    pela altura a que passam no alvo. A velocidade sai daí, resolvida com
+    arrasto no `velocidadeParaAlturaNoAlvo`;
+  - o alvo é ESCOLHIDO e não sorteado às cegas: um cruzamento para a segunda
+    trave sem ninguém na segunda trave é uma bola dada ao guarda-redes. O peso
+    de cada alvo sobe quando lá está um companheiro.
 
-`rnd` é injectado para a função ser pura e testável.
+`rnd` é injectado para a função ser pura e testável. `companheiros` é a lista
+de colegas do batedor (sem ele e sem o guarda-redes).
 */
-function cruzamentoParaArea(bolaPos, ownGoalZ, dirZ, lado, rnd) {
+function cruzamentoDeFalta(bolaPos, dirZ, companheiros, rnd) {
     const r = rnd || Math.random;
-    const zDepth = 6.0 + r() * 4.0;
-    const targetZ = ownGoalZ * -1.0 - dirZ * zDepth;
-    const targetX = lado * (1.0 + r() * 3.5);
+    const F = FreeKickModel;
+    const linhaFundo = dirZ * (CAMPO_COMP / 2);
+    const lado = Math.sign(bolaPos.x) || 1;
 
-    let dx = targetX - bolaPos.x;
-    let dz = targetZ - bolaPos.z;
-    const d = Math.max(0.000001, Math.hypot(dx, dz));
-    dx /= d; dz /= d;
+    const pontoDe = (c) => ({
+        x: lado * c.relX,
+        z: linhaFundo - dirZ * c.dist
+    });
 
-    return { x: dx * 24.0, y: 9.6, z: dz * 24.0 };
+    // Peso de cada alvo, com bónus por ter gente lá.
+    const opcoes = F.cruzamentos.map(c => {
+        const alvo = pontoDe(c);
+        let peso = c.peso;
+        if (companheiros && companheiros.length) {
+            const temGente = companheiros.some(p => p && p.model &&
+                Math.hypot(p.model.position.x - alvo.x, p.model.position.z - alvo.z) < F.raioCompanheiro);
+            if (temGente) peso *= F.bonusCompanheiro;
+        }
+        return { c: c, alvo: alvo, peso: peso };
+    });
+
+    const total = opcoes.reduce((s, o) => s + o.peso, 0);
+    let sorteio = r() * total;
+    let escolhida = opcoes[opcoes.length - 1];
+    for (const o of opcoes) { sorteio -= o.peso; if (sorteio <= 0) { escolhida = o; break; } }
+
+    const c = escolhida.c;
+    const varia = (F.variacaoAlvo || 0);
+    const alvoX = escolhida.alvo.x + (r() * 2 - 1) * varia;
+    const alvoZ = escolhida.alvo.z + (r() * 2 - 1) * varia * dirZ;
+
+    let dx = alvoX - bolaPos.x;
+    let dz = alvoZ - bolaPos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.5) return null;
+    dx /= dist; dz /= dist;
+
+    const v = velocidadeParaAlturaNoAlvo(dist, c.elevacao, c.altura);
+    /*
+    Sem solução: a bola não chega àquela altura àquela distância nem com o
+    tecto de força. Não se inventa um cruzamento — quem chamou que trate isto
+    como "não há cruzamento daqui".
+    */
+    if (v === null) return null;
+
+    const horiz = v * Math.cos(c.elevacao);
+    return {
+        nome: c.nome,
+        alvo: { x: alvoX, z: alvoZ },
+        vel: { x: dx * horiz, y: v * Math.sin(c.elevacao), z: dz * horiz }
+    };
 }
+
+
 
 /*
 Quanto é que quem tem a bola está NAS LATERAIS DA ÁREA — 0 fora, 1 na zona
@@ -677,6 +738,64 @@ function velocidadeRasteiraPara(dist, vChegada, opcoes) {
 
     // Tecto: acima disto o passe rasteiro vira disparo.
     return Math.min(18.5, Math.sqrt(Math.max(0, alvo / k)));
+}
+
+/*
+=============================================================================
+VELOCIDADE PARA PASSAR NO ALVO *A UMA ALTURA PEDIDA*
+=============================================================================
+CUIDADO COM O NOME: já existe um `velocidadeParaChegarA` neste ficheiro, e é
+outra coisa — o passe RASTEIRO que chega ao destino com uma velocidade dada. Em
+scripts clássicos a segunda declaração ganha, e chamar-lhes o mesmo nome fazia
+esta função devolver silenciosamente o resultado da outra (medido: cruzamentos a
+sair a 2.3 m/s, ou seja a bola a cair aos pés do batedor).
+
+O `velocidadeParaAlcance` responde "que força põe a bola no CHÃO a `dist`". Não
+serve para um cruzamento: um cruzamento não é para cair no relvado, é para
+chegar à cabeça — ou, no caso da bola tensa para a entrada da área, à altura de
+quem lhe vai bater de primeira.
+
+Aqui fixa-se a elevação (é ela que dá a FORMA da bola: chapelada para a cabeça,
+tensa para o remate) e procura-se a velocidade que a põe a `alturaChegada`
+quando passa por `dist`. Bissecção sobre a mesma simulação com arrasto do
+`velocidadeParaAlcance` — mais força, mais alta ela vem nessa distância, e a
+monotonia é o que a bissecção precisa.
+
+Devolve null se nem no tecto de velocidade se lá chega: é melhor não cruzar do
+que cruzar com uma bola que não chega.
+*/
+function velocidadeParaAlturaNoAlvo(dist, elev, alturaChegada, y0) {
+    const g = BallPhysics.gravidade;
+    const k = BallPhysics.kArrasto;
+    const startY = (typeof y0 === 'number') ? y0 : BallPhysics.raio;
+
+    // Altura ao passar por `dist`, para uma dada velocidade de saída.
+    const alturaEm = (v) => {
+        let x = 0, y = startY;
+        let vx = v * Math.cos(elev), vy = v * Math.sin(elev);
+        const dt = 1 / 120;
+        for (let i = 0; i < 900; i++) {
+            const s = Math.hypot(vx, vy);
+            if (s > 0.001) { const dv = k * s * s * dt; vx -= vx / s * dv; vy -= vy / s * dv; }
+            vy -= g * dt;
+            const xAnt = x, yAnt = y;
+            x += vx * dt; y += vy * dt;
+            if (x >= dist) {
+                const f = (dist - xAnt) / Math.max(1e-6, x - xAnt);
+                return yAnt + (y - yAnt) * f;
+            }
+            if (y < -2) return -Infinity;   // enterrou antes de lá chegar
+        }
+        return -Infinity;
+    };
+
+    let lo = 1.0, hi = 45.0;
+    if (alturaEm(hi) < alturaChegada) return null;
+    for (let i = 0; i < 22; i++) {
+        const mid = (lo + hi) / 2;
+        if (alturaEm(mid) < alturaChegada) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
 }
 
 /*

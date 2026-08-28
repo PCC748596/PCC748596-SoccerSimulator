@@ -7,7 +7,7 @@ A cobrança de falta tem três desfechos, decididos só pela posição da bola:
   'cruzamento'  ao lado da grande área e perto da linha de fundo (mini-canto).
   'passe'       o resto.
 
-A `decisaoDeFalta` e a `cruzamentoParaArea` são extraídas do js/utils.js e
+A `decisaoDeFalta` é extraída do js/utils.js e
 corridas a sério, com as constantes lidas do js/config.js.
 */
 const fs = require('fs');
@@ -41,9 +41,6 @@ const ambiente = { FreeKickModel, CAMPO_COMP, LARGURA_BALIZA };
 const decisaoDeFalta = new Function(...Object.keys(ambiente),
     `${extrairFuncao(srcUtils, 'decisaoDeFalta', 'js/utils.js')}; return decisaoDeFalta;`
 )(...Object.values(ambiente));
-const cruzamentoParaArea = new Function(
-    `${extrairFuncao(srcUtils, 'cruzamentoParaArea', 'js/utils.js')}; return cruzamentoParaArea;`
-)();
 
 let falhas = 0;
 const erro = m => { falhas++; console.error('  X ' + m); };
@@ -125,16 +122,22 @@ for (const attDir of [1, -1]) {
         const d = decidir(x, 8, attDir);
         if (d !== 'cruzamento') erro(`x=${x.toFixed(1)} a 8 m da linha devia cruzar, deu ${d}`);
 
-        // Fundo de mais para ser mini-canto: é passe.
-        const longe = decidir(x, FreeKickModel.miniCornerProfundidade + 3, attDir);
-        if (longe !== 'passe') {
-            erro(`x=${x.toFixed(1)} a ${FreeKickModel.miniCornerProfundidade + 3} m ` +
-                `devia ser passe, deu ${longe}`);
+        /*
+        NOTA: a zona de cruzamento deixou de ser só o mini-canto. A falta
+        lateral junto à área (`cruzXMin`, mais para dentro, e até
+        `cruzProfundidade`, mais fundo) também cruza — ver os quatro alvos em
+        FreeKickModel.cruzamentos. Por isso o que aqui se testa é o LIMITE
+        dessa zona maior, e já não o do mini-canto.
+        */
+        const longe = decidir(x, FreeKickModel.cruzProfundidade + 4, attDir);
+        if (longe === 'cruzamento') {
+            erro(`x=${x.toFixed(1)} a ${FreeKickModel.cruzProfundidade + 4} m ` +
+                `é fundo de mais para cruzar, deu ${longe}`);
         }
-        // Dentro da largura da área não é mini-canto.
-        const dentroX = decidir(sinal * (FreeKickModel.miniCornerXMin - 3.0), 20, attDir);
+        // Dentro do corredor central não se cruza: dali remata-se ou passa-se.
+        const dentroX = decidir(sinal * (FreeKickModel.cruzXMin - 4.0), 12, attDir);
         if (dentroX === 'cruzamento') {
-            erro(`x=${(sinal * (FreeKickModel.miniCornerXMin - 3)).toFixed(1)} não é lateral da área`);
+            erro(`x=${(sinal * (FreeKickModel.cruzXMin - 4)).toFixed(1)} é corredor central, não lateral`);
         }
     }
 }
@@ -166,7 +169,9 @@ real; mas a ordem tem de estar garantida na mesma. A 22 m o trapézio chega a
 5 — o resto é passe: meio-campo, longe da baliza.
 */
 for (const attDir of [1, -1]) {
-    for (const [x, d] of [[0, 40], [15, 30], [-25, 35], [30, 45]]) {
+    // Longe da baliza: fora da zona de cruzamento (`cruzProfundidade`) e fora
+    // do trapézio de remate.
+    for (const [x, d] of [[0, 40], [15, 33], [-25, 35], [30, 45]]) {
         const r = decidir(x, d, attDir);
         if (r !== 'passe') erro(`x=${x} a ${d} m da linha devia ser passe, deu ${r}`);
     }
@@ -174,24 +179,47 @@ for (const attDir of [1, -1]) {
 console.log('  o resto do campo: passe');
 
 /*
-6 — o cruzamento do mini-canto vai mesmo para dentro da área, e é o mesmo do
-canto (mesma função, os dois sítios).
+6 — OS QUATRO CRUZAMENTOS. Primeira trave, segunda trave, marca do penálti e
+entrada da área a meia altura. O que se fixa é o que os distingue: para onde
+vão e a que ALTURA lá chegam — não a força de saída, que é consequência.
 */
 {
-    const rnd = (() => { let i = 0; const v = [0.0, 0.5, 1.0, 0.25]; return () => v[i++ % v.length]; })();
-    const attDir = 1;
-    const ownGoalZ = -attDir * (CAMPO_COMP / 2);
-    const bola = { x: 22.0, z: attDir * (CAMPO_COMP / 2) - attDir * 8 };
-    const c = cruzamentoParaArea(bola, ownGoalZ, attDir, 1, rnd);
-    const vel = Math.hypot(c.x, c.y, c.z);
-    console.log(`\n  cruzamento do mini-canto: ${vel.toFixed(1)} m/s ` +
-        `(horizontal ${Math.hypot(c.x, c.z).toFixed(1)}, vertical ${c.y.toFixed(1)})`);
-    if (Math.abs(Math.hypot(c.x, c.z) - 24.0) > 0.01) {
-        erro(`a componente horizontal devia ser 24.0, deu ${Math.hypot(c.x, c.z).toFixed(2)}`);
+    console.log('');
+    console.log('os quatro alvos do cruzamento da falta');
+    const nomes = FreeKickModel.cruzamentos.map(c => c.nome);
+    for (const esperado of ['primeira_trave', 'segunda_trave', 'marca_penalti', 'entrada_da_area']) {
+        if (nomes.indexOf(esperado) < 0) erro(`falta o alvo ${esperado}`);
     }
-    if (Math.abs(c.y - 9.6) > 0.01) erro(`a vertical devia ser 9.6, deu ${c.y}`);
-    // Vai na direcção da baliza atacada.
-    if (Math.sign(c.z) !== attDir) erro('o cruzamento não vai na direcção da baliza atacada');
+
+    const alto = FreeKickModel.cruzamentos.filter(c => c.altura >= 2.0);
+    if (alto.length !== 3) erro(`deviam ser TRÊS cruzamentos pelo alto, são ${alto.length}`);
+
+    const meia = FreeKickModel.cruzamentos.find(c => c.nome === 'entrada_da_area');
+    if (!(meia.altura > 0.6 && meia.altura < 1.6)) {
+        erro(`a entrada da área é MEIA ALTURA, não ${meia.altura} m`);
+    }
+    if (!(meia.elevacao < 20 * Math.PI / 180)) {
+        erro('a bola para a entrada da área tem de sair TENSA, não chapelada');
+    }
+    if (!(meia.dist > 15)) erro('a entrada da área não pode estar dentro da pequena área');
+
+    const p1 = FreeKickModel.cruzamentos.find(c => c.nome === 'primeira_trave');
+    const p2 = FreeKickModel.cruzamentos.find(c => c.nome === 'segunda_trave');
+    if (Math.sign(p1.relX) === Math.sign(p2.relX)) {
+        erro('as duas traves têm de ficar em lados OPOSTOS do eixo da baliza');
+    }
+    if (!(Math.abs(p1.relX) > 2.5 && Math.abs(p1.relX) < 5.0)) {
+        erro(`a primeira trave está em ${p1.relX}, e o poste está em 3.66`);
+    }
+
+    const pen = FreeKickModel.cruzamentos.find(c => c.nome === 'marca_penalti');
+    if (Math.abs(pen.dist - 11.0) > 1.5) erro(`a marca do penálti é a 11 m, não a ${pen.dist}`);
+    if (Math.abs(pen.relX) > 0.5) erro('a marca do penálti é no eixo');
+
+    for (const c of FreeKickModel.cruzamentos) {
+        console.log(`  ${c.nome.padEnd(16)} relX=${c.relX} dist=${c.dist} m ` +
+            `chega a ${c.altura} m, elevação ${(c.elevacao * 180 / Math.PI).toFixed(0)}°`);
+    }
 }
 
 if (falhas > 0) {

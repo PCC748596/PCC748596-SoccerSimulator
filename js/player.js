@@ -786,14 +786,42 @@ class FootballPlayer {
         if (decisao === 'cruzamento') {
             /*
             MINI-CANTO: cruzamento para a área, com a mesma balística do canto
-            (ver cruzamentoParaArea em utils.js, partilhada com o
-            SET_PIECE_TAKER da fsm). Daqui não há remate e um passe curto para
-            trás desperdiça a posição.
+            (ver cruzamentoDeFalta em utils.js). Daqui não há
+            remate, e um passe curto para trás desperdiça a posição.
             */
-            const lado = Math.sign(Match.ball.position.x) || 1;
-            const cruz = cruzamentoParaArea(
-                Match.ball.position, this.ownGoalZ, this.dirZ, lado, Math.random);
-            Match.ballVel.set(cruz.x, cruz.y, cruz.z);
+            /*
+            QUATRO ALVOS: primeira trave, segunda trave, marca do penálti (pelo
+            alto, para a cabeça) e entrada da área a meia altura, para quem
+            chega a rematar de primeira. Ver cruzamentoDeFalta (utils.js) e
+            FreeKickModel.cruzamentos.
+
+            O alvo é escolhido com peso pela presença de companheiros: cruzar
+            para a segunda trave sem ninguém na segunda trave é dar a bola ao
+            guarda-redes.
+            */
+            const meus = (this.team === 'TeamA') ? Match.players : Match.opponents;
+            const companheiros = meus.filter(p => p !== this && p.role !== 'gk');
+            const cruz = cruzamentoDeFalta(
+                Match.ball.position, this.dirZ, companheiros, Math.random);
+
+            if (!cruz) {
+                // Daqui não sai cruzamento nenhum (nem com o tecto de força a
+                // bola chega àquela altura): joga-se em passe, que é a saída
+                // que o ramo de baixo já sabe fazer.
+                return this.executarFalta('passe');
+            }
+
+            Match.ballVel.set(cruz.vel.x, cruz.vel.y, cruz.vel.z);
+            // Qual dos quatro saiu — lido pelas ferramentas de medição.
+            Match.ultimoCruzamentoDeFalta = cruz.nome;
+            this.showActionBanner('CROSS');
+            /*
+            O alvo do cruzamento fica escrito para quem ataca a área o poder
+            ler (ver AtacarArea em player_bt.js) — sem isto cruza-se para um
+            ponto que ninguém sabe que existe.
+            */
+            if (!Match.passTargetPos) Match.passTargetPos = new THREE.Vector3();
+            Match.passTargetPos.set(cruz.alvo.x, ALTURA_BASE_Y, cruz.alvo.z);
             this.hasBall = false;
             this.touchLock = BallControl.touchLock;
             Match.ballCarrier = null;

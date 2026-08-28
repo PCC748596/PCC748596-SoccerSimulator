@@ -261,6 +261,66 @@ const FreeKickModel = {
     miniCornerXMin: 20.16,                  // meia-largura da grande área
     miniCornerProfundidade: 22.0,           // até esta distância da linha de fundo
 
+    /*
+    =====================================================================
+    A FALTA LATERAL JUNTO À ÁREA
+    =====================================================================
+    O mini-canto exigia estar já FORA da largura da grande área
+    (`miniCornerXMin`, 20.16 m). A falta lateral clássica — a 14-20 m do
+    eixo, à altura da entrada da área — caía toda no ramo do passe, e
+    saía dali um passe curto para a frente como em qualquer sítio do
+    meio-campo. É a posição de onde se cruza, e não se cruzava.
+
+    Esta zona é mais larga e mais funda do que a do mini-canto, e vem
+    DEPOIS do trapézio de remate: de frente continua a rematar-se.
+    */
+    cruzXMin: 14.0,             // do eixo para fora, conta como falta lateral
+    cruzProfundidade: 26.0,     // e até esta distância da linha de fundo
+
+    /*
+    OS QUATRO CRUZAMENTOS. `relX` é medido do eixo da baliza, com sinal do
+    LADO DE ONDE VEM A BOLA (+ = mesmo lado); `dist` é da linha de fundo;
+    `altura` é a que a bola tem de ter QUANDO LÁ CHEGA — é isso que separa
+    uma bola para a cabeça de uma bola para o pé, e não a força de saída.
+
+    A `elevacao` dá a forma: chapelada nas três primeiras, tensa na
+    quarta. A velocidade sai da altura pedida, resolvida com arrasto no
+    `velocidadeParaChegarA` (utils.js) — a conta do vácuo deixava o
+    cruzamento uns metros curto, como deixava o canto.
+
+    `peso` é a probabilidade relativa; `bonusCompanheiro` multiplica o peso
+    quando há um colega dentro de `raioCompanheiro` do alvo. Sem isso
+    cruzava-se com a mesma frequência para um sítio onde não está ninguém.
+    */
+    cruzamentos: [
+        {
+            nome: 'primeira_trave',
+            relX: 3.4, dist: 5.5, altura: 2.30,
+            elevacao: 31 * Math.PI / 180, peso: 30
+        },
+        {
+            nome: 'segunda_trave',
+            relX: -3.4, dist: 5.8, altura: 2.40,
+            elevacao: 33 * Math.PI / 180, peso: 25
+        },
+        {
+            nome: 'marca_penalti',
+            relX: 0.0, dist: 11.0, altura: 2.30,
+            elevacao: 32 * Math.PI / 180, peso: 25
+        },
+        {
+            // MEIA ALTURA para quem chega a rematar de primeira à entrada
+            // da área. Bola tensa, não chapelada: é para bater, não para
+            // cabecear.
+            nome: 'entrada_da_area',
+            relX: 1.0, dist: 17.5, altura: 1.10,
+            elevacao: 14 * Math.PI / 180, peso: 20
+        }
+    ],
+    raioCompanheiro: 6.0,       // para o alvo contar como povoado
+    bonusCompanheiro: 2.2,      // quanto o peso sobe quando lá está alguém
+    variacaoAlvo: 1.2,          // metros de aleatório no alvo, para não sair sempre igual
+
     distanciaBarreira: 9.15,   // os 9.15 m do regulamento
     barreiraMin: 2,            // quantos formam barreira, longe da baliza
     barreiraMax: 4,            // e perto dela

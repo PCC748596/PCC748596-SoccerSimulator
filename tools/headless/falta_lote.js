@@ -19,6 +19,8 @@ const decisoes = {};
 const distNoSetup = [], distNaBatida = [], minNaBatida = [];
 let violacoes = 0, comBarreira = 0, remates = 0;
 const desfecho = { golo: 0, fora: 0, canto: 0, emJogo: 0 };
+const alvos = {};
+let golosCruz = 0;
 const porZona = {};
 
 for (let n = 0; n < quantas; n++) {
@@ -68,6 +70,17 @@ for (let n = 0; n < quantas; n++) {
     }
     // Desfecho, só nas que são batida directa.
     const dPre = (typeof decisaoDeFalta === 'function') ? decisaoDeFalta(bola.x, bola.z, dir) : '?';
+
+    // Que cruzamento saiu, e o que deu.
+    if (dPre === 'cruzamento') {
+        for (let i = 0; i < Math.round(6 / dt); i++) {
+            Match.update(dt);
+            if (Match.state === 'GOAL') break;
+        }
+        const nome = Match.ultimoCruzamentoDeFalta || '?';
+        alvos[nome] = (alvos[nome] || 0) + 1;
+        if (Match.state === 'GOAL') golosCruz++;
+    }
     if (dPre === 'remate') {
         remates++;
         const linha = dir * (CAMPO_COMP / 2);
@@ -92,6 +105,7 @@ console.log(`barreira: ${media(distNoSetup).toFixed(2)} m no setup  ->  ${media(
 console.log(`defensor MAIS PERTO na batida: media ${media(minNaBatida).toFixed(2)} m  (minimo ${Math.min(...minNaBatida).toFixed(2)} m)`);
 console.log(`batidas com alguem a menos de 9.15 m: ${violacoes} de ${comBarreira}`);
 console.log(`desfecho das ${remates} batidas directas: golo=${desfecho.golo} fora/tiro-de-meta=${desfecho.fora} canto=${desfecho.canto} bola em jogo=${desfecho.emJogo}`);
+console.log(`cruzamentos por alvo: ${JSON.stringify(alvos)} | golos directos deles: ${golosCruz}`);
 console.log('decisao do batedor: ' + Object.entries(decisoes).map(([k, v]) => `${k}=${v}`).join(' '));
 console.log('\nmapa (distancia ao golo / afastamento lateral -> decisao):');
 for (const k of Object.keys(porZona)) console.log(`  ${k.padEnd(14)} ${porZona[k]}`);

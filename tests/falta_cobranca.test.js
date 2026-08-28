@@ -90,7 +90,9 @@ test('a bola só parte no CONTACTO, e o jogo só abre aí', () => {
     // E a decisão continua a ser as três: tocar, cruzar ou rematar.
     const exec = srcPlayer.indexOf('executarFalta(decisao) {');
     assert.ok(exec > 0, 'executarFalta não encontrado');
-    const corpoExec = srcPlayer.slice(exec, exec + 2500);
+    // Até ao fim do método: uma janela fixa passou a cortar o ramo do passe
+    // quando o cruzamento cresceu para os quatro alvos.
+    const corpoExec = srcPlayer.slice(exec, srcPlayer.indexOf('initiateShoot() {', exec));
     for (const caso of ['remate', 'cruzamento']) {
         assert.ok(corpoExec.includes(`decisao === '${caso}'`), `falta o caso ${caso}`);
     }
