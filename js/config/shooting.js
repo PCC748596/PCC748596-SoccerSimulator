@@ -241,7 +241,22 @@ const FreeKickModel = {
 
     3. O RESTO: passe para o melhor colega posicionado.
     */
-    remateDistMax: 23.0,                    // ao centro da baliza
+    /*
+    O TECTO DA BATIDA DIRECTA estava em 23 m, e era ELE que fazia a batida
+    directa quase não existir. Medido num lote de 60 faltas espalhadas pelo
+    terço ofensivo, 51 acabavam em passe e 9 em remate — e o mapa mostrava
+    porquê: só se rematava a 14 e 19 m, ou seja de DENTRO da grande área e da
+    orla dela. A falta que toda a gente reconhece — 25 a 30 m, de frente, com
+    barreira — caía sempre no ramo do passe, porque 24 m já era longe de mais.
+
+    30 m é a distância a que se bate uma falta directa. O `remateAnguloTrave`
+    continua a ser o outro corte, e é ele que impede que isto passe a rematar
+    de qualquer sítio: a 30 m a meia-largura do trapézio são 3.66 + 17.3 m, mas
+    a distância é medida ao CENTRO DA BALIZA, portanto o que sobra é a
+    intersecção do círculo de 30 m com a cunha dos 30° — de frente vai-se a
+    30 m, muito aberto não se vai a 20.
+    */
+    remateDistMax: 30.0,                    // ao centro da baliza
     remateAnguloTrave: 30 * Math.PI / 180,  // da perpendicular à linha de fundo
     miniCornerXMin: 20.16,                  // meia-largura da grande área
     miniCornerProfundidade: 22.0,           // até esta distância da linha de fundo

@@ -506,6 +506,47 @@ Object.assign(Match, {
                 }
             }
 
+            /*
+            OS 9.15 m, DEPOIS DE TODA A GENTE COLOCADA.
+
+            O afastamento existia, mas corria no meio do posicionamento — só
+            sobre os defensores que sobram da barreira, e ANTES de os
+            marcadores serem postos nos `slotsMarcacao`. Esses slots são
+            medidos a partir da LINHA DE FUNDO e não sabem nada de onde está a
+            bola: numa falta perto da área caem lá dentro dos 9.15 m.
+
+            Medido numa falta a 20 m da baliza, distâncias dos dez defensores à
+            bola depois do setup:
+
+                2.35  7.37  9.16  9.16  9.24  9.24  10.81  13.28 ...
+                 ^^^^  ^^^^ dois marcadores dentro da distância regulamentar
+
+            Esta passagem é a última, e por isso é a que manda: empurra
+            radialmente para fora quem estiver a menos de `afastaAdversarios`,
+            barreira incluída (ela está a 9.15 e não é tocada). O guarda-redes
+            fica de fora — a baliza dele pode estar a menos do que isso da bola,
+            e não é ele que faz barreira.
+            */
+            defendingPlayers.forEach(p => {
+                if (p.role === 'gk') return;
+                const dx = p.model.position.x - bolaFK.x;
+                const dz = p.model.position.z - bolaFK.z;
+                const d = Math.hypot(dx, dz);
+                if (d >= F.afastaAdversarios) return;
+
+                // Em cima da bola não há direcção nenhuma: empurra-se para a
+                // própria baliza, que é o lado que um defensor recuaria.
+                let ux, uz;
+                if (d > 0.001) { ux = dx / d; uz = dz / d; }
+                else { ux = 0; uz = -attDir; }
+
+                p.model.position.x = THREE.MathUtils.clamp(
+                    bolaFK.x + ux * F.afastaAdversarios, -(CAMPO_LARG / 2 - 1), CAMPO_LARG / 2 - 1);
+                p.model.position.z = THREE.MathUtils.clamp(
+                    bolaFK.z + uz * F.afastaAdversarios, -(CAMPO_COMP / 2 - 1), CAMPO_COMP / 2 - 1);
+                lookAtBola(p.model, bolaFK);
+            });
+
             this.faltaPendente = true;
             this.faltaAtraso = ESPERA_APOS_REPOSICAO;
 
