@@ -44,7 +44,7 @@ const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
-const srcConfig = ler('js/config.js');
+const srcConfig = ler('js/config/passing.js');
 const srcUtils = ler('js/utils.js');
 const srcCand = ler('js/pass_candidates.js');
 const srcTypes = ler('js/pass_types.js');

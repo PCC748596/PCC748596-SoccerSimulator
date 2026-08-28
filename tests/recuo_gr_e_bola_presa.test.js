@@ -22,8 +22,8 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcUtils = ler('js/utils.js');
-const srcMatch = ler('js/match.js');
-const srcConfig = ler('js/config.js');
+const srcMatch = ['js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js', 'js/match/match_setpieces.js', 'js/match/match_loop.js', 'js/match/match_ui.js'].map(ler).join('\n');
+const srcConfig = ler('js/config/physics.js');
 
 function extrairFuncao(src, nome, ficheiro) {
     const ini = src.indexOf('function ' + nome);
@@ -105,7 +105,7 @@ console.log(LF + '2 — onde a marca nasce e onde morre');
 /* ====================================================================== */
 console.log(LF + '3 — bola pousada em cima da baliza');
 {
-    const corpo = extrairMetodo(srcMatch, 'destravarBolaEmCimaDaBaliza', 'js/match.js');
+    const corpo = extrairMetodo(srcMatch, 'destravarBolaEmCimaDaBaliza', 'js/match/match_state.js');
     const GoalNet = { profBase: PROF_BASE };
     const BallPhysics = { raio: RAIO };
 

@@ -42,7 +42,7 @@ A potência do remate vem do `ShotModel` (config.js), e a fórmula é a mesma qu
 o `executeShotGameplay` corre — verificada mais abaixo contra o texto do fsm.js,
 para o teste falhar se lá deixar de ser assim.
 */
-const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config.js'), 'utf8'));
+const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'shooting.js'), 'utf8')) + '\n' + semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'physics.js'), 'utf8'));
 function extrairObjecto(src, nome, ficheiro) {
     const cabeca = `const ${nome} = {`;
     const ini = src.indexOf(cabeca);

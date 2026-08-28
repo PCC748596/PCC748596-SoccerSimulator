@@ -1657,6 +1657,15 @@ function actReceivePass(ctx) {
         } else {
             p.dynamicTarget.copy(bola);
         }
+
+        const distAlvo = Math.hypot(p.model.position.x - p.dynamicTarget.x, p.model.position.z - p.dynamicTarget.z);
+        const distBola = Math.hypot(p.model.position.x - bola.x, p.model.position.z - bola.z);
+        if (distAlvo < 0.8 && distBola > 1.2) {
+            p.velocity.set(0, 0, 0);
+            p.fsm.changeState('IDLE');
+            lookAtBola(p.model, bola);
+            return;
+        }
     }
 
     p.fsm.changeState('MOVE_TO_POS');
@@ -1828,7 +1837,29 @@ function escolherDestinoDeCorrida(p, bb) {
 
             // Entre os que servem, o que ganha mais campo e tem mais folga.
             const ganho = (cand.z - pos.z) * p.dirZ;
-            const nota = ganho + Math.min(maisPerto, 8.0);
+            let nota = ganho + Math.min(maisPerto, 8.0);
+            
+            // "Quando um lateral recebe a bola, um meia pela lateral ou ponta 
+            // deve tentar se projetar para receber o lancamento"
+            if (portador.pos === 'LB' || portador.pos === 'RB') {
+                if (['LW', 'RW', 'LM', 'RM', 'LB', 'RB'].includes(p.pos) && p.playingStyle) {
+                    const isOutward = (pos.x >= 0 && dx > 0) || (pos.x <= 0 && dx < 0);
+                    const isInward = (pos.x > 0 && dx < 0) || (pos.x < 0 && dx > 0);
+                    const isStraight = (dx === 0);
+                    
+                    if (p.playingStyle === 'prolific_winger' || p.playingStyle === 'cross_specialist') {
+                        // Nas costas do lateral oposto (flanco)
+                        if (isOutward || isStraight) nota += 8.0;
+                    } else if (p.playingStyle === 'hole_player' || p.playingStyle === 'fullback_finisher') {
+                        // Nas costas na diagonal pelo meio
+                        if (isInward) nota += 8.0;
+                    } else if (p.playingStyle === 'roaming_flank') {
+                        // Seja nas costas do lateral oposto ou na diagonal pelo meio
+                        if (isOutward || isStraight || isInward) nota += 8.0;
+                    }
+                }
+            }
+
             if (nota > melhorNota) { melhorNota = nota; melhor = cand; }
         }
     }
@@ -2811,6 +2842,11 @@ const PlayerBT = sel('PlayerRoot',
                 cond('foiCanto', (ctx) => {
                     const p = ctx.p;
                     if (!p.setPieceTarget) return false;
+                    // Se o jogador é o destinatário ou pode disputar no ar, liberta o alvo fixo
+                    if (Match.intendedReceiver === p || (Match.ball && Match.ball.position.y > 0.6)) {
+                        p.setPieceTarget = null;
+                        return false;
+                    }
                     // Se a bola saiu da zona de perigo (z < 25), cancela
                     if (Math.abs(Match.ball.position.z) < 25) {
                         p.setPieceTarget = null;
@@ -2826,7 +2862,7 @@ const PlayerBT = sel('PlayerRoot',
                 act('manterPosicao', (ctx) => {
                     const p = ctx.p;
                     p.dynamicTarget.copy(p.setPieceTarget);
-                    p.speedMult = 4.0;
+                    p.speedMult = (6.0 + ((ctx.skillSpeed - 50) / 50) * 1.5) * 1.15;
                     p.fsm.changeState('MOVE_TO_POS');
                 })
             ),

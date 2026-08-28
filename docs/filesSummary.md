@@ -5,7 +5,23 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
-### Sessão de 27 de Agosto de 2026 (continuação) — constantes que ninguém lia
+### Sessão de 27 de Agosto de 2026 (continuação) — divisão modular do `config.js`
+
+O arquivo `js/config.js` (~5.600 linhas) foi dividido em **9 módulos especializados** na pasta `js/config/` para facilitar o debugging e ajustes granulares:
+
+1. **`js/config/physics.js`**: Dimensões de campo, balizas, redes (`GoalNet`), armações (`GoalFrame`), física da bola (`BallPhysics`), barreiras e bandeirolas de canto.
+2. **`js/config/animations.js`**: Clips de animação e keyframes de remates (`ShotClip`), guarda-redes (`GoalkeeperKickClip`, `GoalkeeperGroundKickClip`, `GoalkeeperThrowClip`), laterais (`ThrowInClip`, `LateralPose`), controlo (`BallControlRightClip`) e durações (`ActionAnimClips`).
+3. **`js/config/gait.js`**: Modelos de passada (`GaitModel`), rotação (`TurnModel`), marcha lateral (`LateralGait`), salto para cabeceio (`SaltoCabeceio`) e cadência de locomoção (`CadenceModel`).
+4. **`js/config/tactics.js`**: Velocidade de jogo, durações, skills médias (`TeamSkills`), formato do bloco (`TeamShape`, `BlockShape`, `LineShape`), estilos de jogo (`PlayingStyles`, `PlayingStyleTuning`), mentalidade (`MentalidadeModel`), objeto `Tatics` e formações (`FormationsData`).
+5. **`js/config/passing.js`**: Modelos de passe (`PassModel`, `PassLineModel`, `PassErrorModel`), tipos de passe (`PassTypeModel`), apoios (`SupportModel`, `atribuirApoios`), jogadas combinadas (`JogadasCombinadas`) e corridas no espaço (`RunIntoSpaceModel`).
+6. **`js/config/shooting.js`**: Remates (`ShootingModel`, `ShotModel`), pontapés livres (`FreeKickModel`), penáltis (`PenaltyModel`), cruzamentos (`CrossModel`), cabeceamentos (`HeaderModel`), cálculo de xG (`XGModel`) e pontos de canto (`pontoDeCanto`).
+7. **`js/config/defense.js`**: Carrinhos (`SlideTackleModel`), modelo de marcação homem-a-homem/zonal (`MarkingModel`, `atribuirMarcacoes`, `pontoDeMarcacao`), linha de fora-de-jogo (`recuoDaUltimaLinha`), pressão (`DefensivePressureModel`) e mola de coesão (`MolaDeCoesao`).
+8. **`js/config/goalkeeper.js`**: Estilos e âncoras de guarda-redes (`GoalkeeperStyle`, `gkAnchor`, `gkSweepTarget`), poses do GR (`GoalkeeperPose`), mergulhos (`GoalkeeperDive`), defesas com mãos e agarres (`GkCatchModel`) e distribuição (`GoalkeeperDistribution`).
+9. **`js/config/player_behavior.js`**: Aparência procedural dos jogadores (`AppearanceModel`), inquietação (`RestlessModel`), cones de visão (`VisionModel`), espera de slot (`EsperaPeloSlotModel`), giros corporais (`GiroDeCostasModel`), condução (`CarryModel`), drible (`DribbleModel`), controlo de bola/receção (`BallControl`), reposição lateral (`ThrowInModel`) e percepção (`PerceptionModel`).
+
+**Remoção do monólito e migração total dos testes:** O ficheiro monolítico `js/config.js` foi completamente eliminado. A suite completa de 64 ficheiros e 120 testes, o `index.html`, o `animEditor.html`, o `animEditor.js` e o `tools/headless/harness.js` agora importam e utilizam diretamente os 9 módulos especializados em `js/config/`.
+
+O `index.html`, `animEditor.html` e `tools/headless/harness.js` carregam diretamente os 9 módulos individuais para inspeção no DevTools.
 
 Testes novos: `falta_cobranca`, `bola_parada_junto_ao_destinatario`,
 `mentalidade_bloco`. Suite: **64 ficheiros, 120 casos**.

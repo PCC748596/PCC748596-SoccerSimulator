@@ -43,7 +43,7 @@ const { giroDoCorpoNoLateral, rodarNoPlano, alcanceMaximoDoLateral,
 
 // O valor real do jogo, lido do config para o teste não guardar uma cópia que
 // possa divergir.
-const cfg = ler('js/config.js');
+const cfg = ler('js/config/animations.js') + '\n' + ler('js/config/tactics.js') + '\n' + ler('js/config/player_behavior.js');
 const GIRO_MAX = parseFloat(cfg.match(/giroMax:\s*([\d.]+)/)[1]);
 const VEL_GIRO = parseFloat(cfg.match(/velGiroCorpo:\s*([\d.]+)/)[1]);
 

@@ -264,7 +264,7 @@ console.log(LF + '5 — o braço volta a cair');
    ===================================================================== */
 console.log(LF + '6 — o lance parado dispara o gesto');
 {
-    const srcMatch = semCR(fs.readFileSync(path.join(raiz, 'js/match.js'), 'utf8'));
+    const srcMatch = semCR(fs.readFileSync(path.join(raiz, 'js/match/match_setpieces.js'), 'utf8'));
     const i = srcMatch.indexOf('setupSetPiece: function');
     const corpo = srcMatch.slice(i, i + 4000);
     if (!/sinalizarMarcacao/.test(corpo)) {

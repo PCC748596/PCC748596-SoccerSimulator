@@ -215,21 +215,23 @@ const Perception = {
         */
         const alturaTesta = ALTURA_TESTA;
         const janelaCabeca = (typeof HeaderModel !== 'undefined' ? HeaderModel.janelaContacto : 0.22);
-        const alturaMaxJogavel = alturaTesta + janelaCabeca;
+        const saltoMax = (typeof SaltoCabeceio !== 'undefined' ? SaltoCabeceio.alturaMax : 0.80);
+        const alturaMaxJogavel = alturaTesta + saltoMax + janelaCabeca;
 
         let melhor = null;
 
-        // PASSO 1 — cabeceio: primeira passagem em descida pela altura da testa
+        // PASSO 1 — cabeceio: primeira passagem em descida pela faixa de cabeceio (com ou sem salto)
         // a que o jogador chega a tempo.
         for (let a = 1; a < traj.length; a++) {
             const prev = traj[a - 1], curr = traj[a];
             if (curr.y >= prev.y) continue;                 // só a descida
             if (prev.y < alturaTesta - janelaCabeca) break; // já desceu demasiado
-            if (curr.y > alturaTesta + janelaCabeca) continue;
+            if (curr.y > alturaTesta + saltoMax + janelaCabeca) continue;
 
             // Interpolação linear da altura para o instante exacto do contacto.
             const dy = prev.y - curr.y;
-            const f = dy > 1e-6 ? (prev.y - alturaTesta) / dy : 0;
+            const targetY = THREE.MathUtils.clamp(prev.y, alturaTesta, alturaTesta + saltoMax);
+            const f = dy > 1e-6 ? (prev.y - targetY) / dy : 0;
             const t = (a - 1 + f) * this.passoAmostra;
             if (t <= 0) continue;
 

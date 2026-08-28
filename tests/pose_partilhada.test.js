@@ -39,7 +39,7 @@ const documentoFalso = {
 
 const amb = { THREE, console, document: documentoFalso, window: {} };
 const mod = new Function(...Object.keys(amb),
-    `${ler('js/config.js')}
+    `${ler('js/config/animations.js')}\n${ler('js/config/gait.js')}\n${ler('js/config/player_behavior.js')}
      ${ler('js/pose.js')}
      return { construirCorpo, escolherAparencia,
               aplicarPoseRemate, aplicarPoseLateral, aplicarPoseChutaoGR,

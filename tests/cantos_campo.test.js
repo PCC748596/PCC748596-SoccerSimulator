@@ -27,8 +27,8 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcUtils = ler('js/utils.js');
-const srcConfig = ler('js/config.js');
-const srcMatch = ler('js/match.js');
+const srcConfig = ler('js/config/physics.js');
+const srcMatch = ['js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js', 'js/match/match_setpieces.js', 'js/match/match_loop.js', 'js/match/match_ui.js'].map(ler).join('\n');
 
 const ini = srcUtils.indexOf('function arcoDeCanto');
 if (ini < 0) throw new Error('arcoDeCanto não encontrada no js/utils.js');

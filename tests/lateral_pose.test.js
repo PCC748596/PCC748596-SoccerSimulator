@@ -12,7 +12,7 @@ const path = require('path');
 const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
 const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
-const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config.js'), 'utf8'));
+const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'animations.js'), 'utf8'));
 const srcPlayer = semCR(fs.readFileSync(path.join(raiz, 'js', 'player.js'), 'utf8'));
 
 function extrairObjecto(src, nome, ficheiro) {

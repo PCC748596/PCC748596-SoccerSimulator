@@ -13,7 +13,7 @@ const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
 const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
 const srcUtils = semCR(fs.readFileSync(path.join(raiz, 'js', 'utils.js'), 'utf8'));
-const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config.js'), 'utf8'));
+const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'player_behavior.js'), 'utf8'));
 
 function extrairFuncao(src, nome, ficheiro) {
     const cabeca = `function ${nome}(`;

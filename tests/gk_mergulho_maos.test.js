@@ -18,7 +18,7 @@ const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
 const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
-const srcConfig = ler('js/config.js');
+const srcConfig = ler('js/config/goalkeeper.js');
 
 function extrairObjecto(src, nome) {
     const cabeca = `const ${nome} = {`;

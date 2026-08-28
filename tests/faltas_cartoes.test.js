@@ -34,12 +34,12 @@ uma cópia que podia divergir dela sem ninguém dar por isso.
 */
 const REGEX_REPOR = new RegExp(
     'reporExpulsos: function \\(\\) \\{[\\s\\S]*?' + LF + '    \\},');
-const corpoRepor = ler('js/match.js').match(REGEX_REPOR)[0]
+const corpoRepor = ['js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js', 'js/match/match_setpieces.js', 'js/match/match_loop.js', 'js/match/match_ui.js'].map(ler).join('\n').match(REGEX_REPOR)[0]
     .replace('reporExpulsos: function () {', 'function reporExpulsosExtraido() {')
     .replace(/,$/, '');
 
 const mod = new Function(...Object.keys(amb),
-    `${ler('js/config.js')}
+    `${ler('js/config/physics.js')}\n${ler('js/config/defense.js')}
      let Match = null;
      ${ler('js/officials.js')}
      ${corpoRepor}

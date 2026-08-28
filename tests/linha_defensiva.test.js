@@ -14,7 +14,7 @@ const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
 const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
 const srcTeam = semCR(fs.readFileSync(path.join(raiz, 'js', 'bt', 'team_bt.js'), 'utf8'));
-const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config.js'), 'utf8'));
+const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'defense.js'), 'utf8')) + '\n' + semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'physics.js'), 'utf8')) + '\n' + semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'tactics.js'), 'utf8'));
 
 const CAMPO_LARG = 68, CAMPO_COMP = 106, AREA_GRANDE_PROF = 16.5;
 

@@ -52,12 +52,16 @@ global.navigator = win.navigator;
 global.performance = win.performance;
 global.requestAnimationFrame = () => 0;
 global.Audio = function () { return { play: () => Promise.resolve(), pause: () => { }, addEventListener: () => { } }; };
-global.THREE = require(path.join(RAIZ, 'node_modules/three/build/three.js'));
+global.THREE = require('three');
 win.THREE = global.THREE;
 
 const FICHEIROS = [
     'assets/ball_mesh.js', 'data/player_skills.js',
-    'js/event_bus.js', 'js/joint_limits.js', 'js/config.js', 'js/stats.js',
+    'js/event_bus.js', 'js/joint_limits.js',
+    'js/config/physics.js', 'js/config/animations.js', 'js/config/gait.js',
+    'js/config/tactics.js', 'js/config/passing.js', 'js/config/shooting.js',
+    'js/config/defense.js', 'js/config/goalkeeper.js', 'js/config/player_behavior.js',
+    'js/stats.js',
     'js/utils.js', 'js/ik.js', 'js/reach.js', 'js/gk_dive.js',
     'js/bt/action_state.js', 'js/perception.js', 'js/playing_styles.js',
     'js/spatial_grid.js', 'js/pass_candidates.js', 'js/pass_types.js',

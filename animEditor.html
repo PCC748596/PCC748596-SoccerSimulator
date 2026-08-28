@@ -197,7 +197,16 @@
     -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
     <!-- Só isto: os clips e as poses. Nada do jogo. -->
-    <script src="js/config.js"></script>
+    <!-- Configurações modulares divididas por subsistema -->
+    <script src="js/config/physics.js"></script>
+    <script src="js/config/animations.js"></script>
+    <script src="js/config/gait.js"></script>
+    <script src="js/config/tactics.js"></script>
+    <script src="js/config/passing.js"></script>
+    <script src="js/config/shooting.js"></script>
+    <script src="js/config/defense.js"></script>
+    <script src="js/config/goalkeeper.js"></script>
+    <script src="js/config/player_behavior.js"></script>
     <!-- getGaitPose e lerpTo: o ciclo da passada vive aqui. -->
     <script src="js/utils.js"></script>
     <script src="js/pose.js"></script>

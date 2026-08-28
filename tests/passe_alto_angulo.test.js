@@ -25,7 +25,7 @@ const test = require('node:test');
 const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
 const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
-const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config.js'), 'utf8'));
+const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'physics.js'), 'utf8')) + '\n' + semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'passing.js'), 'utf8'));
 const srcUtils = semCR(fs.readFileSync(path.join(raiz, 'js', 'utils.js'), 'utf8'));
 
 const CONSTANTES = { ALTURA_CABECA: 1.72, CAMPO_COMP: 106, CAMPO_LARG: 68 };

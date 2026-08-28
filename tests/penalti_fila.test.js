@@ -12,8 +12,8 @@ const path = require('path');
 const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
 const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
-const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config.js'), 'utf8'));
-const srcMatch = semCR(fs.readFileSync(path.join(raiz, 'js', 'match.js'), 'utf8'));
+const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'shooting.js'), 'utf8'));
+const srcMatch = semCR(['js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js', 'js/match/match_setpieces.js', 'js/match/match_loop.js', 'js/match/match_ui.js'].map(f => fs.readFileSync(path.join(raiz, f), 'utf8')).join('\n'));
 
 function extrairObjecto(src, nome, ficheiro) {
     const cabeca = `const ${nome} = {`;

@@ -30,7 +30,7 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcUtils = ler('js/utils.js');
-const srcConfig = ler('js/config.js');
+const srcConfig = ler('js/config/defense.js');
 const srcTeam = ler('js/bt/team_bt.js');
 
 const i = srcUtils.indexOf('function molaParaABola');

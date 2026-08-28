@@ -43,7 +43,7 @@ const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
-const srcMatch = ler('js/match.js');
+const srcMatch = ['js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js', 'js/match/match_setpieces.js', 'js/match/match_loop.js', 'js/match/match_ui.js'].map(ler).join('\n');
 const srcPlayer = ler('js/player.js');
 
 let falhas = 0;

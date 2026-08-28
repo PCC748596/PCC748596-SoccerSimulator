@@ -34,7 +34,7 @@ const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
-const srcConfig = ler('js/config.js');
+const srcConfig = ler('js/config/player_behavior.js') + '\n' + ler('js/config/gait.js');
 const srcPlayer = ler('js/bt/player_bt.js');
 
 function extrairObjecto(src, nome) {

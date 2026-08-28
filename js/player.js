@@ -2160,7 +2160,7 @@ class FootballPlayer {
             this.model.position.z + _v1.z);
 
         let distToGoal = Math.abs(this.targetGoalZ - this.model.position.z);
-        let inShootingRange = (distToGoal < 24 && Math.abs(this.model.position.x) < 16);
+        let inShootingRange = (distToGoal < 24 && Math.abs(this.model.position.x) < 16 && (this.targetGoalZ - this.model.position.z) * this.dirZ > 0);
 
         if (inShootingRange) {
             if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
@@ -2172,16 +2172,16 @@ class FootballPlayer {
             for (const opp of opponentsHead) {
                 if (opp.role === 'gk') continue;
                 const d = opp.model.position.distanceTo(this.model.position);
-                if (d < 2.0 && d < distMarc) { distMarc = d; marcador = opp; }
+                if (d < 2.2 && d < distMarc) { distMarc = d; marcador = opp; }
             }
             // 1. Calcular AerialScore do atacante
-            const aerialAtacante = this.skillFor('TEC') * 0.70 + this.skillFor('STRENGTH') * 0.30;
+            const aerialAtacante = this.skillFor('TEC') * 0.65 + this.skillFor('STRENGTH') * 0.35;
             
-            // 2 & 3. Disputa Aérea
+            // 2 & 3. Disputa Aérea — atacante em impulsão ofensiva tem vantagem no ataque à bola
             let cabeceadaLimpa = true;
             if (marcador) {
-                const aerialDefensor = marcador.skillFor('TEC') * 0.70 + marcador.skillFor('STRENGTH') * 0.30;
-                const attackerChance = aerialAtacante / (aerialAtacante + aerialDefensor);
+                const aerialDefensor = marcador.skillFor('TEC') * 0.40 + marcador.skillFor('DEF') * 0.35 + marcador.skillFor('STRENGTH') * 0.25;
+                const attackerChance = (aerialAtacante * 1.35) / (aerialAtacante * 1.35 + aerialDefensor * 0.65);
                 cabeceadaLimpa = Math.random() < attackerChance;
             }
 
@@ -2189,11 +2189,26 @@ class FootballPlayer {
             let alvoX, alvoY, pow;
             let forcedGKDelay = null;
 
+            // Fator de força e técnica do cabeceador
+            const forcaFactor = 0.85 + (this.skillFor('STRENGTH') / 100) * 0.30 + (this.skillFor('TEC') / 100) * 0.15;
+
             if (!cabeceadaLimpa) {
-                // 4. DEFESA_TIRA
-                alvoX = this.model.position.x + (Math.random() - 0.5) * 5.0;
-                alvoY = 0.3;
-                pow = (5.0 + Math.random() * 3.0) / 3.0;
+                // 4. DEFESA_TIRA / Cabeçada disputada: afasta a bola com força para as laterais/meio-campo
+                const ladoCorte = Math.sign(this.model.position.x) || (Math.random() > 0.5 ? 1 : -1);
+                alvoX = this.model.position.x + ladoCorte * (8.0 + Math.random() * 8.0);
+                const alvoZc = Match.ball.position.z - this.dirZ * (15.0 + Math.random() * 8.0);
+                pow = (13.0 + Math.random() * 2.5) * forcaFactor;
+                const eC = (typeof HeaderModel !== 'undefined' && typeof HeaderModel.elevacaoEscora === 'number')
+                    ? HeaderModel.elevacaoEscora : (-9 * Math.PI / 180);
+                const dxC = alvoX - Match.ball.position.x;
+                const dzC = alvoZc - Match.ball.position.z;
+                const distHC = Math.hypot(dxC, dzC);
+                const vhC = pow * Math.cos(eC);
+                Match.ballVel.set(
+                    (distHC > 0.001 ? dxC / distHC : 0) * vhC,
+                    pow * Math.sin(eC),
+                    (distHC > 0.001 ? dzC / distHC : -this.dirZ) * vhC
+                );
             } else {
                 // 5 & 6. Disputa Atacante x Goleiro
                 const gkAdversario0 = (this.team === 'TeamA') ? Match.opponents[0] : Match.players[0];
@@ -2203,17 +2218,17 @@ class FootballPlayer {
                 }
                 
                 // 7. Comparar probabilisticamente
-                const attackRatio = aerialAtacante / (aerialAtacante + gkScore);
+                const attackRatio = Math.min(0.95, Math.max(0.15, (aerialAtacante * 1.25) / (aerialAtacante * 1.25 + gkScore * 0.75)));
                 
-                // Distribuição de pesos conforme as regras
+                // Distribuição calibrada para cabeçadas mais certas e perigosas a gol
                 const weights = [
-                    { outcome: 'GOL', weight: Math.pow(attackRatio, 2) * 100 },
-                    { outcome: 'TRAVE_CAMPO', weight: attackRatio * 15 },
-                    { outcome: 'TRAVE_FORA', weight: attackRatio * 15 },
-                    { outcome: 'TRAVESSAO_CAMPO', weight: attackRatio * 15 },
-                    { outcome: 'TRAVESSAO_FORA', weight: attackRatio * 15 },
-                    { outcome: 'GOLEIRO_DEFENDE', weight: Math.pow(1 - attackRatio, 2) * 100 },
-                    { outcome: 'GOLEIRO_FORA', weight: (1 - attackRatio) * 50 }
+                    { outcome: 'GOL', weight: Math.pow(attackRatio, 1.1) * 150 },
+                    { outcome: 'TRAVE_CAMPO', weight: attackRatio * 12 },
+                    { outcome: 'TRAVE_FORA', weight: attackRatio * 8 },
+                    { outcome: 'TRAVESSAO_CAMPO', weight: attackRatio * 12 },
+                    { outcome: 'TRAVESSAO_FORA', weight: attackRatio * 8 },
+                    { outcome: 'GOLEIRO_DEFENDE', weight: Math.pow(1 - attackRatio, 1.4) * 50 },
+                    { outcome: 'GOLEIRO_FORA', weight: (1 - attackRatio) * 18 }
                 ];
                 
                 let totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
@@ -2232,69 +2247,69 @@ class FootballPlayer {
                 
                 switch (selectedOutcome) {
                     case 'GOL':
-                        alvoX = sinal * maxC * 0.88;
-                        alvoY = Math.random() * 1.5 + 0.3;
-                        pow = 8.0;
-                        forcedGKDelay = 1.0; // GK não chega
+                        // Cabeçada certeira no canto: rente à trave ou picando para baixo / no ângulo
+                        alvoX = sinal * maxC * (0.75 + Math.random() * 0.18);
+                        alvoY = Math.random() > 0.45 ? (Math.random() * 0.7 + 0.25) : (ALTURA_BALIZA - 0.35 - Math.random() * 0.5);
+                        pow = (15.5 + Math.random() * 2.5) * forcaFactor; // ~15.5 a 20.0 m/s
+                        forcedGKDelay = 0.8; // GK não chega a tempo
                         break;
                     case 'TRAVE_CAMPO':
                         alvoX = sinal * (LARGURA_BALIZA / 2 - 0.08); // Bate na parte de dentro do poste
-                        alvoY = 0.5;
-                        pow = 6.5;
-                        forcedGKDelay = 1.0;
+                        alvoY = 0.6;
+                        pow = (14.0 + Math.random() * 2.0) * forcaFactor;
+                        forcedGKDelay = 0.8;
                         break;
                     case 'TRAVE_FORA':
                         alvoX = sinal * (LARGURA_BALIZA / 2 + 0.08); // Bate na parte de fora do poste
-                        alvoY = 0.5;
-                        pow = 6.5;
-                        forcedGKDelay = 1.0;
+                        alvoY = 0.6;
+                        pow = (14.0 + Math.random() * 2.0) * forcaFactor;
+                        forcedGKDelay = 0.8;
                         break;
                     case 'TRAVESSAO_CAMPO':
                         alvoX = (Math.random() - 0.5) * maxC;
                         alvoY = ALTURA_BALIZA - 0.08; // Bate na parte de baixo do travessão
-                        pow = 7.0;
-                        forcedGKDelay = 1.0;
+                        pow = (14.5 + Math.random() * 2.0) * forcaFactor;
+                        forcedGKDelay = 0.8;
                         break;
                     case 'TRAVESSAO_FORA':
                         alvoX = (Math.random() - 0.5) * maxC;
                         alvoY = ALTURA_BALIZA + 0.08; // Bate na parte de cima do travessão
-                        pow = 7.0;
-                        forcedGKDelay = 1.0;
+                        pow = (14.5 + Math.random() * 2.0) * forcaFactor;
+                        forcedGKDelay = 0.8;
                         break;
                     case 'GOLEIRO_DEFENDE':
-                        alvoX = (Math.random() - 0.5) * 1.5; // Vai perto do meio
-                        alvoY = 1.0;
-                        pow = 4.5; // Fraco, fácil de encaixar
-                        forcedGKDelay = 0; // GK reage instantaneamente
+                        alvoX = (Math.random() - 0.5) * 2.0; // Vai em direção ao alcance do GK
+                        alvoY = 0.6 + Math.random() * 0.9;
+                        pow = (12.5 + Math.random() * 2.0) * forcaFactor; // Cabeçada firme que o GK defende
+                        forcedGKDelay = 0; // GK reage
                         break;
                     case 'GOLEIRO_FORA':
-                        alvoX = sinal * maxC * 1.05; // Vai rente ao poste por fora
+                        alvoX = sinal * maxC * 1.08; // Vai rente ao poste por fora
                         alvoY = 1.0;
-                        pow = 6.5; // GK estica-se e toca nela
+                        pow = (14.0 + Math.random() * 2.0) * forcaFactor;
                         forcedGKDelay = 0;
                         break;
                 }
+
+                const alvoZc = this.targetGoalZ;
+                const dxC = alvoX - Match.ball.position.x;
+                const dzC = alvoZc - Match.ball.position.z;
+                const distHC = Math.hypot(dxC, dzC);
+                const elevC = elevacaoParaAlvo(distHC, alvoY, pow, ALTURA_TESTA);
+                const eC = (elevC === null) ? -0.05 : elevC;
+                const vhC = pow * Math.cos(eC);
+                Match.ballVel.set(
+                    (distHC > 0.001 ? dxC / distHC : 0) * vhC,
+                    pow * Math.sin(eC),
+                    (distHC > 0.001 ? dzC / distHC : this.dirZ) * vhC
+                );
             }
 
-            /*
-            Mesma correcção do remate: mira pela elevação resolvida, e não
-            apontando a direcção 3D ao alvo. Apontar direito ao ponto ignora
-            a queda durante o voo — a bola passava sempre por baixo dele.
-            */
-            const alvoZc = cabeceadaLimpa ? this.targetGoalZ : Match.ball.position.z + this.dirZ * 3;
-            const dxC = alvoX - Match.ball.position.x;
-            const dzC = alvoZc - Match.ball.position.z;
-            const distHC = Math.hypot(dxC, dzC);
-            const elevC = elevacaoParaAlvo(distHC, alvoY, pow);
-            const eC = (elevC === null) ? ShotModel.elevacaoRecurso : elevC;
-            const vhC = pow * Math.cos(eC);
-            Match.ballVel.set(
-                (distHC > 0.001 ? dxC / distHC : 0) * vhC,
-                pow * Math.sin(eC),
-                (distHC > 0.001 ? dzC / distHC : this.dirZ) * vhC
-            );
             this.hasBall = false;
-            this.touchLock = BallControl.touchLock;
+            this.touchLock = 0.75;
+            this.jumpTimer = 0;
+            this.jumpCooldown = (typeof SaltoCabeceio !== 'undefined' ? SaltoCabeceio.duracao : 0.62) + 1.2;
+            if (typeof Match !== 'undefined') Match.lastHeaderPlayer = this;
             Match.ballCarrier = null;
 
             if (cabeceadaLimpa) {
@@ -2309,28 +2324,21 @@ class FootballPlayer {
             }
         } else {
             /*
-            Fora da zona de remate (a contagem de cabeceios seguidos é feita
-            no topo do executeHeader, para todos os casos) a cabeçada é SEMPRE
-            PARA BAIXO — `HeaderModel.elevacaoEscora`.
-
-            Havia aqui um segundo ângulo, o `elevacaoAlivio` a 28°, para o
-            alívio longo. Era ele que alimentava o ping-pong aéreo: a bola
-            subia, voltava a cair à altura da testa e o jogador seguinte
-            cabeceava outra vez. O travão do `maxHeadersSeguidos` corta a
-            sequência ao terceiro, mas dois cabeceios seguidos já se vêem, e
-            entre eles a bola andava no ar.
-
-            Uma cabeçada defensiva bem feita é para baixo: bate no chão perto e
-            ressalta rasteira, fora da altura da cabeça de toda a gente. O que
-            muda entre escorar para um colega e aliviar sem destinatário é a
-            DISTÂNCIA, não o ângulo.
+            Fora da zona de remate / Zagueiro afastando a bola de cabeça:
+            Cabeçada defensiva ou de escora para colega.
             */
+            const ehAlivioDefensivo = Math.abs(this.model.position.z) > 25 && this.role === 'def';
+            if (ehAlivioDefensivo) {
+                this.showActionBanner('CLEARANCE');
+            }
+
             const target = this.findPassTarget('mid') || this.findPassTarget('atk') ||
                 this.findPassTarget('def');
 
             const tectoAlivio = HeaderModel.alcanceAlivioBaixo || 11.0;
             let uxP = 0, uzP = this.dirZ, distDesejada = tectoAlivio;
-            const eP = HeaderModel.elevacaoEscora || (8 * Math.PI / 180);
+            const eP = (typeof HeaderModel !== 'undefined' && typeof HeaderModel.elevacaoEscora === 'number')
+                ? HeaderModel.elevacaoEscora : (-9 * Math.PI / 180);
 
             if (target) {
                 const dxP = target.model.position.x - Match.ball.position.x;
@@ -2338,15 +2346,6 @@ class FootballPlayer {
                 const d = Math.hypot(dxP, dzP);
                 if (d > 0.001) { uxP = dxP / d; uzP = dzP / d; }
 
-                /*
-                Escora para o colega, ou alívio na direcção dele quando está
-                longe de mais para lhe chegar de cabeça.
-
-                O `alcanceMin` é o que impede a cabeçada mansa: sem ele, um
-                colega a 1 m fazia a balística resolver para 1.93 m/s, e a bola
-                ficava à frente da cara do próprio cabeceador — que a cabeceava
-                outra vez assim que o `touchLock` passava.
-                */
                 distDesejada = THREE.MathUtils.clamp(d, HeaderModel.alcanceMin, tectoAlivio);
             } else {
                 // Alívio defensivo sem destinatário: para a frente, com leve
@@ -2359,24 +2358,9 @@ class FootballPlayer {
                 uzP /= len;
             }
 
-            /*
-            A velocidade sai de `velocidadeDeLancamento`, que resolve o ponto
-            (distância, CHÃO) a partir da ALTURA DA TESTA.
-
-            Era `velocidadeParaAlcance`, que resolve o alcance de um lançamento
-            que sai DO CHÃO — e uma cabeçada sai de 1.62 m. Medido: uma escora
-            pedida a 4 m ia bater no chão aos 8.4 m, o dobro, e ainda subia
-            acima da testa pelo caminho. Mesmo defeito que o lateral tinha.
-            */
             const balC = velocidadeDeLancamento(
                 distDesejada, ALTURA_TESTA, BallPhysics.raio, eP, BallPhysics.gravidade);
 
-            /*
-            Tecto de velocidade: uma cabeçada leva a velocidade da testa e do
-            tronco, não de uma perna a rodar. Sem ele a distância pedida mandava
-            na velocidade — a sair a -9° de 1.62 m a bola chega no máximo a
-            ~9.5 m, e pedir 9 m dava 69 m/s. Com o tecto é a distância que cede.
-            */
             const vP = THREE.MathUtils.clamp(
                 balC ? balC.v : velocidadeParaAlcance(distDesejada, eP),
                 HeaderModel.velocidadeMin || 7.0,
@@ -2385,8 +2369,13 @@ class FootballPlayer {
             Match.ballVel.set(uxP * vP * Math.cos(angC), vP * Math.sin(angC), uzP * vP * Math.cos(angC));
 
             this.hasBall = false;
-            this.touchLock = BallControl.touchLock;
+            this.touchLock = 0.75;
+            this.jumpTimer = 0;
+            this.jumpCooldown = (typeof SaltoCabeceio !== 'undefined' ? SaltoCabeceio.duracao : 0.62) + 1.2;
+            if (typeof Match !== 'undefined') Match.lastHeaderPlayer = this;
             Match.ballCarrier = null;
+            window.bolaChutada = false;
+            [Match.players[0], Match.opponents[0]].forEach(gk => { if (gk) { gk.gkReagiu = false; } });
             // Só é "destinatário" se a bola lhe chegar mesmo; a mais de
             // alcanceMax a cabeçada morre pelo caminho e fica disputável.
             Match.intendedReceiver = (target && distDesejada >= (
@@ -2511,7 +2500,7 @@ class FootballPlayer {
         }
 
         if (this.hasBall) {
-            if (this.role === 'gk') {
+            if (this.role === 'gk' && (this.gkEstado === 'segurando' || this.gkEstado === 'apanhar' || this.gkEstado === 'chutando' || this.gkEstado === 'lancando')) {
                 // GR segura a bola nas mãos, junto ao PEITO (não à cintura) —
                 // não ao nível do pé como no dribble de um jogador de campo
                 // (senão fica só pousada no chão à frente dele).
@@ -2808,11 +2797,11 @@ class FootballPlayer {
         let lookTarget = target;
         if (this.fsm && Match.ball) {
             const s = this.fsm.currentState;
-            if (s === 'MARKING' || s === 'BLOCKING' || s === 'SUPPORT_PASS') {
+            if (s === 'MARKING' || s === 'BLOCKING' || s === 'SUPPORT_PASS' || (typeof Match !== 'undefined' && Match.intendedReceiver === this)) {
                 lookTarget = Match.ball.position;
 
                 if (typeof LateralGait !== 'undefined' && d > 0.0001) {
-                    const velAlvo = maxSpeed;
+                    const velAlvo = desired.length();
                     if (velAlvo > LateralGait.velViragem) {
                         // desired já está normalizado e depois escalado; usa-se
                         // a direcção para o alvo, que é a mesma coisa.
@@ -2826,6 +2815,9 @@ class FootballPlayer {
                         }
                     }
                 }
+            } else if (d < 0.5 && Match.ball) {
+                // Muito perto do alvo de movimento: evita que pequenas oscilações façam o corpo girar loucamente
+                lookTarget = Match.ball.position;
             }
         }
         _v1.set(this.model.position.x * 2 - lookTarget.x, this.model.position.y, this.model.position.z * 2 - lookTarget.z);
@@ -3031,8 +3023,12 @@ class FootballPlayer {
                 ela passava por cima sem contacto.
                 */
                 const subida = prev.y - (ALTURA_BASE_Y + ALTURA_TESTA);
-                const dXZ = Math.hypot(this.model.position.x - prev.x, this.model.position.z - prev.z);
-                if (dXZ < S.alcanceXZ && subida > S.alturaSemPulo && subida < S.alturaMax) {
+                const halfT = S.duracao * 0.5;
+                const meuXNoPico = this.model.position.x + (this.velocity ? this.velocity.x * halfT : 0);
+                const meuZNoPico = this.model.position.z + (this.velocity ? this.velocity.z * halfT : 0);
+                const dXZ = Math.hypot(meuXNoPico - prev.x, meuZNoPico - prev.z);
+                const alcanceEfetivo = S.alcanceXZ * 1.35;
+                if (dXZ < alcanceEfetivo && subida > S.alturaSemPulo && subida < S.alturaMax) {
                     this.jumpTimer = S.duracao;
                     this.jumpApex = subida;
                     this.jumpCooldown = S.cooldown;
@@ -3606,12 +3602,15 @@ class FootballPlayer {
                 const semDono = !Match.ballCarrier;
                 const mansinha = Match.ballVel.length() < BallControl.easySpeed;
                 const distBolaAgora = gkCorpo.position.distanceTo(Match.ball.position);
+                const maosProibidas = (typeof maosProibidasNoRecuo === 'function')
+                    ? maosProibidasNoRecuo(Match.recuoParaGR, this.team)
+                    : false;
 
-                if (semDono && mansinha && distBolaAgora < 10.0) {
+                if (semDono && (mansinha || maosProibidas) && distBolaAgora < 10.0) {
                     alvoGkX = Match.ball.position.x;
                     alvoGkZ = Match.ball.position.z;
                     speedLerp = 5.5;
-                    if (distBolaAgora < 1.2) {
+                    if (distBolaAgora < 1.2 && !maosProibidas) {
                         this.gkEstado = 'apanhar';
                         this.gkTempoMergulho = 0;
                     }
@@ -3638,8 +3637,8 @@ class FootballPlayer {
                             speedLerp = 6.0;
 
                             // Perto o suficiente: pára de deslizar e agacha para apanhar,
-                            // em vez de agarrar instantaneamente a meio da corrida.
-                            if (distToBall < 1.2) {
+                            // em vez de agarrar instantaneamente a meio da corrida (se as mãos não estiverem proibidas).
+                            if (distToBall < 1.2 && !maosProibidas) {
                                 this.gkEstado = 'apanhar';
                                 this.gkTempoMergulho = 0;
                             }
@@ -3855,7 +3854,7 @@ class FootballPlayer {
                 gkCorpo.position.y = lerpTo(gkCorpo.position.y, ALTURA_BASE_Y + P.altura, 0.2);
             }
 
-            if (this.hasBall) {
+            if (this.hasBall || this.actionState) {
                 this.runBehaviorTree(dt);
                 this.fsm.update(dt);
             }

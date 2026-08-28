@@ -28,7 +28,7 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcTeam = ler('js/bt/team_bt.js');
-const srcConfig = ler('js/config.js');
+const srcConfig = ler('js/config/defense.js') + '\n' + ler('js/config/tactics.js');
 
 const ini = srcTeam.indexOf('function deveMandarChaser');
 if (ini < 0) throw new Error('deveMandarChaser não encontrada');
@@ -196,7 +196,7 @@ console.log(LF + '5 — T.Defensiva e Defensiva jogam curtas (30 m)');
     na escolha anterior — por fora parecia que a regra não fazia nada. O
     `Tatics.update` escreve nos dois: no `select` e na variável.
     */
-    const srcCfg = ler('js/config.js');
+    const srcCfg = ler('js/config/defense.js') + '\n' + ler('js/config/tactics.js');
     const iUpd = srcCfg.indexOf('    update: function () {');
     const corpoUpdate = srcCfg.slice(iUpd, srcCfg.indexOf(LF + '    },', iUpd));
     if (!/mental\.profundidade/.test(corpoUpdate)) {

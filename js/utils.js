@@ -1045,13 +1045,14 @@ chegava sempre abaixo do ponto visado.
 
 Devolve o ângulo em radianos, ou `null` se nem no ângulo óptimo lá chega.
 */
-function elevacaoParaAlvo(distH, altura, v) {
+function elevacaoParaAlvo(distH, altura, v, y0) {
     const g = BallPhysics.gravidade;
     const k = BallPhysics.kArrasto;
+    const startY = (typeof y0 === 'number') ? y0 : BallPhysics.raio;
 
     // Altura da bola ao passar por distH, para uma dada elevação.
     const alturaEm = (elev) => {
-        let x = 0, y = BallPhysics.raio;
+        let x = 0, y = startY;
         let vx = v * Math.cos(elev), vy = v * Math.sin(elev);
         const dt = 1 / 120;
         for (let i = 0; i < 600; i++) {
@@ -1073,7 +1074,7 @@ function elevacaoParaAlvo(distH, altura, v) {
     // A altura em distH cresce com a elevação até ao óptimo; bissecção no
     // ramo ascendente (o que dá a trajectória mais tensa, que é a que se quer
     // num remate).
-    let lo = -0.15, hi = Math.PI / 4;
+    let lo = (startY > 0.5 ? -0.85 : -0.15), hi = Math.PI / 4;
     if (alturaEm(hi) < altura) return null;      // nem no máximo lá chega
     for (let i = 0; i < 16; i++) {
         const mid = (lo + hi) / 2;

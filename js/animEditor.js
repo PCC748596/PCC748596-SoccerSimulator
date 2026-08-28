@@ -1168,10 +1168,13 @@ const Editor = {
     exporta sem os comentários, em vez de os apagar em silêncio.
     */
     carregarFonte() {
-        fetch('js/config.js')
-            .then(r => r.ok ? r.text() : Promise.reject(r.status))
-            .then(t => { this.fonteConfig = t; })
-            .catch(() => { this.fonteConfig = null; });
+        const pAnim = fetch('js/config/animations.js').then(r => r.ok ? r.text() : '').catch(() => '');
+        const pGait = fetch('js/config/gait.js').then(r => r.ok ? r.text() : '').catch(() => '');
+        Promise.all([pAnim, pGait]).then(([anim, gait]) => {
+            this.fonteConfig = (anim || gait) ? (anim + '\n' + gait) : null;
+            this.fonteAnim = anim || null;
+            this.fonteGait = gait || null;
+        });
     },
 
     /*
@@ -1180,7 +1183,7 @@ const Editor = {
     e não uma versão a fingir.
     */
     reescreverNoTexto() {
-        return reescreverClipNoTexto(this.fonteConfig, this.nomeClip, this.frames());
+        return reescreverClipNoTexto(this.fonteAnim || this.fonteConfig, this.nomeClip, this.frames());
     },
 
     exportar() {
@@ -1197,7 +1200,7 @@ const Editor = {
                 `        // ${i + 1}\n        { ` +
                 Object.keys(K).map(k => `${k}: ${(+K[k]).toFixed(2)}`).join(', ') + ' },');
             texto =
-                `// ATENÇÃO: exportado SEM os comentários originais do config.js.\n` +
+                `// ATENÇÃO: exportado SEM os comentários originais de js/config/animations.js.\n` +
                 `// (não consegui ler o ficheiro — a página está aberta por file://?\n` +
                 `//  com o servidor de desenvolvimento, npm run dev, os comentários\n` +
                 `//  são preservados). Compara antes de colar.\n` +
@@ -1213,7 +1216,7 @@ const Editor = {
         try { document.execCommand('copy'); } catch (e) { /* o utilizador copia à mão */ }
 
         document.getElementById('estado').textContent = comComentarios
-            ? 'Copiado, com os comentários do config.js preservados. Cola por cima do bloco antigo.'
+            ? 'Copiado, com os comentários preservados. Cola por cima do bloco em js/config/animations.js.'
             : 'Copiado SEM comentários — ver o aviso no texto. Cola com cuidado.';
     },
 
@@ -1225,13 +1228,13 @@ const Editor = {
     */
     exportarGait() {
         const area = document.getElementById('saida');
-        const texto = reescreverGaitNoTexto(this.fonteConfig, GaitModel);
+        const texto = reescreverGaitNoTexto(this.fonteGait || this.fonteConfig, GaitModel);
         const estado = document.getElementById('estado');
 
         if (!texto) {
             area.style.display = 'block';
             area.value =
-                '// Nao consegui ler o js/config.js para preservar os comentarios.' + LF +
+                '// Nao consegui ler o js/config/gait.js para preservar os comentarios.' + LF +
                 '// A pagina esta aberta por file://? Com o servidor (npm run dev)' + LF +
                 '// isto funciona. Valores actuais, para copiares a mao:' + LF +
                 JSON.stringify(GaitModel, null, 4);
@@ -1244,7 +1247,7 @@ const Editor = {
         area.select();
         try { document.execCommand('copy'); } catch (e) { /* copia-se à mão */ }
         estado.textContent = 'GaitModel copiado (os três andamentos), com os ' +
-            'comentários preservados. Cola por cima do bloco no config.js.';
+            'comentários preservados. Cola por cima do bloco em js/config/gait.js.';
     }
 };
 

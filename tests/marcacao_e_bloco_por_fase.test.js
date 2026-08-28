@@ -28,7 +28,7 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcTeam = ler('js/bt/team_bt.js');
-const srcConfig = ler('js/config.js');
+const srcConfig = ler('js/config/tactics.js') + '\n' + ler('js/config/defense.js');
 
 function extrairObjecto(src, nome) {
     const i = src.indexOf(`const ${nome} = {`);

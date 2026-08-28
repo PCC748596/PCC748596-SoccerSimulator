@@ -31,7 +31,7 @@ const fimFn = srcEditor.indexOf(LF + '}', ini) + 2;
 const reescreverClipNoTexto = new Function(
     `${srcEditor.slice(ini, fimFn)}; return reescreverClipNoTexto;`)();
 
-const fonte = ler('js/config.js');
+const fonte = ler('js/config/animations.js') + '\n' + ler('js/config/gait.js');
 
 let falhas = 0;
 const erro = m => { falhas++; console.error('  X ' + m); };

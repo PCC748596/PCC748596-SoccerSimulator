@@ -34,7 +34,7 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const src = ler('js/bt/player_bt.js');
-const cfg = ler('js/config.js');
+const cfg = ler('js/config/player_behavior.js');
 
 let falhas = 0;
 const erro = m => { falhas++; console.error('  X ' + m); };

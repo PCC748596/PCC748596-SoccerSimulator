@@ -31,7 +31,7 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcPlayer = ler('js/bt/player_bt.js');
-const srcMatch = ler('js/match.js');
+const srcMatch = ['js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js', 'js/match/match_setpieces.js', 'js/match/match_loop.js', 'js/match/match_ui.js'].map(ler).join('\n');
 
 let falhas = 0;
 const erro = m => { falhas++; console.error('  X ' + m); };

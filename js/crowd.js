@@ -656,7 +656,17 @@ void crowdPesos(out float dePe, out float w1, out float w2,
 
         const geos = this.geometrias();
         const canais = Object.keys(geos);
-        const nTotal = Math.min(CrowdModel.total, lugares.length);
+        
+        let crowdLimit = CrowdModel.total;
+        if (typeof window !== 'undefined') {
+            const ponteiroGrosso = window.matchMedia
+                ? window.matchMedia('(pointer: coarse)').matches
+                : (('ontouchstart' in window) || navigator.maxTouchPoints > 0);
+            const isTabletOrMobile = ponteiroGrosso || window.innerWidth <= 1024;
+            if (isTabletOrMobile) crowdLimit = 5000;
+        }
+        
+        const nTotal = Math.min(crowdLimit, lugares.length);
 
         const dummy = new THREE.Object3D();
         const cor = new THREE.Color();

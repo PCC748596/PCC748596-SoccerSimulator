@@ -926,34 +926,59 @@ class PlayerFSM {
                 if (Match.setPieceTimer > ESPERA_APOS_REPOSICAO && !Match.cantoBolaAlvo) {
                     if (Match.state === 'CORNER_KICK') {
                         const lado = Math.sign(Match.ball.position.x) || 1;
-                        /*
-                        Cruzamento visando o 1º pau e a entrada da pequena área,
-                        onde convergem as jogadas ensaiadas. A balística saiu
-                        para `cruzamentoParaArea` (utils.js) quando a falta ao
-                        lado da área — o mini-canto — passou a precisar do mesmo
-                        cruzamento. Os números não mudaram.
-                        */
-                        const cruz = cruzamentoParaArea(
-                            Match.ball.position, p.ownGoalZ, p.dirZ, lado, Math.random);
-                        Match.ballVel.set(cruz.x, cruz.y, cruz.z);
+                        const teammates = (p.team === 'TeamA') ? Match.players : Match.opponents;
+                        const atkInBox = teammates.filter(pl => pl !== p && pl.role !== 'gk' && Math.abs(pl.model.position.z) > 25);
+                        
+                        // Seleciona o melhor cabeceador do ataque na área (atacante ou central que subiu)
+                        let targetReceiver = null;
+                        if (atkInBox.length > 0) {
+                            atkInBox.sort((a, b) => {
+                                const scoreA = a.skillFor('STRENGTH') * 0.55 + a.skillFor('TEC') * 0.45;
+                                const scoreB = b.skillFor('STRENGTH') * 0.55 + b.skillFor('TEC') * 0.45;
+                                return scoreB - scoreA;
+                            });
+                            const topCandidates = atkInBox.slice(0, Math.min(3, atkInBox.length));
+                            targetReceiver = topCandidates[Math.floor(Math.random() * topCandidates.length)];
+                        }
+
+                        // Zona de cruzamento calibrada (1º poste, marca do pênalti / coração da área ou 2º poste)
+                        let targetX, targetZ;
+                        if (targetReceiver && targetReceiver.dynamicTarget && Math.abs(targetReceiver.dynamicTarget.z) > 26) {
+                            targetX = targetReceiver.dynamicTarget.x;
+                            targetZ = targetReceiver.dynamicTarget.z;
+                        } else {
+                            const zDepth = 6.5 + Math.random() * 4.5;
+                            targetZ = (CAMPO_COMP / 2 - zDepth) * p.dirZ;
+                            const rollZona = Math.random();
+                            if (rollZona < 0.45) targetX = lado * (2.5 + Math.random() * 2.0);
+                            else if (rollZona < 0.80) targetX = (Math.random() - 0.5) * 4.0;
+                            else targetX = -lado * (2.5 + Math.random() * 2.0);
+                        }
+
+                        const dx = targetX - Match.ball.position.x;
+                        const dz = targetZ - Match.ball.position.z;
+                        const d = Math.max(0.0001, Math.hypot(dx, dz));
+                        const grav = (typeof BallPhysics !== 'undefined' && BallPhysics.gravidade) ? BallPhysics.gravidade : 9.81;
+                        const vy = 9.8 + Math.random() * 0.6;
+                        const tVoo = (vy * 2.0) / grav;
+                        const vHoriz = d / tVoo;
+
+                        Match.ballVel.set((dx / d) * vHoriz, vy, (dz / d) * vHoriz);
                         Match.state = 'PLAY';
                         Match.ballCarrier = null;
+                        Match.intendedReceiver = targetReceiver;
+                        if (!Match.passTargetPos) Match.passTargetPos = new THREE.Vector3();
+                        Match.passTargetPos.set(targetX, ALTURA_BASE_Y, targetZ);
                         Match.possessionTeam = p.team;
                         Match.possessionTimer = 0;
                         Match.lastTouchedTeam = p.team;
                         Match.lastTouchedPlayer = p;
-                        /*
-                        Os dois planteis num laço só. Estavam separados, e o
-                        WATCH_CORNER foi posto apenas no de Match.players — ou
-                        seja, só o TeamA. Num canto do TeamB o batedor caía no
-                        ramo antigo e ia direito para MOVE_TO_POS, e metade dos cantos
-                        não tinha o comportamento nenhum.
-                        */
+
                         Match.players.concat(Match.opponents).forEach(pl => {
+                            pl.setPieceTarget = null;
                             if (pl.fsm.currentState === 'SET_PIECE_TAKER') {
                                 pl.fsm.changeState('WATCH_CORNER');
                             } else if (pl.fsm.currentState === 'SET_PIECE_WAIT') {
-                                // Bola no ar: acabou a disputa de posição.
                                 pl.jostleAncora = null;
                                 pl.fsm.changeState('MOVE_TO_POS');
                             }
@@ -963,6 +988,11 @@ class PlayerFSM {
                 break;
             case 'IDLE':
                 p.velocity.set(0, 0, 0);
+                if (typeof Match !== 'undefined' && Match.intendedReceiver === p && Match.ball) {
+                    let lookPos = _v2.copy(Match.ball.position);
+                    lookPos.y = p.model.position.y;
+                    lookAtBola(p.model, lookPos);
+                }
                 break;
             case 'MOVE_TO_POS':
                 {

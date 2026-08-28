@@ -573,15 +573,17 @@ function pickIntercetor(bb) {
         if (!p || p.role === 'gk') continue;
         if (bb.chaser === p) continue;
         if (Match.intendedReceiver === p) continue;
-        if (typeof estouAMarcar === 'function' && estouAMarcar(p)) continue;
 
         const bola = p.blackboard && p.blackboard.ball;
+        const pz = p.model.position.z;
+        const emDisputaAereaNaArea = (bola && bola.tipo === 'cabeca' || (typeof Match !== 'undefined' && Match.ball && Match.ball.position.y > 0.8)) && Math.abs(pz) > 26;
+        if (!emDisputaAereaNaArea && typeof estouAMarcar === 'function' && estouAMarcar(p)) continue;
+
         if (!bola || !bola.interceptable || !bola.interceptionPoint) continue;
         if (bola.timeToIntercept > janela) continue;
 
         const ipt = bola.interceptionPoint;
         const px = p.model.position.x;
-        const pz = p.model.position.z;
         const distP = Math.hypot(ipt.x - px, ipt.z - pz);
 
         // Se outro colega está no caminho / mais bem posicionado entre o jogador e o ponto de intercepção,
@@ -882,14 +884,12 @@ function computeBlock(bb) {
     let z1 = centroZ + (profundidade / 2);
 
     /* --- limites em Z (Regra 2 e Regra 3) -------------------------------
-       O rectângulo do bloco vai até perto da linha de fundo das duas balizas:
-       - Linha de fundo da defesa: -(CAMPO_COMP / 2 - 1.5) = -51.5 m
-       - Linha de fundo do ataque: +(CAMPO_COMP / 2 - 1.5) = +51.5 m
-
-       O pisoDir (guarda-redes) e o empurraZ evitam que os jogadores saiam do campo
-       ou entrem pela baliza adentro.
+       O rectângulo do bloco vai até perto da linha de fundo adversária.
+       A traseira do bloco (minZ) está agora restrita à linha da própria
+       grande área (16.5m), impedindo que os times recuem em demasia para
+       dentro da área em fase defensiva regular.
     */
-    const minZ = -(CAMPO_COMP / 2 - 1.5);
+    const minZ = -(CAMPO_COMP / 2 - 16.5);
     const maxZ = (CAMPO_COMP / 2 - 1.5);
 
     if (z0 < minZ) {
@@ -1812,11 +1812,10 @@ const PosicionamentoAI = {
                 const RAIO_MIN_PORTADOR = 7.5;
                 if (distCarrier < RAIO_MIN_PORTADOR) {
                     const falta = RAIO_MIN_PORTADOR - distCarrier;
-                    let dirX = dx >= 0 ? 1 : -1;
-                    if (Math.abs(dx) < 0.5) {
-                        dirX = (p.slot && p.slot.u >= 0.5) ? 1 : -1;
-                    }
-                    targetX += dirX * falta;
+                    const ux = distCarrier > 0.001 ? dx / distCarrier : ((p.slot && p.slot.u >= 0.5) ? 1 : -1);
+                    const uz = distCarrier > 0.001 ? dz / distCarrier : 0;
+                    targetX += ux * falta;
+                    targetZ += uz * falta;
                 }
             }
         }

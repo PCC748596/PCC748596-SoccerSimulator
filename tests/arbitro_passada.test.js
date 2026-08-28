@@ -18,7 +18,7 @@ const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
 const srcOfficials = semCR(fs.readFileSync(path.join(raiz, 'js', 'officials.js'), 'utf8'));
 const srcUtils = semCR(fs.readFileSync(path.join(raiz, 'js', 'utils.js'), 'utf8'));
-const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config.js'), 'utf8'));
+const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'gait.js'), 'utf8'));
 
 function extrairFuncao(src, nome, ficheiro) {
     const cabeca = `function ${nome}(`;

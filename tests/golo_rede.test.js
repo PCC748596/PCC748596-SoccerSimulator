@@ -16,7 +16,7 @@ fundo que congela a bola.
 const fs = require('fs');
 const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'match.js'), 'utf8');
+const src = ['js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js', 'js/match/match_setpieces.js', 'js/match/match_loop.js', 'js/match/match_ui.js'].map(f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n');
 
 const LARGURA_BALIZA = 7.32, ALTURA_BALIZA = 2.44, CAMPO_COMP = 106;
 const BallPhysics = {
@@ -32,7 +32,7 @@ const GoalNet = { profTopo: 0.8, profBase: 2.0, restituicao: 0.02, atrito: 0.35 
 function extrair(nome) {
     const cabeca = `    ${nome}: function (zSinal) {`;
     const ini = src.indexOf(cabeca);
-    if (ini < 0) throw new Error(`${nome} não encontrado em js/match.js`);
+    if (ini < 0) throw new Error(`${nome} não encontrado em match`);
     const fim = src.indexOf('\n    },', ini);
     return src.slice(ini + cabeca.length, fim);
 }

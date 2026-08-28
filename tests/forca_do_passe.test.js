@@ -31,7 +31,7 @@ const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
-const srcConfig = ler('js/config.js');
+const srcConfig = ler('js/config/physics.js') + '\n' + ler('js/config/passing.js') + '\n' + ler('js/config/player_behavior.js');
 const srcUtils = ler('js/utils.js');
 const srcFsm = ler('js/fsm.js');
 

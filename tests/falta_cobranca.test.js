@@ -22,9 +22,9 @@ const test = require('node:test');
 const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
 const semCR = s => s.split(CR + LF).join(LF);
 const raiz = path.join(__dirname, '..');
-const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config.js'), 'utf8'));
+const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'shooting.js'), 'utf8'));
 const srcPlayer = semCR(fs.readFileSync(path.join(raiz, 'js', 'player.js'), 'utf8'));
-const srcMatch = semCR(fs.readFileSync(path.join(raiz, 'js', 'match.js'), 'utf8'));
+const srcMatch = semCR(['js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js', 'js/match/match_setpieces.js', 'js/match/match_loop.js', 'js/match/match_ui.js'].map(f => fs.readFileSync(path.join(raiz, f), 'utf8')).join('\n'));
 const srcBt = semCR(fs.readFileSync(path.join(raiz, 'js', 'bt', 'player_bt.js'), 'utf8'));
 
 function extrairObjecto(src, nome) {
@@ -107,3 +107,10 @@ test('as duas ligações que fazem a cobrança acontecer', () => {
     assert.ok(/setPieceTaker && p\.actionState/.test(srcBt),
         'o tratarBolaParada volta a matar o gesto do batedor');
 });
+
+test('o batedor fica posicionado na linha da cobrança (mesmo ângulo do penálti)', () => {
+    assert.ok(F.lateralBatedor === 0 || F.lateralBatedor === undefined, 'lateralBatedor deve ser 0 para alinhamento directo');
+    assert.ok(srcMatch.includes('bolaFK.x - dirFK.x * F.recuoBatedor') && srcMatch.includes('bolaFK.z - dirFK.z * F.recuoBatedor'),
+        'match_setpieces.js deve posicionar o batedor directamente atrás da bola na direcção da cobrança');
+});
+

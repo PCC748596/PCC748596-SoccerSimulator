@@ -15,7 +15,7 @@
             <div style="flex: 1;">
                 <h2 id="app-title" style="font-size: 0.85em; font-weight: bold; margin: 0; padding: 0;">SOCCER SIM | FPS: --
                 </h2>
-                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0617</div>
+                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0618</div>
             </div>
             <button type="button" id="btn-painel" title="Minimizar / maximizar (X) — Shift: todos"
                 onclick="togglePainel(undefined, event)">&minus;</button>
@@ -371,7 +371,16 @@
     <!-- Limites anatómicos de rotação por articulação, adaptados ao rig do
          modelo — base pra animação procedural (ex.: mergulho do GR). -->
     <script src="js/joint_limits.js"></script>
-    <script src="js/config.js"></script>
+    <!-- Configurações modulares divididas por subsistema -->
+    <script src="js/config/physics.js"></script>
+    <script src="js/config/animations.js"></script>
+    <script src="js/config/gait.js"></script>
+    <script src="js/config/tactics.js"></script>
+    <script src="js/config/passing.js"></script>
+    <script src="js/config/shooting.js"></script>
+    <script src="js/config/defense.js"></script>
+    <script src="js/config/goalkeeper.js"></script>
+    <script src="js/config/player_behavior.js"></script>
     <script src="js/stats.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/controls.js"></script>
@@ -404,7 +413,12 @@
     <script src="js/bt/team_bt.js"></script>
     <script src="js/bt/player_bt.js"></script>
     <script src="js/goal_net.js"></script>
-    <script src="js/match.js"></script>
+    <script src="js/match/match_state.js"></script>
+    <script src="js/match/match_setup.js"></script>
+    <script src="js/match/match_physics.js"></script>
+    <script src="js/match/match_setpieces.js"></script>
+    <script src="js/match/match_loop.js"></script>
+    <script src="js/match/match_ui.js"></script>
     <!-- Corpo e poses dos clips, partilhados com o animEditor.html. Antes do
          player.js, que os usa. -->
     <script src="js/ambiente_sonoro.js"></script>
