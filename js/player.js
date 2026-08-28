@@ -840,13 +840,46 @@ class FootballPlayer {
             ? ActionAnimClips['shot'].contactTime 
             : (7 / 11);
         
-        const startZ = this.model.position.z;
-        const targetZ = Match.ball.position.z - this.dirZ * 0.5;
+        /*
+        A ÚLTIMA PASSADA, e só ela. Os primeiros metros são ANDADOS durante a
+        espera regulamentar (ramo `penaltiPendente` do Match.update); aqui o
+        `onPrepare` cobre o que sobra entre `arranqueDoGesto` e a bola, dentro
+        do `contactTime` do clip.
+
+        Antes partia dos 4.6 m do `recuoBatedor` e só interpolava o z: 4.1 m em
+        0.32 s são ~13 m/s com a pose de remate congelada — o deslize. Agora
+        são ~1.45 m no mesmo tempo, e o corpo já vem com passo da caminhada.
+        */
+        const PMc = (typeof PenaltyModel !== 'undefined') ? PenaltyModel : {};
+        const paragem = (typeof PMc.paragemNoContacto === 'number') ? PMc.paragemNoContacto : 0.55;
+
+        const inicioPen = { x: this.model.position.x, z: this.model.position.z };
+        const bolaPen = { x: Match.ball.position.x, z: Match.ball.position.z };
+        const dxPen = bolaPen.x - inicioPen.x, dzPen = bolaPen.z - inicioPen.z;
+        const distPen = Math.hypot(dxPen, dzPen) || 1;
+        const fimPen = {
+            x: bolaPen.x - (dxPen / distPen) * paragem,
+            z: bolaPen.z - (dzPen / distPen) * paragem
+        };
+
+        /*
+        VELOCIDADE A ZERO À ENTRADA DO GESTO. Quem move o corpo daqui para a
+        frente é o `onPrepare`, não a velocidade — e deixá-la com os 2.6 m/s da
+        caminhada punha o `animateBones` no ramo da passada (`speed >= 0.1`),
+        que escreve a perna INTEIRA com `aplicarPosePassada` por cima da pose
+        do ShotClip aplicada pela FSM no mesmo frame. O remate desaparecia
+        debaixo de um ciclo de corrida.
+
+        Com a velocidade a zero nenhum dos dois ramos do `animateBones` toca nas
+        pernas em SHOOT (ver as guardas `!== 'SHOOT'`), e o gesto fica visível.
+        */
+        this.velocity.set(0, 0, 0);
 
         this.actionState = new ActionState('shot', {
             onPrepare: (ctx, norm) => {
-                const progress = norm / contactTime;
-                this.model.position.z = startZ + (targetZ - startZ) * progress;
+                const progress = Math.min(1, norm / contactTime);
+                this.model.position.x = inicioPen.x + (fimPen.x - inicioPen.x) * progress;
+                this.model.position.z = inicioPen.z + (fimPen.z - inicioPen.z) * progress;
             },
             onContact: () => {
                 const PM = PenaltyModel;
@@ -2420,24 +2453,35 @@ class FootballPlayer {
         const headless = (typeof Sim !== 'undefined' && Sim.running);
 
         if (Match.kickoffActive || Match.state === 'PENALTY') {
-            this.velocity.set(0, 0, 0);
-
             /*
-            EXCEPÇÃO: o batedor do penálti. O gesto passou a ser um ActionState
-            (corrida + contacto no contactTime do ShotClip), e quem o faz
-            avançar é a FSM — que este freeze nunca deixava correr. Sem isto o
-            onContact nunca disparava: a bola ficava na marca, o `Match.state`
-            só saía de PENALTY pelo timeout de 15 s do setPieceTimer, e nesse
-            instante o guarda-redes via PLAY com a bola solta na área e saía da
-            baliza a ir buscá-la — antes de alguém lhe ter tocado.
+            O BATEDOR DO PENÁLTI É A EXCEPÇÃO AO FREEZE, e tem de o ser ANTES
+            desta linha: quem lhe põe a velocidade da aproximação andada é o
+            ramo `penaltiPendente` do Match.update, e zerá-la aqui apagava-a
+            todos os frames — ele ficava parado em `recuoBatedor` até o gesto
+            o teletransportar.
+
+            Corre a FSM (é ela que faz avançar o ActionState do gesto), integra
+            a velocidade e desenha o passo com o `animateBones` — é o passo que
+            distingue CORRER de DESLIZAR. Sem o `animateBones` o corpo ficava
+            congelado na pose do ShotClip enquanto a posição avançava: era o
+            batedor a patinar sobre a perna de apoio até à bola.
 
             Só a FSM, e não o runBehaviorTree: o `tratarBolaParada` força
             SET_PIECE_WAIT durante o PENALTY e matava o estado SHOOT.
             */
-            if (Match.state === 'PENALTY' && this === Match.setPieceTaker && this.actionState) {
+            if (Match.state === 'PENALTY' && this === Match.setPieceTaker && this.role !== 'gk') {
                 this.fsm.update(dt);
+                if (!this.actionState) {
+                    // Aproximação andada: o gesto move-o pelo `onPrepare`.
+                    this.model.position.addScaledVector(this.velocity, dt);
+                }
+                if (!headless) this.animateBones(dt);
+                else this.model.position.y = ALTURA_BASE_Y;
                 return;
             }
+
+            this.velocity.set(0, 0, 0);
+
             // Bola fica presa no centro (não gruda no pé do taker) — ele fica
             // só encostado. O lerp para o pé (usado no jogo normal) ia
             // arrastando a bola do centro pra fora durante os 4s de espera.

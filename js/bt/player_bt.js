@@ -1053,6 +1053,17 @@ function actEsperarDevolucao(ctx) {
     const T = JogadasCombinadas.tabelinha;
     p.dynamicTarget.set(p.esperarDevolucao.alvo.x, ALTURA_BASE_Y, p.esperarDevolucao.alvo.z);
     p.speedMult = T.velocidadeArranque;
+    /*
+    O `runTimer` tem de vir com o estado. O `case RUN_INTO_SPACE` da FSM aborta
+    logo à entrada quando ele está a zero — e abortava, todos os frames, porque
+    esta folha pedia o estado e nunca lho punha. Ninguém guiava o jogador e a
+    velocidade do último frame ficava congelada a integrar: linha recta para
+    fora do campo. Vale o que resta do pedido de tabelinha.
+    */
+    p.runTimer = Math.max(p.runTimer || 0, p.esperarDevolucao.timer);
+    // `runTimer > 0` significa "corrida em curso" para o actRunIntoSpace, que
+    // a partir daí lê o `runTarget` sem o voltar a criar. Os dois andam juntos.
+    p.runTarget = { x: p.dynamicTarget.x, z: p.dynamicTarget.z };
     p.fsm.changeState('RUN_INTO_SPACE');
 }
 
@@ -1105,6 +1116,10 @@ function actOverlap(ctx) {
         ALTURA_BASE_Y,
         THREE.MathUtils.clamp(alvo.z, -(CAMPO_COMP / 2 - 2), CAMPO_COMP / 2 - 2));
     p.speedMult = O.velocidade;
+    // Ver a nota do runTimer no actEsperarDevolucao: sem ele o RUN_INTO_SPACE
+    // aborta à entrada e ninguém guia o jogador.
+    p.runTimer = Math.max(p.runTimer || 0, p.overlapTimer || O.duracao);
+    p.runTarget = { x: p.dynamicTarget.x, z: p.dynamicTarget.z };
     p.fsm.changeState('RUN_INTO_SPACE');
 }
 

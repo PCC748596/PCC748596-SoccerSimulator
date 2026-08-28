@@ -957,10 +957,29 @@ class PlayerFSM {
                         const dx = targetX - Match.ball.position.x;
                         const dz = targetZ - Match.ball.position.z;
                         const d = Math.max(0.0001, Math.hypot(dx, dz));
-                        const grav = (typeof BallPhysics !== 'undefined' && BallPhysics.gravidade) ? BallPhysics.gravidade : 9.81;
-                        const vy = 9.8 + Math.random() * 0.6;
-                        const tVoo = (vy * 2.0) / grav;
-                        const vHoriz = d / tVoo;
+                        /*
+                        A FORÇA DO CANTO, com o arrasto contado.
+
+                        Era `vHoriz = d / tVoo` sobre um `vy` fixo — a conta do
+                        tiro no VÁCUO. A física da bola trava as três
+                        componentes com arrasto quadrático, e a 17-18 m/s isso
+                        são ~4 m/s² durante os ~2 s de voo: medido, um canto de
+                        35 m caía aos ~29 m, à entrada da área em vez de na
+                        marca. Era o cruzamento a morrer sempre curto.
+
+                        `velocidadeParaAlcance` (utils.js) resolve o mesmo
+                        problema por simulação do voo com arrasto, e é o que o
+                        resto do jogo já usa. A elevação mantém a forma do
+                        cruzamento anterior (~29°); os detalhes estão em
+                        CrossModel.canto.
+                        */
+                        const CC = (typeof CrossModel !== 'undefined' && CrossModel.canto)
+                            ? CrossModel.canto : { elevacao: 29.0, variacaoElev: 3.0, forca: 1.0 };
+                        const elevCanto = (CC.elevacao + (Math.random() - 0.5) * 2 * (CC.variacaoElev || 0))
+                            * Math.PI / 180;
+                        const vCanto = velocidadeParaAlcance(d, elevCanto) * (CC.forca || 1.0);
+                        const vHoriz = vCanto * Math.cos(elevCanto);
+                        const vy = vCanto * Math.sin(elevCanto);
 
                         Match.ballVel.set((dx / d) * vHoriz, vy, (dz / d) * vHoriz);
                         Match.state = 'PLAY';
@@ -1112,6 +1131,33 @@ class PlayerFSM {
                     // e a parar no lugar.
                     p.runCooldown = RunIntoSpaceModel.arrefecimento;
                     p.fsm.changeState('MOVE_TO_POS');
+
+                    /*
+                    O ABORTO NÃO PODE DEIXAR UM FRAME MORTO.
+
+                    Isto fazia `changeState` e `break` sem tocar na velocidade —
+                    e o `player.update` integra a velocidade a seguir, corra ou
+                    não corra a direcção. Um frame assim é invisível; o problema
+                    é quando o aborto se repete todos os frames.
+
+                    E repetia: o `actEsperarDevolucao` e o `actOverlap` metiam o
+                    jogador em RUN_INTO_SPACE sem lhe porem `runTimer`, portanto
+                    a condição `runTimer <= 0` aqui em cima era verdadeira logo
+                    no primeiro frame. A árvore voltava a pedir RUN_INTO_SPACE no
+                    frame seguinte (as guardas da tabelinha e do overlap não
+                    olham para o `runCooldown`), e o ciclo fechava-se.
+
+                    Medido: o jogador ficava com a velocidade CONGELADA do último
+                    frame em que alguém o guiou, e a posição a integrá-la para
+                    sempre — uma linha recta a 10 m/s para fora do campo, com
+                    corpos medidos a |x| = 60 m, muito para lá da bancada. Era
+                    disto que se via um jogador a sair do campo.
+
+                    Guiar já neste frame, com o alvo do MOVE_TO_POS que acabou de
+                    ser pedido, fecha a porta a este e a qualquer outro aborto
+                    que venha a ser escrito aqui.
+                    */
+                    p.velocity = p.steerArrive(p.dynamicTarget, p.speedMult);
                     break;
                 }
 

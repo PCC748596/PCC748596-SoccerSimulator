@@ -389,6 +389,21 @@ const PenaltyModel = {
     espacamentoCobertura: 5.0, // entre eles, nessa linha
     limiteXCobertura: 10.0,    // e nunca mais para fora do que isto
     avancoAtaAdv: 3.0,         // os atacantes ficam à frente dos outros três
+
+    /*
+    A CORRIDA PARA A BOLA. Mesma divisão em dois tempos da falta (ver
+    FreeKickModel.arranqueDoGesto): o batedor espera em `recuoBatedor`, CAMINHA
+    até `arranqueDoGesto` durante o último terço da espera regulamentar, e o
+    gesto cobre só os últimos metros.
+
+    Sem isto os 4.6 m tinham de caber dentro do `contactTime` do ShotClip
+    (~0.32 s), ou seja ~13 m/s com a pose de remate congelada — o batedor
+    DESLIZAVA sobre a perna de apoio até à bola em vez de correr.
+    */
+    arranqueDoGesto: 2.0,         // onde o gesto arranca, atrás da bola
+    velocidadeAproximacao: 2.6,   // m/s a caminhar para a bola, antes do gesto
+    paragemNoContacto: 0.55,      // onde o pé fica no instante do contacto
+
     potencia: 26.0,            // m/s à saída
     alturaMax: 1.9,            // não se coloca acima disto (trave a 2.44)
     margemPoste: 0.45,         // quanto se afasta do poste ao colocar
@@ -470,7 +485,38 @@ const CrossModel = {
     linha de fundo, para não haver um degrau na decisão.
     */
     penalPasseRasteiro: 0.45,   // a nota do passe vale isto, na zona cheia
-    penalLancamentoRasteiro: 0.35
+    penalLancamentoRasteiro: 0.35,
+
+    /*
+    =====================================================================
+    O CANTO — a força que faltava
+    =====================================================================
+    A balística do canto (case 'SET_PIECE_TAKER' em fsm.js) era SEM ARRASTO:
+    fixava `vy` e resolvia a horizontal por `vHoriz = d / tVoo`, ou seja a
+    fórmula de manual para um tiro no vácuo. A física da bola tem arrasto
+    quadrático nas TRÊS componentes (`BallPhysics.kArrasto`, ver
+    match_physics.js), e a 17-18 m/s isso são ~4 m/s² a travar a bola durante
+    todo o voo.
+
+    Medido para um canto típico (d ≈ 35 m, tVoo ≈ 2.0 s): a bola caía aos
+    ~29 m em vez dos 35 — seis metros curta, à entrada da área em vez de na
+    marca. É exactamente o "falta força" que se vê.
+
+    O resto do código não tem este problema porque resolve a balística por
+    `velocidadeParaAlcance` (utils.js), que simula o voo com arrasto. O canto
+    era o único sítio que ainda usava a conta do vácuo, e passa a usar a
+    mesma função.
+
+    `elevacao` mantém a forma do cruzamento que já havia (o `vy` de 9.8 m/s
+    sobre uma horizontal de ~17.5 dava ~29°); `forca` é o botão para afinar
+    por cima da balística correcta, e fica em 1.0 porque com o arrasto
+    contado a bola já chega ao sítio pedido.
+    */
+    canto: {
+        elevacao: 29.0,      // graus à saída do pé
+        variacaoElev: 3.0,   // ± aleatório, para nem todos os cantos saírem iguais
+        forca: 1.0           // multiplicador por cima da balística com arrasto
+    }
 };
 
 /*

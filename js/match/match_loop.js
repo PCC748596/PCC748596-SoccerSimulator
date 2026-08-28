@@ -160,6 +160,38 @@ Object.assign(Match, {
             this.setPieceTimer += dt;
             if (this.penaltiPendente) {
                 this.penaltiAtraso -= dt;
+
+                /*
+                APROXIMAÇÃO ANDADA, igual à da falta (ver o ramo faltaPendente
+                aqui em cima). O batedor espera em `recuoBatedor` (4.6 m) e
+                caminha até `arranqueDoGesto` durante o último terço da espera;
+                o gesto parte daí e cobre só os últimos metros.
+
+                Sem isto os 4.6 m tinham de ser cobertos dentro do `contactTime`
+                do ShotClip (~0.32 s) pelo `onPrepare` do baterPenalti — ~13 m/s
+                com a pose de remate congelada, ou seja o batedor a DESLIZAR
+                sobre a perna de apoio até à bola.
+                */
+                const takerPen = this.setPieceTaker;
+                const PMa = (typeof PenaltyModel !== 'undefined') ? PenaltyModel : null;
+                if (takerPen && takerPen.model && PMa && !takerPen.actionState) {
+                    if (this.penaltiAtraso < ESPERA_APOS_REPOSICAO / 3) {
+                        const dirPx = takerPen.model.position.x - this.ball.position.x;
+                        const dirPz = takerPen.model.position.z - this.ball.position.z;
+                        const dPen = Math.hypot(dirPx, dirPz);
+                        const alvoDist = PMa.arranqueDoGesto || 2.0;
+                        if (dPen > alvoDist + 0.05) {
+                            const passo = Math.min(dPen - alvoDist, (PMa.velocidadeAproximacao || 2.6) * dt);
+                            const v = passo / dt;
+                            takerPen.velocity.set(-(dirPx / dPen) * v, 0, -(dirPz / dPen) * v);
+                        } else {
+                            takerPen.velocity.set(0, 0, 0);
+                        }
+                    } else {
+                        takerPen.velocity.set(0, 0, 0);
+                    }
+                }
+
                 if (this.penaltiAtraso <= 0) {
                     this.penaltiPendente = false;
                     const t = this.setPieceTaker;
