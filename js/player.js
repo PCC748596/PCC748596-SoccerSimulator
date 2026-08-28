@@ -2010,6 +2010,16 @@ class FootballPlayer {
     altura da mão e não do pé. Se não houver alvo, cai no chutão.
     */
     releaseFromHands(targetPlayer) {
+        // Mesma guarda do puntBall: o lançamento também é um ActionState com
+        // contacto atrasado, e um relançamento de uma bola que já não é dele
+        // reescreve a velocidade de uma bola que está noutro lance.
+        if (!this.hasBall || (Match.ballCarrier && Match.ballCarrier !== this)) {
+            this.gkKickAction = null;
+            this.gkEstado = 'idle';
+            this.gkKickNorm = 0;
+            return;
+        }
+
         if (!targetPlayer || !targetPlayer.model) {
             this.puntBall();
             return;
@@ -2045,6 +2055,30 @@ class FootballPlayer {
     bola lá com a elevação sorteada. `g` é 15 aqui (ver updateBall).
     */
     puntBall() {
+        /*
+        A BOLA AINDA É DELE? O chutão é um `ActionState` cujo `onContact` cai no
+        `contactTime` do clip, uns décimos depois da decisão — e entre a decisão
+        e o contacto a bola pode deixar de lhe pertencer: uma bola parada
+        marcada nesse intervalo limpa o `hasBall` de toda a gente
+        (`setupSetPiece`), e o gesto continua a correr no `updateGK`, que não
+        passa pela FSM nem pelo `changeState` que limpa `actionState`.
+
+        Sem esta guarda o contacto disparava na mesma e o `Match.ballVel.set`
+        aqui em baixo RELANÇAVA a bola de onde quer que ela estivesse. Medido
+        num lote de cantos: um cruzamento a 17 m/s, a 5.3 m de altura e a 10.7 m
+        do guarda-redes mais próximo, a passar de repente para 28.5 m/s — a
+        trajectória do canto cortada a meio, sem ninguém por perto.
+
+        Abortar é o comportamento certo: um gesto cuja bola desapareceu não tem
+        nada para chutar.
+        */
+        if (!this.hasBall || (Match.ballCarrier && Match.ballCarrier !== this)) {
+            this.gkKickAction = null;
+            this.gkEstado = 'idle';
+            this.gkKickNorm = 0;
+            return;
+        }
+
         const gGrav = BallPhysics.gravidade;
         const elev = THREE.MathUtils.degToRad(25 + Math.random() * 25);
         const desvio = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * 20);
