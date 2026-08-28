@@ -44,6 +44,45 @@ Object.assign(Match, {
         if (typeof MatchStats !== 'undefined') MatchStats.tick(dt);
         this.updatePlacar();
 
+        /*
+        O CANTO VIVO acaba quando o lance acaba: a bola sai da área, o
+        guarda-redes agarra-a, a equipa que defendia ganha a posse, o jogo pára,
+        ou o prazo esgota. Enquanto durar, os marcadores ficam com o seu homem
+        (ver CornerDefenseModel e o ramo do canto no PlayerAI.tick).
+
+        O prazo existe para o lance não ficar vivo para sempre se nenhuma das
+        outras saídas acontecer — é a mesma ideia do setPieceTimer.
+        */
+        if (this.cantoVivo) {
+            const CD = (typeof CornerDefenseModel !== 'undefined') ? CornerDefenseModel : null;
+            this.cantoVivo.timer += dt;
+
+            const def = this.cantoVivo.equipa;
+            const gkDef = (def === 'TeamA') ? this.players[0] : this.opponents[0];
+            // A baliza que eles defendem é a que fica ATRÁS deles.
+            const linhaDefendida = -gkDef.dirZ * (CAMPO_COMP / 2);
+            const folga = CD ? CD.saidaDaArea : 4.0;
+            const dz = Math.abs(linhaDefendida - this.ball.position.z);
+            const naArea = dz <= 16.5 && Math.abs(this.ball.position.x) <= 20.16;
+            const bemFora = dz > (16.5 + folga) || Math.abs(this.ball.position.x) > (20.16 + folga);
+
+            /*
+            A BOLA COMEÇA FORA DA ÁREA — está na bandeirola de canto. Sem esta
+            memória a saída "a bola saiu da área" disparava no primeiro frame e
+            o lance morria antes de existir (medido: 1 frame de vida).
+            */
+            if (naArea) this.cantoVivo.entrou = true;
+
+            const guardado = !!(gkDef && (gkDef.hasBall || gkDef.gkEstado === 'segurando'));
+
+            if (this.state !== 'PLAY' || guardado ||
+                (this.cantoVivo.entrou && bemFora) ||
+                this.cantoVivo.timer > (CD ? CD.prazo : 9.0)) {
+                this.players.concat(this.opponents).forEach(p => { p.marcaNoCanto = null; });
+                this.cantoVivo = null;
+            }
+        }
+
         if (this.state === 'CORNER_KICK') {
             this.setPieceTimer += dt;
 

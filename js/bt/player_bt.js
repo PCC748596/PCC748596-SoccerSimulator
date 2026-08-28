@@ -2989,6 +2989,76 @@ const PlayingStyleBTs = {
     }
 };
 
+/*
+=============================================================================
+MARCAR NO CANTO — e o duelo aéreo
+=============================================================================
+Enquanto o canto está vivo (`Match.cantoVivo`, posto no instante da batida e
+limpo no Match.update), quem tem um homem atribuído no setup fica com ele. Sem
+isto o bloco retomava o comando na batida e, como o bloco segue a bola — que
+está na bandeirola —, os defensores saíam da própria área com o cruzamento
+ainda no ar.
+
+Dois modos, e é a distinção entre eles que faz a disputa aérea existir:
+
+  COLADO AO HOMEM: fica `distanciaAoHomem` metros dele, do lado da BALIZA, que
+  é onde o marcador tem de estar para lhe ganhar o corpo.
+
+  À BOLA: quando a bola vem alta e já está dentro do `raioContestacao`, larga a
+  colagem e vai ao ponto onde ela vai estar. É este o passo que faltava: o
+  marcador ficava agarrado ao homem, o atacante saltava sozinho, e a "disputa"
+  do executeHeader resolvia-se com um adversário que estava a ver. Agora os
+  dois vão ao mesmo ponto, e o gatilho do salto (avaliarSaltoDeCabeceio) dispara
+  para ambos — dois corpos no ar, e o duelo a decidir qual deles cabeceia.
+
+Devolve `true` quando tomou conta do jogador, para o resto da árvore não lhe
+reescrever o alvo a seguir.
+*/
+function tratarMarcacaoNoCanto(p) {
+    if (typeof Match === 'undefined' || !Match.cantoVivo) return false;
+    if (!p.marcaNoCanto || !p.marcaNoCanto.model) return false;
+    if (p.role === 'gk' || p.hasBall) return false;
+    if (typeof CornerDefenseModel === 'undefined') return false;
+
+    const C = CornerDefenseModel;
+    const homem = p.marcaNoCanto.model.position;
+    const bola = Match.ball.position;
+
+    /*
+    Bola alta e perto: vai à BOLA, não ao homem. `preverBolaEm` dá o ponto de
+    encontro; sem previsão ele corria para onde a bola ESTÁ e chegava atrasado
+    ao sítio onde ela vai estar.
+    */
+    const dBola = Math.hypot(bola.x - p.model.position.x, bola.z - p.model.position.z);
+    if (bola.y > C.alturaContestacao && dBola < C.raioContestacao) {
+        let alvoX = bola.x, alvoZ = bola.z;
+        if (typeof preverBolaEm === 'function') {
+            const S = (typeof SaltoCabeceio !== 'undefined') ? SaltoCabeceio : { duracao: 0.62 };
+            const prev = preverBolaEm(S.duracao * 0.5);
+            if (prev) { alvoX = prev.x; alvoZ = prev.z; }
+        }
+        p.dynamicTarget.set(alvoX, ALTURA_BASE_Y, alvoZ);
+        p.speedMult = p.sprintSpeed || p.speedMult;
+        p.fsm.changeState('MOVE_TO_POS');
+        return true;
+    }
+
+    /*
+    Colado ao homem, do lado da baliza QUE ELE DEFENDE. `p.dirZ` é a direcção
+    de ataque deste jogador, portanto a baliza dele está no sentido oposto.
+    */
+    const linhaDefendida = -p.dirZ * (CAMPO_COMP / 2);
+    let dx = 0, dz = linhaDefendida - homem.z;
+    const d = Math.hypot(dx, dz) || 1;
+    p.dynamicTarget.set(
+        homem.x + (dx / d) * C.distanciaAoHomem,
+        ALTURA_BASE_Y,
+        homem.z + (dz / d) * C.distanciaAoHomem);
+    p.markingTarget = p.marcaNoCanto;
+    p.fsm.changeState('MARKING');
+    return true;
+}
+
 /* --- Ponto de entrada --------------------------------------------------- */
 
 const PlayerAI = {
@@ -3009,6 +3079,13 @@ const PlayerAI = {
         estouAMarcar ficam a olhar para um homem que ele ja largou.
         */
         player.markingTarget = null;
+
+        /*
+        MARCAÇÃO NO CANTO, antes de tudo o resto: enquanto o lance está vivo a
+        marcação individual do canto tem prioridade sobre o bloco e sobre os
+        estilos. Ver tratarMarcacaoNoCanto.
+        */
+        if (tratarMarcacaoNoCanto(player)) return;
 
         /*
         1. BT do Playing Style — só na FASE DE ATAQUE da equipa.

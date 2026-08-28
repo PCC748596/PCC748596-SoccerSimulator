@@ -992,6 +992,20 @@ class PlayerFSM {
                         Match.lastTouchedTeam = p.team;
                         Match.lastTouchedPlayer = p;
 
+                        /*
+                        O LANCE PASSA A ESTAR VIVO. Enquanto estiver, os
+                        marcadores emparelhados no setup (`marcaNoCanto`) ficam
+                        com o seu homem em vez de voltarem ao bloco — ver
+                        CornerDefenseModel e o ramo do canto no PlayerAI.tick.
+
+                        Sem isto o bloco retomava o comando aqui mesmo, e como o
+                        bloco segue a bola (que está na bandeirola de canto) os
+                        defensores eram puxados para fora da própria área com o
+                        cruzamento ainda no ar: medido, 8.1 defensores na área no
+                        cruzamento e 0.8 quatro segundos depois.
+                        */
+                        Match.cantoVivo = { equipa: (p.team === 'TeamA') ? 'TeamB' : 'TeamA', timer: 0 };
+
                         Match.players.concat(Match.opponents).forEach(pl => {
                             pl.setPieceTarget = null;
                             if (pl.fsm.currentState === 'SET_PIECE_TAKER') {

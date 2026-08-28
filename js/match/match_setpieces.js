@@ -80,6 +80,13 @@ Object.assign(Match, {
             ressalta, passa para trás da baliza — e só depois é reposta na quina
             (ver o countdown do canto em update()). Mesma ideia do tiro de meta.
             */
+            /*
+            O lance ainda não está vivo: só passa a estar quando a bola sai do
+            pé (ver o case SET_PIECE_TAKER na fsm.js). Limpa-se aqui para um
+            canto novo não herdar o do anterior.
+            */
+            this.cantoVivo = null;
+
             this.cantoBolaAlvo = { x: canto.bola.x, y: canto.bola.y, z: canto.bola.z };
             this.cantoAguardaChao = true;
             this.cantoBolaAtraso = 1.2;
@@ -237,8 +244,19 @@ Object.assign(Match, {
                 const roleOrder = { 'def': 1, 'mid': 2, 'ata': 3 };
                 return (roleOrder[a.role] || 2) - (roleOrder[b.role] || 2);
             });
+            /*
+            QUEM MARCA QUEM. Os slots 3-8 da defesa emparelham com os slots 1-6
+            do ataque (ver os comentários dos dois arrays); guarda-se o par para
+            a marcação sobreviver à batida — ver CornerDefenseModel e o ramo do
+            canto no PlayerAI.tick. Sem isto o emparelhamento existia só na
+            geometria inicial e desfazia-se no instante do cruzamento.
+            */
+            defendingPlayers.concat(attackingPlayers).forEach(p => { p.marcaNoCanto = null; });
+
             defendersInBox.forEach((p, idx) => {
                 const cfg = defenseSetup[idx] || defenseSetup[defenseSetup.length - 1];
+                // idx 2..7 são os seis marcadores; att 0..5 os seis homens da área.
+                if (idx >= 2 && idx <= 7) p.marcaNoCanto = attackersInBox[idx - 2] || null;
                 const initX = lado * cfg.relX;
                 const initZ = linhaZ - attDir * cfg.dist;
                 const tgtX = lado * cfg.tgt.relX;

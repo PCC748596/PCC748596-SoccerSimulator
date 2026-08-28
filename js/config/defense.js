@@ -600,3 +600,42 @@ const MolaDeCoesao = {
     distMin: 12.0,
     puxaoMax: 9.0
 };
+
+/*
+=============================================================================
+MARCAÇÃO NO CANTO — a marcação que sobrevive à batida
+=============================================================================
+O `setupSetPiece` monta um canto com marcação individual: dez slots de defesa
+emparelhados um a um com os do ataque, cada marcador do lado da BALIZA em
+relação ao seu homem. Está certo, e dura exactamente até a bola sair do pé.
+
+No instante da batida o `case 'SET_PIECE_TAKER'` (fsm.js) largava toda a gente
+— `jostleAncora = null` e `changeState('MOVE_TO_POS')` — e a partir daí quem
+manda é o bloco táctico. O bloco segue a bola, e a bola está na bandeirola de
+canto: os defensores são puxados para fora da própria área com o cruzamento
+ainda no ar. Medido em 40 cantos, defensores dentro da grande área:
+
+    no cruzamento  8.1 de 10
+    +2.0 s         4.4
+    +4.0 s         0.8      <- área vazia, bola ainda viva lá dentro
+
+`marcaNoCanto` (escrito no setup) é o homem de cada marcador, e a marcação
+mantém-se enquanto o lance estiver vivo: até a bola sair da área, o
+guarda-redes a agarrar, a posse mudar de dono, ou o prazo acabar.
+
+    distanciaAoHomem  onde o marcador fica, do lado da baliza
+    prazo             tecto do lance, em segundos
+    raioContestacao   com a bola no ar mais perto do que isto, o marcador
+                      larga a colagem ao homem e vai à BOLA — é isto que põe
+                      os dois no ar ao mesmo tempo, que é o que faz um duelo
+    alturaContestacao só se contesta bola alta; rasteira resolve-se a pé
+    saidaDaArea       a que distância da área o lance se dá por resolvido
+=============================================================================
+*/
+const CornerDefenseModel = {
+    distanciaAoHomem: 1.1,
+    prazo: 9.0,
+    raioContestacao: 6.0,
+    alturaContestacao: 1.5,
+    saidaDaArea: 4.0
+};

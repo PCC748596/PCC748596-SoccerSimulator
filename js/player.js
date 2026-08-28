@@ -2543,6 +2543,17 @@ class FootballPlayer {
             this.model.position.addScaledVector(this.velocity, dt);
         }
 
+        /*
+        O SALTO decide-se aqui e não no animateBones — ver a nota do
+        `avaliarSaltoDeCabeceio`. Corre com ou sem renderer, que é o que faz o
+        jogo aéreo existir também na simulação em lote.
+
+        DEPOIS de a posição ser integrada: o gatilho compara onde a bola vai
+        estar no pico com onde ELE vai estar, e usar a posição do frame
+        anterior era pedir-lhe para saltar para onde já não está.
+        */
+        if (this.role !== 'gk') this.avaliarSaltoDeCabeceio(dt);
+
         if (this.hasBall) {
             if (this.role === 'gk' && (this.gkEstado === 'segurando' || this.gkEstado === 'apanhar' || this.gkEstado === 'chutando' || this.gkEstado === 'lancando')) {
                 // GR segura a bola nas mãos, junto ao PEITO (não à cintura) —
@@ -2814,6 +2825,115 @@ class FootballPlayer {
         }
     }
 
+    /*
+    =========================================================================
+    SALTAR PARA O CABECEIO — a DECISÃO, fora da animação
+    =========================================================================
+    Isto vivia dentro do `animateBones`. Duas consequências, ambas medidas:
+
+      - o `animateBones` só corre com renderer (`if (!headless)`), portanto na
+        simulação em lote NINGUÉM saltava e ninguém cabeceava. Todos os números
+        de cantos, cruzamentos e remates de cabeça dos lotes foram tirados de um
+        jogo sem jogo aéreo;
+      - o `update` salta o `animateBones` nos estados que escrevem a pose
+        inteira a partir de um clip (LATERAL, SHOOT, BALL_CONTROL_RIGHT) e no
+        guarda-redes, e nesses o gatilho também não corria.
+
+    Aqui decide-se e avança-se o salto (timer e altura do corpo); o
+    `animateBones` continua a desenhar a pose a partir do que fica escrito.
+    Correndo no `update`, o salto existe com ou sem ecrã — que é a condição
+    para a disputa aérea poder ser medida e testada.
+
+    Fica de fora quem tem a bola, o guarda-redes (tem o seu próprio salto no
+    updateGK) e quem está a meio de um gesto com clip.
+    */
+    avaliarSaltoDeCabeceio(dt) {
+        if (this.jumpCooldown > 0) this.jumpCooldown -= dt;
+
+        const s = this.fsm ? this.fsm.currentState : '';
+        const gestoComClip = (s === 'LATERAL' || s === 'SHOOT' || s === 'CROSS' ||
+            s === 'BALL_CONTROL_RIGHT' || s === 'SET_PIECE_TAKER');
+        if (!gestoComClip && typeof preverBolaEm === 'function' && typeof SaltoCabeceio !== 'undefined') {
+
+        /*
+        Salto de cabeceio com pontaria NO TEMPO — ver SaltoCabeceio em
+        config.js. Olha-se para onde a bola vai estar no instante do pico
+        (metade da duração do salto) e salta-se só se ela lá estiver ao
+        alcance e acima da cabeça; a subida é a que falta para lhe chegar.
+
+        Antes: gatilho por altura instantânea (1.2-4.5 m) e pico fixo de
+        1.8 m. Saltava para bolas quase no chão e no topo já não lhes tocava.
+        */
+        if (!this.hasBall && this.role !== 'gk' &&
+            this.fsm.currentState !== 'CHEST_CONTROL' &&
+            (!this.jumpTimer || this.jumpTimer <= 0) &&
+            (!this.jumpCooldown || this.jumpCooldown <= 0)) {
+            const maxHeaders = (typeof HeaderModel !== 'undefined' && HeaderModel.maxHeadersSeguidos) ? HeaderModel.maxHeadersSeguidos : 2;
+            const atingiuLimiteCabeca = (typeof Match !== 'undefined' && Match.aerialHeaderCount >= maxHeaders);
+
+            if (!atingiuLimiteCabeca) {
+                const S = SaltoCabeceio;
+                const prev = preverBolaEm(S.duracao * 0.5);
+                /*
+                Medido da TESTA, não do topo da cabeça: é a testa que bate na
+                bola. Com ALTURA_CABECA o salto levava o TOPO do crânio à bola e
+                ela passava por cima sem contacto.
+                */
+                const subida = prev.y - (ALTURA_BASE_Y + ALTURA_TESTA);
+                const halfT = S.duracao * 0.5;
+                const meuXNoPico = this.model.position.x + (this.velocity ? this.velocity.x * halfT : 0);
+                const meuZNoPico = this.model.position.z + (this.velocity ? this.velocity.z * halfT : 0);
+                const dXZ = Math.hypot(meuXNoPico - prev.x, meuZNoPico - prev.z);
+                const alcanceEfetivo = S.alcanceXZ * 1.35;
+                if (dXZ < alcanceEfetivo && subida > S.alturaSemPulo && subida < S.alturaMax) {
+                    this.jumpTimer = S.duracao;
+                    this.jumpApex = subida;
+                    this.jumpCooldown = S.cooldown;
+
+                    // Vira de frente para onde a bola vai estar no pico do salto
+                    // ANTES de saltar — sem isto o corpo ficava com a orientação
+                    // da corrida até esse instante (o pescoço só cobre +-80°, e
+                    // o lookAtBola do contacto em executeHeader só corrige tarde
+                    // de mais, já no ar/depois do salto visualmente feito).
+                    //
+                    // Só no plano horizontal (y do próprio jogador, não o da
+                    // bola): perto do pico a bola pode estar quase 0.8 m em cima
+                    // da cabeça a menos de 1.4 m de distância — ângulo de
+                    // elevação quase vertical. lookAt a apontar quase para o eixo
+                    // "up" é degenerado e distorcia o rig todo (cabeça sumia).
+                    lookAtBola(this.model, _v1.set(prev.x, this.model.position.y, prev.z));
+                } else if (dXZ < S.alcanceXZ && subida > S.subidaMin && subida <= S.alturaSemPulo) {
+                    /*
+                    Bola mesmo em cima da cabeça — chega-se só inclinando o
+                    tronco para trás e o pescoço para cima, sem saltar (ver
+                    aplicarCamadaCabeceioDePe). É a opção preferida sempre que
+                    dá: um salto inteiro para uma bola que já está ao alcance é
+                    que ficava estranho.
+                    */
+                    this.headLeanTimer = 0.30;
+                    this.jumpCooldown = 0.4;
+                    lookAtBola(this.model, _v1.set(prev.x, this.model.position.y, prev.z));
+                }
+            }
+        }
+        }
+
+        // Avanço do salto em curso: o corpo sobe e desce mesmo sem renderer,
+        // que é o que faz o contacto na testa acontecer (ver resolveBallContact).
+        this.jumpAltura = 0;
+        if (this.jumpTimer > 0) {
+            this.jumpTimer -= dt;
+            const jt = this.jumpTimer / SaltoCabeceio.duracao;
+            this.jumpAltura = Math.sin(jt * Math.PI) * (this.jumpApex || SaltoCabeceio.alturaMax);
+            this.model.position.y = ALTURA_BASE_Y + this.jumpAltura;
+            if (this.jumpTimer <= 0) {
+                this.jumpTimer = 0;
+                this.jumpAltura = 0;
+                this.model.position.y = ALTURA_BASE_Y;
+            }
+        }
+    }
+
     steerArrive(target, maxSpeed, brakingDist = 2.0) {
         let desired = _p_v1.subVectors(target, this.model.position);
         desired.y = 0; let d = desired.length();
@@ -3040,76 +3160,24 @@ class FootballPlayer {
             }
         }
 
-        if (this.jumpCooldown > 0) this.jumpCooldown -= dt;
-
         /*
-        Salto de cabeceio com pontaria NO TEMPO — ver SaltoCabeceio em
-        config.js. Olha-se para onde a bola vai estar no instante do pico
-        (metade da duração do salto) e salta-se só se ela lá estiver ao
-        alcance e acima da cabeça; a subida é a que falta para lhe chegar.
+        A DECISÃO de saltar já não vive aqui — ver `avaliarSaltoDeCabeceio`,
+        chamado pelo `update`. Isto é a função da ANIMAÇÃO: o headless não a
+        chama, e enquanto o gatilho estava cá dentro não havia um único salto
+        nem um único cabeceio em toda a simulação em lote. Ficava também de
+        fora quem estivesse em LATERAL, SHOOT ou BALL_CONTROL_RIGHT, que são
+        estados excluídos do animateBones lá em cima no update.
 
-        Antes: gatilho por altura instantânea (1.2-4.5 m) e pico fixo de
-        1.8 m. Saltava para bolas quase no chão e no topo já não lhes tocava.
+        Aqui fica só o que desenha: a altura do salto já foi avançada pelo
+        `avaliarSaltoDeCabeceio` e está em `this.jumpAltura`.
         */
-        if (!this.hasBall && this.role !== 'gk' &&
-            this.fsm.currentState !== 'CHEST_CONTROL' &&
-            (!this.jumpTimer || this.jumpTimer <= 0) &&
-            (!this.jumpCooldown || this.jumpCooldown <= 0)) {
-            const maxHeaders = (typeof HeaderModel !== 'undefined' && HeaderModel.maxHeadersSeguidos) ? HeaderModel.maxHeadersSeguidos : 2;
-            const atingiuLimiteCabeca = (typeof Match !== 'undefined' && Match.aerialHeaderCount >= maxHeaders);
-
-            if (!atingiuLimiteCabeca) {
-                const S = SaltoCabeceio;
-                const prev = preverBolaEm(S.duracao * 0.5);
-                /*
-                Medido da TESTA, não do topo da cabeça: é a testa que bate na
-                bola. Com ALTURA_CABECA o salto levava o TOPO do crânio à bola e
-                ela passava por cima sem contacto.
-                */
-                const subida = prev.y - (ALTURA_BASE_Y + ALTURA_TESTA);
-                const halfT = S.duracao * 0.5;
-                const meuXNoPico = this.model.position.x + (this.velocity ? this.velocity.x * halfT : 0);
-                const meuZNoPico = this.model.position.z + (this.velocity ? this.velocity.z * halfT : 0);
-                const dXZ = Math.hypot(meuXNoPico - prev.x, meuZNoPico - prev.z);
-                const alcanceEfetivo = S.alcanceXZ * 1.35;
-                if (dXZ < alcanceEfetivo && subida > S.alturaSemPulo && subida < S.alturaMax) {
-                    this.jumpTimer = S.duracao;
-                    this.jumpApex = subida;
-                    this.jumpCooldown = S.cooldown;
-
-                    // Vira de frente para onde a bola vai estar no pico do salto
-                    // ANTES de saltar — sem isto o corpo ficava com a orientação
-                    // da corrida até esse instante (o pescoço só cobre +-80°, e
-                    // o lookAtBola do contacto em executeHeader só corrige tarde
-                    // de mais, já no ar/depois do salto visualmente feito).
-                    //
-                    // Só no plano horizontal (y do próprio jogador, não o da
-                    // bola): perto do pico a bola pode estar quase 0.8 m em cima
-                    // da cabeça a menos de 1.4 m de distância — ângulo de
-                    // elevação quase vertical. lookAt a apontar quase para o eixo
-                    // "up" é degenerado e distorcia o rig todo (cabeça sumia).
-                    lookAtBola(this.model, _v1.set(prev.x, this.model.position.y, prev.z));
-                } else if (dXZ < S.alcanceXZ && subida > S.subidaMin && subida <= S.alturaSemPulo) {
-                    /*
-                    Bola mesmo em cima da cabeça — chega-se só inclinando o
-                    tronco para trás e o pescoço para cima, sem saltar (ver
-                    aplicarCamadaCabeceioDePe). É a opção preferida sempre que
-                    dá: um salto inteiro para uma bola que já está ao alcance é
-                    que ficava estranho.
-                    */
-                    this.headLeanTimer = 0.30;
-                    this.jumpCooldown = 0.4;
-                    lookAtBola(this.model, _v1.set(prev.x, this.model.position.y, prev.z));
-                }
-            }
-        }
-
         let jumpHeight = 0;
         if (this.jumpTimer > 0) {
-            this.jumpTimer -= dt;
+            // O timer e a altura são avançados no avaliarSaltoDeCabeceio, que
+            // corre no update. Descontá-los outra vez aqui fazia o salto correr
+            // ao dobro da velocidade e só metade dele existia em headless.
             let jt = this.jumpTimer / SaltoCabeceio.duracao;
-            jumpHeight = Math.sin(jt * Math.PI) * (this.jumpApex || SaltoCabeceio.alturaMax);
-            this.model.position.y = ALTURA_BASE_Y + jumpHeight;
+            jumpHeight = this.jumpAltura || 0;
 
             /*
             Cabeceio em fases (pedido explícito, referência de 12 frames):

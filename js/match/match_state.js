@@ -93,6 +93,12 @@ const Match = {
     golKickPendente: false, golKickAtrasoInicio: 0,
     lateralPendente: false, lateralAtraso: 0,
     cantoBolaAlvo: null, cantoAguardaChao: false, cantoBolaAtraso: 0,
+    /*
+    O canto DEPOIS de batido: { equipa, timer }. Enquanto existe, os marcadores
+    ficam colados ao seu homem em vez de voltarem ao bloco (ver
+    CornerDefenseModel). Limpo no Match.update quando o lance resolve.
+    */
+    cantoVivo: null,
     faltaPendente: false, faltaAtraso: 0,
     penaltiPendente: false, penaltiAtraso: 0,
     counterAttackTeam: null, counterAttackTimer: 0,
