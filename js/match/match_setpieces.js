@@ -369,6 +369,7 @@ Object.assign(Match, {
                 takerFK.model.position.set(
                     bolaFK.x - dirFK.x * F.recuoBatedor, ALTURA_BASE_Y,
                     bolaFK.z - dirFK.z * F.recuoBatedor);
+                takerFK.velocity.set(0, 0, 0);
                 lookAtBola(takerFK.model, bolaFK);
                 takerFK.fsm.changeState('SET_PIECE_WAIT');
                 

@@ -820,10 +820,9 @@ class PlayerFSM {
                     const o = offsetInquietacao(p.jostleAngulo, p.jostleRaio || 0);
                     _v1.set(p.jostleAncora.x + o.x, ALTURA_BASE_Y, p.jostleAncora.z + o.z);
                     p.velocity = p.steerArrive(_v1, J.velocidade, 0);
-                } else if (!(p === Match.setPieceTaker && Match.state === 'FREE_KICK' && Match.faltaPendente)) {
-                    // O batedor da falta é conduzido pela aproximação andada
-                    // (Match.update escreve-lhe a velocidade de caminhada) — não
-                    // se anula aqui, senão a corrida desaparecia.
+                } else if (!(p === Match.setPieceTaker && Match.state === 'FREE_KICK' && Match.faltaPendente && Match.faltaAtraso < (typeof ESPERA_APOS_REPOSICAO !== 'undefined' ? ESPERA_APOS_REPOSICAO / 3 : 1.0))) {
+                    // O batedor da falta só mantém a velocidade durante a aproximação andada
+                    // (último terço da espera). Durante a espera inicial e para os outros jogadores, velocidade é 0.
                     p.velocity.set(0, 0, 0);
                 }
                 if (Match.ball) {

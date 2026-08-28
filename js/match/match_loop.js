@@ -118,26 +118,30 @@ Object.assign(Match, {
                 */
                 const takerFalta = this.setPieceTaker;
                 const FK = (typeof FreeKickModel !== 'undefined') ? FreeKickModel : null;
-                if (takerFalta && takerFalta.model && FK &&
-                    this.faltaAtraso < ESPERA_APOS_REPOSICAO / 3) {
-                    const bx = this.ball.position.x, bz = this.ball.position.z;
-                    let alvoX = bx;
-                    let alvoZ = bz;
-                    if (takerFalta.alvoFalta) {
-                        alvoX = takerFalta.alvoFalta.x;
-                        alvoZ = takerFalta.alvoFalta.z;
-                    }
-                    
-                    const dx = takerFalta.model.position.x - alvoX;
-                    const dz = takerFalta.model.position.z - alvoZ;
-                    const d = Math.hypot(dx, dz);
-                    
-                    if (d > 0.05) {
-                        const passo = Math.min(d, FK.velocidadeAproximacao * dt);
-                        const v = passo / dt;
-                        takerFalta.velocity.set(-(dx / d) * v, 0, -(dz / d) * v);
+                if (takerFalta && takerFalta.model && FK) {
+                    if (this.faltaAtraso < ESPERA_APOS_REPOSICAO / 3) {
+                        const bx = this.ball.position.x, bz = this.ball.position.z;
+                        let alvoX = bx;
+                        let alvoZ = bz;
+                        if (takerFalta.alvoFalta) {
+                            alvoX = takerFalta.alvoFalta.x;
+                            alvoZ = takerFalta.alvoFalta.z;
+                        }
+                        
+                        const dx = takerFalta.model.position.x - alvoX;
+                        const dz = takerFalta.model.position.z - alvoZ;
+                        const d = Math.hypot(dx, dz);
+                        
+                        if (d > 0.05) {
+                            const passo = Math.min(d, FK.velocidadeAproximacao * dt);
+                            const v = passo / dt;
+                            takerFalta.velocity.set(-(dx / d) * v, 0, -(dz / d) * v);
+                        } else {
+                            // Chegou ao ponto de arranque do gesto: pára e espera.
+                            takerFalta.velocity.set(0, 0, 0);
+                        }
                     } else {
-                        // Chegou ao ponto de arranque do gesto: pára e espera.
+                        // Durante a espera inicial antes da caminhada: fica parado no recuo
                         takerFalta.velocity.set(0, 0, 0);
                     }
                 }
