@@ -46,9 +46,17 @@ andamento fica no extremo.
 */
 function misturarAndamento(vel) {
     const A = GaitModel.andar, T = GaitModel.trote, C = GaitModel.correr;
+    const P = GaitModel.parado || A;
     let a, b, k;
 
-    if (vel <= A.vel) { a = A; b = A; k = 0; }
+    /*
+    ABAIXO DO ANDAR a amplitude decai até zero, e não fica congelada no andar
+    inteiro como ficava. Ver GaitModel.parado: com a coxa a oscilar 22.9 graus
+    a 0.05 m/s, atravessar o limiar de 0.1 m/s do `animateBones` fazia o corpo
+    saltar entre uma passada completa e estar de pé — a vibração de quem espera
+    um passe.
+    */
+    if (vel <= A.vel) { a = P; b = A; k = A.vel > 0 ? Math.max(0, vel) / A.vel : 0; }
     else if (vel <= T.vel) { a = A; b = T; k = (vel - A.vel) / (T.vel - A.vel); }
     else if (vel <= C.vel) { a = T; b = C; k = (vel - T.vel) / (C.vel - T.vel); }
     else { a = C; b = C; k = 0; }

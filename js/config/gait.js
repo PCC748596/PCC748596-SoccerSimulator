@@ -19,6 +19,38 @@ const LateralGait = {
 };
 
 const GaitModel = {
+    /*
+    QUASE PARADO. Não é um andamento — é o extremo de baixo da mistura, e
+    existe porque não existia: abaixo de `andar.vel` o `misturarAndamento`
+    devolvia o andar INTEIRO, com a coxa a oscilar 22.9 graus a 0.05 m/s
+    exactamente como a 1.8 m/s.
+
+    O custo disso era a VIBRAÇÃO no lugar. O `animateBones` troca de ramo aos
+    0.1 m/s: abaixo escreve a pose neutra com lerp, acima escreve a passada
+    inteira com set directo. Com a amplitude a não decair, atravessar esse
+    limiar era saltar entre uma passada completa e estar de pé — e quem espera
+    um passe atravessa-o o tempo todo (medido: 14.8 travessias por
+    jogador-minuto, com o jogador praticamente quieto).
+
+    Com isto a amplitude vai a zero com a velocidade e a troca de ramo deixa de
+    se ver. A `passada` NÃO vai a zero: é o avanço por ciclo, e é ela que
+    divide a cadência (`animTimer += vel * dt / passada`).
+
+    O `joelhoBase` fica: é a flexão mínima de quem está de pé, não parte da
+    passada.
+    */
+    parado: {
+        vel: 0.0,
+        passada: 1.55,        // igual à do andar: não é amplitude, é cadência
+        anca: 0.0,
+        joelhoBase: 0.06,     // de pé, o joelho não está trancado
+        joelhoOscila: 0.0,
+        pe: 0.0,
+        braco: 0.0,
+        cotovelo: -0.22,      // os braços ficam como estão de pé
+        tronco: 0.0,
+        ressalto: 0.0
+    },
     andar: {
         vel: 1.8,             // velocidade típica deste andamento (m/s)
         passada: 1.55,        // metros por ciclo completo

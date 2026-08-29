@@ -663,9 +663,30 @@ function aplicarPosePassada(rig, P, t, opts) {
     const movingBackwards = !!o.paraTras;
     const cintura = o.cintura || 0;
 
-    rig.lLeg.rotation.x = P.lHip * amp; rig.lKnee.rotation.x = P.lKnee * amp; rig.lFoot.rotation.x = P.lFoot * amp;
-    rig.rLeg.rotation.x = P.rHip * amp; rig.rKnee.rotation.x = P.rKnee * amp; rig.rFoot.rotation.x = P.rFoot * amp;
-    rig.lArm.rotation.x = P.lArm * amp; rig.rArm.rotation.x = P.rArm * amp;
+    /*
+    SUAVIZAÇÃO: a passada é escrita com `set` directo, e é isso que se quer a
+    correr — a pose é a verdade e não há nada para misturar. A velocidades
+    baixas não: o `animateBones` troca de ramo aos 0.1 m/s, e um jogador que
+    pára com a perna a meio da passada vê o ramo neutro a desfazê-la devagar
+    (lerp de 0.25) e este a refazê-la de repente no frame em que o limiar é
+    atravessado outra vez. Medido: saltos de 30 graus num frame com o jogador
+    parado — a vibração no lugar.
+
+    Com `suavizacao` < 1 a pose entra por lerp, e os dois ramos deixam de
+    puxar a perna em sentidos contrários. Quem chama passa a velocidade
+    normalizada; sem opção nenhuma, comporta-se como sempre.
+    */
+    const sv = (typeof o.suavizacao === 'number') ? Math.max(0, Math.min(1, o.suavizacao)) : 1;
+    const por = (v, alvo) => (sv >= 1) ? alvo : lerpTo(v, alvo, 0.18 + 0.82 * sv);
+
+    rig.lLeg.rotation.x = por(rig.lLeg.rotation.x, P.lHip * amp);
+    rig.lKnee.rotation.x = por(rig.lKnee.rotation.x, P.lKnee * amp);
+    rig.lFoot.rotation.x = por(rig.lFoot.rotation.x, P.lFoot * amp);
+    rig.rLeg.rotation.x = por(rig.rLeg.rotation.x, P.rHip * amp);
+    rig.rKnee.rotation.x = por(rig.rKnee.rotation.x, P.rKnee * amp);
+    rig.rFoot.rotation.x = por(rig.rFoot.rotation.x, P.rFoot * amp);
+    rig.lArm.rotation.x = por(rig.lArm.rotation.x, P.lArm * amp);
+    rig.rArm.rotation.x = por(rig.rArm.rotation.x, P.rArm * amp);
 
     // O cotovelo abre a andar e fecha a correr — era fixo em -1.2, que
     // é postura de sprint aplicada também a quem está a passear.

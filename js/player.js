@@ -3429,7 +3429,14 @@ class FootballPlayer {
                 lateralidade: lateralidade,
                 ladoMov: ladoMov,
                 paraTras: movingBackwards,
-                cintura: this.cinturaAlvoY || 0
+                cintura: this.cinturaAlvoY || 0,
+                /*
+                Perto do limiar dos 0.1 m/s a passada entra por lerp em vez de
+                `set`: é aqui e no ramo neutro que a perna era puxada em
+                sentidos contrários de frame para frame. A correr (acima de
+                0.5 m/s) volta a ser escrita directa, como sempre foi.
+                */
+                suavizacao: Math.min(1, speed / 0.5)
             });
 
             this.model.position.y = ALTURA_BASE_Y + P.ressalto;
