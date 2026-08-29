@@ -119,7 +119,7 @@ const Minimap = {
         }
     },
 
-    _ponto: function (ctx, x, z, raio, cor, contorno) {
+    _ponto: function (ctx, x, z, raio, cor, contorno, texto) {
         const p = this.paraTela(x, z);
         ctx.beginPath();
         ctx.arc(p.sx, p.sy, raio, 0, Math.PI * 2);
@@ -129,6 +129,13 @@ const Minimap = {
             ctx.strokeStyle = contorno;
             ctx.lineWidth = 1.2;
             ctx.stroke();
+        }
+        if (texto) {
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 3.5px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(texto, p.sx, p.sy);
         }
     },
 
@@ -164,7 +171,8 @@ const Minimap = {
                 const c = (p.role === 'gk') ? this.cores.gk : cor;
                 this._ponto(ctx, p.model.position.x, p.model.position.z,
                     this.raioJogador, c,
-                    (p === portador) ? this.cores.portador : null);
+                    (p === portador) ? this.cores.portador : null,
+                    p.num ? p.num.toString() : '');
             }
         };
         desenharEquipa(Match.players, this.cores.TeamA);

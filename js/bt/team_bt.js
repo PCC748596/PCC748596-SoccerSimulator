@@ -833,30 +833,33 @@ function computeBlock(bb) {
     As posições baseiam-se na linha da bola, mas têm comportamentos diferentes
     dependendo da fase do jogo, evitando que o time estique num único retângulo gigante.
     */
-    let targetOffsetZ = bb.isAttacking ? 5.0 : -5.0;
+    let isOffensive = typeof Tatics !== 'undefined' && 
+        (Tatics.estilo === 'ataque' || Tatics.estilo === 'muito_ofensiva');
+    let bZ = (typeof bb.bolaZSuave === 'number' ? bb.bolaZSuave : (bb.ballZ || 0)) * bb.dir;
+    
+    let targetOffsetZ = 0;
+    let offsetDefesa = (isOffensive ? 5.0 : 0.0) + (profundidade / 3);
+    let offsetMeio = 10.0;
+    let offsetAtaque = 5.0 - (profundidade / 3);
 
-    // Pedido: Na T.ofensive e Offensive no setor defensivo, o centro do retângulo de defesa 
-    // tem que se manter uns 5 metros a frente da bola para puxar o time a frente.
-    if (!bb.isAttacking && typeof Tatics !== 'undefined' && 
-        (Tatics.estilo === 'ataque' || Tatics.estilo === 'muito_ofensiva')) {
-        if (bb.bolaZSuave * bb.dir < 0) {
-            targetOffsetZ = 5.0;
-        }
-    }
-
-    // Pedido: O centro do retângulo médio tem que ficar uns 10 metros a frente da bola no setor de meio de campo.
-    // O "centro do retângulo médio" é matematicamente igual ao centro do bloco (centroZ).
-    // Ajustado para respeitar a geometria do bloco: se o offset for muito grande, a bola "cai" para o terço defensivo.
-    let maxOffset = (profundidade / 6) - 0.5;
-    let bZ = bb.ballZ || 0;
     if (bb.isAttacking) {
-        let desiredOffset = Math.min(10.0, maxOffset);
-        if (Math.abs(bZ) < 20.0) {
-            targetOffsetZ = desiredOffset;
+        if (bZ < -20.0) {
+            let dist = Math.min(10.0, -20.0 - bZ);
+            let f = dist / 10.0;
+            targetOffsetZ = offsetMeio * (1 - f) + offsetDefesa * f;
+        } else if (bZ > 20.0) {
+            let dist = Math.min(10.0, bZ - 20.0);
+            let f = dist / 10.0;
+            targetOffsetZ = offsetMeio * (1 - f) + offsetAtaque * f;
         } else {
-            let distanceToMid = Math.abs(Math.abs(bZ) - 20.0);
-            let factor = Math.max(0, 1.0 - (distanceToMid / 10.0));
-            targetOffsetZ = targetOffsetZ * (1 - factor) + desiredOffset * factor;
+            targetOffsetZ = offsetMeio;
+        }
+    } else {
+        targetOffsetZ = -5.0;
+        // Pedido: Na T.ofensive e Offensive no setor defensivo, o centro do retângulo de defesa 
+        // tem que se manter uns 5 metros a frente da bola para puxar o time a frente.
+        if (isOffensive && bZ < 0) {
+            targetOffsetZ = offsetDefesa;
         }
     }
 
@@ -1190,6 +1193,14 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
             zAlvoDir = bolaZDir - distTras;
         }
 
+        const isWideRole = pos === 'LB' || pos === 'RB' || pos === 'LM' || pos === 'RM';
+        let forceOffensiveWide = isWideRole; // Aplica-se na T.Ofensiva e Ofensiva (que é bb.isAttacking)
+
+        if (forceOffensiveWide) {
+            // Pedido: laterais e meias pelas laterais tem que se projetar uns 7 metros a frente da posição do teamsBT
+            zAlvoDir += 7.0;
+        }
+
         if (role === 'def') {
             const limiteCirculo = (typeof TeamShape !== 'undefined' && typeof TeamShape.limiteSaidaCirculoCentral === 'number')
                 ? TeamShape.limiteSaidaCirculoCentral : 0.0;
@@ -1201,13 +1212,15 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
             
             if (pos === 'CB' && zAlvoDir > zCBAcompanha) {
                 zAlvoDir = zCBAcompanha;
-            } else if ((pos === 'LB' || pos === 'RB') && zAlvoDir > zLatAcompanha) {
+            } else if ((pos === 'LB' || pos === 'RB') && zAlvoDir > zLatAcompanha && !forceOffensiveWide) {
                 zAlvoDir = zLatAcompanha;
             }
         }
 
         const minZDef = -(CAMPO_COMP / 2 - 1.5);
         if (zAlvoDir < minZDef) zAlvoDir = minZDef;
+        const maxZAtk = (CAMPO_COMP / 2 - 1.5);
+        if (zAlvoDir > maxZAtk) zAlvoDir = maxZAtk;
 
         zTarget = zAlvoDir * bb.dir;
     }

@@ -486,12 +486,14 @@ Object.assign(Match, {
                     centroMesh[2].visible = false;
                     
                     let bZ = (bb.ballZ || 0) * bb.dir;
-                    if (bZ < bb.bloco.zMid) {
-                        centroMesh[0].visible = true;
-                    } else if (bZ < bb.bloco.zAtk) {
-                        centroMesh[1].visible = true;
+                    // Para alinhar com a perceção do utilizador: ativar o centro com base no setor do campo
+                    // onde a bola está, em vez de onde a bola "cai" dentro do bloco tático empurrado.
+                    if (bZ < -17.5) {
+                        centroMesh[0].visible = true; // Setor defensivo
+                    } else if (bZ < 17.5) {
+                        centroMesh[1].visible = true; // Setor de meio-campo
                     } else {
-                        centroMesh[2].visible = true;
+                        centroMesh[2].visible = true; // Setor ofensivo
                     }
                 } else if (centroMesh && !Array.isArray(centroMesh)) {
                     centroMesh.visible = true;

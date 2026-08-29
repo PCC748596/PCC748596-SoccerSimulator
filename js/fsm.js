@@ -259,7 +259,12 @@ function executePassGameplay(p) {
         de `rasteiroMax` (`forcarArco`), como já fazia antes.
         */
         const forcarArco = (Tatics.passe === 'longo');
-        const elev = resolverElevacaoPasse(distToTarget, forcarArco);
+        let elev = resolverElevacaoPasse(distToTarget, forcarArco);
+
+        if (p.isGkThrow) {
+            elev = null; // forçar passe rasteiro no lançamento com a mão
+            p.isGkThrow = false;
+        }
 
         if (elev === null) {
             /*

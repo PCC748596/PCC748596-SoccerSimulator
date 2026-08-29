@@ -500,7 +500,29 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
                 avanco = 0;
             }
         }
-        if (avanco !== 0) targetZ += avanco * p.dirZ;
+        if (avanco !== 0) {
+            targetZ += avanco * p.dirZ;
+
+            // Evitar que médios e atacantes recuem para trás da linha de centrais (CB)
+            if (avanco < 0 && (p.role === 'mid' || p.role === 'atk')) {
+                if (bb && bb.own) {
+                    let maxCBZ = null;
+                    for (const c of bb.own) {
+                        if (c.role === 'def' && c.pos === 'CB' && c !== p && c.slotTarget) {
+                            const cz = c.slotTarget.z * p.dirZ;
+                            if (maxCBZ === null || cz > maxCBZ) maxCBZ = cz;
+                        }
+                    }
+                    if (maxCBZ !== null) {
+                        // O médio tem que estar pelo menos 2 metros à frente do CB mais avançado
+                        const zAtk = targetZ * p.dirZ;
+                        if (zAtk < maxCBZ + 2.0) {
+                            targetZ = (maxCBZ + 2.0) * p.dirZ;
+                        }
+                    }
+                }
+            }
+        }
 
         // Largura: + abre para a linha do LADO DELE, − fecha para o eixo.
         if (est.largura !== 0) {
@@ -517,7 +539,22 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
         */
         if (est.ombroDefesa && bb && bb.isAttacking &&
             bb.offsideLimitDir !== null && bb.offsideLimitDir !== undefined) {
-            targetZ = (bb.offsideLimitDir - 0.5) * p.dirZ;
+            
+            let zAtk = bb.offsideLimitDir - 0.5;
+            
+            // O Goal Poacher procura a linha de impedimento, mas não deve se desligar
+            // completamente do bloco da equipa (o que causaria a "movimentação maluca" 
+            // de ir muito além do TeamBT e depois recuar tudo quando perde a posse).
+            if (bb.bloco && bb.bloco.z1 !== undefined) {
+                const limiteFrente = bb.bloco.z1 + 12.0; // Máximo 12m à frente do bloco
+                if (zAtk > limiteFrente) zAtk = limiteFrente;
+            }
+
+            // Não deve recuar para trás da sua posição original projetada
+            const zAtkBase = targetZ * p.dirZ;
+            if (zAtk < zAtkBase) zAtk = zAtkBase;
+            
+            targetZ = zAtk * p.dirZ;
             targetX = melhorVaoX(p, bb, targetZ,
                 [-16, -12, -8, -4, 0, 4, 8, 12, 16]);
         }

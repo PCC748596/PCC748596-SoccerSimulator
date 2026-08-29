@@ -545,13 +545,28 @@ class FootballPlayer {
         this.lateralAlvo = null;
         const paraDentro = -Math.sign(this.model.position.x) || 1;
 
+        /*
+        A bola SAI DE DENTRO da linha, não das mãos do batedor que está fora.
+
+        O batedor está fora do campo (ThrowInModel.recuoDaLinha) e a bola está
+        nas mãos dele, logo também está fora. Largá-la ali punha-a com
+        |x| > CAMPO_LARG/2 no frame em que o estado volta a PLAY — e o
+        updateBall assinalava logo OUTRO lateral, agora para a equipa
+        contrária. Repõe-se sobre a linha, meio metro para dentro, à altura das mãos.
+        */
+        const dentroX = -Math.sign(this.model.position.x) || 1;
+        Match.ball.position.set(
+            (CAMPO_LARG / 2 - 0.5) * -dentroX,
+            Match.ball.position.y,
+            Match.ball.position.z);
+
         let dx, dz;
         if (alvo && alvo.model) {
             dx = alvo.model.position.x - Match.ball.position.x;
             dz = alvo.model.position.z - Match.ball.position.z;
         } else {
             // Sem ninguém: campo adentro e um pouco para a frente.
-            dx = paraDentro * 12.0;
+            dx = dentroX * 12.0;
             dz = this.dirZ * 6.0;
         }
         let dist = Math.hypot(dx, dz) || 1;
@@ -582,44 +597,27 @@ class FootballPlayer {
         ALVO EM ALTURA: os PÉS do receptor se o lateral for curto, o PEITO dele
         se for mais longo.
 
-        A bola sai das mãos, a uns 2 m do chão, e a fórmula de alcance
-        (`v = sqrt(alcance * g / sin(2 * elev))`) só vale com a altura de
-        chegada igual à de saída — tratava o ponto de saída como se fosse o
-        chão, e por isso o lateral nunca mirou altura nenhuma: chegava ao
-        receptor à altura que calhasse.
-
-        `alturaSaida` é a da bola AGORA, que está nas mãos. Sem solução para o
-        ângulo sorteado, cai-se na fórmula de sempre.
+        A balística com arrasto do ar (velocidadeParaAlturaNoAlvo) garante que a bola
+        chega directamente ao alvo (pé ou peito) sem ressaltar nem bater no chão antes.
         */
         const alvoNoPeito = alcance > T.distanciaAosPes;
         const alturaAlvo = alvoNoPeito ? BallControl.peitoAltura : BallPhysics.raio;
         const alturaSaida = Match.ball.position.y;
 
-        const bal = velocidadeDeLancamento(
-            alcance, alturaSaida, alturaAlvo, elev, gGrav, T.elevMax * 2);
+        let v = (typeof velocidadeParaAlturaNoAlvo === 'function')
+            ? velocidadeParaAlturaNoAlvo(alcance, elev, alturaAlvo, alturaSaida)
+            : null;
+        let angulo = elev;
 
-        const v = bal ? bal.v : Math.sqrt((alcance * gGrav) / Math.sin(2 * elev));
-        const angulo = bal ? bal.elev : elev;
+        if (!v) {
+            const bal = (typeof velocidadeDeLancamento === 'function')
+                ? velocidadeDeLancamento(alcance, alturaSaida, alturaAlvo, elev, gGrav, T.elevMax * 2)
+                : null;
+            v = bal ? bal.v : Math.sqrt((alcance * gGrav) / Math.sin(2 * elev));
+            angulo = bal ? bal.elev : elev;
+        }
+
         const horiz = v * Math.cos(angulo);
-
-        /*
-        A bola SAI DE DENTRO da linha, não das mãos.
-
-        O batedor está fora do campo (ThrowInModel.recuoDaLinha) e a bola está
-        nas mãos dele, logo também está fora. Largá-la ali punha-a com
-        |x| > CAMPO_LARG/2 no frame em que o estado volta a PLAY — e o
-        updateBall assinalava logo OUTRO lateral, agora para a equipa
-        contrária. Era isso que se via: o gesto completo, a bola a não sair, e
-        o batedor a mudar de equipa.
-
-        Repõe-se sobre a linha, meio metro para dentro, à altura das mãos.
-        */
-        const dentroX = -Math.sign(this.model.position.x) || 1;
-        Match.ball.position.set(
-            (CAMPO_LARG / 2 - 0.5) * -dentroX,
-            Match.ball.position.y,
-            Match.ball.position.z);
-
         dist = Math.hypot(dx, dz) || 1;
         Match.ballVel.set((dx / dist) * horiz, v * Math.sin(angulo), (dz / dist) * horiz);
 
@@ -2079,6 +2077,7 @@ class FootballPlayer {
         // A bola sai da MÃO: o executePassGameplay é partilhado, o som do
         // chute não se aplica.
         this.semSomDeChute = true;
+        this.isGkThrow = true;
 
         executePassGameplay(this);
 

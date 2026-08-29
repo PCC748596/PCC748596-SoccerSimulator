@@ -571,6 +571,34 @@ Object.assign(Match, {
                 lookAtBola(p.model, bolaFK);
             });
 
+            /*
+            LIMITAR ATACANTES À LINHA DE FORA-DE-JOGO
+            Numa falta, a barreira e o limite de 9.15m podem empurrar a linha
+            defensiva. Os atacantes (colocados por geometria absoluta) não podem
+            ficar posicionados em fora-de-jogo.
+            */
+            let maxOppZ = (attDir === 1) ? -999 : 999;
+            defendingPlayers.forEach(o => {
+                if (o.role !== 'gk') {
+                    if (attDir === 1 && o.model.position.z > maxOppZ) maxOppZ = o.model.position.z;
+                    if (attDir === -1 && o.model.position.z < maxOppZ) maxOppZ = o.model.position.z;
+                }
+            });
+            let limiteZ = (attDir === 1) 
+                ? Math.max(0, maxOppZ, bolaFK.z) - 0.2
+                : Math.min(0, maxOppZ, bolaFK.z) + 0.2;
+
+            restantes.forEach(p => {
+                const zAtk = p.model.position.z * attDir;
+                const zLim = limiteZ * attDir;
+                if (zAtk > zLim) {
+                    p.model.position.z = limiteZ;
+                    p.dynamicTarget.z = limiteZ;
+                    p.setPieceTarget.z = limiteZ;
+                    if (p.jostleAncora) p.jostleAncora.z = limiteZ;
+                }
+            });
+
             this.faltaPendente = true;
             this.faltaAtraso = ESPERA_APOS_REPOSICAO;
 
