@@ -294,12 +294,19 @@ Object.assign(Match, {
 
         [1, -1].forEach(lado => {
             const zSinal = comp / 2 * lado; const dir = -lado;
-            const zGA = zSinal + (16.5 / 2) * dir; addLinha(40.32, esp, 0, zSinal + 16.5 * dir); addLinha(esp, 16.5 + esp, 40.32 / 2, zGA); addLinha(esp, 16.5 + esp, -40.32 / 2, zGA);
-            const zPA = zSinal + (5.5 / 2) * dir; addLinha(18.32, esp, 0, zSinal + 5.5 * dir); addLinha(esp, 5.5 + esp, 18.32 / 2, zPA); addLinha(esp, 5.5 + esp, -18.32 / 2, zPA);
+            const zGA = zSinal + (Area.profundidade / 2) * dir;
+            addLinha(Area.largura, esp, 0, zSinal + Area.profundidade * dir);
+            addLinha(esp, Area.profundidade + esp, Area.meiaLargura, zGA);
+            addLinha(esp, Area.profundidade + esp, -Area.meiaLargura, zGA);
 
-            const ptPen = new THREE.Mesh(new THREE.CircleGeometry(0.2, 16), matLinha); ptPen.rotation.x = -Math.PI / 2; ptPen.position.set(0, 0.02, zSinal + 11 * dir); campoGrupo.add(ptPen);
-            const theta = Math.acos(5.5 / 9.15); const arcRot = lado === 1 ? Math.PI / 2 - theta : -Math.PI / 2 - theta;
-            const arco = new THREE.Mesh(new THREE.RingGeometry(9.15 - esp / 2, 9.15 + esp / 2, 32, 1, arcRot, theta * 2), matLinha); arco.rotation.x = -Math.PI / 2; arco.position.set(0, 0.02, zSinal + 11 * dir); campoGrupo.add(arco);
+            const zPA = zSinal + (Area.pequenaProfundidade / 2) * dir;
+            addLinha(Area.pequenaLargura, esp, 0, zSinal + Area.pequenaProfundidade * dir);
+            addLinha(esp, Area.pequenaProfundidade + esp, Area.pequenaMeiaLargura, zPA);
+            addLinha(esp, Area.pequenaProfundidade + esp, -Area.pequenaMeiaLargura, zPA);
+
+            const ptPen = new THREE.Mesh(new THREE.CircleGeometry(0.2, 16), matLinha); ptPen.rotation.x = -Math.PI / 2; ptPen.position.set(0, 0.02, zSinal + Area.distanciaPenalti * dir); campoGrupo.add(ptPen);
+            const theta = Math.acos(Area.pequenaProfundidade / Area.raioMeiaLua); const arcRot = lado === 1 ? Math.PI / 2 - theta : -Math.PI / 2 - theta;
+            const arco = new THREE.Mesh(new THREE.RingGeometry(Area.raioMeiaLua - esp / 2, Area.raioMeiaLua + esp / 2, 32, 1, arcRot, theta * 2), matLinha); arco.rotation.x = -Math.PI / 2; arco.position.set(0, 0.02, zSinal + Area.distanciaPenalti * dir); campoGrupo.add(arco);
 
             const baliza = new THREE.Group();
             const matPoste = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }); const rP = GoalFrame.raioPoste;
@@ -841,13 +848,13 @@ Object.assign(Match, {
 
     assignFormations: function () {
         let compMult = 0.8;
-        if (typeof Tatics !== 'undefined' && Tatics.compactness) {
+        if (Tatics.compactness) {
             if (Tatics.compactness === 'large') compMult = 1.0;
             else if (Tatics.compactness === 'short') compMult = 0.6;
         }
 
-        const fDataA = FormationsData[typeof Tatics !== 'undefined' && Tatics.formacaoA ? Tatics.formacaoA : '442'];
-        const fDataB = FormationsData[typeof Tatics !== 'undefined' && Tatics.formacaoB ? Tatics.formacaoB : '442'];
+        const fDataA = FormationsData[Tatics.formacaoA || '442'];
+        const fDataB = FormationsData[Tatics.formacaoB || '442'];
 
         const processTeam = (teamList, fData, isTeamA) => {
             const campo = fData.filter(f => f.role !== 'gk');
@@ -912,7 +919,7 @@ Object.assign(Match, {
     },
 
     resetPlay: function (forcingKickoffTeam = null) {
-        this.state = 'PLAY'; this.ballVel.set(0, 0, 0);
+        this.mudarEstado('PLAY', 'reset_play'); this.ballVel.set(0, 0, 0);
 
         /*
         Disciplina zerada e expulsos de volta ao plantel. O `Sim` chama isto

@@ -33,6 +33,7 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcConfig = ler('js/config/player_behavior.js');
+const srcUtils = ler('js/utils.js');
 const srcTeam = ler('js/bt/team_bt.js');
 
 function extrairObjecto(src, nome) {
@@ -48,11 +49,11 @@ const ok = m => console.log('  . ' + m);
 
 const E = extrairObjecto(srcConfig, 'EsperaPeloSlotModel');
 
-const i = srcConfig.indexOf('function esperarPeloSlot(');
+const i = srcUtils.indexOf('function esperarPeloSlot(');
 if (i < 0) throw new Error('esperarPeloSlot não encontrada');
 const esperarPeloSlot = new Function(
     `const EsperaPeloSlotModel = ${JSON.stringify(E)};` +
-    srcConfig.slice(i, srcConfig.indexOf(LF + '}', i) + 2) + '; return esperarPeloSlot;'
+    srcUtils.slice(i, srcUtils.indexOf(LF + '}', i) + 2) + '; return esperarPeloSlot;'
 )();
 
 /*

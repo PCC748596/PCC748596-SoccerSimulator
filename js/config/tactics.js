@@ -29,6 +29,27 @@ lance. Ver o ramo `kickoffActive` no Match.update.
 const APITO_ANTES_DA_SAIDA = 1.0;
 
 /*
+=============================================================================
+PRAZOS DE BOLA PARADA (DESENCRAVE / SEGURANÇA)
+=============================================================================
+Prazos máximos (em segundos reais) para cada lance de bola parada. Se o lance
+não for executado dentro deste tempo (devido a interrupção, perda de batedor
+ou bloqueio físico), o simulador força a retoma do jogo para evitar travamentos.
+=============================================================================
+*/
+const SetPiecePrazos = {
+    canto: 20.0,
+    falta: 15.0,
+    penalti: 15.0,
+    lateral: 15.0,
+    tiroDeMeta: 20.0
+};
+
+if (typeof window !== 'undefined') {
+    window.SetPiecePrazos = SetPiecePrazos;
+}
+
+/*
 Duração e escala do relógio de jogo:
 45 minutos de tempo de jogo (2700s) = 10 minutos reais (600s).
 Cada segundo real avança 4.5 segundos no relógio da partida.

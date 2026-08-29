@@ -23,6 +23,7 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcConfig = ler('js/config/defense.js');
+const srcUtils = ler('js/utils.js');
 const srcPlayer = ler('js/bt/player_bt.js');
 
 function extrairObjecto(src, nome) {
@@ -112,10 +113,10 @@ console.log(LF + '2 — a árvore deixa de desviar 12 m em qualquer terço');
 console.log(LF + '3 — com o homem longe, o marcador fica a um tecto do slot');
 {
     const M = extrairObjecto(srcConfig, 'MarkingModel');
-    const j = srcConfig.indexOf('function pontoDeMarcacao(');
-    if (j < 0) throw new Error('pontoDeMarcacao não encontrada em js/config.js');
+    const j = srcUtils.indexOf('function pontoDeMarcacao(');
+    if (j < 0) throw new Error('pontoDeMarcacao não encontrada em js/utils.js');
     const pontoDeMarcacao = new Function(
-        srcConfig.slice(j, srcConfig.indexOf(LF + '}' + LF, j) + 3) + '; return pontoDeMarcacao;'
+        srcUtils.slice(j, srcUtils.indexOf(LF + '}' + LF, j) + 3) + '; return pontoDeMarcacao;'
     )();
 
     // Central no seu terço defensivo, homem a 20 m — mais longe do que

@@ -146,7 +146,7 @@ Object.assign(Match, {
             if (Math.abs(this.ball.position.x) < (LARGURA_BALIZA / 2 - 0.1) && this.ball.position.y < ALTURA_BALIZA) {
 
                 if (this.state === 'PLAY') {
-                    this.state = 'GOAL';
+                    this.mudarEstado('GOAL', 'goal_scored');
                     this.goalSequenceStage = 0;
                     this.tempoParada = 0;
                     // Golo validado: o árbitro apita e aponta ao meio-campo.
@@ -392,17 +392,17 @@ Object.assign(Match, {
             }
             
             if (d > 1.3) continue;
-            const dentroArea = Math.abs(this.ball.position.x) < 20.16 &&
-                (this.ball.position.z - gk.ownGoalZ) * gk.dirZ < 16.5 &&
-                (this.ball.position.z - gk.ownGoalZ) * gk.dirZ > -1.0;
+            const distZFromGoal = (this.ball.position.z - gk.ownGoalZ) * gk.dirZ;
+            const dentroArea = Math.abs(this.ball.position.x) < Area.meiaLargura &&
+                distZFromGoal < Area.profundidade &&
+                distZFromGoal > -1.0;
             if (!dentroArea) continue;
             /*
             RECUO COM O PE: as maos estao proibidas. Nao se agarra, e a bola
             segue para o tratamento normal aqui em baixo — o guarda-redes
             joga-a com o pe como qualquer outro jogador.
             */
-            if (typeof maosProibidasNoRecuo === 'function' &&
-                maosProibidasNoRecuo(this.recuoParaGR, gk.team)) continue;
+            if (maosProibidasNoRecuo(this.recuoParaGR, gk.team)) continue;
 
             /*
             Bola ao alcance do CORPO. Agarrava sempre — e é quase sempre isso
@@ -414,11 +414,7 @@ Object.assign(Match, {
             `extensao` é a distância medida (`d`) sobre o alcance de 1.3 m que
             este ramo já usa como filtro.
             */
-            if (typeof resolverDefesaGK === 'function') {
-                gk.resolverDefesaComMaos('corpo', d / 1.3);
-                return true;
-            }
-            gk.grabBall();
+            gk.resolverDefesaComMaos('corpo', d / 1.3);
             return true;
         }
 
@@ -429,9 +425,11 @@ Object.assign(Match, {
         let bestAltura = 0;
         const considerar = (p) => {
             if (p.touchLock > 0) return;
+            if (p.jumpTimer > 0 && p.hasHeaderedInJump) return;
             if (this.lastHeaderPlayer === p && this.aerialHeaderTimer > 0) return;
+            if (this.lastHeaderPlayer && this.aerialHeaderTimer > (HeaderModel.cooldownDisputa - 0.35)) return;
             // O guarda-redes só controla a bola com o pé se as mãos estiverem proibidas (recuo)
-            if (p.role === 'gk' && !(typeof maosProibidasNoRecuo === 'function' && maosProibidasNoRecuo(this.recuoParaGR, p.team))) return;
+            if (p.role === 'gk' && !maosProibidasNoRecuo(this.recuoParaGR, p.team)) return;
             // Companheiro de time NÃO tira a bola do próprio jogador com a bola
             if (this.ballCarrier && p !== this.ballCarrier && p.team === this.ballCarrier.team) return;
             // Distância ao CORPO (pés..testa), não à origem do modelo — ver
@@ -467,11 +465,10 @@ Object.assign(Match, {
            força o domínio no peito com os pés no chão.
         2. Limita a no máximo 2 cabeceios aéreos seguidos sem a bola assentar.
         */
-        const maxHeaders = (typeof HeaderModel !== 'undefined' && HeaderModel.maxHeadersSeguidos) ? HeaderModel.maxHeadersSeguidos : 2;
+        const maxHeaders = HeaderModel.maxHeadersSeguidos;
         const atingiuLimiteCabeca = this.aerialHeaderCount >= maxHeaders;
 
-        const maxPeitos = (typeof BallControl.maxPeitosSeguidos === 'number')
-            ? BallControl.maxPeitosSeguidos : 2;
+        const maxPeitos = BallControl.maxPeitosSeguidos;
         if ((bestAltura >= BallControl.peitoYMin && bestAltura <= BallControl.peitoYMax && best.jumpTimer <= 0) ||
             (atingiuLimiteCabeca && bestAltura <= (ALTURA_TESTA + HeaderModel.janelaContacto) && best.jumpTimer <= 0)) {
             /*

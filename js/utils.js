@@ -2660,3 +2660,558 @@ function jogaDePrimeira(tec, distAdversario, rnd) {
     const r = (rnd === undefined) ? Math.random() : rnd;
     return r < chance;
 }
+
+/* =========================================================================
+   GEOMETRIA E DECISÃO — GOALKEEPER (migradas de config/goalkeeper.js)
+   ========================================================================= */
+
+/*
+Âncora do guarda-redes.
+
+Profundidade: cresce com a distância da bola à baliza, com easing quadrático —
+o recuo acelera junto da área, que é onde importa.
+
+Lateral: bissetriz do ângulo bola-postes, recuada de depth. O desvio encolhe
+sozinho conforme ele recua para a linha; é geometria, não uma constante à mão.
+*/
+function gkAnchor(ballX, ballZ, ownGoalZ, dirZ, style) {
+    const e = style || (typeof GoalkeeperStyle !== 'undefined' ? GoalkeeperStyle.defensive : { depthMin: 1.5, depthMax: 5.5 });
+
+    const dx = ballX;
+    const dz = ballZ - ownGoalZ;
+    const d = Math.max(0.000001, Math.hypot(dx, dz));
+
+    const near = (typeof GK_D_NEAR !== 'undefined') ? GK_D_NEAR : 16.5;
+    const far = (typeof GK_D_FAR !== 'undefined') ? GK_D_FAR : 55.0;
+    let t = (d - near) / Math.max(0.000001, far - near);
+    t = Math.max(0, Math.min(1, t));
+    const depth = e.depthMin + (e.depthMax - e.depthMin) * t * t;
+
+    // d === 0 é a bola em cima do centro da baliza: sem direção definida, fica
+    // no eixo. Sem esta guarda, depth/d dava NaN.
+    const largBaliza = (typeof LARGURA_BALIZA !== 'undefined') ? LARGURA_BALIZA : 7.32;
+    const limitGKX = (largBaliza / 2) - 0.5;
+    let x = ballX * (depth / d);
+    x = Math.max(-limitGKX, Math.min(limitGKX, x));
+
+    return { x: x, z: ownGoalZ + depth * dirZ };
+}
+
+/*
+Onde o guarda-redes se põe enquanto segura a bola: `segurarAvanco` metros à
+frente da própria linha, no eixo.
+*/
+function gkAlvoSegurando(ownGoalZ, dirZ) {
+    const avanco = (typeof GoalkeeperPose !== 'undefined' && typeof GoalkeeperPose.segurarAvanco === 'number')
+        ? GoalkeeperPose.segurarAvanco : 4.0;
+    return { x: 0, z: ownGoalZ + avanco * dirZ };
+}
+
+/*
+Já pode relançar? Precisa de ter passado `segurarMinimo` — a folga para as
+equipas se reorganizarem — e de haver alguém a quem jogar.
+*/
+function gkPodeLancar(tempoSegurando, temAlvo) {
+    const minimo = (typeof GoalkeeperPose !== 'undefined' && typeof GoalkeeperPose.segurarMinimo === 'number')
+        ? GoalkeeperPose.segurarMinimo : 3.0;
+    return tempoSegurando >= minimo && !!temAlvo;
+}
+
+/*
+Alvo de varrida. Ao contrário de gkAnchor(), vai NA DIRECÇÃO da bola: é a
+situação em que o guarda-redes sai mesmo, porque não há defensor entre o
+atacante e a baliza. sweepOut trava quão longe.
+*/
+function gkSweepTarget(ballX, ballZ, ownGoalZ, dirZ, style) {
+    const e = style || (typeof GoalkeeperStyle !== 'undefined' ? GoalkeeperStyle.defensive : { sweepOut: 14.0 });
+
+    const dx = ballX;
+    const dz = ballZ - ownGoalZ;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.0001) return { x: 0, z: ownGoalZ };
+
+    // Nunca ultrapassa a bola, nem sai mais do que sweepOut.
+    const alcance = Math.min(d, e.sweepOut);
+    return {
+        x: (dx / d) * alcance,
+        z: ownGoalZ + (dz / d) * alcance
+    };
+}
+
+/* =========================================================================
+   GEOMETRIA E DECISÃO — DEFESA E MARCAÇÃO (migradas de config/defense.js)
+   ========================================================================= */
+
+/*
+`marcadores`: [{ x, z, manter, ref }] - o ponto de onde cada um marca (o slot ja
+inclinado pelo estilo), o que ele acompanhava e se a histerese ainda o segura.
+Devolve um array pela MESMA ordem, com o adversario de cada um ou null.
+
+Pura: sem Match, sem Tatics, sem THREE.
+*/
+function atribuirMarcacoes(marcadores, adversarios, raio) {
+    const n = marcadores.length;
+    const escolha = new Array(n).fill(null);
+    if (!adversarios || !adversarios.length) return escolha;
+
+    const tomados = new Set();
+
+    const pesoSlot = (typeof MarkingModel !== 'undefined' && typeof MarkingModel.pesoSlot === 'number')
+        ? MarkingModel.pesoSlot : 0.5;
+    const bonusManter = (typeof MarkingModel !== 'undefined' && typeof MarkingModel.bonusManter === 'number')
+        ? MarkingModel.bonusManter : 3.0;
+    const bonusPar = (typeof MarkingModel !== 'undefined' && typeof MarkingModel.bonusPar === 'number')
+        ? MarkingModel.bonusPar : 6.0;
+    const tabelaPares = (typeof MarkingModel !== 'undefined') ? MarkingModel.paresPorPosicao : null;
+
+    /*
+    Elegibilidade é ZONAL (distância do SLOT ao homem, contra `raio`); o custo
+    que ordena o leilão é a distância REAL do marcador ao homem, mais uma
+    fracção da distância do slot. `px`/`pz` são a posição actual de quem marca —
+    se não vierem, cai no slot e o comportamento é o antigo.
+    */
+    const medir = (m, o) => {
+        const dxs = o.model.position.x - m.x;
+        const dzs = o.model.position.z - m.z;
+        const dSlot = Math.hypot(dxs, dzs);
+
+        const px = (typeof m.px === 'number') ? m.px : m.x;
+        const pz = (typeof m.pz === 'number') ? m.pz : m.z;
+        const dReal = Math.hypot(o.model.position.x - px, o.model.position.z - pz);
+
+        let custo = dReal + dSlot * pesoSlot;
+        if (m.ref === o) custo -= bonusManter;
+
+        // Par natural da posição (CB<->CF, LB<->RM, ...), por ordem de
+        // preferência: 1ª leva o desconto inteiro, 2ª metade, e assim por diante.
+        const lista = (m.pos && tabelaPares) ? tabelaPares[m.pos] : null;
+        if (lista && o.pos) {
+            const idx = lista.indexOf(o.pos);
+            if (idx >= 0) custo -= bonusPar / (idx + 1);
+        }
+
+        return { dSlot: dSlot, custo: custo };
+    };
+
+    // 1) Histerese primeiro: quem mantem o homem trava-o antes do leilao.
+    for (let i = 0; i < n; i++) {
+        const m = marcadores[i];
+        if (!m || !m.manter || !m.ref) continue;
+        if (adversarios.indexOf(m.ref) < 0) continue;   // saiu do campo
+        if (tomados.has(m.ref)) continue;               // outro ja o segurava
+        escolha[i] = m.ref;
+        tomados.add(m.ref);
+    }
+
+    // 2) Leilao guloso: todos os pares elegiveis, do custo mais baixo ao mais alto.
+    const pares = [];
+    for (let i = 0; i < n; i++) {
+        if (escolha[i]) continue;
+        const m = marcadores[i];
+        if (!m) continue;
+        for (const o of adversarios) {
+            // O guarda-redes nao se acompanha: fica na baliza dele.
+            if (!o || o.role === 'gk' || !o.model) continue;
+            if (tomados.has(o)) continue;
+            const med = medir(m, o);
+            if (med.dSlot >= raio) continue;
+            pares.push({ i: i, o: o, custo: med.custo });
+        }
+    }
+    pares.sort((a, b) => a.custo - b.custo);
+
+    for (const par of pares) {
+        if (escolha[par.i] || tomados.has(par.o)) continue;
+        escolha[par.i] = par.o;
+        tomados.add(par.o);
+    }
+
+    return escolha;
+}
+
+/*
+TRASEIRA DA ÚLTIMA LINHA A DEFENDER, em metros no referencial de ataque da
+equipa (o `dir` do TeamBT: a própria baliza é o valor mais negativo).
+*/
+function recuoDaUltimaLinha(z0Dir, maisRecuadoDir, distancia, pisoDir, tectoDir) {
+    let z = z0Dir;
+    if (maisRecuadoDir !== null && maisRecuadoDir !== undefined) {
+        const atrasDoHomem = maisRecuadoDir - distancia;
+        if (atrasDoHomem < z) z = atrasDoHomem;
+    }
+    if (tectoDir !== null && tectoDir !== undefined && z > tectoDir) z = tectoDir;
+    if (pisoDir !== null && pisoDir !== undefined && z < pisoDir) z = pisoDir;
+    return z;
+}
+
+/*
+Onde este jogador se põe para acompanhar o homem: entre ele e a PRÓPRIA baliza,
+a `distancia` metros dele, e nunca mais de `biasMax` fora do slot.
+
+Pura: sem Match, sem Tatics, sem THREE.
+*/
+function pontoDeMarcacao(slotX, slotZ, alvoX, alvoZ, ownGoalZ, distancia, biasMax) {
+    if (biasMax <= 0) return { x: slotX, z: slotZ };
+
+    // Do homem para a própria baliza: é deste lado que se fica.
+    let gx = 0 - alvoX;
+    let gz = ownGoalZ - alvoZ;
+    const gl = Math.hypot(gx, gz);
+    if (gl > 0.0001) { gx /= gl; gz /= gl; } else { gx = 0; gz = 0; }
+
+    const desejadoX = alvoX + gx * distancia;
+    const desejadoZ = alvoZ + gz * distancia;
+
+    // Desvio a partir do slot, cortado ao tecto.
+    let dx = desejadoX - slotX;
+    let dz = desejadoZ - slotZ;
+    const d = Math.hypot(dx, dz);
+    if (d > biasMax && d > 0.0001) {
+        dx = (dx / d) * biasMax;
+        dz = (dz / d) * biasMax;
+    }
+
+    return { x: slotX + dx, z: slotZ + dz };
+}
+
+/* =========================================================================
+   GEOMETRIA E DECISÃO — PASSES, CORREDORES E CANTOS
+   ========================================================================= */
+
+/*
+GEOMETRIA DO CANTO - onde fica a bola, quem bate e para onde ele olha.
+*/
+function pontoDeCanto(bolaX, attDir) {
+    const lado = (bolaX >= 0) ? 1 : -1;
+    const meiaLarg = (typeof CAMPO_LARG !== 'undefined' ? CAMPO_LARG : 68.0) / 2;
+    const meioComp = (typeof CAMPO_COMP !== 'undefined' ? CAMPO_COMP : 105.0) / 2;
+    const raioBola = (typeof BallPhysics !== 'undefined' && typeof BallPhysics.raio === 'number') ? BallPhysics.raio : 0.11;
+
+    // Meio metro para dentro das duas linhas: a bandeirola, sem arriscar o
+    // clamp da linha de fundo.
+    const bola = {
+        x: lado * (meiaLarg - 0.5),
+        y: raioBola,
+        z: attDir * (meioComp - 0.5)
+    };
+
+    // Para onde a bola vai: a zona do penalti da baliza atacada.
+    const alvo = { x: 0, z: attDir * (meioComp - 11) };
+
+    // Batedor: na recta alvo->bola, 1.6 m PARA ALEM da bola. Fica sempre fora
+    // do campo (a bola ja esta a meio metro das duas linhas) e com a bola
+    // entre ele e a area, que e o que lhe da o gesto de centrar.
+    let dx = bola.x - alvo.x;
+    let dz = bola.z - alvo.z;
+    const d = Math.max(0.000001, Math.hypot(dx, dz));
+    dx /= d; dz /= d;
+
+    const batedor = { x: bola.x + dx * 1.6, z: bola.z + dz * 1.6 };
+
+    return { bola: bola, batedor: batedor, alvo: alvo };
+}
+
+/*
+O SECTOR MANDA NA LARGURA — multiplicador sobre o fecho do LineShape.
+*/
+function fechoDoSector(setores) {
+    if (!setores || !setores.length) return 1.0;
+
+    const esq = setores.indexOf('esq') >= 0;
+    const dir = setores.indexOf('dir') >= 0;
+    const cen = setores.indexOf('cen') >= 0;
+    const flancos = (esq ? 1 : 0) + (dir ? 1 : 0);
+
+    if (flancos === 0) return cen ? 0.75 : 1.0;
+    if (cen) return flancos === 2 ? 1.0 : 1.05;
+    return flancos === 2 ? 1.15 : 1.10;
+}
+
+function atribuirApoios(o) {
+    const resultado = [];
+    if (!o || !o.candidatos || !o.candidatos.length) return resultado;
+
+    const port = o.portador;
+    const dirZ = port.dirZ;
+    const larg = (typeof CAMPO_LARG !== 'undefined' ? CAMPO_LARG : 68.0);
+    const comp = (typeof CAMPO_COMP !== 'undefined' ? CAMPO_COMP : 105.0);
+    const meiaLarg = larg / 2 - 2.0;
+    const meioComp = comp / 2 - 2.0;
+
+    function serve(x, z) {
+        if (Math.abs(x) > meiaLarg || Math.abs(z) > meioComp) return false;
+        if (typeof o.offsideLimitDir === 'number' && z * dirZ > o.offsideLimitDir) return false;
+
+        const d = Math.hypot(x - port.x, z - port.z);
+        if (d < o.raioMin - 1.0 || d > o.raioMax + 1.0) return false;
+
+        for (const a of o.adversarios) {
+            if (Math.hypot(a.x - x, a.z - z) < o.margemAdversario) return false;
+        }
+
+        return linhaLivre(port.x, port.z, x, z, o.adversarios, o.margemLinha);
+    }
+
+    const escolhidos = [];
+    const usados = new Set();
+
+    const longeDosOutros = (x, z) => {
+        for (const e of escolhidos) {
+            if (Math.hypot(e.x - x, e.z - z) < 6.0) return false;
+        }
+        return true;
+    };
+
+    for (const c of o.candidatos) {
+        if (escolhidos.length >= o.maxApoios) break;
+        const actual = c.apoioActual;
+        if (!actual) continue;
+        if (Math.hypot(actual.x - c.slotX, actual.z - c.slotZ) > o.desvioMax) continue;
+        if (!serve(actual.x, actual.z)) continue;
+        if (!longeDosOutros(actual.x, actual.z)) continue;
+
+        usados.add(c.id);
+        escolhidos.push({ id: c.id, x: actual.x, z: actual.z });
+    }
+
+    const angulos = [-150, -110, -70, -35, 0, 35, 70, 110, 150];
+    const raios = [o.raioMin, (o.raioMin + o.raioMax) / 2, o.raioMax];
+
+    const pontos = [];
+    for (const grau of angulos) {
+        for (const raio of raios) {
+            const rad = grau * Math.PI / 180;
+            const x = port.x + Math.sin(rad) * raio;
+            const z = port.z + Math.cos(rad) * raio * dirZ;
+            if (!serve(x, z)) continue;
+
+            let folgaPonto = Infinity;
+            for (const a of o.adversarios) {
+                const d = Math.hypot(a.x - x, a.z - z);
+                if (d < folgaPonto) folgaPonto = d;
+            }
+
+            pontos.push({
+                x: x,
+                z: z,
+                folgaLinha: folgaDaLinha(port.x, port.z, x, z, o.adversarios),
+                folgaPonto: folgaPonto
+            });
+        }
+    }
+
+    const notaPara = (ponto, c) => notaPontoDeApoio({
+        folgaLinha: ponto.folgaLinha,
+        folgaPonto: ponto.folgaPonto,
+        custoSlot: Math.hypot(ponto.x - c.slotX, ponto.z - c.slotZ)
+    }, o.pesos);
+
+    for (const c of o.candidatos) {
+        if (escolhidos.length >= o.maxApoios) break;
+        if (usados.has(c.id) || !c.apoioActual) continue;
+
+        let melhor = null, melhorNota = -Infinity;
+        for (const ponto of pontos) {
+            if (!longeDosOutros(ponto.x, ponto.z)) continue;
+            const custo = Math.hypot(ponto.x - c.slotX, ponto.z - c.slotZ);
+            if (custo > o.desvioMax) continue;
+            const nota = notaPara(ponto, c);
+            if (nota <= melhorNota) continue;
+            melhorNota = nota;
+            melhor = ponto;
+        }
+        if (!melhor) continue;
+
+        usados.add(c.id);
+        escolhidos.push({ id: c.id, x: melhor.x, z: melhor.z });
+    }
+
+    const pares = [];
+    for (const c of o.candidatos) {
+        if (usados.has(c.id)) continue;
+        for (let i = 0; i < pontos.length; i++) {
+            const custo = Math.hypot(pontos[i].x - c.slotX, pontos[i].z - c.slotZ);
+            if (custo > o.desvioMax) continue;
+            pares.push({ id: c.id, i: i, nota: notaPara(pontos[i], c) });
+        }
+    }
+    pares.sort((a, b) => b.nota - a.nota);
+
+    for (const par of pares) {
+        if (escolhidos.length >= o.maxApoios) break;
+        if (usados.has(par.id)) continue;
+
+        const ponto = pontos[par.i];
+        if (!longeDosOutros(ponto.x, ponto.z)) continue;
+
+        usados.add(par.id);
+        escolhidos.push({ id: par.id, x: ponto.x, z: ponto.z });
+    }
+
+    return escolhidos;
+}
+
+/* =========================================================================
+   COMPORTAMENTO E APARÊNCIA DE JOGADORES (migradas de config/player_behavior.js)
+   ========================================================================= */
+
+function hashAparencia(seed, sal) {
+    let h = (seed * 2654435761 + sal * 40503) >>> 0;
+    h ^= h >>> 15;
+    h = (h * 2246822519) >>> 0;
+    h ^= h >>> 13;
+    return h >>> 0;
+}
+
+function repartirPorPeso(lista, n) {
+    const total = lista.reduce((soma, item) => soma + item.peso, 0);
+    const quotas = lista.map((item) => {
+        const exacta = (item.peso / total) * n;
+        const inteira = Math.floor(exacta);
+        return { item: item, inteira: inteira, resto: exacta - inteira };
+    });
+
+    let atribuidos = quotas.reduce((soma, q) => soma + q.inteira, 0);
+    const porResto = quotas.slice().sort((a, b) => b.resto - a.resto);
+    for (let i = 0; atribuidos < n; i++, atribuidos++) {
+        porResto[i % porResto.length].inteira++;
+    }
+
+    const saida = [];
+    for (const q of quotas) {
+        for (let k = 0; k < q.inteira; k++) saida.push(q.item);
+    }
+    return saida;
+}
+
+function baralharPorHash(lista, seed) {
+    const out = lista.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+        const j = hashAparencia(seed, i) % (i + 1);
+        const tmp = out[i]; out[i] = out[j]; out[j] = tmp;
+    }
+    return out;
+}
+
+function escolherAparencia(indice, total, seedEquipa) {
+    const n = total || 11;
+    const semente = (seedEquipa || 0) + 1;
+
+    const M = (typeof AppearanceModel !== 'undefined') ? AppearanceModel : { tipos: [], chuteiras: [] };
+    const tipos = baralharPorHash(repartirPorPeso(M.tipos, n), semente * 7919);
+    const botas = baralharPorHash(repartirPorPeso(M.chuteiras, n), semente * 104729);
+
+    const i = ((indice % n) + n) % n;
+    const tipo = tipos[i] || { nome: 'default', cabelo: '#000', pele: '#d1a384' };
+    const bota = botas[i] || { nome: 'default', cor: '#000' };
+
+    return {
+        tipo: tipo.nome,
+        cabelo: tipo.cabelo,
+        pele: tipo.pele,
+        chuteira: bota.nome,
+        corChuteira: bota.cor
+    };
+}
+
+function offsetInquietacao(angulo, raio) {
+    return { x: Math.cos(angulo) * raio, z: Math.sin(angulo) * raio };
+}
+
+function coneVisao(tec) {
+    const V = (typeof VisionModel !== 'undefined') ? VisionModel : { anguloMin: 30.0, anguloPorTecnica: 0.9 };
+    return (Math.max(V.anguloMin, tec * V.anguloPorTecnica) * Math.PI) / 180;
+}
+
+function alcanceVisao(tec, minimo) {
+    const V = (typeof VisionModel !== 'undefined') ? VisionModel : { distanciaMin: 12.0, distanciaPorTecnica: 0.5 };
+    return Math.max(minimo === undefined ? V.distanciaMin : minimo,
+        tec * V.distanciaPorTecnica);
+}
+
+function esperarPeloSlot(e) {
+    const M = (typeof EsperaPeloSlotModel !== 'undefined') ? EsperaPeloSlotModel : { distanciaMax: 3.5, velocidadeMin: 0.4 };
+    const dx = e.slotX - e.px, dz = e.slotZ - e.pz;
+    const dist = Math.hypot(dx, dz);
+    if (dist > M.distanciaMax) return false;
+    if (dist < 0.001) return true;
+
+    const dtSeguro = (e.dt && e.dt > 0.0001) ? e.dt : 0.016;
+    const vx = (e.slotX - e.slotAnteriorX) / dtSeguro;
+    const vz = (e.slotZ - e.slotAnteriorZ) / dtSeguro;
+
+    const aproximacao = -((vx * dx) + (vz * dz)) / dist;
+    return aproximacao >= M.velocidadeMin;
+}
+
+function eixoDeConducao(e) {
+    const paraFrente = { bx: 0, bz: e.dirZ };
+    const G = (typeof GiroDeCostasModel !== 'undefined') ? GiroDeCostasModel : { zonaLivre: 17.0, raio: 7.0, meiaAberturaGraus: 45, passoGiroGraus: 30 };
+
+    if (e.carryRecuo) return { bx: 0, bz: -e.dirZ };
+
+    const olhaParaOAtaque = (e.facingZ * e.dirZ) >= 0;
+    if (olhaParaOAtaque) return paraFrente;
+
+    if (e.zDir > G.zonaLivre) return paraFrente;
+
+    let sx = e.entradaX, sz = e.entradaZ;
+    const lenS = Math.hypot(sx, sz);
+    if (lenS < 0.001) { sx = 0; sz = e.dirZ; } else { sx /= lenS; sz /= lenS; }
+
+    const cosAbertura = Math.cos(e.meiaAberturaGraus !== undefined
+        ? e.meiaAberturaGraus * Math.PI / 180
+        : G.meiaAberturaGraus * Math.PI / 180);
+    const raio = G.raio;
+
+    let livre = true;
+    for (const o of (e.adversarios || [])) {
+        const d = Math.hypot(o.x, o.z);
+        if (d > raio || d < 0.001) continue;
+        if ((o.x / d) * sx + (o.z / d) * sz >= cosAbertura) { livre = false; break; }
+    }
+    if (livre) return paraFrente;
+
+    const fLen = Math.hypot(e.facingX, e.facingZ) || 1;
+    const fx = e.facingX / fLen, fz = e.facingZ / fLen;
+    const passo = (G.passoGiroGraus || 30) * Math.PI / 180;
+
+    const rodar = (ang) => ({
+        bx: fx * Math.cos(ang) + fz * Math.sin(ang),
+        bz: fz * Math.cos(ang) - fx * Math.sin(ang)
+    });
+
+    const folgaDe = (v) => {
+        let menor = Infinity;
+        for (const o of (e.adversarios || [])) {
+            const d = Math.hypot(o.x, o.z);
+            if (d < 0.001) return 0;
+            const t = o.x * v.bx + o.z * v.bz;
+            if (t <= 0) continue;
+            const perp = Math.abs(o.x * v.bz - o.z * v.bx);
+            if (perp < menor) menor = perp;
+        }
+        return menor;
+    };
+
+    const esq = rodar(-passo);
+    const dir = rodar(passo);
+    return folgaDe(esq) >= folgaDe(dir) ? esq : dir;
+}
+
+function distanciaMinimaNoLateral(pos) {
+    const T = (typeof ThrowInModel !== 'undefined') ? ThrowInModel : { distanciaMinimaPorPos: {}, distanciaMinimaOmissao: 0 };
+    const v = T.distanciaMinimaPorPos ? T.distanciaMinimaPorPos[pos] : undefined;
+    return (typeof v === 'number') ? v : (T.distanciaMinimaOmissao || 0);
+}
+
+if (typeof window !== 'undefined') {
+    Object.assign(window, {
+        gkAnchor, gkAlvoSegurando, gkPodeLancar, gkSweepTarget,
+        atribuirMarcacoes, recuoDaUltimaLinha, pontoDeMarcacao,
+        pontoDeCanto, fechoDoSector, atribuirApoios,
+        hashAparencia, repartirPorPeso, baralharPorHash, escolherAparencia,
+        offsetInquietacao, coneVisao, alcanceVisao,
+        esperarPeloSlot, eixoDeConducao, distanciaMinimaNoLateral
+    });
+}

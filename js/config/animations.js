@@ -217,7 +217,7 @@ const GoalkeeperGroundKickClip = {
     ]
 };
 
-const SetPieceGroundKickClip = GoalkeeperGroundKickClip;
+
 
 /*
 =============================================================================
@@ -412,7 +412,7 @@ regulamento não deixa correr para o ganhar. O tecto escala com o atributo
 STRENGTH de quem repõe — ver `alcanceMaxFraco`/`alcanceMaxForte` mais abaixo.
 */
 
-const GoalkeeperThrowPower = 1.0;
+
 
 /*
 =============================================================================

@@ -117,6 +117,33 @@ const Match = {
     // ficheiros (match.js afastarDoGuardaRedes, position_bt.js commit).
     // TeamA/TeamB -> true enquanto o GR dessa equipa está com a bola na mão.
     gkHoldingBall: { TeamA: false, TeamB: false },
+
+    /*
+    TRANSIÇÃO DE ESTADO CENTRALIZADA (ver docs/auditoria_config_match.md item 4).
+    Garante limpeza canónica em transições (limpar timers, flags pendentes de
+    bola parada, etc.) e emite evento 'MATCH_STATE_CHANGE' no EventBus.
+    */
+    mudarEstado: function (novo, motivo = '') {
+        const anterior = this.state;
+        this.state = novo;
+
+        if (novo === 'PLAY') {
+            this.setPieceTaker = null;
+            this.setPieceTimer = 0;
+            this.cantoBolaAlvo = null;
+            this.cantoAguardaChao = false;
+            this.faltaPendente = false;
+            this.penaltiPendente = false;
+            this.lateralPendente = false;
+            this.golKickPendente = false;
+            this.golKickProntos = false;
+        }
+
+        if (typeof EventBus !== 'undefined' && anterior !== novo) {
+            EventBus.emit('MATCH_STATE_CHANGE', { anterior: anterior, novo: novo, motivo: motivo });
+        }
+        return novo;
+    },
 };
 
 // Se usarmos window.Match (no browser), ou módulos

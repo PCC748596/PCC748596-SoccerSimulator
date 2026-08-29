@@ -889,8 +889,10 @@ function computeBlock(bb) {
        grande área (16.5m), impedindo que os times recuem em demasia para
        dentro da área em fase defensiva regular.
     */
-    const minZ = -(CAMPO_COMP / 2 - 16.5);
-    const maxZ = (CAMPO_COMP / 2 - 1.5);
+    const fundo = typeof LINHA_FUNDO !== 'undefined' ? LINHA_FUNDO : CAMPO_COMP / 2;
+    const profArea = typeof Area !== 'undefined' ? Area.profundidade : 16.5;
+    const minZ = -(fundo - profArea);
+    const maxZ = (fundo - 1.5);
 
     if (z0 < minZ) {
         z0 = minZ;
@@ -1128,8 +1130,14 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
     const nudge = PositionDepthNudge[pos];
     if (nudge) {
         if (bb.isAttacking) {
-            const fbSt = (pos === 'LB' || pos === 'RB') ? FullBackStyle[fbStyle] : null;
-            v += nudge.comBola * (fbSt ? fbSt.comBolaMult : 1);
+            let fbSt = (pos === 'LB' || pos === 'RB') ? FullBackStyle[fbStyle] : null;
+            const isDefMental = (typeof Tatics !== 'undefined' && (Tatics.estilo === 'defesa' || Tatics.estilo === 'muito_defensiva'));
+            let mult = fbSt ? fbSt.comBolaMult : 1;
+            if (isDefMental) {
+                if (pos === 'LB' || pos === 'RB') mult = FullBackStyle.defensive.comBolaMult;
+                if (pos === 'LM' || pos === 'RM') mult = 0.0;
+            }
+            v += nudge.comBola * mult;
         } else {
             v += nudge.semBola;
         }

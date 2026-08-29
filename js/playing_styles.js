@@ -305,8 +305,11 @@ function avaliarEstilo(p, bb, dt) {
 
     // Histerese por tempo: só troca depois de aguentar o mínimo no estado
     // actual. Ligar é imediato; desligar é que espera.
+    // Exceção: ao transitar para defesa (T.Defensive / Defensive / sem posse), desliga imediatamente
+    // para não arrastar laterais e meias para o ataque sem a bola.
+    const faseDefensiva = !bb.isAttacking || (typeof TeamState !== 'undefined' && (bb.state === TeamState.TRANSITION_DEFENSIVE || bb.state === TeamState.DEFENSIVE));
     if (quer === antes) return;
-    if (!quer && p.styleTimer < ESTILO_TEMPO_MINIMO) return;
+    if (!quer && !faseDefensiva && p.styleTimer < ESTILO_TEMPO_MINIMO) return;
 
     p.styleAtivo = quer;
     p.styleTimer = 0;
@@ -483,7 +486,18 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
 
         // Avanço/recuo, no referencial de ataque.
         let avanco = est.avanco;
-        if (bb && bb.isAttacking) avanco += est.avancoComBola;
+        if (bb && bb.isAttacking) {
+            avanco += est.avancoComBola;
+        } else {
+            // Em fase defensiva (T.Defensive / Defensive / sem posse), avanço ofensivo positivo é anulado
+            if (avanco > 0) avanco = 0;
+        }
+        // Se a mentalidade tática for defensiva (defesa / muito_defensiva), laterais e médios de ala seguram a linha e não avançam pelo estilo
+        if (typeof Tatics !== 'undefined' && (Tatics.estilo === 'defesa' || Tatics.estilo === 'muito_defensiva')) {
+            if (['LB', 'RB', 'LM', 'RM'].includes(p.pos) && avanco > 0) {
+                avanco = 0;
+            }
+        }
         if (avanco !== 0) targetZ += avanco * p.dirZ;
 
         // Largura: + abre para a linha do LADO DELE, − fecha para o eixo.

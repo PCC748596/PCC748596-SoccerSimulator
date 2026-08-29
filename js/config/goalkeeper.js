@@ -13,7 +13,7 @@ const GoalkeeperStyle = {
 
 // Referências da curva de profundidade: borda da grande área e meio-campo
 // adversário. Entre elas a profundidade cresce; fora delas está saturada.
-const GK_D_NEAR = 16.5;
+const GK_D_NEAR = typeof Area !== 'undefined' ? Area.profundidade : 16.5;
 const GK_D_FAR = 55.0;
 
 /*
@@ -22,77 +22,10 @@ Posição de ancoragem do guarda-redes, em repouso e a defender.
 Função PURA de propósito: não lê Match nem window, só os cinco argumentos, e
 por isso é testável isolada (ver tests/gk_anchor.test.js).
 
-Profundidade: cresce com a distância da bola à baliza, com easing quadrático —
-o recuo acelera junto da área, que é onde importa.
-
-Lateral: bissetriz do ângulo bola-postes, recuada de depth. O desvio encolhe
-sozinho conforme ele recua para a linha; é geometria, não uma constante à mão.
-*/
-function gkAnchor(ballX, ballZ, ownGoalZ, dirZ, style) {
-    const e = style || GoalkeeperStyle.defensive;
-
-    const dx = ballX;
-    const dz = ballZ - ownGoalZ;
-    const d = Math.max(0.000001, Math.hypot(dx, dz));
-
-    let t = (d - GK_D_NEAR) / Math.max(0.000001, GK_D_FAR - GK_D_NEAR);
-    t = Math.max(0, Math.min(1, t));
-    const depth = e.depthMin + (e.depthMax - e.depthMin) * t * t;
-
-    // d === 0 é a bola em cima do centro da baliza: sem direção definida, fica
-    // no eixo. Sem esta guarda, depth/d dava NaN.
-    const limitGKX = (LARGURA_BALIZA / 2) - 0.5;
-    let x = ballX * (depth / d);
-    x = Math.max(-limitGKX, Math.min(limitGKX, x));
-
-    return { x: x, z: ownGoalZ + depth * dirZ };
-}
-
 /*
-Onde o guarda-redes se põe enquanto segura a bola: `segurarAvanco` metros à
-frente da própria linha, no eixo.
-
-Pura, como a gkAnchor. Existe para ele deixar de ficar completamente parado
-durante os 5 a 8 segundos em que segura — andava zero e o campo ficava à
-espera dele.
+Geometria e decisão do guarda-redes (gkAnchor, gkAlvoSegurando, gkPodeLancar,
+gkSweepTarget) foram movidas para js/utils.js (ver docs/auditoria_config_match.md item 5).
 */
-function gkAlvoSegurando(ownGoalZ, dirZ) {
-    return { x: 0, z: ownGoalZ + GoalkeeperPose.segurarAvanco * dirZ };
-}
-
-/*
-Já pode relançar? Precisa de ter passado `segurarMinimo` — a folga para as
-equipas se reorganizarem — e de haver alguém a quem jogar.
-
-Devolver false não prende ninguém: ao fim de `segurarDur` o relançamento sai à
-mesma, com o gesto do chuto (ver updateGK).
-*/
-function gkPodeLancar(tempoSegurando, temAlvo) {
-    return tempoSegurando >= GoalkeeperPose.segurarMinimo && !!temAlvo;
-}
-
-/*
-Alvo de varrida. Ao contrário de gkAnchor(), vai NA DIRECÇÃO da bola: é a
-situação em que o guarda-redes sai mesmo, porque não há defensor entre o
-atacante e a baliza. sweepOut trava quão longe.
-
-Também pura, pelas mesmas razões de gkAnchor().
-*/
-function gkSweepTarget(ballX, ballZ, ownGoalZ, dirZ, style) {
-    const e = style || GoalkeeperStyle.defensive;
-
-    const dx = ballX;
-    const dz = ballZ - ownGoalZ;
-    const d = Math.hypot(dx, dz);
-    if (d < 0.0001) return { x: 0, z: ownGoalZ };
-
-    // Nunca ultrapassa a bola, nem sai mais do que sweepOut.
-    const alcance = Math.min(d, e.sweepOut);
-    return {
-        x: (dx / d) * alcance,
-        z: ownGoalZ + (dz / d) * alcance
-    };
-}
 
 /*
 Postura do guarda-redes.
@@ -144,9 +77,9 @@ const GoalkeeperPose = {
     A bola é colocada na quina da PEQUENA ÁREA do lado por onde saiu, o GR
     caminha até à linha de fundo atrás dela, faz a corrida e chuta.
     */
-    // Meia-largura da pequena área: 5.5 m para cada lado de cada poste.
-    pequenaAreaX: LARGURA_BALIZA / 2 + 5.5,   // ~9.16
-    pequenaAreaZ: 5.5,                        // profundidade a partir da linha
+    // Meia-largura da pequena área: 5.5 m para cada lado de cada poste (LARGURA_BALIZA/2 + 5.5).
+    pequenaAreaX: typeof Area !== 'undefined' ? Area.pequenaMeiaLargura : (LARGURA_BALIZA / 2 + 5.5),   // ~9.16
+    pequenaAreaZ: typeof Area !== 'undefined' ? Area.pequenaProfundidade : 5.5,                        // profundidade a partir da linha
     tiroMetaAndar: 2.2,      // m/s a caminhar até à linha de fundo
     tiroMetaCorrer: 5.5,     // m/s na corrida para a bola
     tiroMetaRecuo: 3.8,      // metros atrás da bola onde fica antes de arrancar a corrida (+30cm)

@@ -117,9 +117,9 @@ const SpatialGrid = {
               meio-campo): fileira 5 -> 80, 6 -> 70, 7 -> 60, daí -> 0
         */
         cruzamento: function (avanco, cx) {
-            let meioComp = CAMPO_COMP / 2;
+            let meioComp = typeof LINHA_FUNDO !== 'undefined' ? LINHA_FUNDO : CAMPO_COMP / 2;
             const rowFromGoal = Math.max(0, Math.floor((meioComp - avanco) / SpatialGrid.cellSizeZ));
-            const areaXedge = 20.16; // meia-largura da grande área (mesma ref. do MARKING/CHUTE)
+            const areaXedge = typeof Area !== 'undefined' ? Area.meiaLargura : 20.16; // meia-largura da grande área (mesma ref. do MARKING/CHUTE)
             const distX = Math.abs(cx) - areaXedge;
 
             if (distX >= 0) {

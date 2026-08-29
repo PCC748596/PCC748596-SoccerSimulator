@@ -158,21 +158,73 @@ do salto.
 */
 const ALTURA_TESTA = ALTURA_CABECA - 0.10;   // 1.62
 const CAMPO_LARG = 68; const CAMPO_COMP = 106;
+const LINHA_FUNDO = CAMPO_COMP / 2;          // 53.0 m (distância do centro a cada linha de fundo)
+const MEIA_LARGURA_CAMPO = CAMPO_LARG / 2;   // 34.0 m (distância do centro a cada linha lateral)
 
 /*
-Profundidade da grande área, da linha de fundo para dentro. É a borda do
-rectângulo do bloco táctico nas duas pontas (ver computeBlock em team_bt.js):
-|z| = CAMPO_COMP/2 - AREA_GRANDE_PROF = 36.5 m.
+=============================================================================
+GEOMETRIA DAS ÁREAS DO CAMPO
+=============================================================================
+Centralização das dimensões e predicados das áreas (grande e pequena área),
+para evitar dispersão de números mágicos (16.5, 20.16, 5.5, 9.16) e duplicidade
+de lógicas de contenção.
+=============================================================================
 */
-const AREA_GRANDE_PROF = 16.5;
+const Area = {
+    profundidade: 16.5,          // da linha de fundo para dentro
+    meiaLargura: 20.16,          // do eixo do campo para cada lado
+    largura: 40.32,              // largura total (2 * meiaLargura)
+    pequenaProfundidade: 5.5,    // profundidade da pequena área a partir da linha de fundo
+    pequenaMeiaLargura: 9.16,    // LARGURA_BALIZA / 2 + 5.5 (7.32/2 + 5.5 = 9.16)
+    pequenaLargura: 18.32,       // largura total da pequena área
+    distanciaPenalti: 11.0,      // marca de penálti a partir da linha de fundo
+    raioMeiaLua: 9.15,           // raio do arco da grande área
+
+    /*
+    Verifica se um ponto (x, z) está dentro da grande área.
+    - Se ladoZ for fornecido (+1, -1, ou z da linha de fundo ex.: ±53):
+      avalia em relação à baliza específica indicada.
+    - Se ladoZ for omitido/nulo: avalia se está em QUALQUER uma das duas grandes áreas.
+    */
+    contem: function (x, z, ladoZ) {
+        if (Math.abs(x) > this.meiaLargura) return false;
+        if (ladoZ !== undefined && ladoZ !== null) {
+            const sinal = Math.sign(ladoZ) || 1;
+            const dz = (sinal * LINHA_FUNDO - z) * sinal;
+            return dz >= 0 && dz <= this.profundidade;
+        }
+        const dz = LINHA_FUNDO - Math.abs(z);
+        return dz >= 0 && dz <= this.profundidade;
+    },
+
+    /*
+    Verifica se um ponto (x, z) está dentro da pequena área (área de meta).
+    */
+    contemPequena: function (x, z, ladoZ) {
+        if (Math.abs(x) > this.pequenaMeiaLargura) return false;
+        if (ladoZ !== undefined && ladoZ !== null) {
+            const sinal = Math.sign(ladoZ) || 1;
+            const dz = (sinal * LINHA_FUNDO - z) * sinal;
+            return dz >= 0 && dz <= this.pequenaProfundidade;
+        }
+        const dz = LINHA_FUNDO - Math.abs(z);
+        return dz >= 0 && dz <= this.pequenaProfundidade;
+    }
+};
 
 /*
-Meia-largura da grande área. O número já andava escrito à mão em meia dúzia de
-sítios (`20.16` em match.js, config.js…); aqui fica com nome, para quem
-precisar dele a seguir. Os usos antigos ficam como estão — trocá-los todos é
-mexer em código que não tem nada que ver com o que se está a fazer.
+Aliases para manter compatibilidade com módulos existentes.
 */
-const AREA_GRANDE_MEIA_LARG = 20.16;
+const AREA_GRANDE_PROF = Area.profundidade;
+const AREA_GRANDE_MEIA_LARG = Area.meiaLargura;
+
+if (typeof window !== 'undefined') {
+    window.Area = Area;
+    window.LINHA_FUNDO = LINHA_FUNDO;
+    window.MEIA_LARGURA_CAMPO = MEIA_LARGURA_CAMPO;
+    window.AREA_GRANDE_PROF = AREA_GRANDE_PROF;
+    window.AREA_GRANDE_MEIA_LARG = AREA_GRANDE_MEIA_LARG;
+}
 
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();

@@ -1730,14 +1730,15 @@ Ver RunIntoSpaceModel em config.js.
 */
 function posicaoCorreAoEspaco(role, pos) {
     if (role === 'gk') return false;
-    if (role !== 'def') return true;
-    /*
-    LATERAIS SIM, CENTRAIS NAO. A versao anterior barrava `def` inteiro, e com
-    isso o lateral que servia o ponta ficava parado a ver — que e metade do
-    que falta nas jogadas pela ala. Um CENTRAL a arrancar deixa mesmo a linha
-    a descoberto; um lateral a subir e futebol normal, e ate ha um playing
-    style so para isso (offensive_fullback).
-    */
+    if (role !== 'def') {
+        if (typeof Tatics !== 'undefined' && (Tatics.estilo === 'defesa' || Tatics.estilo === 'muito_defensiva')) {
+            if (pos === 'LM' || pos === 'RM') return false;
+        }
+        return true;
+    }
+    if (typeof Tatics !== 'undefined' && (Tatics.estilo === 'defesa' || Tatics.estilo === 'muito_defensiva')) {
+        return false;
+    }
     return pos === 'LB' || pos === 'RB';
 }
 
@@ -1757,13 +1758,18 @@ function referenciaDaBola() {
 function podeCorrerNoEspaco(ctx) {
     const p = ctx.p;
     if (typeof RunIntoSpaceModel === 'undefined') return false;
+
+    const bb = ctx.bb;
+    if (!bb || !bb.isAttacking) {
+        p.runTimer = 0;
+        p.runCarrier = null;
+        return false;
+    }
+
     if ((p.runTimer || 0) > 0) return true;          // ja vai a caminho
 
     if (!posicaoCorreAoEspaco(p.role, p.pos)) return false;
     if ((p.runCooldown || 0) > 0) return false;
-
-    const bb = ctx.bb;
-    if (!bb || !bb.isAttacking) return false;
 
     const referencia = referenciaDaBola();
     if (!referencia || referencia === p || referencia.team !== p.team) return false;

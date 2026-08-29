@@ -25,90 +25,14 @@ const AppearanceModel = {
     ]
 };
 
-/*
-Hash inteiro determinístico, para baralhar sem Math.random. A aparência tem de
-ser ESTÁVEL: com Math.random o mesmo jogador mudava de cabelo a cada recarga e a
-cada reconstrução do modelo.
-*/
-function hashAparencia(seed, sal) {
-    let h = (seed * 2654435761 + sal * 40503) >>> 0;
-    h ^= h >>> 15;
-    h = (h * 2246822519) >>> 0;
-    h ^= h >>> 13;
-    return h >>> 0;
+if (typeof window !== 'undefined') {
+    window.AppearanceModel = AppearanceModel;
 }
 
 /*
-Reparte `n` lugares por uma lista com `peso`, pelo método do maior resto: dá a
-cada entrada a parte inteira da sua quota e distribui o que sobra por quem tem
-maior resto. Devolve a lista de entradas repetidas, por ordem.
-
-É isto que garante as proporções PEDIDAS em amostras pequenas. Sortear cada
-jogador por hash independente parecia mais simples, mas em 22 amostras dava
-tanto como um negro em vinte e dois e treze chuteiras brancas — o acaso não é
-obrigado a respeitar os pesos, e um plantel é uma amostra pequena.
+Funções de aparência (hashAparencia, repartirPorPeso, baralharPorHash, escolherAparencia)
+foram movidas para js/utils.js (ver docs/auditoria_config_match.md item 5).
 */
-function repartirPorPeso(lista, n) {
-    const total = lista.reduce((soma, item) => soma + item.peso, 0);
-    const quotas = lista.map((item) => {
-        const exacta = (item.peso / total) * n;
-        const inteira = Math.floor(exacta);
-        return { item: item, inteira: inteira, resto: exacta - inteira };
-    });
-
-    let atribuidos = quotas.reduce((soma, q) => soma + q.inteira, 0);
-    const porResto = quotas.slice().sort((a, b) => b.resto - a.resto);
-    for (let i = 0; atribuidos < n; i++, atribuidos++) {
-        porResto[i % porResto.length].inteira++;
-    }
-
-    const saida = [];
-    for (const q of quotas) {
-        for (let k = 0; k < q.inteira; k++) saida.push(q.item);
-    }
-    return saida;
-}
-
-// Baralha uma lista com Fisher-Yates, usando o hash em vez de Math.random.
-function baralharPorHash(lista, seed) {
-    const out = lista.slice();
-    for (let i = out.length - 1; i > 0; i--) {
-        const j = hashAparencia(seed, i) % (i + 1);
-        const tmp = out[i]; out[i] = out[j]; out[j] = tmp;
-    }
-    return out;
-}
-
-/*
-Aparência do jogador `indice` num plantel de `total`, para a equipa `seedEquipa`.
-
-Constrói o plantel inteiro e devolve uma entrada. Recomputar por jogador é
-trabalho a mais irrelevante — são onze entradas, uma vez, na construção das
-equipas — e evita ter de guardar estado partilhado entre jogadores.
-
-Cabelo e pele vêm sempre do MESMO tipo, para não sair ruivo de pele escura. As
-chuteiras são repartidas à parte, e baralhadas com outro sal, para as duas
-listas não ficarem alinhadas — senão todos os ruivos calçavam a mesma cor.
-*/
-function escolherAparencia(indice, total, seedEquipa) {
-    const n = total || 11;
-    const semente = (seedEquipa || 0) + 1;
-
-    const tipos = baralharPorHash(repartirPorPeso(AppearanceModel.tipos, n), semente * 7919);
-    const botas = baralharPorHash(repartirPorPeso(AppearanceModel.chuteiras, n), semente * 104729);
-
-    const i = ((indice % n) + n) % n;
-    const tipo = tipos[i];
-    const bota = botas[i];
-
-    return {
-        tipo: tipo.nome,
-        cabelo: tipo.cabelo,
-        pele: tipo.pele,
-        chuteira: bota.nome,
-        corChuteira: bota.cor
-    };
-}
 
 /*
 =============================================================================
@@ -151,12 +75,8 @@ const RestlessModel = {
 };
 
 /*
-Ponto a `raio` metros do alvo, na direcção `angulo`. Pura: sem Match, sem
-THREE (ver tests/inquietacao.test.js).
+offsetInquietacao foi movido para js/utils.js (ver docs/auditoria_config_match.md item 5).
 */
-function offsetInquietacao(angulo, raio) {
-    return { x: Math.cos(angulo) * raio, z: Math.sin(angulo) * raio };
-}
 
 /*
 =============================================================================
@@ -177,19 +97,9 @@ const VisionModel = {
     distanciaMin: 12.0
 };
 
-// Meio-ângulo do cone de visão, em RADIANOS.
-function coneVisao(tec) {
-    const V = VisionModel;
-    return (Math.max(V.anguloMin, tec * V.anguloPorTecnica) * Math.PI) / 180;
-}
-
-// Até onde o jogador lê o jogo, em metros. `minimo` permite a um consumidor
-// exigir mais do que o piso geral, como o toque de condução já fazia.
-function alcanceVisao(tec, minimo) {
-    const V = VisionModel;
-    return Math.max(minimo === undefined ? V.distanciaMin : minimo,
-        tec * V.distanciaPorTecnica);
-}
+/*
+coneVisao e alcanceVisao foram movidos para js/utils.js (ver docs/auditoria_config_match.md item 5).
+*/
 
 /*
 =============================================================================
@@ -256,27 +166,8 @@ const EsperaPeloSlotModel = {
 };
 
 /*
-O posto vem ter com ele? Geometria pura: posição dele, posto de agora, posto do
-frame anterior e o dt entre os dois.
-
-A aproximação mede-se ao longo da recta jogador->posto, e não em z: um posto que
-chega pelo lado conta exactamente como um que chega pela frente.
+esperarPeloSlot e eixoDeConducao foram movidos para js/utils.js (ver docs/auditoria_config_match.md item 5).
 */
-function esperarPeloSlot(e) {
-    const dx = e.slotX - e.px, dz = e.slotZ - e.pz;
-    const dist = Math.hypot(dx, dz);
-    if (dist > EsperaPeloSlotModel.distanciaMax) return false;
-    if (dist < 0.001) return true;
-
-    const dtSeguro = (e.dt && e.dt > 0.0001) ? e.dt : 0.016;
-    const vx = (e.slotX - e.slotAnteriorX) / dtSeguro;
-    const vz = (e.slotZ - e.slotAnteriorZ) / dtSeguro;
-
-    // Componente da velocidade do posto NA DIRECÇÃO do jogador: positiva
-    // quando ele se aproxima.
-    const aproximacao = -((vx * dx) + (vz * dz)) / dist;
-    return aproximacao >= EsperaPeloSlotModel.velocidadeMin;
-}
 
 const GiroDeCostasModel = {
     // Distância a que um adversário invalida o giro de 180° (cone de
@@ -302,86 +193,6 @@ const GiroDeCostasModel = {
     */
     zonaLivre: 17.0
 };
-
-/*
-Eixo em torno do qual o leque de condução abre, já com a regra do giro.
-
-Pura de propósito — recebe números e devolve um vector unitário, sem tocar em
-Match nem em THREE — porque é a única forma de a fixar num teste sem montar um
-jogo inteiro à volta.
-
-    dirZ        sentido de ataque da equipa (+1 ou -1)
-    zDir        z do jogador no referencial de ataque (negativo: campo próprio)
-    facingX/Z   para onde o corpo está virado
-    entradaX/Z  direcção em que a BOLA vinha a viajar quando ele a dominou
-    adversarios posições RELATIVAS a ele, no referencial do mundo
-*/
-function eixoDeConducao(e) {
-    const paraFrente = { bx: 0, bz: e.dirZ };
-
-    // Recuo deliberado: quem manda é o carryRecuo, e isto não lhe toca.
-    if (e.carryRecuo) return { bx: 0, bz: -e.dirZ };
-
-    // Já virado para a frente não há giro nenhum para travar.
-    const olhaParaOAtaque = (e.facingZ * e.dirZ) >= 0;
-    if (olhaParaOAtaque) return paraFrente;
-
-    // No ULTIMO TERCO gira à vontade — ver GiroDeCostasModel.zonaLivre.
-    if (e.zDir > GiroDeCostasModel.zonaLivre) return paraFrente;
-
-    // Direcção de saída: a oposta àquela de onde a bola vem, ou seja o próprio
-    // sentido em que ela viajava.
-    let sx = e.entradaX, sz = e.entradaZ;
-    const lenS = Math.hypot(sx, sz);
-    if (lenS < 0.001) { sx = 0; sz = e.dirZ; } else { sx /= lenS; sz /= lenS; }
-
-    const cosAbertura = Math.cos(e.meiaAberturaGraus !== undefined
-        ? e.meiaAberturaGraus * Math.PI / 180
-        : GiroDeCostasModel.meiaAberturaGraus * Math.PI / 180);
-    const raio = GiroDeCostasModel.raio;
-
-    let livre = true;
-    for (const o of (e.adversarios || [])) {
-        const d = Math.hypot(o.x, o.z);
-        if (d > raio || d < 0.001) continue;
-        if ((o.x / d) * sx + (o.z / d) * sz >= cosAbertura) { livre = false; break; }
-    }
-    if (livre) return paraFrente;
-
-    /*
-    Cone ocupado: um toque de `passoGiroGraus` a partir de onde ele está
-    virado, para o lado mais livre. O lado escolhe-se pelo adversário mais
-    próximo de cada uma das duas hipóteses — sair para onde há mais espaço é
-    literalmente isto, e não uma preferência por um dos lados.
-    */
-    const fLen = Math.hypot(e.facingX, e.facingZ) || 1;
-    const fx = e.facingX / fLen, fz = e.facingZ / fLen;
-    const passo = GiroDeCostasModel.passoGiroGraus * Math.PI / 180;
-
-    const rodar = (ang) => ({
-        bx: fx * Math.cos(ang) + fz * Math.sin(ang),
-        bz: fz * Math.cos(ang) - fx * Math.sin(ang)
-    });
-
-    const folgaDe = (v) => {
-        let menor = Infinity;
-        for (const o of (e.adversarios || [])) {
-            const d = Math.hypot(o.x, o.z);
-            if (d < 0.001) return 0;
-            // Distância do adversário à semi-recta da saída, só para quem
-            // está do lado de lá: quem ficou para trás não estorva.
-            const t = o.x * v.bx + o.z * v.bz;
-            if (t <= 0) continue;
-            const perp = Math.abs(o.x * v.bz - o.z * v.bx);
-            if (perp < menor) menor = perp;
-        }
-        return menor;
-    };
-
-    const esq = rodar(-passo);
-    const dir = rodar(passo);
-    return folgaDe(esq) >= folgaDe(dir) ? esq : dir;
-}
 
 const CarryModel = {
     leque: [-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2],
@@ -896,18 +707,10 @@ const ThrowInModel = {
     pesoMin: 0.6,            // cortes do erro de peso, para não sair absurdo
     pesoMax: 1.4
 };
-/*
-Distância mínima à bola, por posição, durante um lance de lateral. Ver
-ThrowInModel.distanciaMinimaPorPos, que é onde os números vivem.
 
-Zero quer dizer "sem restrição": é a omissão, e é o que vale para quem são as
-opções curtas do lance.
+/*
+distanciaMinimaNoLateral foi movida para js/utils.js (ver docs/auditoria_config_match.md item 5).
 */
-function distanciaMinimaNoLateral(pos) {
-    const T = ThrowInModel;
-    const v = T.distanciaMinimaPorPos[pos];
-    return (typeof v === 'number') ? v : T.distanciaMinimaOmissao;
-}
 
 const PerceptionModel = {
     // Só reage quem lá chega depressa. Acima disto é bola para o chaser, não

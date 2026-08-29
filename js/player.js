@@ -95,6 +95,7 @@ class FootballPlayer {
         this.peitoBom = false; // ganhou o sorteio do amortecimento?
         this.peitoHopTimer = 0; // pequeno salto opcional (ver controlarNoPeito)
         this.jumpApex = 0;     // subida deste salto (ver SaltoCabeceio)
+        this.hasHeaderedInJump = false; // impede dar duas cabeçadas no mesmo pulo
         this.headLeanTimer = 0; // cabeceio de pé, sem saltar (ver animateBones)
         this.cinturaAlvoY = 0;  // cintura acompanha o giro da cabeça p/ a bola
 
@@ -628,7 +629,7 @@ class FootballPlayer {
         Match.intendedReceiver = (alvo && alvo.model) ? alvo : null;
         Match.lastTouchedTeam = this.team;
         Match.lastTouchedPlayer = this;
-        Match.state = 'PLAY';
+        Match.mudarEstado('PLAY', 'throw_in_taken');
         if (typeof MatchStats !== 'undefined') MatchStats.registarPasseIniciado(this.team, 'passe');
         if (typeof EventBus !== 'undefined') EventBus.emit('THROW_IN_TAKEN', { team: this.team, p: this });
     }
@@ -742,11 +743,9 @@ class FootballPlayer {
         contacto, que o cria com o seu próprio ActionState.
         */
         const clip = 'shot';
-        const dur = (typeof ActionAnimClips !== 'undefined' && ActionAnimClips[clip])
-            ? ActionAnimClips[clip].contactTime : (7 / 11);
+        const dur = ActionAnimClips[clip] ? ActionAnimClips[clip].contactTime : (7 / 11);
 
-        const F = (typeof FreeKickModel !== 'undefined') ? FreeKickModel : {};
-        const paragem = (typeof F.paragemNoContacto === 'number') ? F.paragemNoContacto : 0.55;
+        const paragem = FreeKickModel.paragemNoContacto;
 
         const inicio = { x: this.model.position.x, z: this.model.position.z };
         const bolaFalta = { x: Match.ball.position.x, z: Match.ball.position.z };
@@ -764,7 +763,7 @@ class FootballPlayer {
                 this.model.position.z = inicio.z + (fim.z - inicio.z) * k;
             },
             onContact: () => {
-                Match.state = 'PLAY';
+                Match.mudarEstado('PLAY', 'free_kick_taken');
                 this.executarFalta(decisao);
             }
         });
@@ -863,10 +862,8 @@ class FootballPlayer {
     `gkDelayReacao = 0`, posto no setupSetPiece.
     */
     baterPenalti() {
-        const shotDuration = (typeof ShotClip !== 'undefined' && ShotClip.duration) ? ShotClip.duration : 0.8;
-        const contactTime = (typeof ActionAnimClips !== 'undefined' && ActionAnimClips['shot']) 
-            ? ActionAnimClips['shot'].contactTime 
-            : (7 / 11);
+        const shotDuration = ShotClip.duration;
+        const contactTime = ActionAnimClips['shot'] ? ActionAnimClips['shot'].contactTime : (7 / 11);
         
         /*
         A ÚLTIMA PASSADA, e só ela. Os primeiros metros são ANDADOS durante a
@@ -878,8 +875,7 @@ class FootballPlayer {
         0.32 s são ~13 m/s com a pose de remate congelada — o deslize. Agora
         são ~1.45 m no mesmo tempo, e o corpo já vem com passo da caminhada.
         */
-        const PMc = (typeof PenaltyModel !== 'undefined') ? PenaltyModel : {};
-        const paragem = (typeof PMc.paragemNoContacto === 'number') ? PMc.paragemNoContacto : 0.55;
+        const paragem = PenaltyModel.paragemNoContacto;
 
         const inicioPen = { x: this.model.position.x, z: this.model.position.z };
         const bolaPen = { x: Match.ball.position.x, z: Match.ball.position.z };
@@ -911,7 +907,7 @@ class FootballPlayer {
             },
             onContact: () => {
                 const PM = PenaltyModel;
-                Match.state = 'PLAY';
+                Match.mudarEstado('PLAY', 'penalty_taken');
 
                 // Oponentes e GK
                 const defendingPlayers = (this.team === 'TeamA') ? Match.opponents : Match.players;
@@ -2236,8 +2232,7 @@ class FootballPlayer {
         */
         if (typeof Match !== 'undefined') {
             Match.aerialHeaderCount = (Match.aerialHeaderCount || 0) + 1;
-            Match.aerialHeaderTimer = (typeof HeaderModel !== 'undefined' && HeaderModel.cooldownDisputa)
-                ? HeaderModel.cooldownDisputa : 2.2;
+            Match.aerialHeaderTimer = HeaderModel.cooldownDisputa;
         }
         // De frente para a bola, mesma correcção do controlarNoPeito — sem
         // isto o corpo ficava com a orientação da última corrida, muitas
@@ -2293,8 +2288,7 @@ class FootballPlayer {
                 alvoX = this.model.position.x + ladoCorte * (8.0 + Math.random() * 8.0);
                 const alvoZc = Match.ball.position.z - this.dirZ * (15.0 + Math.random() * 8.0);
                 pow = (13.0 + Math.random() * 2.5) * forcaFactor;
-                const eC = (typeof HeaderModel !== 'undefined' && typeof HeaderModel.elevacaoEscora === 'number')
-                    ? HeaderModel.elevacaoEscora : (-9 * Math.PI / 180);
+                const eC = HeaderModel.elevacaoEscora;
                 const dxC = alvoX - Match.ball.position.x;
                 const dzC = alvoZc - Match.ball.position.z;
                 const distHC = Math.hypot(dxC, dzC);
@@ -2402,7 +2396,8 @@ class FootballPlayer {
 
             this.hasBall = false;
             this.touchLock = 0.75;
-            this.jumpTimer = 0;
+            this.headLeanTimer = 0;
+            if (this.jumpTimer > 0) this.hasHeaderedInJump = true;
             this.jumpCooldown = (typeof SaltoCabeceio !== 'undefined' ? SaltoCabeceio.duracao : 0.62) + 1.2;
             if (typeof Match !== 'undefined') Match.lastHeaderPlayer = this;
             Match.ballCarrier = null;
@@ -2432,8 +2427,7 @@ class FootballPlayer {
 
             const tectoAlivio = HeaderModel.alcanceAlivioBaixo || 11.0;
             let uxP = 0, uzP = this.dirZ, distDesejada = tectoAlivio;
-            const eP = (typeof HeaderModel !== 'undefined' && typeof HeaderModel.elevacaoEscora === 'number')
-                ? HeaderModel.elevacaoEscora : (-9 * Math.PI / 180);
+            const eP = HeaderModel.elevacaoEscora;
 
             if (target) {
                 const dxP = target.model.position.x - Match.ball.position.x;
@@ -2465,7 +2459,8 @@ class FootballPlayer {
 
             this.hasBall = false;
             this.touchLock = 0.75;
-            this.jumpTimer = 0;
+            this.headLeanTimer = 0;
+            if (this.jumpTimer > 0) this.hasHeaderedInJump = true;
             this.jumpCooldown = (typeof SaltoCabeceio !== 'undefined' ? SaltoCabeceio.duracao : 0.62) + 1.2;
             if (typeof Match !== 'undefined') Match.lastHeaderPlayer = this;
             Match.ballCarrier = null;
@@ -2930,7 +2925,7 @@ class FootballPlayer {
             this.fsm.currentState !== 'CHEST_CONTROL' &&
             (!this.jumpTimer || this.jumpTimer <= 0) &&
             (!this.jumpCooldown || this.jumpCooldown <= 0)) {
-            const maxHeaders = (typeof HeaderModel !== 'undefined' && HeaderModel.maxHeadersSeguidos) ? HeaderModel.maxHeadersSeguidos : 2;
+            const maxHeaders = HeaderModel.maxHeadersSeguidos;
             const atingiuLimiteCabeca = (typeof Match !== 'undefined' && Match.aerialHeaderCount >= maxHeaders);
 
             if (!atingiuLimiteCabeca) {
@@ -2950,7 +2945,9 @@ class FootballPlayer {
                 if (dXZ < alcanceEfetivo && subida > S.alturaSemPulo && subida < S.alturaMax) {
                     this.jumpTimer = S.duracao;
                     this.jumpApex = subida;
-                    this.jumpCooldown = S.cooldown;
+                    this.jumpCooldown = S.duracao + S.cooldown;
+                    this.hasHeaderedInJump = false;
+                    this.headLeanTimer = 0;
 
                     // Vira de frente para onde a bola vai estar no pico do salto
                     // ANTES de saltar — sem isto o corpo ficava com a orientação
@@ -2991,6 +2988,8 @@ class FootballPlayer {
             if (this.jumpTimer <= 0) {
                 this.jumpTimer = 0;
                 this.jumpAltura = 0;
+                this.hasHeaderedInJump = false;
+                this.headLeanTimer = 0;
                 this.model.position.y = ALTURA_BASE_Y;
             }
         }
@@ -3152,6 +3151,10 @@ class FootballPlayer {
     chão. Mesmo padrão de camada aditiva das outras duas (corte, peito).
     */
     aplicarCamadaCabeceioDePe(dt) {
+        if (this.jumpTimer > 0) {
+            this.headLeanTimer = 0;
+            return;
+        }
         if (this.headLeanTimer <= 0) return;
         this.headLeanTimer -= dt;
         const rig = this.rig;
@@ -3688,10 +3691,10 @@ class FootballPlayer {
         let prevX = gkCorpo.position.x;
         let prevZ = gkCorpo.position.z;
 
-        gkCorpo.position.x = Math.max(-20.16, Math.min(20.16, gkCorpo.position.x));
-        let meioComp = CAMPO_COMP / 2;
-        let areaMinZ = (this.team === 'TeamA') ? -meioComp : meioComp - 16.5;
-        let areaMaxZ = (this.team === 'TeamA') ? -meioComp + 16.5 : meioComp;
+        gkCorpo.position.x = Math.max(-Area.meiaLargura, Math.min(Area.meiaLargura, gkCorpo.position.x));
+        let meioComp = LINHA_FUNDO;
+        let areaMinZ = (this.team === 'TeamA') ? -meioComp : meioComp - Area.profundidade;
+        let areaMaxZ = (this.team === 'TeamA') ? -meioComp + Area.profundidade : meioComp;
         gkCorpo.position.z = Math.max(areaMinZ, Math.min(areaMaxZ, gkCorpo.position.z));
 
         if (window.bolaChutada && !this.gkReagiu) {
@@ -3763,7 +3766,7 @@ class FootballPlayer {
             } else if (Match.state === 'PLAY') {
                 this.isPenaltyDive = false;
                 let isAttacking = (Match.possessionTeam === this.team);
-                let bolaNaArea = (Math.abs(Match.ball.position.x) < 20.16 && Match.ball.position.z * this.dirZ < -36.5);
+                let bolaNaArea = Area.contem(Match.ball.position.x, Match.ball.position.z, this.ownGoalZ);
                 
                 // Exclui a bola que ele mesmo acabou de chutar (relançamento/
                 // reposição) — sem isto, um pontapé de baliza contava como
@@ -4822,8 +4825,7 @@ class FootballPlayer {
         window.bolaChutada = false;
 
         // A jogada recomeça no instante do toque.
-        Match.state = 'PLAY';
-        Match.setPieceTaker = null;
+        Match.mudarEstado('PLAY', 'goal_kick_taken');
         this.gkKickTipo = null;
 
         if (typeof MatchStats !== 'undefined') MatchStats.registarPasseIniciado(this.team, 'lancamento');

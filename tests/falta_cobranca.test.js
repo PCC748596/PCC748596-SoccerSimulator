@@ -82,8 +82,8 @@ test('a bola só parte no CONTACTO, e o jogo só abre aí', () => {
     assert.ok(corpo.includes('new ActionState('),
         'o baterFalta não cria gesto nenhum — voltou a executar no mesmo frame');
     assert.ok(corpo.includes('onPrepare'), 'sem onPrepare não há corrida');
-    assert.ok(/onContact[\s\S]{0,200}Match\.state = 'PLAY'/.test(corpo),
-        "o jogo tem de abrir no CONTACTO: `Match.state = 'PLAY'` dentro do onContact");
+    assert.ok(/onContact[\s\S]{0,200}(Match\.state = 'PLAY'|Match\.mudarEstado\('PLAY')/.test(corpo),
+        "o jogo tem de abrir no CONTACTO: `Match.state = 'PLAY'` ou `Match.mudarEstado('PLAY')` dentro do onContact");
     assert.ok(/onContact[\s\S]{0,300}executarFalta/.test(corpo),
         'o contacto não chama o executarFalta');
 

@@ -1020,6 +1020,11 @@ const Officials = {
     match.js), portanto o TeamA defende z negativo.
     */
     ehPenalti: function (x, z, teamInfractor) {
+        if (typeof Area !== 'undefined' && typeof Area.contem === 'function') {
+            const ladoZ = (teamInfractor === 'TeamA') ? -1 : (teamInfractor === 'TeamB') ? 1 : 0;
+            if (!ladoZ) return false;
+            return Area.contem(x, z, ladoZ);
+        }
         const meiaLargArea = AREA_GRANDE_MEIA_LARG;
         if (Math.abs(x) > meiaLargArea) return false;
 

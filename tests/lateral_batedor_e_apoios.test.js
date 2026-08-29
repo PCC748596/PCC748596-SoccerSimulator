@@ -25,6 +25,7 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcConfig = ler('js/config/player_behavior.js');
+const srcUtils = ler('js/utils.js');
 const srcMatch = ['js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js', 'js/match/match_setpieces.js', 'js/match/match_loop.js', 'js/match/match_ui.js'].map(ler).join('\n');
 const srcTeam = ler('js/bt/team_bt.js');
 
@@ -134,7 +135,7 @@ console.log(LF + '2 — o lateral do outro lado não atravessa o campo');
    ===================================================================== */
 console.log(LF + '3 — o central fica, o CM não se cola');
 {
-    const dist = extrairFuncao(srcConfig, 'distanciaMinimaNoLateral',
+    const dist = extrairFuncao(srcUtils, 'distanciaMinimaNoLateral',
         `const ThrowInModel = ${JSON.stringify(T)};`);
 
     const dCB = dist('CB');

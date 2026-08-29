@@ -108,12 +108,14 @@ const Minimap = {
         ctx.ellipse(centro.sx, centro.sy, raioZ, raioX, 0, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Áreas dos dois lados: grande (16.5 x 40.3) e pequena (5.5 x 18.3).
-        const meiaGrandeX = LARGURA_BALIZA / 2 + 16.5;
-        const meiaPequenaX = LARGURA_BALIZA / 2 + 5.5;
+        // Áreas dos dois lados: grande (16.5 x 40.32) e pequena (5.5 x 18.32).
+        const meiaGrandeX = typeof Area !== 'undefined' ? Area.meiaLargura : (LARGURA_BALIZA / 2 + 16.5);
+        const meiaPequenaX = typeof Area !== 'undefined' ? Area.pequenaMeiaLargura : (LARGURA_BALIZA / 2 + 5.5);
+        const profGrande = typeof Area !== 'undefined' ? Area.profundidade : 16.5;
+        const profPequena = typeof Area !== 'undefined' ? Area.pequenaProfundidade : 5.5;
         for (const lado of [1, -1]) {
-            this._rect(ctx, lado * meioZ, lado * (meioZ - 16.5), -meiaGrandeX, meiaGrandeX);
-            this._rect(ctx, lado * meioZ, lado * (meioZ - 5.5), -meiaPequenaX, meiaPequenaX);
+            this._rect(ctx, lado * meioZ, lado * (meioZ - profGrande), -meiaGrandeX, meiaGrandeX);
+            this._rect(ctx, lado * meioZ, lado * (meioZ - profPequena), -meiaPequenaX, meiaPequenaX);
         }
     },
 

@@ -982,7 +982,7 @@ class PlayerFSM {
                         const vy = vCanto * Math.sin(elevCanto);
 
                         Match.ballVel.set((dx / d) * vHoriz, vy, (dz / d) * vHoriz);
-                        Match.state = 'PLAY';
+                        Match.mudarEstado('PLAY', 'canto_batido');
                         Match.ballCarrier = null;
                         Match.intendedReceiver = targetReceiver;
                         if (!Match.passTargetPos) Match.passTargetPos = new THREE.Vector3();

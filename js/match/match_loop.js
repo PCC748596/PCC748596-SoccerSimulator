@@ -35,9 +35,7 @@ Object.assign(Match, {
             return;
         }
 
-        const clockScale = (typeof MatchDuration !== 'undefined' && MatchDuration.timeScale)
-            ? MatchDuration.timeScale
-            : 4.5;
+        const clockScale = MatchDuration.timeScale;
         this.tempoDeJogo += dt * clockScale;
         // Relógio em segundos simulados, para a telemetria do passe (o
         // tempoDeJogo acima vem multiplicado pelo timeScale).
@@ -54,17 +52,17 @@ Object.assign(Match, {
         outras saídas acontecer — é a mesma ideia do setPieceTimer.
         */
         if (this.cantoVivo) {
-            const CD = (typeof CornerDefenseModel !== 'undefined') ? CornerDefenseModel : null;
+            const CD = CornerDefenseModel;
             this.cantoVivo.timer += dt;
 
             const def = this.cantoVivo.equipa;
             const gkDef = (def === 'TeamA') ? this.players[0] : this.opponents[0];
             // A baliza que eles defendem é a que fica ATRÁS deles.
-            const linhaDefendida = -gkDef.dirZ * (CAMPO_COMP / 2);
-            const folga = CD ? CD.saidaDaArea : 4.0;
+            const linhaDefendida = -gkDef.dirZ * LINHA_FUNDO;
+            const folga = CD.saidaDaArea;
             const dz = Math.abs(linhaDefendida - this.ball.position.z);
-            const naArea = dz <= 16.5 && Math.abs(this.ball.position.x) <= 20.16;
-            const bemFora = dz > (16.5 + folga) || Math.abs(this.ball.position.x) > (20.16 + folga);
+            const naArea = Area.contem(this.ball.position.x, this.ball.position.z, linhaDefendida);
+            const bemFora = dz > (Area.profundidade + folga) || Math.abs(this.ball.position.x) > (Area.meiaLargura + folga);
 
             /*
             A BOLA COMEÇA FORA DA ÁREA — está na bandeirola de canto. Sem esta
@@ -77,7 +75,7 @@ Object.assign(Match, {
 
             if (this.state !== 'PLAY' || guardado ||
                 (this.cantoVivo.entrou && bemFora) ||
-                this.cantoVivo.timer > (CD ? CD.prazo : 9.0)) {
+                this.cantoVivo.timer > CD.prazo) {
                 this.players.concat(this.opponents).forEach(p => { p.marcaNoCanto = null; });
                 this.cantoVivo = null;
             }
@@ -131,7 +129,8 @@ Object.assign(Match, {
             os estados dos guarda-redes), que é precisamente o que falta a um
             lance que nunca aconteceu.
             */
-            if (this.setPieceTimer > 20.0) {
+            const prazoCanto = SetPiecePrazos.canto;
+            if (this.setPieceTimer > prazoCanto) {
                 this.setPieceTimer = 0;
                 this.cantoBolaAlvo = null;
                 this.cantoAguardaChao = false;
@@ -156,8 +155,8 @@ Object.assign(Match, {
                 ver: a bola parecia saltar-lhe para o pé.
                 */
                 const takerFalta = this.setPieceTaker;
-                const FK = (typeof FreeKickModel !== 'undefined') ? FreeKickModel : null;
-                if (takerFalta && takerFalta.model && FK) {
+                const FK = FreeKickModel;
+                if (takerFalta && takerFalta.model) {
                     if (this.faltaAtraso < ESPERA_APOS_REPOSICAO / 3) {
                         const bx = this.ball.position.x, bz = this.ball.position.z;
                         let alvoX = bx;
@@ -189,10 +188,11 @@ Object.assign(Match, {
                     this.faltaPendente = false;
                     const t = this.setPieceTaker;
                     if (t) t.baterFalta();
-                    else this.state = 'PLAY';
+                    else this.mudarEstado('PLAY', 'falta_sem_batedor');
                 }
             }
-            if (this.setPieceTimer > 15.0) { this.setPieceTimer = 0; this.state = 'PLAY'; this.faltaPendente = false; }
+            const prazoFalta = SetPiecePrazos.falta;
+            if (this.setPieceTimer > prazoFalta) { this.mudarEstado('PLAY', 'timeout_falta'); }
         }
 
         if (this.state === 'PENALTY') {
@@ -212,15 +212,15 @@ Object.assign(Match, {
                 sobre a perna de apoio até à bola.
                 */
                 const takerPen = this.setPieceTaker;
-                const PMa = (typeof PenaltyModel !== 'undefined') ? PenaltyModel : null;
-                if (takerPen && takerPen.model && PMa && !takerPen.actionState) {
+                const PMa = PenaltyModel;
+                if (takerPen && takerPen.model && !takerPen.actionState) {
                     if (this.penaltiAtraso < ESPERA_APOS_REPOSICAO / 3) {
                         const dirPx = takerPen.model.position.x - this.ball.position.x;
                         const dirPz = takerPen.model.position.z - this.ball.position.z;
                         const dPen = Math.hypot(dirPx, dirPz);
-                        const alvoDist = PMa.arranqueDoGesto || 2.0;
+                        const alvoDist = PMa.arranqueDoGesto;
                         if (dPen > alvoDist + 0.05) {
-                            const passo = Math.min(dPen - alvoDist, (PMa.velocidadeAproximacao || 2.6) * dt);
+                            const passo = Math.min(dPen - alvoDist, PMa.velocidadeAproximacao * dt);
                             const v = passo / dt;
                             takerPen.velocity.set(-(dirPx / dPen) * v, 0, -(dirPz / dPen) * v);
                         } else {
@@ -235,10 +235,11 @@ Object.assign(Match, {
                     this.penaltiPendente = false;
                     const t = this.setPieceTaker;
                     if (t) t.baterPenalti();
-                    else this.state = 'PLAY';
+                    else this.mudarEstado('PLAY', 'penalti_sem_batedor');
                 }
             }
-            if (this.setPieceTimer > 15.0) { this.setPieceTimer = 0; this.state = 'PLAY'; this.penaltiPendente = false; }
+            const prazoPenalti = SetPiecePrazos.penalti;
+            if (this.setPieceTimer > prazoPenalti) { this.mudarEstado('PLAY', 'timeout_penalti'); }
         }
 
         if (this.state === 'THROW_IN') {
@@ -270,16 +271,15 @@ Object.assign(Match, {
                         });
                     } else {
                         // Sem batedor válido, não deixa o jogo preso.
-                        this.state = 'PLAY';
+                        this.mudarEstado('PLAY', 'lateral_sem_batedor');
                     }
                 }
             }
 
             // Rede de segurança: gesto interrompido, batedor derrubado, etc.
-            if (this.setPieceTimer > 15.0) {
-                this.setPieceTimer = 0;
-                this.state = 'PLAY';
-                this.lateralPendente = false;
+            const prazoLateral = SetPiecePrazos.lateral;
+            if (this.setPieceTimer > prazoLateral) {
+                this.mudarEstado('PLAY', 'timeout_lateral');
             }
         }
 
@@ -333,7 +333,8 @@ Object.assign(Match, {
             this.updateGoalKickWait(dt);
             // Orçamento maior que antes: posicionamento + espera de 3-6s +
             // corrida/cobrança cabem lá dentro sem disparar o reset.
-            if (this.setPieceTimer > 20.0) {
+            const prazoTiroDeMeta = SetPiecePrazos.tiroDeMeta;
+            if (this.setPieceTimer > prazoTiroDeMeta) {
                 this.setPieceTimer = 0;
                 this.resetPlay();
             }
@@ -408,7 +409,7 @@ Object.assign(Match, {
                 outfieldB.sort((a, b) => b.model.position.z - a.model.position.z);
                 this.offsideLineB.position.z = Math.max(0, outfieldB[0].model.position.z, this.ball.position.z);
             }
-            if (typeof TeamShape !== 'undefined' && typeof Tatics !== 'undefined') {
+            if (typeof TeamShape !== 'undefined') {
                 const cap = TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium;
                 this.defLineA.position.z = cap * 1;
                 this.defLineB.position.z = cap * -1;
@@ -539,18 +540,14 @@ Object.assign(Match, {
         Otimiza os alvos dos jogadores da mesma posição para evitarem esbarrar ou
         correrem para o mesmo alvo.
         */
-        if (typeof PosicionamentoAI.otimizarSlotsPorPosicao === 'function') {
-            PosicionamentoAI.otimizarSlotsPorPosicao(this.players, bbA);
-            PosicionamentoAI.otimizarSlotsPorPosicao(this.opponents, bbB);
-        }
+        PosicionamentoAI.otimizarSlotsPorPosicao(this.players, bbA);
+        PosicionamentoAI.otimizarSlotsPorPosicao(this.opponents, bbB);
 
         this.players.forEach(p => PosicionamentoAI.tickBase(p, bbA));
         this.opponents.forEach(p => PosicionamentoAI.tickBase(p, bbB));
 
-        if (typeof atribuirMarcacoesDaEquipa === 'function') {
-            atribuirMarcacoesDaEquipa(this.players, bbA);
-            atribuirMarcacoesDaEquipa(this.opponents, bbB);
-        }
+        atribuirMarcacoesDaEquipa(this.players, bbA);
+        atribuirMarcacoesDaEquipa(this.opponents, bbB);
 
         this.players.forEach(p => PosicionamentoAI.tickFinal(p, bbA));
         this.opponents.forEach(p => PosicionamentoAI.tickFinal(p, bbB));
@@ -561,10 +558,8 @@ Object.assign(Match, {
         que a marcacao tinha). Corre depois do posicionamento porque o custo de
         um apoio e a distancia do slot dele ao ponto.
         */
-        if (typeof atribuirApoiosDaEquipa === 'function') {
-            atribuirApoiosDaEquipa(this.players, bbA);
-            atribuirApoiosDaEquipa(this.opponents, bbB);
-        }
+        atribuirApoiosDaEquipa(this.players, bbA);
+        atribuirApoiosDaEquipa(this.opponents, bbB);
 
         /*
         Nao ha mais nada a mexer nos alvos depois disto.

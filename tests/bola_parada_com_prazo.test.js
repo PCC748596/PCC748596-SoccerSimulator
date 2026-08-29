@@ -85,14 +85,14 @@ console.log(LF + '1 — nenhum estado de bola parada fica sem cão-de-guarda');
             continue;
         }
 
-        // Um prazo é um teste ao setPieceTimer contra um número.
-        const temPrazo = /setPieceTimer\s*>\s*[\d.]+/.test(bloco);
+        // Um prazo é um teste ao setPieceTimer contra um número ou constante configurada.
+        const temPrazo = /setPieceTimer\s*>\s*[a-zA-Z0-9_.]+/.test(bloco);
         if (!temPrazo) {
             erro(`${estado} incrementa o setPieceTimer e nunca o testa — ` +
                 `pode ficar aceso para sempre`);
         } else {
-            const prazo = bloco.match(/setPieceTimer\s*>\s*([\d.]+)/)[1];
-            ok(`${estado}: prazo de ${prazo} s`);
+            const prazo = bloco.match(/setPieceTimer\s*>\s*([a-zA-Z0-9_.]+)/)[1];
+            ok(`${estado}: prazo de ${prazo}`);
         }
     }
 }
@@ -111,7 +111,7 @@ console.log(LF + '2 — ao expirar, o canto não deixa estado pendurado');
         prazo dispara e os deixa escritos, o canto seguinte arranca já com a
         bola "à espera de aterrar" de um lance que nunca houve.
         */
-        const i = bloco.search(/setPieceTimer\s*>\s*[\d.]+/);
+        const i = bloco.search(/setPieceTimer\s*>\s*[a-zA-Z0-9_.]+/);
         const depoisDoPrazo = (i >= 0) ? bloco.slice(i) : '';
 
         for (const campo of ['cantoBolaAlvo', 'cantoAguardaChao']) {

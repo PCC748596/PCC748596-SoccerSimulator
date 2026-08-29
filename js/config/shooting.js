@@ -39,8 +39,8 @@ const ShootingModel = {
     skill de sempre.
     */
     dentroDaArea: {
-        profundidade: 16.5,   // da linha de fundo para dentro
-        meiaLargura: 20.16,
+        profundidade: typeof Area !== 'undefined' ? Area.profundidade : 16.5,   // da linha de fundo para dentro
+        meiaLargura: typeof Area !== 'undefined' ? Area.meiaLargura : 20.16,
         /*
         Dentro da área também não se aplica o corte da camada CHUTE do
         SpatialGrid (`chuteVal <= 0` mandava não rematar). Uma célula não
@@ -258,7 +258,7 @@ const FreeKickModel = {
     */
     remateDistMax: 30.0,                    // ao centro da baliza
     remateAnguloTrave: 30 * Math.PI / 180,  // da perpendicular à linha de fundo
-    miniCornerXMin: 20.16,                  // meia-largura da grande área
+    miniCornerXMin: typeof Area !== 'undefined' ? Area.meiaLargura : 20.16, // meia-largura da grande área
     miniCornerProfundidade: 22.0,           // até esta distância da linha de fundo
 
     /*
@@ -556,11 +556,11 @@ normal (o GK reage com `gkDelayReacao`, como em qualquer remate).
 =============================================================================
 */
 const PenaltyModel = {
-    marcaZ: 11.0,              // distância à linha de fundo
-    raioMeiaLua: 9.15,         // ninguém dentro disto além do batedor
-    margemArea: 16.5,          // linha da grande área
+    marcaZ: typeof Area !== 'undefined' ? Area.distanciaPenalti : 11.0,         // distância à linha de fundo
+    raioMeiaLua: typeof Area !== 'undefined' ? Area.raioMeiaLua : 9.15,        // ninguém dentro disto além do batedor
+    margemArea: typeof Area !== 'undefined' ? Area.profundidade : 16.5,         // linha da grande área
     recuoBatedor: 4.6,         // onde ele espera, atrás da bola
-    areaX: 20.16,              // meia-largura da grande área
+    areaX: typeof Area !== 'undefined' ? Area.meiaLargura : 20.16,             // meia-largura da grande área
     folgaArco: 0.6,            // quanto ficam PARA LÁ da meia-lua
     folgaArea: 0.8,            // e para lá da linha da área
     /*
@@ -871,31 +871,6 @@ const XGModel = {
     anguloMinimo: 0.02
 };
 
-function pontoDeCanto(bolaX, attDir) {
-    const lado = (bolaX >= 0) ? 1 : -1;
-    const meiaLarg = CAMPO_LARG / 2;
-    const meioComp = CAMPO_COMP / 2;
-
-    // Meio metro para dentro das duas linhas: a bandeirola, sem arriscar o
-    // clamp da linha de fundo.
-    const bola = {
-        x: lado * (meiaLarg - 0.5),
-        y: BallPhysics.raio,
-        z: attDir * (meioComp - 0.5)
-    };
-
-    // Para onde a bola vai: a zona do penalti da baliza atacada.
-    const alvo = { x: 0, z: attDir * (meioComp - 11) };
-
-    // Batedor: na recta alvo->bola, 1.6 m PARA ALEM da bola. Fica sempre fora
-    // do campo (a bola ja esta a meio metro das duas linhas) e com a bola
-    // entre ele e a area, que e o que lhe da o gesto de centrar.
-    let dx = bola.x - alvo.x;
-    let dz = bola.z - alvo.z;
-    const d = Math.max(0.000001, Math.hypot(dx, dz));
-    dx /= d; dz /= d;
-
-    const batedor = { x: bola.x + dx * 1.6, z: bola.z + dz * 1.6 };
-
-    return { bola: bola, batedor: batedor, alvo: alvo };
-}
+/*
+Geometria do canto (pontoDeCanto) foi movida para js/utils.js (ver docs/auditoria_config_match.md item 5).
+*/

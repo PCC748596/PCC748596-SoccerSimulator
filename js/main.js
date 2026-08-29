@@ -868,8 +868,84 @@ function animate(time) {
     rendererCore.render(scene, cameraCore);
 }
 
+/*
+=============================================================================
+VALIDAÇÃO DE ARRANQUE DOS MODELOS (Auditoria item 7)
+=============================================================================
+Confirma que todos os modelos essenciais de configuração, física e animação
+foram carregados antes de inicializar o jogo, falhando imediatamente com
+erro explícito em vez de degradar silenciosamente com valores de fallback.
+=============================================================================
+*/
+function validarModelosDoJogo() {
+    const modelosObrigatorios = [
+        ['Area', typeof Area !== 'undefined'],
+        ['BallPhysics', typeof BallPhysics !== 'undefined'],
+        ['GoalFrame', typeof GoalFrame !== 'undefined'],
+        ['BarreiraCampo', typeof BarreiraCampo !== 'undefined'],
+        ['Tatics', typeof Tatics !== 'undefined'],
+        ['FormationsData', typeof FormationsData !== 'undefined'],
+        ['MatchDuration', typeof MatchDuration !== 'undefined'],
+        ['SetPiecePrazos', typeof SetPiecePrazos !== 'undefined'],
+        ['TeamShape', typeof TeamShape !== 'undefined'],
+        ['BlockShape', typeof BlockShape !== 'undefined'],
+        ['MentalidadeModel', typeof MentalidadeModel !== 'undefined'],
+        ['PassLineModel', typeof PassLineModel !== 'undefined'],
+        ['PassModel', typeof PassModel !== 'undefined'],
+        ['PassErrorModel', typeof PassErrorModel !== 'undefined'],
+        ['SupportModel', typeof SupportModel !== 'undefined'],
+        ['FirstTouchModel', typeof FirstTouchModel !== 'undefined'],
+        ['RunIntoSpaceModel', typeof RunIntoSpaceModel !== 'undefined'],
+        ['ShootingModel', typeof ShootingModel !== 'undefined'],
+        ['ShotModel', typeof ShotModel !== 'undefined'],
+        ['FreeKickModel', typeof FreeKickModel !== 'undefined'],
+        ['PenaltyModel', typeof PenaltyModel !== 'undefined'],
+        ['CrossModel', typeof CrossModel !== 'undefined'],
+        ['HeaderModel', typeof HeaderModel !== 'undefined'],
+        ['XGModel', typeof XGModel !== 'undefined'],
+        ['SlideTackleModel', typeof SlideTackleModel !== 'undefined'],
+        ['MarkingModel', typeof MarkingModel !== 'undefined'],
+        ['DefensivePressureModel', typeof DefensivePressureModel !== 'undefined'],
+        ['CornerDefenseModel', typeof CornerDefenseModel !== 'undefined'],
+        ['GoalkeeperStyle', typeof GoalkeeperStyle !== 'undefined'],
+        ['GoalkeeperPose', typeof GoalkeeperPose !== 'undefined'],
+        ['GoalkeeperDistribution', typeof GoalkeeperDistribution !== 'undefined'],
+        ['GoalkeeperDive', typeof GoalkeeperDive !== 'undefined'],
+        ['GkCatchModel', typeof GkCatchModel !== 'undefined'],
+        ['TurnModel', typeof TurnModel !== 'undefined'],
+        ['LateralGait', typeof LateralGait !== 'undefined'],
+        ['GaitModel', typeof GaitModel !== 'undefined'],
+        ['SaltoCabeceio', typeof SaltoCabeceio !== 'undefined'],
+        ['CadenceModel', typeof CadenceModel !== 'undefined'],
+        ['AppearanceModel', typeof AppearanceModel !== 'undefined'],
+        ['RestlessModel', typeof RestlessModel !== 'undefined'],
+        ['VisionModel', typeof VisionModel !== 'undefined'],
+        ['EsperaPeloSlotModel', typeof EsperaPeloSlotModel !== 'undefined'],
+        ['GiroDeCostasModel', typeof GiroDeCostasModel !== 'undefined'],
+        ['CarryModel', typeof CarryModel !== 'undefined'],
+        ['DribbleModel', typeof DribbleModel !== 'undefined'],
+        ['BallControl', typeof BallControl !== 'undefined'],
+        ['ThrowInModel', typeof ThrowInModel !== 'undefined'],
+        ['PerceptionModel', typeof PerceptionModel !== 'undefined'],
+        ['ActionAnimClips', typeof ActionAnimClips !== 'undefined'],
+        ['ShotClip', typeof ShotClip !== 'undefined'],
+        ['GoalkeeperKickClip', typeof GoalkeeperKickClip !== 'undefined'],
+        ['GoalkeeperGroundKickClip', typeof GoalkeeperGroundKickClip !== 'undefined'],
+        ['GoalkeeperThrowClip', typeof GoalkeeperThrowClip !== 'undefined'],
+        ['ThrowInClip', typeof ThrowInClip !== 'undefined'],
+        ['Match', typeof Match !== 'undefined']
+    ];
+
+    const emFalta = modelosObrigatorios.filter(m => !m[1]).map(m => m[0]);
+    if (emFalta.length > 0) {
+        throw new Error(`Modelos críticos em falta na inicialização: ${emFalta.join(', ')}`);
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     try {
+        validarModelosDoJogo();
+
         // Preenche o aviso do lote com os valores por omissão das caixas.
         actualizarAvisoDoLote();
 

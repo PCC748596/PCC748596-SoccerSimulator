@@ -28,6 +28,7 @@ const raiz = path.join(__dirname, '..');
 const ler = f => semCR(fs.readFileSync(path.join(raiz, f), 'utf8'));
 
 const srcConfig = ler('js/config/player_behavior.js');
+const srcUtils = ler('js/utils.js');
 const srcFsm = ler('js/fsm.js');
 
 function extrairObjecto(src, nome) {
@@ -49,7 +50,7 @@ const erro = m => { falhas++; console.error('  X ' + m); };
 const ok = m => console.log('  . ' + m);
 
 const G = extrairObjecto(srcConfig, 'GiroDeCostasModel');
-const eixoDeConducao = extrairFuncao(srcConfig, 'eixoDeConducao',
+const eixoDeConducao = extrairFuncao(srcUtils, 'eixoDeConducao',
     `const GiroDeCostasModel = ${JSON.stringify(G)};`);
 
 /*

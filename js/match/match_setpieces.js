@@ -1,6 +1,6 @@
 Object.assign(Match, {
     setupSetPiece: function (type, team) {
-        this.state = type;
+        this.mudarEstado(type, 'setpiece_' + type.toLowerCase());
         this.setPieceTeam = team;
 
         /*
@@ -505,9 +505,8 @@ Object.assign(Match, {
             */
             if (setorFK === 'ataque_lateral' || setorFK === 'ataque_entrada') {
                 const ladoFK = Math.sign(bolaFK.x) || 1;
-                const linhaFundoFK = attDir * (CAMPO_COMP / 2);
-                const naArea = lugares.filter(l =>
-                    Math.abs(linhaFundoFK - l.z) <= 20.0 && Math.abs(l.x) <= 20.16);
+                const linhaFundoFK = attDir * LINHA_FUNDO;
+                const naArea = lugares.filter(l => Area.contem(l.x, l.z, linhaFundoFK));
                 const livres = defesaOrdenada.slice(nBarreira);
                 for (let i = 0; i < naArea.length && i < livres.length && i < F.slotsMarcacao.length; i++) {
                     const cfg = F.slotsMarcacao[i];
@@ -804,9 +803,9 @@ Object.assign(Match, {
             */
             const G = GoalkeeperPose;
             const ladoX = Math.sign(this.ball.position.x) || 1;
-            const linhaZ = -attDir * (CAMPO_COMP / 2);            // linha de fundo dele
-            const bolaX = ladoX * G.pequenaAreaX;
-            const bolaZ = linhaZ + attDir * G.pequenaAreaZ;       // para dentro do campo
+            const linhaZ = -attDir * LINHA_FUNDO;            // linha de fundo dele
+            const bolaX = ladoX * Area.pequenaMeiaLargura;
+            const bolaZ = linhaZ + attDir * Area.pequenaProfundidade;       // para dentro do campo
 
             /*
             A bola NÃO teleporta já — continua o movimento que trazia até
@@ -884,10 +883,9 @@ Object.assign(Match, {
             defendingPlayers.forEach(p => {
                 if (p.role === 'gk') return;
                 // Empurra para fora da grande área adversária.
-                const dentroArea = Math.abs(p.model.position.x) < 20.16 &&
-                    (p.model.position.z - linhaZ) * attDir < 16.5;
+                const dentroArea = Area.contem(p.model.position.x, p.model.position.z, linhaZ);
                 if (dentroArea) {
-                    p.model.position.z = linhaZ + attDir * 17.5;
+                    p.model.position.z = linhaZ + attDir * (Area.profundidade + 1.0);
                 }
 
                 /*
