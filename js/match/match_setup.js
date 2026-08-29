@@ -128,7 +128,7 @@ Object.assign(Match, {
         // Marca do centro do bloco — o ponto onde as diagonais se cruzam.
         const criarCentro = (cor) => {
             const m = new THREE.Mesh(
-                new THREE.RingGeometry(0.55, 0.85, 24),
+                new THREE.PlaneGeometry(0.85, 0.85),
                 new THREE.MeshBasicMaterial({ color: cor, side: THREE.DoubleSide })
             );
             m.rotation.x = -Math.PI / 2;
@@ -137,8 +137,19 @@ Object.assign(Match, {
             this.scene.add(m);
             return m;
         };
-        this.btPosCentroA = criarCentro(0x3498db);
-        this.btPosCentroB = criarCentro(0xe74c3c);
+        this.btPosCentroA = [criarCentro(0x3498db), criarCentro(0x3498db), criarCentro(0x3498db)];
+        this.btPosCentroB = [criarCentro(0xe74c3c), criarCentro(0xe74c3c), criarCentro(0xe74c3c)];
+        
+        const criarLinhasTercos = (cor) => {
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(4 * 3), 3));
+            const linha = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: 0.6 }));
+            linha.visible = false;
+            this.scene.add(linha);
+            return linha;
+        };
+        this.btPosTercosA = criarLinhasTercos(0x3498db);
+        this.btPosTercosB = criarLinhasTercos(0xe74c3c);
 
         this.passTargetVisual = new THREE.Mesh(
             new THREE.CircleGeometry(0.5, 32),

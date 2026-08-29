@@ -1796,15 +1796,26 @@ class FootballPlayer {
 
             // Bônus explícito para passes laterais e para trás
             const livreAFrente = (typeof semMarcacaoAFrente === 'function') ? semMarcacaoAFrente(this, opponents, 20.0, 45.0) : false;
-            if (progression <= 2.0 && relX > 5.0) {
-                score *= 1.25; // Lado
-            } else if (progression < -2.0) {
-                if (!livreAFrente && inDefensiveZone) {
-                    score *= 1.20; // Trás sob pressão na defesa
-                } else if (!inDefensiveZone) {
-                    score -= 50; // Leve penalidade por recuar no ataque se não for necessário
-                } else if (livreAFrente) {
-                    score -= 150; // Penaliza recuo se tem 10m livres à frente para conduzir
+            
+            if (filterOrDir === 'tras' || filterOrDir === 'back') {
+                if (opt.role !== 'gk' && distMarcador >= 4.0) {
+                    score += 400; // Prioridade MÁXIMA para jogador de linha desmarcado no passe para trás
+                } else if (opt.role === 'gk') {
+                    // Só toca no GK se não tiver mais ninguém e o GK estiver muito livre
+                    if (distMarcador < 10.0) score -= 500;
+                    else score -= 150; // Penalidade natural para não usar o GK como apoio primário
+                }
+            } else {
+                if (progression <= 2.0 && relX > 5.0) {
+                    score *= 1.25; // Lado
+                } else if (progression < -2.0) {
+                    if (!livreAFrente && inDefensiveZone) {
+                        score *= 1.20; // Trás sob pressão na defesa
+                    } else if (!inDefensiveZone) {
+                        score -= 50; // Leve penalidade por recuar no ataque se não for necessário
+                    } else if (livreAFrente) {
+                        score -= 150; // Penaliza recuo se tem 10m livres à frente para conduzir
+                    }
                 }
             }
 

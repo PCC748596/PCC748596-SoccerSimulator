@@ -420,10 +420,14 @@ Object.assign(Match, {
         this.btPosRectB.visible = false;
         this.btPosDiagA.visible = false;
         this.btPosDiagB.visible = false;
-        this.btPosCentroA.visible = false;
-        this.btPosCentroB.visible = false;
+        if (Array.isArray(this.btPosCentroA)) this.btPosCentroA.forEach(c => c.visible = false);
+        else if (this.btPosCentroA) this.btPosCentroA.visible = false;
+        if (Array.isArray(this.btPosCentroB)) this.btPosCentroB.forEach(c => c.visible = false);
+        else if (this.btPosCentroB) this.btPosCentroB.visible = false;
+        if (this.btPosTercosA) this.btPosTercosA.visible = false;
+        if (this.btPosTercosB) this.btPosTercosB.visible = false;
 
-        const updateRect = (teamName, rectMesh, diagMesh, centroMesh) => {
+        const updateRect = (teamName, rectMesh, diagMesh, centroMesh, tercosMesh) => {
             const bb = (typeof TeamAI !== 'undefined' && TeamAI.blackboards) ? TeamAI.blackboards[teamName] : null;
             if (bb) {
                 rectMesh.visible = true;
@@ -431,9 +435,15 @@ Object.assign(Match, {
                 const maxZ = Math.max(bb.blockBottom * bb.dir, bb.blockTop * bb.dir);
                 let x0 = -17;
                 let x1 = 17;
+                let zDef = minZ;
+                let zMid = (minZ + maxZ) / 2;
+                let zAtk = maxZ;
                 if (bb.bloco) {
                     x0 = bb.bloco.x0;
                     x1 = bb.bloco.x1;
+                    zDef = bb.bloco.zDef * bb.dir;
+                    zMid = bb.bloco.zMid * bb.dir;
+                    zAtk = bb.bloco.zAtk * bb.dir;
                 }
                 const pts = rectMesh.geometry.attributes.position.array;
                 pts[0] = x0; pts[1] = 0.05; pts[2] = minZ;
@@ -442,7 +452,7 @@ Object.assign(Match, {
                 pts[9] = x0; pts[10] = 0.05; pts[11] = maxZ;
                 rectMesh.geometry.attributes.position.needsUpdate = true;
 
-                // Diagonais canto a canto, e a marca no cruzamento delas.
+                // Diagonais canto a canto
                 diagMesh.visible = true;
                 const d = diagMesh.geometry.attributes.position.array;
                 d[0] = x0; d[1] = 0.05; d[2] = minZ;
@@ -451,17 +461,51 @@ Object.assign(Match, {
                 d[9] = x0; d[10] = 0.05; d[11] = maxZ;
                 diagMesh.geometry.attributes.position.needsUpdate = true;
 
-                centroMesh.visible = true;
-                centroMesh.position.x = (x0 + x1) / 2;
-                centroMesh.position.z = (minZ + maxZ) / 2;
+                if (tercosMesh) {
+                    tercosMesh.visible = true;
+                    const tm = tercosMesh.geometry.attributes.position.array;
+                    // Linha zMid
+                    tm[0] = x0; tm[1] = 0.05; tm[2] = zMid;
+                    tm[3] = x1; tm[4] = 0.05; tm[5] = zMid;
+                    // Linha zAtk
+                    tm[6] = x0; tm[7] = 0.05; tm[8] = zAtk;
+                    tm[9] = x1; tm[10] = 0.05; tm[11] = zAtk;
+                    tercosMesh.geometry.attributes.position.needsUpdate = true;
+                }
+
+                if (Array.isArray(centroMesh) && centroMesh.length >= 3) {
+                    let tam3 = bb.bloco.z1 - bb.bloco.zAtk;
+                    let z3Center = (bb.bloco.zAtk + tam3 / 2) * bb.dir;
+                    
+                    centroMesh[0].position.set((x0 + x1) / 2, 0.06, (zDef + zMid) / 2);
+                    centroMesh[1].position.set((x0 + x1) / 2, 0.06, (zMid + zAtk) / 2);
+                    centroMesh[2].position.set((x0 + x1) / 2, 0.06, z3Center);
+                    
+                    centroMesh[0].visible = false;
+                    centroMesh[1].visible = false;
+                    centroMesh[2].visible = false;
+                    
+                    let bZ = (bb.ballZ || 0) * bb.dir;
+                    if (bZ < bb.bloco.zMid) {
+                        centroMesh[0].visible = true;
+                    } else if (bZ < bb.bloco.zAtk) {
+                        centroMesh[1].visible = true;
+                    } else {
+                        centroMesh[2].visible = true;
+                    }
+                } else if (centroMesh && !Array.isArray(centroMesh)) {
+                    centroMesh.visible = true;
+                    centroMesh.position.x = (x0 + x1) / 2;
+                    centroMesh.position.z = (minZ + maxZ) / 2;
+                }
             }
         };
 
         if (window.teamBTPosState === 'TeamA' || window.teamBTPosState === 'Both') {
-            updateRect('TeamA', this.btPosRectA, this.btPosDiagA, this.btPosCentroA);
+            updateRect('TeamA', this.btPosRectA, this.btPosDiagA, this.btPosCentroA, this.btPosTercosA);
         }
         if (window.teamBTPosState === 'TeamB' || window.teamBTPosState === 'Both') {
-            updateRect('TeamB', this.btPosRectB, this.btPosDiagB, this.btPosCentroB);
+            updateRect('TeamB', this.btPosRectB, this.btPosDiagB, this.btPosCentroB, this.btPosTercosB);
         }
 
         if (!this._allPlayersCache || this._allPlayersCache.length !== this.players.length + this.opponents.length) {

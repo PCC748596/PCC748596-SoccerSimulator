@@ -35,6 +35,14 @@ Object.assign(Match, {
             this.possessionTimer = 0;
             this.counterAttackTeam = null;
             this.counterAttackTimer = 0;
+
+            // Força a atualização da IA tática (blocos e baseTargets) imediatamente
+            // com a nova posse de bola. Assim, quem vai defender a bola parada não
+            // usa os alvos velhos da jogada de ataque anterior.
+            if (typeof TeamAI !== 'undefined') {
+                TeamAI.tick('TeamA', this);
+                TeamAI.tick('TeamB', this);
+            }
         }
 
         this.setPieceTimer = 0;
@@ -955,11 +963,28 @@ Object.assign(Match, {
         const team = this.setPieceTaker ? this.setPieceTaker.team : null;
         const atacantes = (team === 'TeamA') ? this.players : this.opponents;
 
-        atacantes.forEach(p => {
+        // Recuperar a linha defensiva caso a equipe batedora mude de tática
+        const capGK = (typeof TeamShape !== 'undefined' && typeof Tatics !== 'undefined' && TeamShape.linhaDefensiva) 
+            ? (TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium)
+            : -18.25;
+
+        this.players.concat(this.opponents).forEach(p => {
             if (p.role === 'gk') return;
-            if (p.fsm.currentState === 'MOVE_TO_POS' &&
-                p.model.position.distanceTo(p.dynamicTarget) < 1.5) {
-                p.fsm.changeState('SET_PIECE_WAIT');
+            if (p.fsm.currentState === 'MOVE_TO_POS') {
+                const isAtacante = (p.team === team);
+                
+                if (isAtacante) {
+                    const atkZ = p.baseTarget.z * p.dirZ;
+                    const tecto = Math.max(atkZ, capGK);
+                    const novoAtkZ = Math.min(atkZ + 6.0, tecto);
+                    p.dynamicTarget.set(p.baseTarget.x, ALTURA_BASE_Y, novoAtkZ * p.dirZ);
+                } else {
+                    p.dynamicTarget.set(p.baseTarget.x, ALTURA_BASE_Y, p.baseTarget.z);
+                }
+
+                if (p.model.position.distanceTo(p.dynamicTarget) < 1.5) {
+                    p.fsm.changeState('SET_PIECE_WAIT');
+                }
             }
         });
 

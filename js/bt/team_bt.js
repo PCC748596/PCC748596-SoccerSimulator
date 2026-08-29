@@ -829,49 +829,43 @@ function computeBlock(bb) {
     const reposta = (typeof Match !== 'undefined' && Match.state !== 'PLAY');
 
     /*
-    O centro do bloco fica 5 m À FRENTE da linha da bola — e "à frente" muda de
-    sentido com a fase:
-
-        T.Offensive / Offensive   entre a bola e a baliza ATACADA   -> +5
-        T.Defensive / Defensive   entre a bola e a baliza DEFENDIDA -> -5
-
-    Estava fixo em +5.0 para as quatro fases, ou seja a defender o bloco era
-    empurrado 5 m na direcção da baliza adversária — para trás da bola em vez
-    de entre ela e a nossa baliza. Tudo isto no referencial de ataque (bb.dir),
-    onde + é o sentido do ataque da equipa.
+    NOVO SISTEMA DE BLOCOS (Defesa, Meio, Ataque)
+    As posições baseiam-se na linha da bola, mas têm comportamentos diferentes
+    dependendo da fase do jogo, evitando que o time estique num único retângulo gigante.
     */
-    const targetOffsetZ = bb.isAttacking ? 5.0 : -5.0;
+    let targetOffsetZ = bb.isAttacking ? 5.0 : -5.0;
+
+    // Pedido: Na T.ofensive e Offensive no setor defensivo, o centro do retângulo de defesa 
+    // tem que se manter uns 5 metros a frente da bola para puxar o time a frente.
+    if (!bb.isAttacking && typeof Tatics !== 'undefined' && 
+        (Tatics.estilo === 'ataque' || Tatics.estilo === 'muito_ofensiva')) {
+        if (bb.bolaZSuave * bb.dir < 0) {
+            targetOffsetZ = 5.0;
+        }
+    }
+
+    // Pedido: O centro do retângulo médio tem que ficar uns 10 metros a frente da bola no setor de meio de campo.
+    // O "centro do retângulo médio" é matematicamente igual ao centro do bloco (centroZ).
+    // Ajustado para respeitar a geometria do bloco: se o offset for muito grande, a bola "cai" para o terço defensivo.
+    let maxOffset = (profundidade / 6) - 0.5;
+    let bZ = bb.ballZ || 0;
+    if (bb.isAttacking) {
+        let desiredOffset = Math.min(10.0, maxOffset);
+        if (Math.abs(bZ) < 20.0) {
+            targetOffsetZ = desiredOffset;
+        } else {
+            let distanceToMid = Math.abs(Math.abs(bZ) - 20.0);
+            let factor = Math.max(0, 1.0 - (distanceToMid / 10.0));
+            targetOffsetZ = targetOffsetZ * (1 - factor) + desiredOffset * factor;
+        }
+    }
 
     if (bb.blocoZSuave === undefined) {
         bb.blocoZSuave = targetOffsetZ;
     } else {
-        // Nota: na troca de posse o alvo salta de +5 para -5 (ou o inverso). O
-        // seguirBola faz a travessia desses 10 m em rampa, que é o que se quer:
-        // o bloco reorganiza-se, não teleporta.
         bb.blocoZSuave = seguirBola(bb.blocoZSuave, targetOffsetZ, BlockShape.seguimentoBola, dtMatch, reposta);
     }
 
-    /*
-    A MENTALIDADE, que não estava aqui.
-
-    O `MentalidadeModel[estilo].blocoZ` existe desde sempre no config, com o
-    comentário "A Mentalidade fala uma vez, pelo blocoZ" — e NUNCA era lido. A
-    única coisa que a Mentalidade mexia era a `profundidade` (ver
-    escolherProfundidade), e essa, a defender, é forçada a 'short' para toda a
-    gente: ou seja, com a equipa sem bola, escolher Muito Defensiva ou Muito
-    Ofensiva dava exactamente o mesmo bloco.
-
-    Medido, com a equipa a defender (mediana da profundidade do alvo, no
-    referencial de ataque):
-
-                        Muito Defensiva   Muito Ofensiva
-        defesas              -16.1             -16.6
-        médios                -6.1              -7.0
-
-    Um metro de diferença, e no sentido errado. Agora o `blocoZ` desloca o
-    centro do bloco: negativo recua-o para o próprio meio-campo, positivo
-    empurra-o para o do adversário.
-    */
     const mentalBloco = (typeof MentalidadeModel !== 'undefined' &&
         MentalidadeModel[Tatics.estilo] &&
         typeof MentalidadeModel[Tatics.estilo].blocoZ === 'number')
@@ -883,81 +877,32 @@ function computeBlock(bb) {
     let z0 = centroZ - (profundidade / 2);
     let z1 = centroZ + (profundidade / 2);
 
-    /* --- limites em Z (Regra 2 e Regra 3) -------------------------------
-       O rectângulo do bloco vai até perto da linha de fundo adversária.
-       A traseira do bloco (minZ) está restrita à linha da própria grande área
-       (16.5m).
-    */
+    /* --- limites em Z (Regra 2 e Regra 3) ------------------------------- */
     const fundo = typeof LINHA_FUNDO !== 'undefined' ? LINHA_FUNDO : CAMPO_COMP / 2;
     const profArea = typeof Area !== 'undefined' ? Area.profundidade : 16.5;
     const minZ = -(fundo - profArea);
-    const maxZ = (fundo - 1.5);
-
-    if (z0 < minZ) {
-        z0 = minZ;
-        z1 = z0 + profundidade;
-        if (z1 > maxZ) z1 = maxZ;
-    } else if (z1 > maxZ) {
-        /*
-        A frente bate na marca de penálti adversária: o bloco ENCOLHE contra
-        ela. Fazia `z0 = z1 - profundidade`, ou seja arrastava o rectângulo
-        inteiro para trás — tocar numa borda recalculava a outra, o defeito que
-        já tinha sido corrigido nos outros caminhos. Era ele que punha a
-        traseira 26 m atrás do tecto da Linha Defensiva com bloco longo.
-        */
-        z1 = maxZ;
-        if (z0 > z1) z0 = z1;
+    
+    // No tiro de meta, ninguem pode invadir a area (quem defende o tiro de meta tem o maxZ capado)
+    const isGoalKick = typeof Match !== 'undefined' && Match.state === 'GOAL_KICK';
+    let maxZ = (fundo - 1.5);
+    if (isGoalKick) {
+        maxZ = fundo - profArea;
     }
 
-    /* --- Linha Defensiva do painel (ÂNCORA da traseira) ------------------
-       A TRASEIRA do bloco é a linha defensiva da equipa, e o painel diz ONDE
-       ela se põe (TeamShape.linhaDefensiva, no referencial de ataque).
+    // Bloco rígido, não pode se deformar (a distância entre z0 e z1 será sempre `profundidade`)
+    if (z0 < minZ) {
+        let shift = minZ - z0;
+        z0 = minZ;
+        z1 += shift;
+    } else if (z1 > maxZ) {
+        let shift = maxZ - z1;
+        z1 = maxZ;
+        z0 += shift;
+    }
 
-       Era só um TECTO — cortava a linha quando ela subia demais, mas nunca a
-       fazia subir. Com bloco longo e a bola longe, a traseira saía do centro do
-       bloco e o tecto nunca mordia: medido sem posse com a bola em +20 e Length
-       `large`, `medium` (-18.25) e `high` (-2.0) davam os DOIS -20.0, ou seja o
-       botão não separava nada. Passa a âncora: a traseira assume o valor
-       pedido, e só recua de lá por uma razão de jogo.
-
-       Quem manda recuar é `recuoDaUltimaLinha` (config.js), que estava escrita
-       e nunca era chamada — os dois recuos legítimos são:
-
-         - o adversário mais recuado: a linha põe-se `distancia` metros atrás
-           dele (MarkingModel.distanciaPorPressao, do Defensive Pressure), senão
-           deixava-se um atacante nas costas;
-         - o piso do guarda-redes, que é um limite físico e ganha a tudo.
-
-       Só SEM bola: com posse o bloco sobe com a jogada e quem trava a frente é
-       o fora-de-jogo, não isto.
-
-       CORRE DEPOIS DOS LIMITES DO CAMPO, e fica com a última palavra. Corria
-       antes, e o `else if (z1 > maxZ)` recalculava `z0 = z1 - profundidade`,
-       arrastando o rectângulo inteiro para trás e desfazendo o que acabara de
-       ser aplicado.
-
-       Quando a linha pedida e a profundidade pedida não cabem entre ela e a
-       marca de penálti adversária, quem cede é a FRENTE: a traseira é escolha
-       explícita do painel, a frente é derivada. O bloco encolhe, com um mínimo
-       de `profundidadeMinima` para não colapsar numa linha só.
-    */
     if (!bb.isAttacking && typeof TeamShape !== 'undefined' &&
         typeof Tatics !== 'undefined' && TeamShape.linhaDefensiva) {
-        /*
-        A LINHA DEFENSIVA É DO PAINEL, MAS A MENTALIDADE TAMBÉM FALA.
-
-        A âncora da traseira vinha só do botão Low/Medium/High, e é ela que tem
-        a última palavra sobre onde a última linha se põe. Resultado: o
-        `blocoZ` da Mentalidade movia o centro do bloco mas os DEFESAS ficavam
-        onde estavam — medido, um metro de diferença entre Muito Defensiva e
-        Muito Ofensiva, que é o mesmo que dizer que a Mentalidade não existia
-        para eles.
-
-        `pesoNaLinha` é a fracção do `blocoZ` que passa para a âncora. Não é 1:
-        o botão da Linha Defensiva continua a ser o controlo grosso, a
-        Mentalidade inclina-o. Com 0.5, Muito Defensiva recua a linha 5 m e
-        Muito Ofensiva sobe-a 6 m sobre o que o painel pediu.
-        */
+        
         const capBase = TeamShape.linhaDefensiva[Tatics.linhaDefensiva]
             ?? TeamShape.linhaDefensiva.medium;
         const pesoMental = (typeof MentalidadeModel !== 'undefined' &&
@@ -965,11 +910,6 @@ function computeBlock(bb) {
             ? MentalidadeModel.pesoNaLinha : 0;
         const capLinha = capBase + mentalBloco * pesoMental;
 
-        /*
-        Adversário de campo mais recuado e piso do guarda-redes, ambos no
-        referencial de ataque desta equipa. `null` quando não há lista de
-        adversários (harness de teste, arranque): aí a âncora manda sozinha.
-        */
         let maisRecuadoDir = null, pisoDir = null;
         if (bb.opp && bb.opp.length) {
             for (const o of bb.opp) {
@@ -988,12 +928,23 @@ function computeBlock(bb) {
             ? (M.distanciaPorPressao[Tatics.pressaoDefensiva] ?? M.distanciaPorPressao.balanced)
             : 3.0;
 
-        z0 = recuoDaUltimaLinha(z0, maisRecuadoDir, distancia, pisoDir, capLinha);
+        let lastLine = recuoDaUltimaLinha(z0, maisRecuadoDir, distancia, pisoDir, capLinha);
+        
+        // Empurra o bloco inteiro a partir da nova âncora traseira, para não haver deformação
+        let diff = lastLine - z0;
+        z0 += diff;
+        z1 += diff;
 
-        if (z0 < minZ) z0 = minZ;
-        z1 = Math.min(z0 + profundidade, maxZ);
-        const profMin = B.profundidadeMinima ?? 20.0;
-        if (z1 - z0 < profMin) z1 = Math.min(z0 + profMin, maxZ);
+        // Se a nova âncora jogar o ataque pra fora, corrigimos rigidamente:
+        if (z0 < minZ) {
+            let shift = minZ - z0;
+            z0 = minZ;
+            z1 += shift;
+        } else if (z1 > maxZ) {
+            let shift = maxZ - z1;
+            z1 = maxZ;
+            z0 += shift;
+        }
     }
 
     /* --- largura e centro em X (Regra 1 e Regra 2) ----------------------
@@ -1022,6 +973,9 @@ function computeBlock(bb) {
         x1: x1,
         z0: z0,
         z1: z1,
+        zDef: z0,
+        zMid: z0 + (z1 - z0) / 3,
+        zAtk: z0 + 2 * (z1 - z0) / 3,
         modo: modo
     };
 
@@ -1172,73 +1126,70 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
     const empurraZ = dentro(bloco.z0, bloco.z1, limZ);
 
     let xTarget = bloco.x0 + u * (bloco.x1 - bloco.x0) + empurraX;
-    let zTarget = ((bloco.z0 + v * (bloco.z1 - bloco.z0)) + empurraZ) * bb.dir;
+    
+    let targetZRaw;
+    if (v < 0.5) {
+        // Interpola entre Defesa (v=0) e Meio (v=0.5)
+        targetZRaw = bloco.zDef + (v / 0.5) * (bloco.zMid - bloco.zDef);
+    } else {
+        // Interpola entre Meio (v=0.5) e Ataque (v=1.0)
+        targetZRaw = bloco.zMid + ((v - 0.5) / 0.5) * (bloco.zAtk - bloco.zMid);
+    }
+    
+    let zTarget = (targetZRaw + empurraZ) * bb.dir;
 
-    /*
-    Acompanhamento da linha da bola pela linha de defesa na saída de jogo:
-    Com posse de bola (construção / progressão do jogo da defesa até ao círculo central),
-    a linha defensiva (centrais e laterais) acompanha a linha da bola cerca de 3 m atrás,
-    evitando que fiquem demasiado para trás na progressão do jogo, garantindo sempre a
-    hierarquia tática e espaçamento com os médios (CM).
-    */
     if (bb.isAttacking) {
         // A linha defensiva (centrais e laterais) acompanha a linha da bola.
-        // Garantindo sempre a hierarquia tática e espaçamento com os médios (CM).
         const bolaZDir = (typeof bb.bolaZSuave === 'number' ? bb.bolaZSuave : (bb.ballZ || 0)) * bb.dir;
         let zAlvoDir = zTarget * bb.dir;
         
         let distFrente = 5;
         let distTras = 5;
 
-        // Regras de afastamento da linha da bola:
         let emProfundidade = bb.isCounter || role === 'atk' || pos === 'LW' || pos === 'RW' || pos === 'LWB' || pos === 'RWB';
         if (emProfundidade) {
             distFrente = 20;
         }
         
-        // Defesas e trincos costumam ficar atrás da linha da bola para dar cobertura
         if (role === 'def' || pos === 'DM') {
             distTras = 15;
-            distFrente = 0; // Defesa central e trinco não devem passar à frente da bola 
+            distFrente = 0; 
             
-            // Mas laterais podem subir no corredor se forem ofensivos
             if (pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB') {
                 distFrente = 10;
             }
         }
         
-        let gkComBola = bb.ballCarrier && bb.ballCarrier.role === 'gk' && bb.ballCarrier.team === p.team;
+        let isGkHolding = typeof Match !== 'undefined' && Match.gkHoldingBall && Match.gkHoldingBall[bb.team];
+        let isGkCarrier = bb.carrier && bb.carrier.role === 'gk' && bb.carrier.team === bb.team;
+        let gkComBola = isGkHolding || isGkCarrier;
         let portadorBloqueado = false;
         
-        if (bb.ballCarrier && bb.ballCarrier.team === p.team && !gkComBola) {
-            const oppCarrier = bb.oppCarrier; // adversário mais próximo do portador
-            if (oppCarrier && bb.ballCarrier.model.position.distanceTo(oppCarrier.model.position) < 4.0) {
+        if (bb.carrier && bb.carrier.team === bb.team && !gkComBola) {
+            const oppCarrier = bb.oppCarrier;
+            if (oppCarrier && bb.carrier.model.position.distanceTo(oppCarrier.model.position) < 4.0) {
                 portadorBloqueado = true;
             }
         }
         
         if (portadorBloqueado) {
-            distTras = 12; // Permite que venham mais atrás oferecer apoio
-            distFrente = Math.min(distFrente, 3); // Reduz a distância na frente para forçá-los a aproximar para passe curto
+            distTras = 12; 
+            distFrente = Math.min(distFrente, 3); 
         }
         
         if (gkComBola) {
-            // Quando o goleiro tem a bola, a defesa avança para receber o passe abrindo nas laterais, sem grudar nele
-            distFrente = Math.max(distFrente, 25);
+            distFrente = Math.max(distFrente, 60); // Permite que o time se espalhe pelo campo todo
             distTras = Math.max(distTras, 15);
         }
 
-        // 1. Limita o avanço: não deixa os jogadores fugirem muito para a frente da bola
         if (zAlvoDir > bolaZDir + distFrente) {
             zAlvoDir = bolaZDir + distFrente;
         }
         
-        // 2. Limita o recuo: não deixa os jogadores ficarem muito atrás da bola (garante o acompanhamento do time)
         if (zAlvoDir < bolaZDir - distTras) {
             zAlvoDir = bolaZDir - distTras;
         }
 
-        // Mantém a regra de segurança antiga para a defesa na saída de jogo (teto para não bater nos médios)
         if (role === 'def') {
             const limiteCirculo = (typeof TeamShape !== 'undefined' && typeof TeamShape.limiteSaidaCirculoCentral === 'number')
                 ? TeamShape.limiteSaidaCirculoCentral : 0.0;
@@ -1248,7 +1199,6 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
             const zLatAcompanha = Math.min(limiteCirculo, zDefTeto + 1.5);
             const zCBAcompanha = Math.min(limiteCirculo, zDefTeto);
             
-            // Se o clamp os tiver puxado muito para a frente, o teto corrige
             if (pos === 'CB' && zAlvoDir > zCBAcompanha) {
                 zAlvoDir = zCBAcompanha;
             } else if ((pos === 'LB' || pos === 'RB') && zAlvoDir > zLatAcompanha) {
@@ -1937,6 +1887,60 @@ const PosicionamentoAI = {
                     finalZ = bz + uz * minDist;
                 }
             }
+        }
+
+        // Afastar companheiros de equipa no mesmo espaco (evitar o empilhamento tatico como o caso LB + LM + LW)
+        if (p.role !== 'gk' && typeof Match !== 'undefined') {
+            const companheiros = (p.team === 'TeamA' ? Match.players : Match.opponents).filter(c => c !== p && c.role !== 'gk' && c.postoBase);
+            let repelX = 0;
+            let repelZ = 0;
+            const RAIO_REPULSAO = 3.5; 
+            
+            for (const c of companheiros) {
+                // A forca repulsiva usa o posto base tatico do colega
+                const dx = molaX - c.postoBase.x;
+                const dz = finalZ - c.postoBase.z;
+                const distSq = dx*dx + dz*dz;
+                
+                if (distSq > 0.001 && distSq < RAIO_REPULSAO * RAIO_REPULSAO) {
+                    const dist = Math.sqrt(distSq);
+                    const forca = (RAIO_REPULSAO - dist) / RAIO_REPULSAO; 
+                    repelX += (dx / dist) * forca * 3.0; 
+                    repelZ += (dz / dist) * forca * 3.0;
+                }
+            }
+            molaX += repelX;
+            finalZ += repelZ;
+            
+            // Procurar espaco vazio nas imediacoes quando ataca (fuga de adversarios)
+            if (bb && bb.isAttacking) {
+                const adversarios = (p.team === 'TeamA' ? Match.opponents : Match.players).filter(o => o.role !== 'gk');
+                let fugirX = 0;
+                let fugirZ = 0;
+                const RAIO_FUGA = 6.0; 
+                
+                // Só aplica fuga do meio-campo para a frente (ou pouco antes da linha do meio-campo).
+                // Evita que médios fujam dos atacantes correndo para trás em direção à própria baliza na saída de bola.
+                if (finalZ * p.dirZ > -5.0) { 
+                    for (const o of adversarios) {
+                        const dx = molaX - o.model.position.x;
+                        const dz = finalZ - o.model.position.z;
+                        const distSq = dx*dx + dz*dz;
+                        
+                        if (distSq > 0.001 && distSq < RAIO_FUGA * RAIO_FUGA) {
+                            const dist = Math.sqrt(distSq);
+                            const forca = (RAIO_FUGA - dist) / RAIO_FUGA;
+                            fugirX += (dx / dist) * forca * 4.0;
+                            fugirZ += (dz / dist) * forca * 4.0;
+                        }
+                    }
+                    molaX += fugirX;
+                    finalZ += fugirZ;
+                }
+            }
+            
+            // Suaviza a tentativa de espacamento mantendo-a dentro da faixa de accao original (nao empurrar alas pra lateral muito longe)
+            // molaX ja estara com a forca aplicada
         }
 
         const tx = THREE.MathUtils.clamp(molaX, -34, 34);
