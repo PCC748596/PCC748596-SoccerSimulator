@@ -219,14 +219,14 @@ const PlayingStyleTriggers = {
     the_destroyer: (p, bb, s) => !s.atacando && bb.oppCarrier &&
         p.model.position.distanceTo(bb.oppCarrier.model.position) < 18,
 
-    // Inicia de trás: fase de construção.
-    orchestrator: (p, bb, s) => s.atacando && s.bolaAvanco < 10,
+    // Inicia de trás: fase de construção. Permanece ativo na transição defensiva para não saltar à frente
+    orchestrator: (p, bb, s) => s.bolaAvanco < 10,
 
     // Trinco: senta-se sempre que a equipa sobe, e a defender também.
     anchor_man: () => true,
 
-    // Sai a jogar: bola no nosso terço.
-    build_up: (p, bb, s) => s.atacando && s.bolaAvanco < -10,
+    // Sai a jogar: bola no nosso terço. Permanece ativo na defesa.
+    build_up: (p, bb, s) => s.bolaAvanco < -10,
 
     // Central que sobe: último terço, e não quando já se ganha por 2+ (não
     // vale a pena expor a defesa nesse caso).
@@ -296,7 +296,9 @@ function avaliarEstilo(p, bb, dt) {
     if (typeof TeamState !== 'undefined' && bb.state !== TeamState.OFFENSIVE) {
         if (p.playingStyle !== 'anchor_man' && 
             p.playingStyle !== 'defensive_fullback' && 
-            p.playingStyle !== 'the_destroyer') {
+            p.playingStyle !== 'the_destroyer' &&
+            p.playingStyle !== 'orchestrator' &&
+            p.playingStyle !== 'build_up') {
             quer = false;
         }
     }
@@ -570,6 +572,10 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
                 targetX += (fx / fd) * 7.0;
             }
 
+            // Evita colapso de múltiplos Dummy Runners no mesmo alvo usando a base natural do slot
+            const espalhamentoExtra = p.slot ? (p.slot.u - 0.5) * 6.0 : ((p.id % 3) - 1) * 3.0;
+            targetX += espalhamentoExtra;
+
             // Desloca-se em Z à frente da jogada/portador (profundidade de ataque)
             const zAtkMin = (carrierZ * p.dirZ) + 6.0;
             let zAtk = Math.max(targetZ * p.dirZ, zAtkMin);
@@ -657,15 +663,23 @@ Corta só o excesso: nunca empurra para trás quem já estava aquém do tecto.
 function aplicarTectoDoEstilo(p, targetZ) {
     if (typeof estiloAtivoDe !== 'function') return targetZ;
     const est = estiloAtivoDe(p);
-    if (!est || !est.travaNaEntradaArea) return targetZ;
-
-    // Linha da grande área: CAMPO_COMP / 2 (53) - 16.5 = 36.5.
-    // 10 metros antes disso: 26.5.
-    const lim = 26.5; 
-    const zAtaque = targetZ * p.dirZ;
     
-    if (zAtaque > lim) return lim * p.dirZ;
-    if (zAtaque < -lim) return -lim * p.dirZ;
+    const zAtaque = targetZ * p.dirZ;
+
+    if (est && est.travaNaEntradaArea) {
+        // Linha da grande área: CAMPO_COMP / 2 (53) - 16.5 = 36.5.
+        // 10 metros antes disso: 26.5.
+        const lim = 26.5; 
+        if (zAtaque > lim) return lim * p.dirZ;
+        if (zAtaque < -lim) return -lim * p.dirZ;
+    }
+
+    if (est && est.travaNaIntermediaria) {
+        // Intermediária ofensiva: ~ 15m à frente do meio campo.
+        // Impede que o jogador avance muito além disso para organizar o jogo de trás.
+        const limIntermediaria = 15.0; 
+        if (zAtaque > limIntermediaria) return limIntermediaria * p.dirZ;
+    }
 
     return targetZ;
 }

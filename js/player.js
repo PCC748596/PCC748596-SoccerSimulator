@@ -1813,6 +1813,16 @@ class FootballPlayer {
                 if (Math.sign(optPos.x) !== Math.sign(ownX) && Math.abs(optPos.x - ownX) > 20) {
                     score += 150;
                 }
+                
+                // Gosta de organizar o jogo com a defesa e recuar a bola para abrir espaços
+                if (opt.role === 'def' || opt.pos === 'LB' || opt.pos === 'RB') {
+                    score += 120;
+                }
+                
+                // Prefere lançamentos longos e viradas
+                if (dist > 25.0) {
+                    score += 100;
+                }
             }
             if (teamBB && congestaoMeuLado >= 50) {
                 const congestaoAlvo = teamBB.congestion[secToCongestionKey[optSec]] || 0;
@@ -3362,14 +3372,52 @@ class FootballPlayer {
             if (!(this.fsm.currentState === 'CHEST_CONTROL' && this.peitoHopTimer > 0)) {
                 this.model.position.y = lerpTo(this.model.position.y, ALTURA_BASE_Y);
             }
+            let protectingBall = false;
+            if (typeof Match !== 'undefined' && Match.intendedReceiver === this && Match.ball) {
+                const ps = this.playingStyle;
+                if (ps === 'target_man' || ps === 'fox_in_the_box' || ps === 'goal_poacher' || ps === 'dummy_runner') {
+                    let opponents = (this.team === 'TeamA') ? Match.opponents : Match.players;
+                    if (opponents) {
+                        let nearestOpp = null;
+                        let nearestDist = Infinity;
+                        for (let i = 0; i < opponents.length; i++) {
+                            const o = opponents[i];
+                            if (!o || o.role === 'gk') continue;
+                            const dist = this.model.position.distanceTo(o.model.position);
+                            if (dist < nearestDist) {
+                                nearestDist = dist;
+                                nearestOpp = o;
+                            }
+                        }
+                        if (nearestOpp && nearestDist < 3.0) {
+                            let fwd = _v2.set(0, 0, 1).applyQuaternion(this.model.quaternion).normalize();
+                            let dirToOpp = _v1.subVectors(nearestOpp.model.position, this.model.position).normalize();
+                            if (fwd.dot(dirToOpp) < -0.2) {
+                                protectingBall = true;
+                            }
+                        }
+                    }
+                }
+            }
+
             rig.chest.rotation.y = lerpTo(rig.chest.rotation.y, this.cinturaAlvoY || 0); rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, 0);
             rig.pelvis.rotation.y = lerpTo(rig.pelvis.rotation.y, 0); rig.pelvis.rotation.z = lerpTo(rig.pelvis.rotation.z, 0);
-            rig.lLeg.rotation.x = lerpTo(rig.lLeg.rotation.x, 0); rig.rLeg.rotation.x = lerpTo(rig.rLeg.rotation.x, 0);
-            rig.lKnee.rotation.x = lerpTo(rig.lKnee.rotation.x, 0); rig.rKnee.rotation.x = lerpTo(rig.rKnee.rotation.x, 0);
             rig.lFoot.rotation.x = lerpTo(rig.lFoot.rotation.x, 0); rig.rFoot.rotation.x = lerpTo(rig.rFoot.rotation.x, 0);
-            rig.lArm.rotation.x = lerpTo(rig.lArm.rotation.x, 0); rig.rArm.rotation.x = lerpTo(rig.rArm.rotation.x, 0);
-            rig.lArm.rotation.z = lerpTo(rig.lArm.rotation.z, Math.PI / 12); rig.rArm.rotation.z = lerpTo(rig.rArm.rotation.z, -Math.PI / 12);
-            rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, Math.PI / 32); rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, -Math.PI / 32);
+            
+            if (protectingBall) {
+                rig.lArm.rotation.x = lerpTo(rig.lArm.rotation.x, 0.4); rig.rArm.rotation.x = lerpTo(rig.rArm.rotation.x, 0.4);
+                rig.lArm.rotation.z = lerpTo(rig.lArm.rotation.z, Math.PI / 4.5); rig.rArm.rotation.z = lerpTo(rig.rArm.rotation.z, -Math.PI / 4.5);
+                rig.lElbow.rotation.x = lerpTo(rig.lElbow.rotation.x, -0.7); rig.rElbow.rotation.x = lerpTo(rig.rElbow.rotation.x, -0.7);
+                rig.lLeg.rotation.x = lerpTo(rig.lLeg.rotation.x, 0.2); rig.rLeg.rotation.x = lerpTo(rig.rLeg.rotation.x, 0.2);
+                rig.lKnee.rotation.x = lerpTo(rig.lKnee.rotation.x, 0.4); rig.rKnee.rotation.x = lerpTo(rig.rKnee.rotation.x, 0.4);
+                rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, Math.PI / 16); rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, -Math.PI / 16);
+            } else {
+                rig.lArm.rotation.x = lerpTo(rig.lArm.rotation.x, 0); rig.rArm.rotation.x = lerpTo(rig.rArm.rotation.x, 0);
+                rig.lArm.rotation.z = lerpTo(rig.lArm.rotation.z, Math.PI / 12); rig.rArm.rotation.z = lerpTo(rig.rArm.rotation.z, -Math.PI / 12);
+                rig.lLeg.rotation.x = lerpTo(rig.lLeg.rotation.x, 0); rig.rLeg.rotation.x = lerpTo(rig.rLeg.rotation.x, 0);
+                rig.lKnee.rotation.x = lerpTo(rig.lKnee.rotation.x, 0); rig.rKnee.rotation.x = lerpTo(rig.rKnee.rotation.x, 0);
+                rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, Math.PI / 32); rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, -Math.PI / 32);
+            }
             return;
         }
         if (speed >= 0.1) {

@@ -507,13 +507,25 @@ uma dúzia de frames alguma das faces já tinha saído — o resultado real seri
 "o que calhar primeiro", não os 80/20 pedidos. Fica gravada no jogador e só
 é limpa quando ele deixa de ter a bola (ver limparSaidaGK).
 */
-function decidirSaidaGK(p) {
+function decidirSaidaGK(ctx) {
+    const p = ctx.p;
     const G = GoalkeeperDistribution;
     let chance = G.laterais;
     if (G.porEstilo && typeof Tatics !== 'undefined' &&
         G.porEstilo[Tatics.teamPlayStyle] !== undefined) {
         chance = G.porEstilo[Tatics.teamPlayStyle];
     }
+    
+    // A preferência do estilo da equipa é a base, mas podemos ajustá-la em
+    // função da disponibilidade real das linhas de passe.
+    const lateralLivre = acharLateralParaSaida(ctx);
+    if (!lateralLivre) {
+        // Se ninguém está livre, não tem como sair a jogar curto.
+        chance = 0.0;
+    }
+    // Se há um lateral livre, a chance permanece a que o estilo de jogo mandou
+    // (ex: Possession = 70%, Direct = 25%).
+
     p.gkSaida = (Math.random() < chance) ? 'laterais' : 'chuteFrente';
     return p.gkSaida;
 }
@@ -1675,7 +1687,11 @@ function actReceivePass(ctx) {
 
         const distAlvo = Math.hypot(p.model.position.x - p.dynamicTarget.x, p.model.position.z - p.dynamicTarget.z);
         const distBola = Math.hypot(p.model.position.x - bola.x, p.model.position.z - bola.z);
-        if (distAlvo < 0.8 && distBola > 1.2) {
+        
+        // Histerese para evitar sacudir (jitter)
+        const lim = (p.fsm.currentState === 'IDLE') ? 1.5 : 0.8;
+        
+        if (distAlvo < lim && distBola > 1.2) {
             p.velocity.set(0, 0, 0);
             p.fsm.changeState('IDLE');
             lookAtBola(p.model, bola);
@@ -2274,7 +2290,7 @@ function tratarGuardaRedes(ctx) {
     const G = GoalkeeperDistribution;
     // Sorteada UMA vez por posse (ver decidirSaidaGK) — a cada frame seria
     // "o que calhar primeiro" em vez da proporção pedida.
-    const saida = p.gkSaida || decidirSaidaGK(p);
+    const saida = p.gkSaida || decidirSaidaGK(ctx);
 
     /*
     Quando o GR segura a bola nas mãos, o relançamento é tratado pelo estado
@@ -2931,10 +2947,20 @@ const PlayerBT = sel('PlayerRoot',
                         const p = ctx.p;
                         const c = Match.ballCarrier;
                         const side = Math.sign(c.model.position.x) || 1;
-                        // Metade dos candidatos ataca o 1º poste (lado do cruzamento),
-                        // a outra o 2º poste — leque simples, sem coordenação fina.
-                        const targetX = (p.id % 2 === 0) ? -side * 5.0 : side * 9.0;
-                        const targetZ = (CrossModel.areaZ + 6.0) * p.dirZ;
+                        
+                        // Usa a posição do slot inicial do jogador para espalhá-los pela área
+                        // de forma natural e sem colisões no mesmo alvo exato.
+                        const slotU = p.slot ? p.slot.u : 0.5;
+                        const slotV = p.slot ? p.slot.v : 1.0;
+                        
+                        // Espalha ao longo de X (largura da área)
+                        const offsetX = (slotU - 0.5) * 16.0; 
+                        const targetX = -side * 3.0 + offsetX;
+                        
+                        // Espalha na profundidade Z baseado no avanço da posição (v)
+                        const offsetZ = slotV * 8.0;
+                        const targetZ = (CrossModel.areaZ + 3.0 + offsetZ) * p.dirZ;
+                        
                         p.dynamicTarget.set(targetX, ALTURA_BASE_Y, targetZ);
                         p.speedMult = (5.5 + ((ctx.skillSpeed - 50) / 50) * 1.2) * 1.25 * 0.9;
                         p.fsm.changeState('MOVE_TO_POS');

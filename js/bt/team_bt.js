@@ -885,9 +885,8 @@ function computeBlock(bb) {
 
     /* --- limites em Z (Regra 2 e Regra 3) -------------------------------
        O rectângulo do bloco vai até perto da linha de fundo adversária.
-       A traseira do bloco (minZ) está agora restrita à linha da própria
-       grande área (16.5m), impedindo que os times recuem em demasia para
-       dentro da área em fase defensiva regular.
+       A traseira do bloco (minZ) está restrita à linha da própria grande área
+       (16.5m).
     */
     const fundo = typeof LINHA_FUNDO !== 'undefined' ? LINHA_FUNDO : CAMPO_COMP / 2;
     const profArea = typeof Area !== 'undefined' ? Area.profundidade : 16.5;
@@ -1173,7 +1172,95 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
     const empurraZ = dentro(bloco.z0, bloco.z1, limZ);
 
     let xTarget = bloco.x0 + u * (bloco.x1 - bloco.x0) + empurraX;
-    const zTarget = ((bloco.z0 + v * (bloco.z1 - bloco.z0)) + empurraZ) * bb.dir;
+    let zTarget = ((bloco.z0 + v * (bloco.z1 - bloco.z0)) + empurraZ) * bb.dir;
+
+    /*
+    Acompanhamento da linha da bola pela linha de defesa na saída de jogo:
+    Com posse de bola (construção / progressão do jogo da defesa até ao círculo central),
+    a linha defensiva (centrais e laterais) acompanha a linha da bola cerca de 3 m atrás,
+    evitando que fiquem demasiado para trás na progressão do jogo, garantindo sempre a
+    hierarquia tática e espaçamento com os médios (CM).
+    */
+    if (bb.isAttacking) {
+        // A linha defensiva (centrais e laterais) acompanha a linha da bola.
+        // Garantindo sempre a hierarquia tática e espaçamento com os médios (CM).
+        const bolaZDir = (typeof bb.bolaZSuave === 'number' ? bb.bolaZSuave : (bb.ballZ || 0)) * bb.dir;
+        let zAlvoDir = zTarget * bb.dir;
+        
+        let distFrente = 5;
+        let distTras = 5;
+
+        // Regras de afastamento da linha da bola:
+        let emProfundidade = bb.isCounter || role === 'atk' || pos === 'LW' || pos === 'RW' || pos === 'LWB' || pos === 'RWB';
+        if (emProfundidade) {
+            distFrente = 20;
+        }
+        
+        // Defesas e trincos costumam ficar atrás da linha da bola para dar cobertura
+        if (role === 'def' || pos === 'DM') {
+            distTras = 15;
+            distFrente = 0; // Defesa central e trinco não devem passar à frente da bola 
+            
+            // Mas laterais podem subir no corredor se forem ofensivos
+            if (pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB') {
+                distFrente = 10;
+            }
+        }
+        
+        let gkComBola = bb.ballCarrier && bb.ballCarrier.role === 'gk' && bb.ballCarrier.team === p.team;
+        let portadorBloqueado = false;
+        
+        if (bb.ballCarrier && bb.ballCarrier.team === p.team && !gkComBola) {
+            const oppCarrier = bb.oppCarrier; // adversário mais próximo do portador
+            if (oppCarrier && bb.ballCarrier.model.position.distanceTo(oppCarrier.model.position) < 4.0) {
+                portadorBloqueado = true;
+            }
+        }
+        
+        if (portadorBloqueado) {
+            distTras = 12; // Permite que venham mais atrás oferecer apoio
+            distFrente = Math.min(distFrente, 3); // Reduz a distância na frente para forçá-los a aproximar para passe curto
+        }
+        
+        if (gkComBola) {
+            // Quando o goleiro tem a bola, a defesa avança para receber o passe abrindo nas laterais, sem grudar nele
+            distFrente = Math.max(distFrente, 25);
+            distTras = Math.max(distTras, 15);
+        }
+
+        // 1. Limita o avanço: não deixa os jogadores fugirem muito para a frente da bola
+        if (zAlvoDir > bolaZDir + distFrente) {
+            zAlvoDir = bolaZDir + distFrente;
+        }
+        
+        // 2. Limita o recuo: não deixa os jogadores ficarem muito atrás da bola (garante o acompanhamento do time)
+        if (zAlvoDir < bolaZDir - distTras) {
+            zAlvoDir = bolaZDir - distTras;
+        }
+
+        // Mantém a regra de segurança antiga para a defesa na saída de jogo (teto para não bater nos médios)
+        if (role === 'def') {
+            const limiteCirculo = (typeof TeamShape !== 'undefined' && typeof TeamShape.limiteSaidaCirculoCentral === 'number')
+                ? TeamShape.limiteSaidaCirculoCentral : 0.0;
+            const zMidDir = bloco.z0 + 0.45 * (bloco.z1 - bloco.z0);
+            const zDefTeto = zMidDir - 3.5;
+            
+            const zLatAcompanha = Math.min(limiteCirculo, zDefTeto + 1.5);
+            const zCBAcompanha = Math.min(limiteCirculo, zDefTeto);
+            
+            // Se o clamp os tiver puxado muito para a frente, o teto corrige
+            if (pos === 'CB' && zAlvoDir > zCBAcompanha) {
+                zAlvoDir = zCBAcompanha;
+            } else if ((pos === 'LB' || pos === 'RB') && zAlvoDir > zLatAcompanha) {
+                zAlvoDir = zLatAcompanha;
+            }
+        }
+
+        const minZDef = -(CAMPO_COMP / 2 - 1.5);
+        if (zAlvoDir < minZDef) zAlvoDir = minZDef;
+
+        zTarget = zAlvoDir * bb.dir;
+    }
 
     const ballX = bb.ballX || 0;
     const CORREDOR_LIMITE = 11.33; 
@@ -1221,109 +1308,11 @@ function slotNoBloco(p, bb) {
 }
 
 /*
-SISTEMA DE DETECÇÃO DO ALVO MAIS PRÓXIMO PARA JOGADORES DA MESMA POSIÇÃO
-Evita que dois atacantes (CF), dois médios (CM) ou dois centrais (CB) corram
-para o mesmo lugar. Pareia os slots da formação dinamicamente por proximidade,
-com tratamento dedicado para quando um deles é o portador da bola.
+Garante a estabilidade dos slots táticos por posição (evita cruzamentos erráticos de centrais ou médios).
 */
 function otimizarSlotsPorPosicao(lista, bb) {
-    if (!lista || !bb || !bb.bloco) return;
-
-    // Agrupa jogadores de campo pela posição (ex: CF, CB, CM, etc)
-    const grupos = {};
-    for (const p of lista) {
-        if (!p || p.role === 'gk' || !p.slot) continue;
-        if (!p.slotInicial) {
-            p.slotInicial = { u: p.slot.u, v: p.slot.v };
-        }
-        if (!grupos[p.pos]) grupos[p.pos] = [];
-        grupos[p.pos].push(p);
-    }
-
-    const carrier = (typeof Match !== 'undefined' && Match.ballCarrier) ? Match.ballCarrier : null;
-
-    for (const pos in grupos) {
-        const grupo = grupos[pos];
-        if (grupo.length < 2) continue;
-
-        // Slots iniciais da formação para este grupo
-        const slots = grupo.map(p => p.slotInicial);
-        
-        // Posição espacial no mundo de cada slot no bloco atual
-        const alvosSlots = slots.map(s => calcularPontoDoSlot(s, pos, grupo[0].role, grupo[0].fbStyle, bb));
-        if (alvosSlots.some(a => !a)) continue;
-
-        const k = grupo.length;
-        if (k === 2) {
-            const p0 = grupo[0];
-            const p1 = grupo[1];
-            const pos0 = p0.model ? p0.model.position : p0.baseTarget;
-            const pos1 = p1.model ? p1.model.position : p1.baseTarget;
-            const s0 = alvosSlots[0];
-            const s1 = alvosSlots[1];
-
-            // Caso 1: Um dos jogadores do grupo é o portador da bola
-            const isP0Carrier = (carrier === p0) || (p0.fsm && (p0.fsm.currentState === 'CARRY' || p0.fsm.currentState === 'DRIBBLE'));
-            const isP1Carrier = (carrier === p1) || (p1.fsm && (p1.fsm.currentState === 'CARRY' || p1.fsm.currentState === 'DRIBBLE'));
-
-            if (isP0Carrier && !isP1Carrier) {
-                // p0 é o portador: atribui a p0 o slot mais próximo dele, e p1 obrigatoriamente fica com o outro slot
-                const d0_s0 = Math.hypot(pos0.x - s0.x, pos0.z - s0.z);
-                const d0_s1 = Math.hypot(pos0.x - s1.x, pos0.z - s1.z);
-                if (d0_s0 <= d0_s1) {
-                    p0.slot = slots[0];
-                    p1.slot = slots[1];
-                } else {
-                    p0.slot = slots[1];
-                    p1.slot = slots[0];
-                }
-                continue;
-            } else if (isP1Carrier && !isP0Carrier) {
-                // p1 é o portador: atribui a p1 o slot mais próximo dele, e p0 obrigatoriamente fica com o outro slot
-                const d1_s0 = Math.hypot(pos1.x - s0.x, pos1.z - s0.z);
-                const d1_s1 = Math.hypot(pos1.x - s1.x, pos1.z - s1.z);
-                if (d1_s1 <= d1_s0) {
-                    p1.slot = slots[1];
-                    p0.slot = slots[0];
-                } else {
-                    p1.slot = slots[0];
-                    p0.slot = slots[1];
-                }
-                continue;
-            }
-
-            // Caso 2: Nenhum é o portador da bola (jogo posicional)
-            // Compara configuração direta (p0->s0, p1->s1) vs invertida (p0->s1, p1->s0)
-            const d00 = (pos0.x - s0.x) ** 2 + (pos0.z - s0.z) ** 2;
-            const d11 = (pos1.x - s1.x) ** 2 + (pos1.z - s1.z) ** 2;
-            const custoDireto = d00 + d11;
-
-            const d01 = (pos0.x - s1.x) ** 2 + (pos0.z - s1.z) ** 2;
-            const d10 = (pos1.x - s0.x) ** 2 + (pos1.z - s0.z) ** 2;
-            const custoInvertido = d01 + d10;
-
-            const HISTERESE = 4.0; // metros quadrados de folga para estabilidade dinâmica
-            const atualmenteDireto = (!p0.slot || (p0.slot.u === slots[0].u && p0.slot.v === slots[0].v));
-
-            if (atualmenteDireto) {
-                if (custoInvertido < custoDireto - HISTERESE) {
-                    p0.slot = slots[1];
-                    p1.slot = slots[0];
-                } else {
-                    p0.slot = slots[0];
-                    p1.slot = slots[1];
-                }
-            } else {
-                if (custoDireto < custoInvertido - HISTERESE) {
-                    p0.slot = slots[0];
-                    p1.slot = slots[1];
-                } else {
-                    p0.slot = slots[1];
-                    p1.slot = slots[0];
-                }
-            }
-        }
-    }
+    // Foi removido o congelamento (slotInicial) porque quebrava a inversão de 
+    // campo ao intervalo e ignorava mudanças táticas feitas pelo utilizador.
 }
 
 /*

@@ -165,7 +165,15 @@ const TeamShape = {
     // Construção: com a bola aquém deste Z, um médio desce a dar linha de passe.
     supportBallZ: -6.0,
     supportAhead: 9.0,    // quantos metros à frente da bola se oferece
-    supportWide: 8.0      // e quanto abre para o lado, para abrir o corredor
+    supportWide: 8.0,     // e quanto abre para o lado, para abrir o corredor
+
+    /*
+    Na saída de jogo e na progressão com posse até ao círculo central,
+    a linha de defesa acompanha a linha da bola cerca de 3 m atrás,
+    evitando que os defesas fiquem demasiado para trás.
+    */
+    distanciaDefesaSaida: 3.0,
+    limiteSaidaCirculoCentral: 0.0
 };
 
 /*
@@ -540,7 +548,8 @@ const PlayingStyles = {
     orchestrator: {
         nome: 'Orchestrator', posicoes: ['CM', 'DM'],
         driblar: 0.5,
-        avanco: -5, passe: 1.35, lancar: 1.4, conduzir: 0.7, cadencia: 1.2
+        avanco: -5, passe: 1.35, lancar: 1.4, conduzir: 0.7, cadencia: 1.2,
+        travaNaIntermediaria: true
     },
     anchor_man: {
         nome: 'Anchor Man', posicoes: ['DM'],

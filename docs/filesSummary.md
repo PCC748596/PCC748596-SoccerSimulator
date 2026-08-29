@@ -5,6 +5,27 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 28 de Agosto de 2026 (continuação) — Inteligência tática e resolução de colapsos posicionais
+
+**O Guarda-Redes e a Saída Curta** (`js/bt/player_bt.js`)
+A decisão de saída de bola do guarda-redes dependia de uma probabilidade fixa baseada no estilo de jogo, ignorando a pressão real (mesmo no estilo Possession, poderia mandar um chutão cego à frente). 
+- O guarda-redes agora faz uma leitura inteligente das linhas de passe defensivas (`acharLateralParaSaida(ctx)`).
+- Se houver um lateral ou central desmarcado (folga suficiente), a chance de sair a jogar curto pela defesa sobe automaticamente para **100%**.
+- Se não houver ninguém livre, a chance cai para 0% e ele recorre ao chutão por pura segurança.
+
+**Aglomeração Defensiva na Segunda Parte (O Bug dos 8 jogadores colapsados)** (`js/bt/team_bt.js`)
+No intervalo, quando o motor de jogo invertia a orientação espacial (`dirZ`) e os lados do campo, o sistema de posicionamento congelava o eixo natural de referência de cada jogador na variável estática `slotInicial`.
+- A inteligência tentava forçar o reposicionamento cruzando os valores da primeira metade do jogo, o que enfiava a defesa, meio-campo e ataque no mesmo ponto exato do relvado.
+- Removido o caching rígido de `slotInicial` na função `otimizarSlotsPorPosicao`, permitindo ao motor recalcular os eixos fluidamente (respeitando a inversão de campo e ajustes táticos feitos na interface pelo treinador).
+
+**Espalhamento Dinâmico na Área (Ataque ao Cruzamento)** (`js/bt/player_bt.js`)
+Quando a equipa atacava a baliza, todos os jogadores (independentemente de serem pontas ou médios) rumavam à exata coordenada matemática do primeiro ou segundo poste (`-side * 5.0` ou `side * 9.0`), criando uma sobreposição irrealista de múltiplos bonecos num ponto único.
+- A função foi reescrita para espalhar os atacantes através de *offsets* baseados na sua largura original no terreno (`p.slot.u`) e avanço (`p.slot.v`). Os jogadores agora invadem a área num leque tático amplo, guardando distâncias naturais e preenchendo todos os vazios.
+
+**Dummy Runners sem Colisão** (`js/playing_styles.js`)
+Múltiplos jogadores com a diretriz tática de arrastamento convergiam na profundidade de ataque para o mesmo raio.
+- Adicionado um "espalhamento extra" na função `aplicarEstiloPosicional` do Dummy Runner. Com base na raiz estrutural de cada jogador (`p.slot.u`), cada corredor abre uma frente de ataque vertical paralela para arrastar marcações sem chocar com os companheiros.
+
 ### Sessão de 28 de Agosto de 2026 — bolas paradas, jogo aéreo, e um jogador a voar para fora do estádio
 
 Testes novos: `penalti_corrida`, `canto_forca`, `corrida_abortada`,
