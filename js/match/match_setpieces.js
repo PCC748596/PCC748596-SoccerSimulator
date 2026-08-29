@@ -375,12 +375,29 @@ Object.assign(Match, {
             dirFK.normalize();
             const perpFK = new THREE.Vector3(-dirFK.z, 0, dirFK.x);
 
-            let takerFK = null, minFK = 999;
-            attackingPlayers.forEach(p => {
-                if (p.role === 'gk') return;
-                const d = p.model.position.distanceTo(bolaFK);
-                if (d < minFK) { minFK = d; takerFK = p; }
-            });
+            /*
+            QUEM BATE. Era o mais PERTO da bola — a cobrança calhava a quem a
+            jogada tinha deixado ali, e via-se um central a bater uma falta na
+            entrada da área adversária.
+
+            Agora sai do sector (FreeKickModel.batedorPorSetor): na defesa e no
+            meio-campo recuado batem os DEFENSORES (o de melhor Técnica), do
+            meio-campo para a frente bate o melhor técnico NÃO-defensor, e no
+            cruzamento pela ala bate o LATERAL — porque os centrais e os pontas
+            queremo-los dentro da área a atacar a bola.
+
+            A decisão da bola calcula-se aqui em cima porque o sector de ataque
+            depende dela: cruzar e rematar não têm o mesmo desenho.
+            */
+            const decisaoFK = (typeof decisaoDeFalta === 'function')
+                ? decisaoDeFalta(bolaFK.x, bolaFK.z, attDir) : 'passe';
+            const setorPreliminar = (typeof setorDaFalta === 'function')
+                ? setorDaFalta(bolaFK.x, bolaFK.z, attDir, decisaoFK) : 'meio_avancado';
+            const criterioFK = (F.batedorPorSetor && F.batedorPorSetor[setorPreliminar]) || 'naoDef';
+
+            const takerFK = (typeof batedorDaFalta === 'function')
+                ? batedorDaFalta(attackingPlayers, criterioFK, p => p.skillFor('TEC'))
+                : null;
             this.setPieceTaker = takerFK || null;
 
             if (takerFK) {
@@ -433,66 +450,66 @@ Object.assign(Match, {
 
             /*
             ==========================================================
-            GENTE NA ÁREA À ESPERA DO CRUZAMENTO
+            ONDE SE PÕE A EQUIPA QUE COBRA
             ==========================================================
-            Até aqui só o batedor e a barreira eram colocados: os outros nove
-            atacantes ficavam onde a jogada os tinha deixado, e cruzava-se para
-            uma área vazia.
+            Antes só o batedor e cinco homens na área eram colocados, e só a
+            partir do `zonaDeArea` — nas outras faltas os dez ficavam onde a
+            jogada os tinha deixado. Uma falta na própria defesa tinha o mesmo
+            desenho de uma falta ao lado da área: nenhum.
 
-            Mesmo desenho do canto (ver attackSetup mais acima): slots
-            relativos à baliza, `initial` onde se espera e `target` para onde
-            se ataca quando a bola sai, com a disputa de posição (jostle) por
-            cima. O que muda é a quantidade — cinco e não nove, porque numa
-            falta a bola tanto pode sair em cruzamento como em remate directo,
-            e a equipa inteira dentro da área deixava o contra-ataque aberto.
+            Agora o desenho sai do SECTOR (ver setorDaFalta e
+            FreeKickModel.formacaoPorSetor). Os lugares são geometria pura e
+            vivem no `lugaresDaFalta` (utils.js), para se poderem medir sem
+            montar um jogo.
 
-            Só a partir de `zonaDeArea`: mais longe do que isso a falta é de
-            recomposição e não de ataque.
+            O `dynamicTarget` é escrito a par da posição: sem ele o nível 1
+            reescreve o alvo no frame seguinte e eles saem todos do lugar antes
+            de a bola ser batida.
             */
-            const povoarArea = avancoFK >= F.zonaDeArea;
-            if (povoarArea) {
-                const ladoFK = Math.sign(bolaFK.x) || 1;
-                const linhaFundoFK = attDir * (CAMPO_COMP / 2);
+            const setorFK = setorDaFalta(bolaFK.x, bolaFK.z, attDir, decisaoFK);
+            this.setorDaFaltaActual = setorFK;
 
+            const restantes = attackingPlayers.filter(p => p !== takerFK && p.role !== 'gk');
+            const lugares = lugaresDaFalta(bolaFK.x, bolaFK.z, attDir, restantes, setorFK);
+
+            lugares.forEach(l => {
+                const p = l.p;
+                p.model.position.set(l.x, ALTURA_BASE_Y, l.z);
+                p.dynamicTarget.set(l.x, ALTURA_BASE_Y, l.z);
+                p.setPieceTarget = new THREE.Vector3(l.x, ALTURA_BASE_Y, l.z);
                 /*
-                Quem vai à área: avançados primeiro, laterais e trincos por
-                último — a mesma ordem do canto, e pela mesma razão (sem ela o
-                slot saía pela ordem do plantel e um lateral ficava no primeiro
-                pau com o ponta-de-lança na sobra).
+                A disputa de posição (jostle) só para quem ataca a área: no
+                meio-campo não há ninguém em cima deles para disputar, e o
+                passo-à-volta-da-âncora lia-se como indecisão.
                 */
-                const naArea = attackingPlayers
-                    .filter(p => p !== takerFK && p.role !== 'gk')
-                    .sort((a, b) => {
-                        const ordem = { 'ata': 1, 'mid': 2, 'def': 3 };
-                        return (ordem[a.role] || 2) - (ordem[b.role] || 2);
-                    })
-                    .slice(0, F.slotsArea.length);
-
-                naArea.forEach((p, idx) => {
-                    const cfg = F.slotsArea[idx];
-                    const initX = ladoFK * cfg.initial.relX;
-                    const initZ = linhaFundoFK - attDir * cfg.initial.dist;
-
-                    p.model.position.set(initX, ALTURA_BASE_Y, initZ);
-                    p.dynamicTarget.set(
-                        ladoFK * cfg.target.relX, ALTURA_BASE_Y,
-                        linhaFundoFK - attDir * cfg.target.dist);
-                    p.setPieceTarget = new THREE.Vector3().copy(p.model.position);
-                    p.jostleAncora = { x: initX, z: initZ };
+                if (setorFK === 'ataque_lateral' || setorFK === 'ataque_entrada') {
+                    p.jostleAncora = { x: l.x, z: l.z };
                     p.jostleAngulo = Math.random() * Math.PI * 2;
                     p.jostleRaio = Math.random() * SetPieceJostle.raio;
                     p.jostleTimer = Math.random() * SetPieceJostle.intervaloMax;
-                    p.fsm.changeState('SET_PIECE_WAIT');
-                    lookAtBola(p.model, bolaFK);
-                });
+                } else {
+                    p.jostleAncora = null;
+                }
+                p.fsm.changeState('SET_PIECE_WAIT');
+                lookAtBola(p.model, bolaFK);
+            });
 
-                /*
-                E os marcadores. Só os defensores que SOBRAM da barreira — ela
-                é obrigação e vem primeiro. Sem isto os atacantes ficavam na
-                área sozinhos, que é tão irreal como a área vazia.
-                */
+            /*
+            E OS MARCADORES da defesa, só quando há área para marcar. Os
+            defensores que SOBRAM da barreira — ela é obrigação e vem primeiro.
+            Sem isto os atacantes ficavam na área sozinhos, que é tão irreal
+            como a área vazia.
+
+            O afastamento dos 9.15 m corre DEPOIS disto (ver mais abaixo): estes
+            slots são medidos da linha de fundo e não sabem onde está a bola.
+            */
+            if (setorFK === 'ataque_lateral' || setorFK === 'ataque_entrada') {
+                const ladoFK = Math.sign(bolaFK.x) || 1;
+                const linhaFundoFK = attDir * (CAMPO_COMP / 2);
+                const naArea = lugares.filter(l =>
+                    Math.abs(linhaFundoFK - l.z) <= 20.0 && Math.abs(l.x) <= 20.16);
                 const livres = defesaOrdenada.slice(nBarreira);
-                for (let i = 0; i < naArea.length && i < livres.length; i++) {
+                for (let i = 0; i < naArea.length && i < livres.length && i < F.slotsMarcacao.length; i++) {
                     const cfg = F.slotsMarcacao[i];
                     const d = livres[i];
                     d.model.position.set(

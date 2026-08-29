@@ -398,7 +398,148 @@ const FreeKickModel = {
         { relX: -4.2, dist: 7.4 },
         { relX: 1.0, dist: 12.7 },
         { relX: 0.5, dist: 17.7 }
-    ]
+    ],
+
+    /*
+    =====================================================================
+    ONDE SE PÕE A EQUIPA QUE COBRA, POR SECTOR DO CAMPO
+    =====================================================================
+    Até aqui só o batedor e cinco homens na área eram colocados; os outros
+    ficavam onde a jogada os tinha deixado. Uma falta na própria defesa
+    tinha o mesmo desenho de uma falta ao lado da área.
+
+    A UNIDADE É O AVANÇO: `bolaZ * attDir`, medido do MEIO-CAMPO. Negativo
+    é campo próprio, positivo é campo adversário; ±53 são as linhas de
+    fundo. É o mesmo referencial do `barreiraZonaZ` e do `zonaDeArea`.
+
+    CINCO SECTORES (ver setorDaFalta em utils.js):
+
+      defesa          avanço < -17.7   (terço defensivo)
+      meio_recuado    -17.7 a 0        (meio-campo, ainda no campo próprio)
+      meio_avancado    0 a +17.7       (meio-campo, já no campo adversário)
+      ataque_lateral   terço ofensivo, ao lado da área  -> cruzamento
+      ataque_entrada   terço ofensivo, de frente        -> cobrança directa
+
+    Nos dois últimos quem manda é a DECISÃO (`decisaoDeFalta`): o sector de
+    ataque segue o que a bola vai fazer, senão o desenho e a cobrança
+    diziam coisas diferentes.
+    */
+    setores: {
+        tercoDefensivo: -17.7,   // avanço abaixo disto é sector defensivo
+        meioCampo: 0.0,          // e daqui para cima já é campo adversário
+        tercoOfensivo: 17.7
+    },
+
+    /*
+    QUEM BATE, por sector.
+
+      'central'  o ZAGUEIRO (CB) de melhor Técnica, com 'def' de reserva
+      'def'      o DEFENSOR de melhor Técnica (lateral incluído)
+      'naoDef'   o melhor Técnico que NÃO é defensor
+      'lateral'  o LATERAL de melhor Técnica (LB/RB), com `naoDef` de reserva
+
+    O `lateral` é o do cruzamento pela ala: quem cruza de lá é o lateral que
+    subiu, e não o ponta-de-lança que se quer DENTRO da área a atacar a
+    bola. Um lateral é `role: 'def'`, portanto esta é a excepção à regra
+    geral — trocar para 'naoDef' aqui é uma linha, se preferires assim.
+    */
+    batedorPorSetor: {
+        defesa: 'central',
+        meio_recuado: 'central',
+        meio_avancado: 'naoDef',
+        ataque_lateral: 'lateral',
+        ataque_entrada: 'naoDef'
+    },
+
+    /*
+    O DESENHO. Cada grupo de posições recebe uma linha, em três modos:
+
+      'bola'    `avanco` metros à frente da BOLA (negativo = atrás dela) e
+                `xs` são posições ABSOLUTAS na largura do campo. Serve para
+                as faltas de recomposição, onde o que importa é a escada de
+                linhas à frente da bola.
+      'baliza'  `slots` medidos da LINHA DE FUNDO (`dist`) e do eixo da
+                baliza (`relX`, com o sinal do lado de onde vem a bola).
+                Serve para quem ataca a área — mesmo referencial dos slots
+                do canto.
+      'apoio'   junto à bola: `dx` para o lado (com o sinal do lado da bola)
+                e `dz` para a frente. Serve para quem dá a opção curta.
+
+    Grupos: cb (CB), lat (LB/RB), mc (DM/CM/AM), ml (LM/RM/LW/RW), ata (CF).
+    Quando há mais gente do que lugares, os que sobram repetem o último
+    lugar afastados de `espacamentoExtra` metros.
+    */
+    espacamentoExtra: 4.5,
+
+    formacaoPorSetor: {
+        /*
+        FALTA NA PRÓPRIA DEFESA. Batem os centrais; o meio-campo à frente e
+        o ataque mais à frente ainda — é a bola posta para a frente, e o
+        desenho é uma escada de linhas para haver a quem jogar.
+        */
+        defesa: {
+            cb: { modo: 'bola', avanco: 2.0, xs: [-10, 10] },
+            lat: { modo: 'bola', avanco: 10.0, xs: [-26, 26] },
+            mc: { modo: 'bola', avanco: 20.0, xs: [-8, 0, 8] },
+            ml: { modo: 'bola', avanco: 22.0, xs: [-23, 23] },
+            ata: { modo: 'bola', avanco: 34.0, xs: [-7, 7] }
+        },
+
+        // MEIO-CAMPO AINDA NO CAMPO PRÓPRIO: mesma ideia, escada mais curta.
+        meio_recuado: {
+            cb: { modo: 'bola', avanco: 2.0, xs: [-9, 9] },
+            lat: { modo: 'bola', avanco: 12.0, xs: [-26, 26] },
+            mc: { modo: 'bola', avanco: 18.0, xs: [-7, 0, 7] },
+            ml: { modo: 'bola', avanco: 20.0, xs: [-24, 24] },
+            ata: { modo: 'bola', avanco: 32.0, xs: [-8, 8] }
+        },
+
+        /*
+        MEIO-CAMPO JÁ NO CAMPO ADVERSÁRIO. Batem os médios. Os centrais
+        ficam ATRÁS da bola (é aqui que o contra-ataque nasce), os laterais
+        e os meias-laterais abrem na largura, e os avançados à frente.
+        */
+        meio_avancado: {
+            cb: { modo: 'bola', avanco: -12.0, xs: [-9, 9] },
+            lat: { modo: 'bola', avanco: 0.0, xs: [-28, 28] },
+            mc: { modo: 'bola', avanco: 6.0, xs: [-6, 6] },
+            ml: { modo: 'bola', avanco: 10.0, xs: [-27, 27] },
+            ata: { modo: 'bola', avanco: 18.0, xs: [-7, 7] }
+        },
+
+        /*
+        AO LADO DA ÁREA — CRUZAMENTO. Bate o lateral. Os CENTRAIS SOBEM
+        para cabecear e os avançados também; os médios centrais ficam
+        recuados na entrada da área, para o ressalto e para tapar o
+        contra-ataque; o meia-lateral do lado dá o apoio curto ao batedor.
+
+        Os `dist` batem certo com os quatro alvos do cruzamento (ver
+        `cruzamentos`): primeira trave ~5.5 m, segunda ~5.8, marca ~11,
+        entrada ~17.5.
+        */
+        ataque_lateral: {
+            ata: { modo: 'baliza', slots: [{ relX: 3.2, dist: 5.6 }, { relX: -3.4, dist: 6.2 }] },
+            cb: { modo: 'baliza', slots: [{ relX: 0.0, dist: 11.0 }, { relX: -1.5, dist: 8.5 }] },
+            mc: { modo: 'baliza', slots: [{ relX: 1.0, dist: 18.0 }, { relX: -4.0, dist: 19.5 }] },
+            ml: { modo: 'apoio', dx: 5.5, dz: -1.5 },
+            lat: { modo: 'bola', avanco: -16.0, xs: [-16, 16] }
+        },
+
+        /*
+        DE FRENTE À ENTRADA DA ÁREA — COBRANÇA DIRECTA. Os centrais ficam
+        recuados (não têm nada a fazer à frente numa bola que vai à baliza,
+        e é dali que se defende o contra-ataque), os avançados ficam à
+        espera do RESSALTO — do guarda-redes, da barreira ou do poste — e
+        os laterais e médios dão o apoio, para a alternativa curta existir.
+        */
+        ataque_entrada: {
+            ata: { modo: 'baliza', slots: [{ relX: 2.5, dist: 13.5 }, { relX: -2.5, dist: 14.5 }] },
+            mc: { modo: 'apoio', dx: 7.0, dz: -1.0 },
+            ml: { modo: 'apoio', dx: 11.0, dz: 1.5 },
+            lat: { modo: 'apoio', dx: 15.0, dz: -3.0 },
+            cb: { modo: 'bola', avanco: -20.0, xs: [-10, 10] }
+        }
+    }
 };
 
 /*

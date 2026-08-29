@@ -478,6 +478,178 @@ function velocidadeDeLancamento(distancia, alturaSaida, alturaAlvo, elev, gravid
 }
 
 /*
+=============================================================================
+O SECTOR DA FALTA — que desenho a equipa faz
+=============================================================================
+A `decisaoDeFalta` diz o que a BOLA vai fazer; isto diz onde a EQUIPA se põe.
+São coisas diferentes e tinham de ser duas funções, mas não podem discordar:
+no terço ofensivo o sector segue a decisão, senão o desenho dizia "cruzamento"
+com a bola a ir à baliza.
+
+A unidade é o AVANÇO (`bolaZ * attDir`, medido do meio-campo), a mesma do
+`barreiraZonaZ` e do `zonaDeArea`. Ver FreeKickModel.setores.
+
+    defesa          terço defensivo próprio
+    meio_recuado    meio-campo, ainda no campo próprio
+    meio_avancado   meio-campo, já no campo adversário
+    ataque_lateral  terço ofensivo, ao lado da área   -> cruzamento
+    ataque_entrada  terço ofensivo, de frente         -> cobrança directa
+*/
+function setorDaFalta(bolaX, bolaZ, attDir, decisao) {
+    const F = FreeKickModel;
+    const S = F.setores;
+    const avanco = bolaZ * attDir;
+
+    if (avanco >= S.tercoOfensivo) {
+        /*
+        No terço ofensivo manda a decisão: se a bola vai à baliza é cobrança
+        directa (os centrais ficam atrás), se vai cruzada é o desenho de área.
+        O `passe` daqui é raro — sai do trapézio e da zona de cruzamento ao
+        mesmo tempo — e trata-se como cobrança directa, que é o desenho mais
+        prudente dos dois.
+        */
+        const d = decisao || decisaoDeFalta(bolaX, bolaZ, attDir);
+        return (d === 'cruzamento') ? 'ataque_lateral' : 'ataque_entrada';
+    }
+    if (avanco >= S.meioCampo) return 'meio_avancado';
+    if (avanco >= S.tercoDefensivo) return 'meio_recuado';
+    return 'defesa';
+}
+
+/*
+O grupo de posicionamento de uma posição. Não é o `role`: um lateral e um
+central são os dois `role: 'def'` e numa bola parada não fazem a mesma coisa —
+o central sobe para cabecear e o lateral bate ou fica de segurança.
+*/
+function grupoNaBolaParada(pos) {
+    if (pos === 'CB') return 'cb';
+    if (pos === 'LB' || pos === 'RB') return 'lat';
+    if (pos === 'DM' || pos === 'CM' || pos === 'AM') return 'mc';
+    if (pos === 'LM' || pos === 'RM' || pos === 'LW' || pos === 'RW') return 'ml';
+    return 'ata';
+}
+
+/*
+QUEM BATE A FALTA. Ver FreeKickModel.batedorPorSetor.
+
+Era o mais PERTO da bola, e por isso a cobrança calhava a quem a jogada tinha
+deixado ali — um central a bater uma falta na entrada da área adversária. Agora
+sai do critério do sector, e o desempate é sempre a Técnica.
+
+`skillDe` é injectado (o `skillFor` do jogador) para a função ser testável sem
+o resto do jogo.
+*/
+function batedorDaFalta(candidatos, criterio, skillDe) {
+    const tec = (p) => skillDe ? skillDe(p) : (p.skillFor ? p.skillFor('TEC') : 0);
+    const melhorDe = (lista) => {
+        let melhor = null, nota = -Infinity;
+        for (const p of lista) {
+            const t = tec(p);
+            if (t > nota) { nota = t; melhor = p; }
+        }
+        return melhor;
+    };
+
+    const semGk = candidatos.filter(p => p.role !== 'gk');
+    if (!semGk.length) return null;
+
+    if (criterio === 'central') {
+        // ZAGUEIRO, não um defensor qualquer: o lateral é `role: 'def'` e
+        // sem esta distinção a falta na própria defesa saía batida por ele.
+        const centrais = semGk.filter(p => p.pos === 'CB');
+        return melhorDe(centrais) ||
+            melhorDe(semGk.filter(p => p.role === 'def')) || melhorDe(semGk);
+    }
+    if (criterio === 'def') {
+        return melhorDe(semGk.filter(p => p.role === 'def')) || melhorDe(semGk);
+    }
+    if (criterio === 'lateral') {
+        // O lateral do LADO da bola bate primeiro; sem laterais, o melhor
+        // técnico não-defensor, que é a regra geral do ataque.
+        const laterais = semGk.filter(p => p.pos === 'LB' || p.pos === 'RB');
+        return melhorDe(laterais) ||
+            melhorDe(semGk.filter(p => p.role !== 'def')) || melhorDe(semGk);
+    }
+    // 'naoDef'
+    return melhorDe(semGk.filter(p => p.role !== 'def')) || melhorDe(semGk);
+}
+
+/*
+OS LUGARES DA EQUIPA QUE COBRA, para um sector. Geometria pura: recebe a bola,
+a direcção de ataque e a lista de quem colocar, devolve um ponto por jogador.
+Fica aqui e não no `setupSetPiece` para se poder medir e testar sem montar um
+jogo inteiro.
+
+Devolve `[{ p, x, z }]`. Quem não tiver lugar no desenho do sector não vem na
+lista — o chamador deixa-o onde está.
+*/
+function lugaresDaFalta(bolaX, bolaZ, attDir, jogadores, setor) {
+    const F = FreeKickModel;
+    const desenho = F.formacaoPorSetor[setor];
+    if (!desenho) return [];
+
+    const linhaFundo = attDir * (CAMPO_COMP / 2);
+    const lado = Math.sign(bolaX) || 1;
+    const limX = CAMPO_LARG / 2 - 2.0;
+    const limZ = CAMPO_COMP / 2 - 2.0;
+    const extra = F.espacamentoExtra || 4.5;
+
+    // Agrupa por grupo de posicionamento.
+    const grupos = {};
+    for (const p of jogadores) {
+        if (!p || p.role === 'gk') continue;
+        const g = grupoNaBolaParada(p.pos);
+        (grupos[g] = grupos[g] || []).push(p);
+    }
+
+    const saida = [];
+    for (const g of Object.keys(grupos)) {
+        const cfg = desenho[g];
+        if (!cfg) continue;
+
+        /*
+        Ordena por x para os lugares saírem pela mesma ordem em que eles já
+        estão na largura: sem isto o da esquerda ia para o lugar da direita e
+        cruzavam-se a caminho.
+        */
+        const lista = grupos[g].slice().sort((a, b) => a.model.position.x - b.model.position.x);
+
+        lista.forEach((p, i) => {
+            let x, z;
+
+            if (cfg.modo === 'baliza') {
+                const n = cfg.slots.length;
+                const slot = cfg.slots[Math.min(i, n - 1)];
+                const sobra = Math.max(0, i - (n - 1));
+                x = lado * slot.relX + sobra * extra * (i % 2 ? 1 : -1);
+                z = linhaFundo - attDir * (slot.dist + sobra * 1.5);
+
+            } else if (cfg.modo === 'apoio') {
+                // Junto à bola: para o lado de onde ela está, e `dz` à frente.
+                const sinal = (i % 2 === 0) ? -lado : lado;
+                x = bolaX + sinal * (cfg.dx + Math.floor(i / 2) * extra);
+                z = bolaZ + attDir * cfg.dz;
+
+            } else {
+                const xs = cfg.xs || [0];
+                const n = xs.length;
+                const base = xs[Math.min(i, n - 1)];
+                const sobra = Math.max(0, i - (n - 1));
+                x = base + sobra * extra * (base >= 0 ? 1 : -1);
+                z = bolaZ + attDir * cfg.avanco;
+            }
+
+            saida.push({
+                p: p,
+                x: Math.max(-limX, Math.min(limX, x)),
+                z: Math.max(-limZ, Math.min(limZ, z))
+            });
+        });
+    }
+    return saida;
+}
+
+/*
 O QUE SE FAZ COM UMA FALTA, a partir de onde a bola está.
 
 Três casos, e a ordem entre eles importa — o trapézio de remate ganha sempre:
