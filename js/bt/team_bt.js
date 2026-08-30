@@ -1857,6 +1857,42 @@ function classificarLinhas(lista, bb) {
     }
 
     /*
+    UM LATERAL DE CADA VEZ: sobe o do LADO DA JOGADA, o outro segura a zaga.
+
+    Medido antes desta regra, em fase de ataque: os dois laterais fora da linha
+    de trás 76.8% do tempo, e quando subia só um era o do lado ERRADO da bola em
+    69.5% dos casos.
+
+    A escolha tem ZONA MORTA (`zonaMortaLado`): com a bola perto do eixo não há
+    lado, e mantém-se a escolha anterior. Sem isso os dois trocavam de papel a
+    cada passe pelo meio, e um lateral a subir e a descer todos os frames é pior
+    do que dois lá em cima.
+
+    Só em ATAQUE. A defender ninguém apoia coisa nenhuma e os dois pertencem à
+    linha de trás.
+    */
+    const zonaMorta = (L && typeof L.zonaMortaLado === 'number') ? L.zonaMortaLado : 5.0;
+    const latEsq = campo.find(p => p.pos === 'LB');
+    const latDir = campo.find(p => p.pos === 'RB');
+
+    if (latEsq && latDir && bb.isAttacking) {
+        const bolaX = (typeof bb.bolaXSuave === 'number') ? bb.bolaXSuave : (bb.ballX || 0);
+        if (Math.abs(bolaX) > zonaMorta) bb.ladoQueSobe = Math.sign(bolaX);
+        if (!bb.ladoQueSobe) bb.ladoQueSobe = 1;
+
+        const ladoDe = (p) => Math.sign(p.baseTarget ? p.baseTarget.x : p.model.position.x) || 1;
+        for (const lat of [latEsq, latDir]) {
+            if (ladoDe(lat) !== bb.ladoQueSobe) {
+                // O do lado contrário fica: é ele que auxilia a zaga.
+                lat.seguraLinha = true;
+                lat.linhaActual = 'def';
+                const i = linhas.mid.indexOf(lat);
+                if (i >= 0) { linhas.mid.splice(i, 1); linhas.def.push(lat); }
+            }
+        }
+    }
+
+    /*
     O PAR DO MESMO LADO. Quando o lateral e o meia-lateral do mesmo flanco
     ficam na MESMA linha e no mesmo corredor, o de trás fecha para dentro — o
     corredor é de quem subiu. Ver LineShape.parDistX / parFecho.

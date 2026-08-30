@@ -422,7 +422,28 @@ const LineShape = {
     não estão amontoados e não há nada a corrigir.
     */
     parDistX: 7.0,
-    parFecho: 0.55
+    parFecho: 0.55,
+
+    /*
+    UM LATERAL DE CADA VEZ.
+
+    Sobe o do LADO DA JOGADA; o outro fica a auxiliar a zaga. Medido a 30 de
+    Agosto, em fase de ataque:
+
+        os DOIS laterais fora da linha de trás: 76.8%
+        só um: 12.3%          nenhum: 10.9%
+        e quando subia só um, era o do lado ERRADO da bola em 69.5% dos casos
+
+    Ou seja: quase sempre subiam os dois, e quando não subiam, subia o errado.
+    A zaga ficava com os dois centrais sozinhos e o contra-ataque tinha o campo
+    todo pelas costas.
+
+    `zonaMortaLado` é a largura, a contar do eixo, em que a bola não tem lado
+    definido: dentro dela mantém-se a escolha anterior. Sem isto os dois
+    laterais trocavam de papel a cada passe pelo meio — e um lateral a subir e a
+    descer todos os frames é pior do que dois lá em cima.
+    */
+    zonaMortaLado: 5.0
 };
 
 /*

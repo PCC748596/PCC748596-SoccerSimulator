@@ -2718,6 +2718,62 @@ function gkPodeLancar(tempoSegurando, temAlvo) {
 }
 
 /*
+=============================================================================
+O GUARDA-REDES PODE SAIR DA ÁREA PARA ALIVIAR?
+=============================================================================
+Só quando a bola está FORA da área (lá dentro joga com as mãos) e ele JÁ ESTÁ
+COMPROMETIDO — a menos de `margemSaida` da linha da área. É esta segunda
+condição que impede o guarda-redes de arrancar campo fora atrás de qualquer
+bola solta: sai quem já saiu.
+
+`dzGk` e `dzBola` são profundidades a contar da linha de golo dele, no sentido
+do campo. Geometria pura, sem Match.
+*/
+function gkPodeSairParaAliviar(dzGk, dzBola, bolaX, G, area) {
+    if (!G || !area) return false;
+    const bolaForaDaArea = dzBola > area.profundidade || Math.abs(bolaX) > area.meiaLargura;
+    if (!bolaForaDaArea) return false;
+
+    // Já comprometido: a menos de `margemSaida` da linha da área.
+    const comprometido = dzGk >= area.profundidade - G.margemSaida;
+    if (!comprometido) return false;
+
+    // E não persegue para lá do alcance.
+    return dzBola <= area.profundidade + G.alcanceFora;
+}
+
+/*
+PARA ONDE VAI O ALÍVIO. No corredor central, em FRENTE; encostado a um lado,
+para a LINHA LATERAL mais próxima. Nunca para o meio da própria área, e nunca
+para onde o corpo calhar estar virado.
+
+Devolve a velocidade a dar à bola. `dirZ` é a direcção de ataque da equipa dele
+— o alívio vai nesse sentido.
+*/
+function alivioDoGuardaRedes(bolaX, dirZ, G, larguraCampo) {
+    const g = BallPhysics.gravidade;
+    const elev = (G.elevacao || 28) * Math.PI / 180;
+    const v = G.forca || 22.0;
+
+    let dx, dz;
+    if (Math.abs(bolaX) < G.corredorCentral) {
+        // Centro: em frente, e ligeiramente para o lado em que já está, para a
+        // bola não voltar a cair no eixo à frente da própria baliza.
+        dx = (Math.sign(bolaX) || 1) * 0.35;
+        dz = dirZ;
+    } else {
+        // Encostado: para a linha lateral mais próxima, ainda com algum avanço.
+        dx = Math.sign(bolaX) || 1;
+        dz = dirZ * 0.45;
+    }
+    const n = Math.hypot(dx, dz) || 1;
+    dx /= n; dz /= n;
+
+    const horiz = v * Math.cos(elev);
+    return { x: dx * horiz, y: v * Math.sin(elev), z: dz * horiz };
+}
+
+/*
 Alvo de varrida. Ao contrário de gkAnchor(), vai NA DIRECÇÃO da bola: é a
 situação em que o guarda-redes sai mesmo, porque não há defensor entre o
 atacante e a baliza. sweepOut trava quão longe.

@@ -2088,6 +2088,45 @@ class FootballPlayer {
     }
 
     /*
+    ALIVIAR FORA DA ÁREA, com o pé e com direcção.
+
+    Disparado no `contactTime` do gesto de chuto no chão, como o tiro de meta.
+    A direcção sai do `alivioDoGuardaRedes` (utils.js): em frente se ele estiver
+    no corredor central, para a linha lateral mais próxima se estiver encostado
+    — nunca para o meio da própria área.
+
+    Mesma guarda do `puntBall`: se a bola já não estiver ali, aborta em vez de
+    a relançar de onde quer que ela esteja (ver a nota do puntBall).
+    */
+    aliviarForaDaArea() {
+        const G = (typeof GkSaidaDaArea !== 'undefined') ? GkSaidaDaArea : null;
+        const perto = Match.ball &&
+            this.model.position.distanceTo(Match.ball.position) < 2.5;
+        if (!G || !perto || typeof alivioDoGuardaRedes !== 'function') {
+            this.gkKickAction = null;
+            this.gkEstado = 'idle';
+            this.gkKickNorm = 0;
+            return;
+        }
+
+        const v = alivioDoGuardaRedes(Match.ball.position.x, this.dirZ, G, CAMPO_LARG);
+        Match.ballVel.set(v.x, v.y, v.z);
+
+        this.hasBall = false;
+        this.touchLock = BallControl.touchLock;
+        Match.ballCarrier = null;
+        Match.intendedReceiver = null;
+        Match.passTargetPos = null;
+        Match.lastTouchedTeam = this.team;
+        Match.lastTouchedPlayer = this;
+        if (typeof EfeitosSonoros !== 'undefined') {
+            EfeitosSonoros.chute(Match.ball.position, 0.9);
+        }
+        if (typeof EventBus !== 'undefined') {
+            EventBus.emit('GK_CLEARANCE', { team: this.team, gk: this });
+        }
+    }
+    /*
     Relançamento do GR: chutão para a frente, com os ângulos sorteados a cada
     execução (pedido do utilizador).
 
@@ -3749,10 +3788,35 @@ class FootballPlayer {
         let prevX = gkCorpo.position.x;
         let prevZ = gkCorpo.position.z;
 
-        gkCorpo.position.x = Math.max(-Area.meiaLargura, Math.min(Area.meiaLargura, gkCorpo.position.x));
+        /*
+        O GUARDA-REDES ESTAVA PRESO À ÁREA por estas quatro linhas: fizesse o
+        que fizesse, a posição dele era cortada aos limites da grande área todos
+        os frames. Medido antes: saía 0.12% dos frames e nunca mais do que 0.2 m
+        para lá da linha — ou seja, não saía.
+
+        A área continua a ser o limite normal. A EXCEPÇÃO é aliviar: bola solta
+        FORA da área com ele já comprometido (ver gkPodeSairParaAliviar). Aí a
+        margem abre-se até `alcanceFora`, e o que ele faz lá é jogá-la com o PÉ
+        — as mãos fora da área continuam proibidas, e disso trata o
+        `resolveBallContact`, que exige `dentroArea` para agarrar.
+        */
+        const G_SAI = (typeof GkSaidaDaArea !== 'undefined') ? GkSaidaDaArea : null;
+        let folgaFora = 0;
+        if (G_SAI && Match.ball && typeof gkPodeSairParaAliviar === 'function') {
+            const dzGkAgora = (gkCorpo.position.z - this.ownGoalZ) * this.dirZ;
+            const dzBolaAgora = (Match.ball.position.z - this.ownGoalZ) * this.dirZ;
+            if (gkPodeSairParaAliviar(dzGkAgora, dzBolaAgora, Match.ball.position.x, G_SAI, Area) ||
+                this.gkEstado === 'chutando') {
+                folgaFora = G_SAI.alcanceFora;
+            }
+        }
+
+        const limX = Area.meiaLargura + folgaFora;
+        gkCorpo.position.x = Math.max(-limX, Math.min(limX, gkCorpo.position.x));
         let meioComp = LINHA_FUNDO;
-        let areaMinZ = (this.team === 'TeamA') ? -meioComp : meioComp - Area.profundidade;
-        let areaMaxZ = (this.team === 'TeamA') ? -meioComp + Area.profundidade : meioComp;
+        const prof = Area.profundidade + folgaFora;
+        let areaMinZ = (this.team === 'TeamA') ? -meioComp : meioComp - prof;
+        let areaMaxZ = (this.team === 'TeamA') ? -meioComp + prof : meioComp;
         gkCorpo.position.z = Math.max(areaMinZ, Math.min(areaMaxZ, gkCorpo.position.z));
 
         if (window.bolaChutada && !this.gkReagiu) {
@@ -3849,12 +3913,54 @@ class FootballPlayer {
                     : false;
 
                 if (semDono && (mansinha || maosProibidas) && distBolaAgora < 10.0) {
-                    alvoGkX = Match.ball.position.x;
-                    alvoGkZ = Match.ball.position.z;
-                    speedLerp = 5.5;
-                    if (distBolaAgora < 1.2 && !maosProibidas) {
-                        this.gkEstado = 'apanhar';
-                        this.gkTempoMergulho = 0;
+                    /*
+                    A BOLA ESTÁ FORA DA ÁREA?
+
+                    Este ramo mandava-o atrás de qualquer bola solta a 10 m e
+                    agarrava-a a 1.2 m sem olhar à área — as mãos fora da área
+                    são falta, e o `resolveBallContact` já o impedia de agarrar,
+                    mas ele ficava ali parado em cima dela sem fazer nada.
+
+                    Agora: fora da área SÓ vai se já estiver comprometido (ver
+                    gkPodeSairParaAliviar), e o que faz lá é ALIVIAR COM O PÉ,
+                    com direcção — em frente pelo meio, para a linha lateral se
+                    estiver encostado. Nunca com as mãos.
+                    */
+                    const G = (typeof GkSaidaDaArea !== 'undefined') ? GkSaidaDaArea : null;
+                    const dzGk = (gkCorpo.position.z - this.ownGoalZ) * this.dirZ;
+                    const dzBola = (Match.ball.position.z - this.ownGoalZ) * this.dirZ;
+                    const bolaForaDaArea = dzBola > Area.profundidade ||
+                        Math.abs(Match.ball.position.x) > Area.meiaLargura;
+
+                    const podeSair = G && typeof gkPodeSairParaAliviar === 'function' &&
+                        gkPodeSairParaAliviar(dzGk, dzBola, Match.ball.position.x, G, Area);
+
+                    if (bolaForaDaArea && !podeSair) {
+                        // Não está comprometido: não sai. Volta à âncora.
+                        alvoGkX = ancora.x;
+                        alvoGkZ = ancora.z;
+                        speedLerp = 3.5;
+                    } else {
+                        alvoGkX = Match.ball.position.x;
+                        alvoGkZ = Match.ball.position.z;
+                        speedLerp = 5.5;
+
+                        if (distBolaAgora < 1.2) {
+                            if (bolaForaDaArea) {
+                                // ALÍVIO COM O PÉ. Mesmo gesto do tiro de meta,
+                                // com a bola a partir no contactTime do clip.
+                                this.gkEstado = 'chutando';
+                                this.gkKickTipo = 'chao';
+                                this.gkTempoMergulho = 0;
+                                this.gkKickNorm = 0;
+                                this.gkKickAction = new ActionState('gkPuntChao', {
+                                    onContact: () => this.aliviarForaDaArea()
+                                });
+                            } else if (!maosProibidas) {
+                                this.gkEstado = 'apanhar';
+                                this.gkTempoMergulho = 0;
+                            }
+                        }
                     }
                 } else if (isCross) {
                     alvoGkZ = ownGoalZCenter(this.team) + (Match.ball.position.z - ownGoalZCenter(this.team)) * 0.55;

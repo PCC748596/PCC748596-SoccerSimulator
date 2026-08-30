@@ -201,6 +201,41 @@ Visão de jogo: distância de leitura = técnica * 0.5, ângulo de visão = téc
 */
 /*
 =============================================================================
+SAIR DA ÁREA PARA ALIVIAR
+=============================================================================
+Uma bola solta que fica FORA da área e o guarda-redes já saiu a defender: ele
+pode sair da área e afastá-la com o PÉ. Não tem de travar em cima da linha.
+
+Duas condições, e a segunda é a que impede o disparate:
+
+  1. A BOLA ESTÁ FORA DA ÁREA. Lá dentro joga-se com as mãos, como sempre.
+  2. ELE JÁ ESTÁ COMPROMETIDO — a menos de `margemSaida` da linha da área. Um
+     guarda-redes em cima da linha de golo não arranca campo fora atrás de uma
+     bola solta; sai quem JÁ saiu.
+
+`alcanceFora` limita o resto: mesmo comprometido, não persegue a bola até ao
+meio-campo.
+
+O ALÍVIO TEM DIRECÇÃO, e é isso que separa isto de um pontapé às cegas. Se ele
+está no corredor central manda a bola em FRENTE; se está encostado a um lado
+manda-a para a LINHA LATERAL mais próxima, que é a saída segura. Nunca para o
+meio da própria área, e nunca 'para onde o nariz estiver virado'.
+
+    corredorCentral   |x| abaixo disto conta como centro (manda em frente)
+    forca             velocidade de saída do alívio, m/s
+    elevacao          graus: é um alívio, não um passe rasteiro
+=============================================================================
+*/
+const GkSaidaDaArea = {
+    margemSaida: 2.0,        // já comprometido: a menos disto da linha da área
+    alcanceFora: 8.0,        // e não persegue mais do que isto para lá dela
+    corredorCentral: 12.0,
+    forca: 22.0,
+    elevacao: 28.0
+};
+
+/*
+=============================================================================
 APARÊNCIA DOS JOGADORES
 =============================================================================
 Antes toda a gente saía do mesmo molde: pele 0xdcdde1, cabelo 0x2c1e16 e
