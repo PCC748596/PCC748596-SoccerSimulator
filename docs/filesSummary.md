@@ -5,6 +5,19 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 29 de Agosto de 2026 — Balística do lateral e posicionamento regulamentar em faltas
+
+**Cobrança de Lateral com Chegada Limpa ao Receptor** (`js/player.js`)
+O lançamento lateral podia sofrer perda de sustentação devido ao arrasto do ar ou ressaltar/quicar no chão antes de chegar aos pés ou peito do colega.
+- A função `lancarLateral` agora posiciona a bola dentro da linha de jogo antes do cálculo vetorial de direção e distância, eliminando erros de ângulo e alcance.
+- A balística de lançamento passou a utilizar o solver de arrasto `velocidadeParaAlturaNoAlvo` (com fallback robusto para `velocidadeDeLancamento`), garantindo que a trajetória da bola alcance a altura exata definida (`BallControl.peitoAltura` ou a altura dos pés) no momento do encontro com o receptor, sem quiques indesejados.
+
+**Anti-Impedimento no Posicionamento das Faltas** (`js/match/match_setpieces.js`)
+Durante a montagem da falta (`setupSetPiece` em `FREE_KICK`), alguns atacantes ficavam posicionados à frente do último homem da linha defensiva adversária na meia-lua ou nas laterais.
+- O sistema agora calcula a linha de impedimento regulamentar (`limiteZ`) considerando os defensores adversários e a posição da bola.
+- Qualquer jogador atacante cujo slot o colocasse além da linha legal tem sua posição (`model.position.z`), `dynamicTarget`, `setPieceTarget` e `jostleAncora` automaticamente recuados com margem de segurança para trás do limite de fora-de-jogo.
+
+
 ### Sessão de 28 de Agosto de 2026 (continuação) — Inteligência tática e resolução de colapsos posicionais
 
 **O Guarda-Redes e a Saída Curta** (`js/bt/player_bt.js`)

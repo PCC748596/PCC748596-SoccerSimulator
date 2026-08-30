@@ -2036,7 +2036,7 @@ class FootballPlayer {
         this.passAimPoint = null;
 
         // Ativar Inércia pós-passe de 4.0s: o jogador não recua para o posto base atrás da cota da jogada
-        if (this.role !== 'gk') {
+        if (this.role !== 'gk' && this.pos !== 'CB' && this.pos !== 'DC') {
             this.passInertiaTimer = 4.0;
             this.passInertiaZDir = this.model.position.z * this.dirZ;
         }
