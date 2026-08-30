@@ -247,6 +247,14 @@ const MarkingModel = {
     distanciaPorPressao: { low: 4.5, balanced: 3.0, high: 1.5 },
 
     /*
+    Chão para o aperto que o ESTILO acrescenta (ver distanciaComEstilo em
+    playing_styles.js). O botão do painel manda na equipa; o estilo do jogador
+    aperta ou alivia por cima disso — mas por muito agressivo que seja, marcar
+    a meio metro não é marcar, é falta.
+    */
+    distanciaMinimaEstilo: 1.2,
+
+    /*
     QUANDO VALE A PENA SAIR À BOLA — o raio de accionamento do chaser.
 
     Antes não existia: a Defensive Pressure decidia só ONDE se perseguia (que

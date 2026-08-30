@@ -431,20 +431,26 @@ Object.assign(Match, {
             const bb = (typeof TeamAI !== 'undefined' && TeamAI.blackboards) ? TeamAI.blackboards[teamName] : null;
             if (bb) {
                 rectMesh.visible = true;
-                const minZ = Math.min(bb.blockBottom * bb.dir, bb.blockTop * bb.dir);
-                const maxZ = Math.max(bb.blockBottom * bb.dir, bb.blockTop * bb.dir);
-                let x0 = -17;
-                let x1 = 17;
-                let zDef = minZ;
-                let zMid = (minZ + maxZ) / 2;
-                let zAtk = maxZ;
-                if (bb.bloco) {
-                    x0 = bb.bloco.x0;
-                    x1 = bb.bloco.x1;
-                    zDef = bb.bloco.zDef * bb.dir;
-                    zMid = bb.bloco.zMid * bb.dir;
-                    zAtk = bb.bloco.zAtk * bb.dir;
+
+                /*
+                UMA FONTE SÓ: o `bb.bloco`. A moldura vinha do
+                `blockBottom`/`blockTop` e as linhas do `bloco.z*` — hoje são o
+                mesmo valor, mas são duas fontes para um dado só, e é assim que
+                as coisas divergem sem ninguém dar por isso.
+                */
+                const b = bb.bloco;
+                let x0 = -17, x1 = 17;
+                let z0 = bb.blockBottom * bb.dir, z1 = bb.blockTop * bb.dir;
+                let zDef = z0, zMid = (z0 + z1) / 2, zAtk = z1;
+                if (b) {
+                    x0 = b.x0; x1 = b.x1;
+                    z0 = b.z0 * bb.dir; z1 = b.z1 * bb.dir;
+                    zDef = b.zDef * bb.dir;
+                    zMid = b.zMid * bb.dir;
+                    zAtk = b.zAtk * bb.dir;
                 }
+                const minZ = Math.min(z0, z1);
+                const maxZ = Math.max(z0, z1);
                 const pts = rectMesh.geometry.attributes.position.array;
                 pts[0] = x0; pts[1] = 0.05; pts[2] = minZ;
                 pts[3] = x1; pts[4] = 0.05; pts[5] = minZ;
@@ -452,34 +458,54 @@ Object.assign(Match, {
                 pts[9] = x0; pts[10] = 0.05; pts[11] = maxZ;
                 rectMesh.geometry.attributes.position.needsUpdate = true;
 
-                // Diagonais canto a canto
-                diagMesh.visible = true;
-                const d = diagMesh.geometry.attributes.position.array;
-                d[0] = x0; d[1] = 0.05; d[2] = minZ;
-                d[3] = x1; d[4] = 0.05; d[5] = maxZ;
-                d[6] = x1; d[7] = 0.05; d[8] = minZ;
-                d[9] = x0; d[10] = 0.05; d[11] = maxZ;
-                diagMesh.geometry.attributes.position.needsUpdate = true;
+                /*
+                DIAGONAIS DESLIGADAS. Marcavam o centro do rectângulo canto a
+                canto, e isso hoje é dito pelos marcadores de faixa — o campo já
+                tem linhas de movimento que cheguem. A malha fica criada (o
+                `criarDiagonais` continua lá) para se poder voltar a ligar numa
+                linha.
+                */
+                diagMesh.visible = false;
 
                 if (tercosMesh) {
                     tercosMesh.visible = true;
                     const tm = tercosMesh.geometry.attributes.position.array;
-                    // Linha zMid
-                    tm[0] = x0; tm[1] = 0.05; tm[2] = zMid;
-                    tm[3] = x1; tm[4] = 0.05; tm[5] = zMid;
-                    // Linha zAtk
-                    tm[6] = x0; tm[7] = 0.05; tm[8] = zAtk;
-                    tm[9] = x1; tm[10] = 0.05; tm[11] = zAtk;
-                    tercosMesh.geometry.attributes.position.needsUpdate = true;
+                    /*
+                    AS DUAS DIVISÓRIAS, a 1/3 e 2/3 da profundidade: é o que
+                    parte o rectângulo nas três faixas (defesa, meio, ataque).
+
+                    As âncoras `zDef`/`zMid`/`zAtk` NÃO se desenham — a de trás e
+                    a da frente são a moldura, e a do meio só acrescentava uma
+                    terceira linha interna que fazia quatro faixas. Ver a nota no
+                    criarLinhasTercos.
+                    */
+                    const t1 = z0 + (z1 - z0) / 3;
+                    const t2 = z0 + 2 * (z1 - z0) / 3;
+                    tm[0] = x0; tm[1] = 0.05; tm[2] = t1;
+                    tm[3] = x1; tm[4] = 0.05; tm[5] = t1;
+                    tm[6] = x0; tm[7] = 0.05; tm[8] = t2;
+                    tm[9] = x1; tm[10] = 0.05; tm[11] = t2;
+                                        tercosMesh.geometry.attributes.position.needsUpdate = true;
                 }
 
                 if (Array.isArray(centroMesh) && centroMesh.length >= 3) {
-                    let tam3 = bb.bloco.z1 - bb.bloco.zAtk;
-                    let z3Center = (bb.bloco.zAtk + tam3 / 2) * bb.dir;
-                    
-                    centroMesh[0].position.set((x0 + x1) / 2, 0.06, (zDef + zMid) / 2);
-                    centroMesh[1].position.set((x0 + x1) / 2, 0.06, (zMid + zAtk) / 2);
-                    centroMesh[2].position.set((x0 + x1) / 2, 0.06, z3Center);
+                    /*
+                    O CENTRO DE CADA LINHA, sobre a própria linha — não no meio
+                    da faixa entre duas. É o modelo: na defesa manda o centro da
+                    linha de defesa, no meio o do meio, no ataque o do ataque.
+
+                    Estava no meio das faixas, e o terceiro fazia
+                    `tam3 = z1 - zAtk`: com o zAtk corrigido para a frente do
+                    bloco isso passou a ZERO e o marcador do sector ofensivo
+                    caía em cima da borda.
+                    */
+                    const cx = (x0 + x1) / 2;
+                    // O centro de cada FAIXA (1/6, 1/2 e 5/6 da profundidade),
+                    // que é o ponto de controlo daquele sector do campo.
+                    const P = z1 - z0;
+                    centroMesh[0].position.set(cx, 0.06, z0 + P / 6);
+                    centroMesh[1].position.set(cx, 0.06, z0 + P / 2);
+                    centroMesh[2].position.set(cx, 0.06, z0 + 5 * P / 6);
                     
                     centroMesh[0].visible = false;
                     centroMesh[1].visible = false;
@@ -586,6 +612,13 @@ Object.assign(Match, {
         Otimiza os alvos dos jogadores da mesma posição para evitarem esbarrar ou
         correrem para o mesmo alvo.
         */
+        /*
+        QUEM ESTÁ EM QUE LINHA, antes de qualquer posicionamento: o `u` de cada
+        um depende de quantos estão na linha dele. Ver classificarLinhas.
+        */
+        PosicionamentoAI.classificarLinhas(this.players, bbA);
+        PosicionamentoAI.classificarLinhas(this.opponents, bbB);
+
         PosicionamentoAI.otimizarSlotsPorPosicao(this.players, bbA);
         PosicionamentoAI.otimizarSlotsPorPosicao(this.opponents, bbB);
 

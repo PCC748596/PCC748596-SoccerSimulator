@@ -236,6 +236,41 @@ const BlockShape = {
     },
 
     /*
+    =====================================================================
+    AS TRÊS LINHAS DO BLOCO — defesa, meio e ataque
+    =====================================================================
+    Fracções da profundidade: 0 é a traseira (a linha do fora-de-jogo da
+    equipa) e 1 é a frente. O `v` de cada jogador, que vem da formação,
+    interpola entre estas três âncoras — ver calcularPontoDoSlot em
+    team_bt.js.
+
+    O ATAQUE TEM DE SER 1.0. Estava escrito em código como `z0 + 2/3 da
+    profundidade`, e isso deixava o TERÇO DA FRENTE DO BLOCO VAZIO por
+    construção: o avançado (v = 1.0) parava a dois terços. Toda a formação
+    encolhia com ele —
+
+        pos     v       devia ficar   ficava em
+        CB     0.000        0%           0%
+        LB/RB  0.091        9.1%         6.1%
+        CM     0.455       45.5%        30.3%
+        LM/RM  0.545       54.5%        36.3%
+        CF     1.000      100%          66.7%
+
+    — e o número da `profundidade` aqui em cima passava a mentir por um
+    terço: 40 m configurados davam 27 m ocupados, com 13 m vazios à frente.
+
+    Ficam aqui e não em código porque é isto que faz as três linhas serem
+    ajustáveis em vez de decorativas: aproximar `meio` da `defesa` dá um
+    bloco com o miolo recuado (defesa e meio juntos, ataque isolado à
+    frente); afastá-lo dá o contrário.
+    */
+    linhas: {
+        defesa: 0.0,
+        meio: 0.5,
+        ataque: 1.0
+    },
+
+    /*
     Profundidade MÍNIMA do bloco, em metros. Só entra quando o tecto da Linha
     Defensiva e a marca de penálti adversária não deixam espaço para a
     profundidade pedida (linha alta + bloco longo): aí a frente do bloco cede,
@@ -340,7 +375,54 @@ const LineShape = {
         def: { comBola: 0.92, semBola: 0.78 },
         mid: { comBola: 1.00, semBola: 0.88 },
         atk: { comBola: 1.00, semBola: 0.80 }
-    }
+    },
+
+    /*
+    =====================================================================
+    A LINHA FECHA-SE QUANDO PERDE GENTE
+    =====================================================================
+    O `u` de cada jogador vinha só do slot da formação e não sabia quantos
+    estavam de facto na linha. Se um central subia, os que ficavam mantinham
+    exactamente o mesmo `u` — três homens espalhados pelos mesmos metros, com
+    um buraco onde ele estava.
+
+    Medido a 30 de Agosto, linha de trás definida como quem está a menos de
+    6 m do jogador mais recuado:
+
+        na linha de trás: 2.71 jogadores (1.83 centrais, 0.71 laterais)
+        distribuição: 1 -> 11.6%   2 -> 46.7%   3 -> 8.7%   4 -> 26.2%
+        largura ocupada: 18.7 m
+
+    `porFalta` é quanto a linha encolhe por cada jogador em falta face ao que
+    a formação lá põe. Com a linha completa o factor é 1.0 e NADA MUDA — foi a
+    condição imposta a esta alteração. A perder um, os que ficam aproximam-se
+    do eixo; a perder dois, mais ainda.
+
+        4 de 4 -> 1.00      3 de 4 -> 0.82      2 de 4 -> 0.64
+
+    `minimoAtras` é a regra do mínimo: por muito que a equipa suba, a linha de
+    trás não pode ficar com menos do que isto. Quem estiver mais perto de lá é
+    travado à altura da linha em vez de subir.
+    */
+    porFalta: 0.18,
+    fechoMinimo: 0.45,      // chão: nem com a linha quase vazia se fecha mais
+    minimoAtras: 2,         // jogadores que a linha de trás nunca perde
+    faixaDaLinha: 6.0,      // metros do mais recuado que ainda contam como linha
+
+    /*
+    O PAR DO MESMO LADO: lateral e meia-lateral.
+
+    Medido a 30 de Agosto: ficam a **3.0 m um do outro em x** — o mesmo
+    corredor — e a menos de 4 m em linha recta em 14.7% dos frames. É o par que
+    se vê amontoado junto à linha lateral.
+
+    Quando os dois caem na MESMA linha, o de trás fecha para dentro: o corredor
+    é do que subiu. `parFecho` é quanto o `u` dele se aproxima do eixo, e
+    `parDistX` é a partir de que proximidade em x a regra entra — acima disso
+    não estão amontoados e não há nada a corrigir.
+    */
+    parDistX: 7.0,
+    parFecho: 0.55
 };
 
 /*
@@ -537,13 +619,19 @@ const PlayingStyles = {
     /* --- Meio-campo ------------------------------------------------------ */
     box_to_box: {
         nome: 'Box-to-Box', posicoes: ['AM', 'LM', 'RM', 'CM', 'DM'],
-        amplitudeZ: 1.5, avancoComBola: 5, pressao: 1.2,
+        amplitudeZ: 1.5, avancoComBola: 5,
+        // O que sobe é o mesmo que desce: recuo curto e marcação um pouco
+        // mais apertada do que a do painel.
+        defensivo: { pressao: 1.2, recuo: 2.0 },
         travaNaEntradaArea: true // "da entrada de uma área até a entrada da outra" — não passa da entrada
     },
     the_destroyer: {
         nome: 'The Destroyer', posicoes: ['CM', 'DM', 'CB'],
         driblar: 0.4,
-        avanco: -2, pressao: 1.6, conduzir: 0.6, lancar: 0.7, amplitudeZ: 0.85
+        avanco: -2, conduzir: 0.6, lancar: 0.7, amplitudeZ: 0.85,
+        // O que sai mais à bola de todos: 1.6 encurta a distância de
+        // marcação a dois terços da do painel.
+        defensivo: { pressao: 1.6, recuo: 1.0 }
     },
     orchestrator: {
         nome: 'Orchestrator', posicoes: ['CM', 'DM'],
@@ -554,7 +642,9 @@ const PlayingStyles = {
     anchor_man: {
         nome: 'Anchor Man', posicoes: ['DM'],
         driblar: 0.3,
-        avanco: -7, pressao: 1.25, lancar: 0.5, conduzir: 0.5, amplitudeZ: 0.6
+        avanco: -7, lancar: 0.5, conduzir: 0.5, amplitudeZ: 0.6,
+        // O trinco não sai: recua para tapar o espaço à frente dos centrais.
+        defensivo: { pressao: 1.25, recuo: 3.0 }
     },
 
     /* --- Defesas --------------------------------------------------------- */
@@ -596,7 +686,9 @@ const PlayingStyles = {
     },
     defensive_fullback: {
         nome: 'Defensive Full-back', posicoes: ['LB', 'RB'],
-        avanco: -2, pressao: 1.2, cruzar: 0.7
+        avanco: -2, cruzar: 0.7,
+        // Segura a linha em vez de sair à bola.
+        defensivo: { pressao: 1.2, recuo: 2.5 }
     },
 
     /* --- Guarda-redes ---------------------------------------------------- */

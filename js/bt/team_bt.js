@@ -971,14 +971,23 @@ function computeBlock(bb) {
         if (x0 < -maxX) x0 = -maxX;
     }
 
+    const L = (typeof BlockShape !== 'undefined' && BlockShape.linhas)
+        ? BlockShape.linhas : { defesa: 0.0, meio: 0.5, ataque: 1.0 };
+
     bb.bloco = {
         x0: x0,
         x1: x1,
         z0: z0,
         z1: z1,
-        zDef: z0,
-        zMid: z0 + (z1 - z0) / 3,
-        zAtk: z0 + 2 * (z1 - z0) / 3,
+        /*
+        AS TRÊS LINHAS. Fracções em BlockShape.linhas — ver a nota lá, com a
+        medição. O ataque era `z0 + 2/3 da profundidade`, e isso deixava o
+        terço da frente do bloco vazio por construção: o avançado (v = 1.0)
+        parava a dois terços e arrastava a formação toda com ele.
+        */
+        zDef: z0 + (z1 - z0) * L.defesa,
+        zMid: z0 + (z1 - z0) * L.meio,
+        zAtk: z0 + (z1 - z0) * L.ataque,
         modo: modo
     };
 
@@ -1072,7 +1081,7 @@ function deslocamentoDeCorredor(o) {
 /*
 Calcula a posição no mundo de um slot específico dentro do bloco tático.
 */
-function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
+function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPorPar) {
     const bloco = bb.bloco;
     if (!bloco || !slot) return null;
 
@@ -1114,7 +1123,23 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
         fechoAdicional = 1.0 - (0.40 * fatorCentral); // aperta até mais 40% para fechar o meio
     }
 
-    const u = THREE.MathUtils.clamp(0.5 + (slot.u - 0.5) * fecho * fechoSec * fechoAdicional, 0.02, 0.98);
+    /*
+    A LINHA FECHA-SE QUANDO PERDE GENTE. Com a linha completa este factor é 1.0
+    e o `u` sai exactamente como saía — foi a condição imposta a esta
+    alteração. A perder um, os que ficam aproximam-se do eixo: é isto que faz
+    o central que sobra e o lateral do lado oposto fecharem para o meio quando
+    o outro central sobe. Ver LineShape.porFalta e classificarLinhas.
+    */
+    const fechoOcup = (typeof fechoPorOcupacao === 'function')
+        ? fechoPorOcupacao(bb, linhaActual || role) : 1.0;
+
+    // O de trás do par lateral/meia-lateral fecha para o eixo — ver a regra do
+    // par em classificarLinhas.
+    const fechoPar = (fecharPorPar && LineShape && typeof LineShape.parFecho === 'number')
+        ? LineShape.parFecho : 1.0;
+
+    const u = THREE.MathUtils.clamp(
+        0.5 + (slot.u - 0.5) * fecho * fechoSec * fechoAdicional * fechoOcup * fechoPar, 0.02, 0.98);
 
     const MARGEM_LINHA_SLOT = 1.5;
     const limX = CAMPO_LARG / 2 - MARGEM_LINHA_SLOT;
@@ -1130,12 +1155,18 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
 
     let xTarget = bloco.x0 + u * (bloco.x1 - bloco.x0) + empurraX;
     
+    /*
+    O `v` da formação (0 = mais recuado, 1 = mais adiantado) interpola entre as
+    TRÊS linhas do bloco. O ponto de charneira é o `v` = 0.5 da formação e não
+    a fracção da linha do meio: são coisas diferentes — o primeiro é onde o
+    jogador está na formação, o segundo é onde a linha do meio está no bloco.
+    */
     let targetZRaw;
     if (v < 0.5) {
-        // Interpola entre Defesa (v=0) e Meio (v=0.5)
+        // Metade de trás da formação: entre a linha de defesa e a do meio.
         targetZRaw = bloco.zDef + (v / 0.5) * (bloco.zMid - bloco.zDef);
     } else {
-        // Interpola entre Meio (v=0.5) e Ataque (v=1.0)
+        // Metade da frente: entre a linha do meio e a do ataque.
         targetZRaw = bloco.zMid + ((v - 0.5) / 0.5) * (bloco.zAtk - bloco.zMid);
     }
     
@@ -1267,7 +1298,7 @@ Onde este jogador fica dentro do bloco, em metros no mundo.
 */
 function slotNoBloco(p, bb) {
     if (!bb || !p || !p.slot) return null;
-    return calcularPontoDoSlot(p.slot, p.pos, p.role, p.fbStyle, bb);
+    return calcularPontoDoSlot(p.slot, p.pos, p.role, p.fbStyle, bb, p.linhaActual, p.fecharPorPar);
 }
 
 /*
@@ -1478,6 +1509,18 @@ function aplicarMarcacaoPosicional(p, bb, targetX, targetZ) {
     const M = MarkingModel;
     let distancia = M.distanciaPorPressao[Tatics.pressaoDefensiva]
         ?? M.distanciaPorPressao.balanced;
+
+    /*
+    A METADE DEFENSIVA DO ESTILO aperta ou alivia esta distância — ver
+    `distanciaComEstilo` (playing_styles.js). O `pressao` estava na config
+    desde sempre e não era lido por ninguém: um The Destroyer marcava
+    exactamente como um Creative Playmaker.
+
+    Aqui e não mais abaixo: as correcções que se seguem (campo de ataque sem
+    pressão alta, `biasMax`) são regras da EQUIPA e têm de continuar a valer
+    por cima da personalidade de um jogador.
+    */
+    if (typeof distanciaComEstilo === 'function') distancia = distanciaComEstilo(p, distancia);
     let biasMax = M.biasMaxPara(targetZ * p.dirZ);
 
     // No campo de ataque com pressão não-High, a marcação é feita a distância acompanhando a jogada
@@ -1734,8 +1777,136 @@ function atribuirApoiosDaEquipa(lista, bb) {
     }
 }
 
+/*
+=============================================================================
+QUEM ESTÁ EM QUE LINHA, AGORA — e não segundo a formação
+=============================================================================
+O `p.role` vem da formação e NUNCA MUDA: um lateral que sobe para o meio-campo
+continua a contar como defesa para o `LineShape`, para o fecho e para tudo o
+resto. Era por isso que a linha de trás não se recompunha quando perdia gente.
+
+A LINHA DE TRÁS é quem está a menos de `faixaDaLinha` do jogador mais RECUADO da
+equipa — relativa aos COMPANHEIROS, que é o que se vê no ecrã. Medir contra os
+terços do bloco não serve: o bloco é empurrado pela bola e pela linha de
+fora-de-jogo, e há frames em que os onze caem todos no mesmo terço (medido, a
+contagem oscilava entre 0 e 10).
+
+`nominal` é quantos a FORMAÇÃO põe naquela linha — é contra ele que se mede a
+falta. Sai do `role`, que para isto serve: é a intenção do treinador.
+
+Escreve em `p.linhaActual` e `bb.linhas`. Corre uma vez por equipa por frame,
+ANTES do posicionamento, porque o `u` de cada um vai depender de quantos são.
+*/
+function classificarLinhas(lista, bb) {
+    const L = (typeof LineShape !== 'undefined') ? LineShape : null;
+    const faixa = (L && typeof L.faixaDaLinha === 'number') ? L.faixaDaLinha : 6.0;
+
+    const campo = lista.filter(p => p && p.role !== 'gk' && p.model);
+    if (!campo.length) { bb.linhas = null; return; }
+
+    const comZ = campo.map(p => ({ p: p, z: p.model.position.z * bb.dir }))
+        .sort((a, b) => a.z - b.z);
+    const traseira = comZ[0].z;
+
+    const linhas = { def: [], mid: [], atk: [] };
+    const nominal = { def: 0, mid: 0, atk: 0 };
+
+    for (const o of comZ) {
+        const p = o.p;
+        // A intenção da formação, para se saber quantos DEVIAM lá estar.
+        const nom = (p.role === 'def') ? 'def' : (p.role === 'atk' ? 'atk' : 'mid');
+        nominal[nom]++;
+
+        /*
+        A linha REAL. Só a de trás é definida pela distância ao mais recuado —
+        é a que a regra do mínimo protege e a que se fecha ao perder gente. As
+        outras duas ficam pela intenção da formação: um médio que sobe não deixa
+        de ser médio para efeitos de largura, e o ataque não tem linha atrás de
+        si para se recompor.
+        */
+        const naTraseira = (o.z <= traseira + faixa);
+        const linha = naTraseira ? 'def' : (nom === 'def' ? 'mid' : nom);
+        p.linhaActual = linha;
+        linhas[linha].push(p);
+    }
+
+    /*
+    O MÍNIMO DA LINHA DE TRÁS. Por muito que a equipa suba, não pode ficar com
+    menos de `minimoAtras` atrás — medido antes desta regra, 11.6% dos frames
+    tinham UM só jogador na linha de trás.
+
+    Quem completa são os mais recuados a seguir, e ficam marcados com
+    `seguraLinha`: o `tickBase` trava-lhes a profundidade à altura da linha em
+    vez de os deixar subir. Marca-se e limpa-se aqui, todos os frames, para
+    ninguém ficar preso a segurar uma linha que já não precisa dele.
+    */
+    const minimo = (L && typeof L.minimoAtras === 'number') ? L.minimoAtras : 2;
+    for (const o of comZ) o.p.seguraLinha = false;
+
+    if (linhas.def.length < minimo) {
+        for (const o of comZ) {
+            if (linhas.def.length >= minimo) break;
+            if (o.p.linhaActual === 'def') continue;
+            o.p.linhaActual = 'def';
+            o.p.seguraLinha = true;
+            const i = linhas.mid.indexOf(o.p);
+            if (i >= 0) linhas.mid.splice(i, 1);
+            else { const j = linhas.atk.indexOf(o.p); if (j >= 0) linhas.atk.splice(j, 1); }
+            linhas.def.push(o.p);
+        }
+    }
+
+    /*
+    O PAR DO MESMO LADO. Quando o lateral e o meia-lateral do mesmo flanco
+    ficam na MESMA linha e no mesmo corredor, o de trás fecha para dentro — o
+    corredor é de quem subiu. Ver LineShape.parDistX / parFecho.
+
+    Medido antes desta regra: 3.0 m entre eles em x, e 14.7% dos frames a menos
+    de 4 m em linha recta.
+    */
+    const distX = (L && typeof L.parDistX === 'number') ? L.parDistX : 7.0;
+    for (const o of comZ) o.p.fecharPorPar = false;
+
+    for (const par of [['LB', 'LM'], ['RB', 'RM']]) {
+        const lat = campo.find(p => p.pos === par[0]);
+        const ala = campo.find(p => p.pos === par[1]);
+        if (!lat || !ala) continue;
+        if (lat.linhaActual !== ala.linhaActual) continue;
+        if (Math.abs(lat.model.position.x - ala.model.position.x) > distX) continue;
+
+        // O de trás fecha; o da frente fica com o corredor.
+        const zLat = lat.model.position.z * bb.dir;
+        const zAla = ala.model.position.z * bb.dir;
+        (zLat < zAla ? lat : ala).fecharPorPar = true;
+    }
+
+    bb.linhas = {
+        def: linhas.def, mid: linhas.mid, atk: linhas.atk,
+        nominal: nominal
+    };
+}
+
+/*
+O FACTOR DE FECHO de uma linha: 1.0 com a linha completa (e aí NADA muda), e
+menos por cada jogador em falta face ao que a formação lá põe. Ver
+LineShape.porFalta.
+*/
+function fechoPorOcupacao(bb, linha) {
+    const L = (typeof LineShape !== 'undefined') ? LineShape : null;
+    if (!L || !bb || !bb.linhas || typeof L.porFalta !== 'number') return 1.0;
+
+    const actual = bb.linhas[linha] ? bb.linhas[linha].length : 0;
+    const nom = bb.linhas.nominal ? bb.linhas.nominal[linha] : 0;
+    if (!nom || actual >= nom) return 1.0;
+
+    const falta = nom - actual;
+    const chao = (typeof L.fechoMinimo === 'number') ? L.fechoMinimo : 0.45;
+    return Math.max(chao, 1.0 - falta * L.porFalta);
+}
+
 const PosicionamentoAI = {
     otimizarSlotsPorPosicao: otimizarSlotsPorPosicao,
+    classificarLinhas: classificarLinhas,
 
     /*
     FASE 1 - o posto de cada um antes da marcacao: slot no bloco + estilo.
@@ -1751,6 +1922,18 @@ const PosicionamentoAI = {
         const slot = slotNoBloco(p, bb);
         let targetX = slot ? slot.x : p.baseTarget.x;
         let targetZ = slot ? slot.z : p.baseTarget.z;
+
+        /*
+        SEGURAR A LINHA: quem foi chamado para completar o mínimo atrás não
+        sobe acima da linha de trás. Ver a regra do mínimo em
+        classificarLinhas.
+        */
+        if (p.seguraLinha && bb.bloco) {
+            const L = (typeof LineShape !== 'undefined') ? LineShape : null;
+            const faixa = (L && typeof L.faixaDaLinha === 'number') ? L.faixaDaLinha : 6.0;
+            const tecto = bb.bloco.z0 + faixa;
+            if (targetZ * p.dirZ > tecto) targetZ = tecto * p.dirZ;
+        }
 
         // Inércia pós-passe de 4 segundos: se a equipa estiver no ataque, não recua para trás da cota onde passou
         if (bb && bb.isAttacking && p.passInertiaTimer > 0 && typeof p.passInertiaZDir === 'number') {

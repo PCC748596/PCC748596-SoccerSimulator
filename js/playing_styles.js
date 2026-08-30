@@ -62,10 +62,36 @@ function estiloAtivoDe(p) {
 }
 
 /*
-Estilo válido para uma posição? Usado na atribuição e na UI: escolher
-"Anchor Man" para um avançado não faz sentido nenhum e seria um erro
-silencioso (os modificadores aplicavam-se na mesma).
+=============================================================================
+A METADE DEFENSIVA — e porque não pode passar pelo `estiloAtivoDe`
+=============================================================================
+O `estiloAtivoDe` devolve `EstiloBase` quando `p.styleAtivo` é falso. E o
+`avaliarEstilo` DESLIGA o `styleAtivo` assim que a equipa entra em fase
+defensiva — de propósito, para não arrastar laterais e meias para o ataque sem
+a bola.
+
+Ou seja: a metade defensiva lida por ali nunca correria. Medido antes desta
+função existir, o recuo do estilo aplicava-se em 0.17 m dos 1.0 m pedidos —
+cerca de um sexto dos frames, os da transição antes de o estilo desligar.
+
+`styleAtivo` continua a querer dizer "a metade OFENSIVA está a ser exercida".
+A metade defensiva depende só de duas coisas: o estilo existir e ter `defensivo`,
+e o interruptor do painel (`playingStyleDesligado`) não estar em off. Qual das
+duas corre é a FASE que decide, no aplicarEstiloPosicional.
+
+Devolve null quando não há metade defensiva — e é isso que faz o jogador cair
+na segunda camada (slot no bloco, marcação, mola), como foi pedido.
 */
+function estiloDefensivoDe(p) {
+    if (!p || p.playingStyleDesligado || !p.playingStyle) return null;
+    if (typeof Config !== 'undefined' && !Config.usePlayingStyles) return null;
+    const def = PlayingStyles[p.playingStyle];
+    if (!def || !def.defensivo) return null;
+
+    const base = (typeof EstiloDefensivoBase !== 'undefined') ? EstiloDefensivoBase : {};
+    return Object.assign({}, base, def.defensivo);
+}
+
 function estiloValidoPara(chave, pos) {
     const def = PlayingStyles[chave];
     if (!def || !def.posicoes) return false;
@@ -468,6 +494,33 @@ function melhorVaoX(p, bb, zAlvo, candidatosX) {
     return melhorX;
 }
 
+/*
+=============================================================================
+A PRESSÃO DO ESTILO — quanto ele aperta o homem, comparado com o botão
+=============================================================================
+`PlayingStyles.*.defensivo.pressao` multiplica a distância a que o jogador
+acompanha o seu homem: >1 marca mais apertado, <1 dá espaço. Compõe-se com o
+`Tatics.pressaoDefensiva` do painel em vez de o substituir — o botão continua a
+ser o controlo da equipa, e o estilo é a personalidade de um jogador dentro
+dele.
+
+Fica limitado por `MarkingModel.distanciaMinimaEstilo`: por muito agressivo que
+o estilo seja, encostar-se ao homem a meio metro não é marcar, é falta.
+
+Devolve a distância já corrigida. Sem estilo, sem metade defensiva, ou em fase
+ofensiva, devolve a distância tal como veio.
+*/
+function distanciaComEstilo(p, distancia) {
+    if (typeof estiloDefensivoDe !== 'function') return distancia;
+    const D = estiloDefensivoDe(p);
+    if (!D || !D.pressao || D.pressao === 1.0) return distancia;
+
+    const M = (typeof MarkingModel !== 'undefined') ? MarkingModel : null;
+    const minimo = (M && typeof M.distanciaMinimaEstilo === 'number')
+        ? M.distanciaMinimaEstilo : 1.0;
+    return Math.max(minimo, distancia / D.pressao);
+}
+
 /* =========================================================================
    CAMADA POSICIONAL DO PLAYING STYLE
    =========================================================================
@@ -484,6 +537,46 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
     }
 
     const est = estiloAtivoDe(p);
+
+    /*
+    =====================================================================
+    QUAL DAS METADES DO ESTILO CORRE: decide a FASE, não o estilo
+    =====================================================================
+    Os campos soltos do estilo (`avanco`, `largura`, `ombroDefesa`...) são a
+    metade OFENSIVA. A metade defensiva vive no bloco `defensivo` e só existe
+    nos estilos que têm mesmo comportamento sem posse (ver PlayingStyles).
+
+    Quem não tiver metade defensiva não desloca NADA a defender: fica com o
+    posicionamento normal — slot no bloco, marcação, mola de coesão —, que é a
+    segunda camada. É deliberado: um Goal Poacher sem a bola não tem
+    identidade defensiva nenhuma, e inventar-lhe uma era pior do que não ter.
+
+    A fase é a mesma que o `avaliarEstilo` usa para ligar e desligar o estilo,
+    e conta as DUAS transições: sem posse, ou em T.Defensive/Defensive. Um
+    jogador em transição defensiva já não está a atacar, mesmo que a posse
+    ainda não tenha mudado de mãos no Match.
+
+    Antes: a metade ofensiva corria SEMPRE, e o único cuidado era anular o
+    `avanco` positivo a defender. Um Anchor Man (avanco -7) levava o recuo
+    ofensivo dele para a fase defensiva, e o `pressao` que a config lhe dava
+    não era lido por ninguém.
+    */
+    const faseDefensivaEst = !bb || !bb.isAttacking ||
+        (typeof TeamState !== 'undefined' &&
+            (bb.state === TeamState.TRANSITION_DEFENSIVE || bb.state === TeamState.DEFENSIVE));
+
+    if (faseDefensivaEst) {
+        // NÃO pelo `est`: o estiloAtivoDe devolve EstiloBase quando o estilo
+        // está desligado, e é precisamente isso que a fase defensiva faz. Ver
+        // a nota do estiloDefensivoDe.
+        const D = (typeof estiloDefensivoDe === 'function') ? estiloDefensivoDe(p) : null;
+        if (!D) return { x: targetX, z: targetZ };   // -> segunda camada
+
+        // O `recuo` é o espelho do `avanco`: metros ATRÁS do slot, no
+        // referencial de ataque.
+        if (D.recuo) targetZ -= D.recuo * p.dirZ;
+        return { x: targetX, z: targetZ };
+    }
 
 
         // Avanço/recuo, no referencial de ataque.

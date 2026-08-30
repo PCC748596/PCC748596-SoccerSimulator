@@ -5,6 +5,326 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 30 de Agosto de 2026 — as camadas de movimentação, esclarecidas e medidas
+
+Testes novos: `bloco_tres_linhas`. Suite: **182 casos, 4 a falhar** — ver o aviso
+no fim desta secção.
+
+O tema foi perceber o que as três camadas de movimentação fazem de facto, e não
+o que o código diz que fazem. Metade das conclusões são de medição; a outra
+metade são coisas que simplesmente não existem em runtime.
+
+#### DUAS DAS TRÊS ÁRVORES NÃO CORREM
+
+O `PlayerAI.tick` corre três árvores por ordem — `PlayingStyleBTs`,
+`PositionBTs`, `PlayerBT`. Verificado em runtime:
+
+```
+PositionBTs com árvore:     0   []
+PlayingStyleBTs com árvore: 0   []
+```
+
+Ambos são registos com todas as chaves a `null` e um `register` que **ninguém
+chama** — zero chamadas em todo o projecto. Os dois primeiros `if` nunca entram.
+**Só o `PlayerBT` corre.**
+
+O `PositionBT` já estava documentado como apagado. O `PlayingStyleBT` **não
+estava**, e a consequência é que o comentário sobre "as duas primeiras podem
+cortar a terceira com SUCCESS" descreve uma situação que não acontece.
+
+Os Playing Styles TÊM efeito, mas por outro caminho: o `aplicarEstiloPosicional`
+(playing_styles.js), chamado de dentro do `tickBase`. **O estilo é um
+deslocamento, não uma árvore.**
+
+#### O que corre, de facto, por frame
+
+```
+Match.runTeamAI()                          <- ANTES de qualquer player.update
+  TeamAI.tick(A) e (B)                     forma do bloco -> bb.bloco
+  otimizarSlotsPorPosicao                  quem fica com que slot
+  tickBase(p)     -> p.postoBase           slot + inércia + afastar do portador
+                                           + aplicarEstiloPosicional
+  atribuirMarcacoesDaEquipa                -> p.marcRef
+  tickFinal(p)    -> p.dynamicTarget       marcação, inquietação, tecto,
+                                           mola, fora-de-jogo, clamp, alisamento
+player.update(dt)
+  runBehaviorTree -> PlayerAI.tick -> PlayerBT   <- pode REESCREVER o dynamicTarget
+  fsm.update
+```
+
+**Último a escrever ganha.** O `dynamicTarget` é escrito 8 vezes no `team_bt.js`
+e **25 vezes no `player_bt.js`**: a camada 1 calcula o posto com todos os cortes
+(bloco, estilo, marcação, mola, fora-de-jogo, clamp) e qualquer folha do
+`PlayerBT` sobrepõe-lhe um ponto que não passou por nenhum deles. Foi assim que
+apareceu, na sessão de 28, um alvo a `|x| = 39.95` com o `tacticalTarget` dentro
+do campo.
+
+#### As duas metades de um Playing Style
+
+Pedido: cada estilo tem uma metade ofensiva e uma defensiva, e a FASE decide qual
+corre. Quem não tiver metade defensiva não desloca nada a defender e fica com o
+posicionamento normal — a segunda camada.
+
+Os campos soltos (`avanco`, `largura`, `remate`…) passaram a ser a metade
+ofensiva; a defensiva vive num bloco `defensivo` novo, e só existe nos quatro
+estilos que têm mesmo comportamento sem posse.
+
+**O `pressao` estava na config desde sempre e NUNCA ERA LIDO.** Os catorze usos
+de "pressao" no código eram todos o `Tatics.pressaoDefensiva` do painel, que é
+outra coisa. Passou para dentro do `defensivo` e passou a multiplicar a distância
+de marcação, com chão em `MarkingModel.distanciaMinimaEstilo` (1.2 m — marcar a
+meio metro é falta):
+
+```
+painel em balanced (3.00 m):
+  sem estilo           3.00 m
+  the_destroyer        1.88 m
+  anchor_man           2.40 m
+  box_to_box           2.50 m
+  defensive_fullback   2.50 m
+```
+
+**A armadilha, apanhada a medir:** a primeira versão ficou meio-ligada — o recuo
+aplicava-se **0.17 m dos 1.0 m pedidos**. O `estiloAtivoDe` devolve `EstiloBase`
+quando `styleAtivo` é falso, e o `avaliarEstilo` DESLIGA o `styleAtivo` assim que
+a equipa entra em fase defensiva (de propósito, para não arrastar laterais para o
+ataque sem bola). A metade defensiva lida por ali nunca poderia correr; os 0.17 m
+eram só os frames da transição.
+
+Daí o `estiloDefensivoDe(p)`, que não depende do `styleAtivo` — depende só de o
+estilo ter metade defensiva e do interruptor do painel. O `styleAtivo` fica a
+querer dizer "a metade OFENSIVA está a ser exercida".
+
+Medido depois, médios centrais com o painel em `balanced`:
+
+```
+TeamA (The Destroyer): marca a 5.52 m | recuo aplicado 1.00 m (pedido 1.0)
+TeamB (sem estilo)   : marca a 6.84 m | recuo aplicado 0.00 m
+```
+
+#### O terço da frente do bloco que ficava vazio
+
+O bloco foi dividido em três âncoras (defesa, meio, ataque) e o `v` da formação
+interpola entre elas. A divisão está certa; a aritmética não estava:
+
+```js
+zAtk: z0 + 2 * (z1 - z0) / 3     // o ataque a DOIS TERÇOS da profundidade
+```
+
+`v = 1.0` é o jogador mais adiantado da formação e devia cair na FRENTE do bloco.
+Caía a 66.7%, e arrastava a formação inteira:
+
+```
+  pos     v       devia ficar   ficava em
+  CB     0.000        0%           0%
+  LB/RB  0.091        9.1%         6.1%
+  CM     0.455       45.5%        30.3%
+  LM/RM  0.545       54.5%        36.3%
+  CF     1.000      100%          66.7%
+```
+
+Com 40 m de profundidade, eram **13 m do bloco vazios por construção**, e o
+número da `BlockShape.profundidade` do painel mentia por um terço.
+
+As fracções passaram para `BlockShape.linhas` (`defesa: 0.0, meio: 0.5,
+ataque: 1.0`) — é isso que faz as três linhas serem ajustáveis em vez de
+decorativas. Medido a defender:
+
+```
+  pos    v      antes    agora
+  CB    0.000   0.009   -0.010
+  CM    0.455   0.294    0.377
+  LM/RM 0.545   0.358    0.469
+  CF    1.000   0.608    0.862
+```
+
+Metros vazios à frente: **13.0 -> 7.7 m**. O que sobra é a mola e o alisamento a
+puxarem o avançado para trás, e isso é a equipa a não se partir.
+
+#### NA FASE OFENSIVA AS TRÊS LINHAS NÃO SÃO USADAS
+
+O `zTarget` que sai da interpolação é **substituído** dentro do
+`if (bb.isAttacking)`: a posição deixa de ser "onde estou no bloco" e passa a ser
+"a que distância da bola posso estar", com tectos por função —
+
+```
+role 'def' / DM         distFrente = 0      (LB/RB: 10)   distTras = 15
+atacantes, LW/RW        distFrente = 20                   distTras = 5
+todos os outros         distFrente = 5                    distTras = 5
+```
+
+**Três valores de `distFrente`**, mais o `+7.0` que os `isWideRole` levam DEPOIS
+do clamp. Medido, metros à frente da linha da bola:
+
+```
+  pos    fracção do bloco    metros à frente da bola
+  CB          0.034               -12.3  ± 11.1
+  LB/RB       0.359                +3.9  ±  8.4
+  CM          0.395                +5.7  ±  7.3   <- saturado no cap de 5
+  LM/RM       0.567               +14.3  ±  8.1   <- 5 + 7 do wide
+  CF          0.679               +19.9  ±  6.5   <- saturado no cap de 20
+```
+
+O CM e o CF estão nos tectos: não é o bloco que os coloca, é o clamp. E como
+LB/RB cai junto do CM, e LM/RM junto do CF, o que se vê são DOIS aglomerados mais
+o CB isolado. **A atacar a equipa fica mais curta (0.679) do que a defender
+(0.862)** — o contrário do que devia ser.
+
+#### O que falta para as três linhas servirem para o que foram pensadas
+
+A intenção é controlar as linhas separadamente: se um lateral sobe para a linha
+média, o espaçamento dos médios muda e os defesas que ficam recompõem-se como
+três centrais, mais centralizados. E cada linha deve avançar pela sua própria
+referência, sem esperar que o rectângulo inteiro se mova.
+
+Três coisas medidas que dizem o que falta:
+
+  - **as três linhas seguem a bola sem atraso** (correlação ~0.72, lag 0.0 s) e
+    com distâncias de 14.0 m (defesa-meio) e 11.6 m (meio-ataque), desvio 3-4 m.
+    O problema não é atraso: é que `zDef`/`zMid`/`zAtk` são fatias do MESMO
+    rectângulo, todas derivadas de um `z0`/`z1` com uma referência só. **Não há
+    três controlos, há um.**
+  - **a largura de uma linha não sabe quantos estão nela.** O `u` vem só do slot
+    da formação. Medido: def 33.3 m, mid 36.9 m, atk 12.0 m. Se o lateral subir,
+    os três que ficam mantêm o `u` deles e fica um buraco onde ele estava.
+  - **não existe noção, em runtime, de quem está em que linha.** O `p.role` vem
+    da formação e nunca muda: um lateral que sobe continua a contar como defesa
+    para o `LineShape`, para o fecho e para o cálculo da última linha.
+
+Decidido: primeiro a LARGURA por ocupação (a linha reparte-se por quem lá está de
+facto), depois as âncoras por linha. A troca de linha sai da POSIÇÃO EFECTIVA do
+jogador, com histerese. A profundidade continua a sair da bola.
+
+Base de referência já medida, formação 442 intacta:
+
+```
+  def (n=4): RB=0.150 CB=0.350 CB=0.650 LB=0.850   amplitude=0.700 centro=0.500
+  mid (n=4): RM=0.150 CM=0.350 CM=0.650 LM=0.850   amplitude=0.700 centro=0.500
+  atk (n=2): CF=0.375 CF=0.625                     amplitude=0.250 centro=0.500
+```
+
+A restrição que a implementação tem de respeitar: **com a ocupação normal, nada
+pode mudar** — só quando alguém troca de linha.
+
+#### O desenho do bloco: âncoras e divisórias são coisas diferentes
+
+Foi a pergunta "porque é que o rectângulo defensivo está dividido em 3 e o
+ofensivo em 2?" que destapou a confusão — e a confusão estava no modelo, não no
+desenho.
+
+**AS ÂNCORAS** (`zDef`, `zMid`, `zAtk`) são os pontos entre os quais o `v` da
+formação interpola. Têm de cobrir o bloco INTEIRO: se não cobrirem, a formação
+encolhe — foi esse o bug do `zAtk` a 2/3. **Três âncoras dão DUAS faixas**,
+sempre: a de trás e a da frente *são* a moldura.
+
+**AS DIVISÓRIAS** (1/3 e 2/3) partem o rectângulo nas três FAIXAS — defesa, meio
+e ataque. Não controlam nada; são a leitura do campo.
+
+Era o mesmo valor a fazer os dois papéis, e é por isso que o `zAtk` estava
+errado: âncora do ataque E divisória dos 2/3 ao mesmo tempo. Com o `zAtk`
+corrigido para a frente do bloco, a linha passou a ser desenhada por cima da
+moldura e o que se via passou de três faixas para duas. As duas faixas eram o
+desenho CORRECTO — as três de antes eram o bug a ser desenhado.
+
+Três tentativas até acertar, e vale a pena ficarem registadas porque a
+aritmética é contra-intuitiva:
+
+```
+  desenhar as 3 âncoras            -> 2 faixas   (a de trás e a da frente são a moldura)
+  âncoras + 2 divisórias           -> 4 faixas   (3 linhas internas)
+  só as 2 divisórias               -> 3 faixas   <- é isto
+```
+
+O que ficou:
+
+  - **duas divisórias** a 1/3 e 2/3, e mais nada. As âncoras não se desenham:
+    hoje não acrescentam à leitura. Quando cada linha ganhar a sua própria âncora
+    (fase C) deixam de coincidir com as divisórias e aí levam estilo próprio — a
+    nota está no `criarLinhasTercos`;
+  - **três marcadores de centro**, nos centros das faixas (1/6, 1/2, 5/6), e o
+    aceso diz em que faixa está a bola. É o "centro que controla";
+  - **diagonais desligadas** (`diagMesh.visible = false`) a pedido — o campo já
+    tem linhas de movimento que cheguem. A malha continua criada, voltar a
+    ligá-las é uma linha;
+  - **uma fonte só para a geometria**: a moldura vinha do `blockBottom`/
+    `blockTop` e as linhas do `bloco.z*`. São o mesmo valor hoje, mas eram duas
+    fontes para um dado só — e é assim que as coisas divergem sem ninguém dar por
+    isso. Passou tudo a sair de `bb.bloco`.
+
+**Um defeito introduzido e corrigido no mesmo dia:** o terceiro marcador fazia
+`tam3 = bloco.z1 - bloco.zAtk`. Com o `zAtk` corrigido para a frente do bloco
+isso passou a ZERO, e o marcador do sector ofensivo caía em cima da borda em vez
+de dentro da faixa. Corrigir uma coisa partiu outra que dependia do valor errado
+— vale a pena procurar por mais dependências do `zAtk` antigo se algo parecer
+deslocado.
+
+Verificado a correr o próprio caminho do desenho (`window.teamBTPosState` ligado
+no harness, e a ler as posições da malha depois do `Match.update`):
+
+```
+TeamA: moldura -18.3..11.7 | divisórias -8.3 e 1.8 | linhas internas=2 -> FAIXAS=3
+   centros das faixas: -13.3  -3.3  6.8  | aceso: [1]
+TeamB: moldura 24.2..-25.8 | divisórias 7.5 e -9.2 | linhas internas=2 -> FAIXAS=3
+   centros das faixas: 15.8  -0.8  -17.5  | aceso: [1]
+```
+
+
+#### Arrumação: `tools/scratch/`
+
+Vinte e quatro ficheiros saíram da raiz do projecto (e um de dentro de
+`js/bt/`) para `tools/scratch/`, que tem um README a explicar cada família.
+Nada aqui é usado pelo jogo, pelos testes ou por qualquer ferramenta — a pasta
+pode ser apagada inteira, o git guarda tudo.
+
+  - **15 `patch*.js`** — codemods de um só uso, que liam um ficheiro de
+    produção, faziam um `replace` e voltavam a escrevê-lo. Verificados um a um
+    a seco (com o `fs.writeFileSync` desligado, comparando o resultado com o
+    ficheiro actual): **os quinze são operações nulas**. O efeito deles já está
+    no código.
+  - **8 rascunhos de cálculo** (`test_slots.js`, `test_cb.js`, `test_block.js`,
+    `test_all_cb.js`, `test_cb_cm.js`, `test_dump_pos.js`, `find_bug.js`,
+    `sim_offsets.js`) — não são testes, não correm sob `node --test`, e o
+    problema deles é o que têm dentro: **cópias à mão de dados de config**. O
+    `test_slots.js` traz uma cópia inteira do `FormationsData`. No dia em que a
+    config mudar — e mudou — descrevem um jogo que já não existe.
+  - **`team_bt.js.current.txt`** — cópia de segurança de um ficheiro de
+    produção, que estava dentro de `js/bt/` a parecer código.
+
+A regra que isto ilustra: um script que muda código é lixo no instante em que
+corre (o resultado está no ficheiro, a intenção pertence ao commit), e um
+rascunho que COPIA config em vez de a LER tem prazo de validade e não avisa
+quando expira. Para medir comportamento o sítio é `tools/headless/` — o jogo
+real a correr em Node, sem cópias de nada.
+
+**A suite tem DUAS gerações de testes**, e vale a pena saber ao escrever um
+novo: 21 ficheiros usam `node:test` com casos nomeados, e **56 são scripts
+simples** que fazem `console.log` e `process.exit(1)` — o `node --test` corre-os
+na mesma, mas cada um conta como UM caso. É por isso que a suite diz 182 casos
+em 77 ficheiros. Os novos devem usar `node:test`.
+
+#### AVISO — 347 linhas removidas do `player_bt.js`, e quatro testes a falhar
+
+```
+not ok - tests/arvore_sem_bola.test.js
+not ok - quem pede RUN_INTO_SPACE põe também o runTimer
+not ok - runTimer e runTarget andam sempre juntos
+not ok - o actRunIntoSpace continua a ser quem cria a corrida normal
+```
+
+As funções `actRunIntoSpace`, `actEsperarDevolucao` e `actOverlap` deixaram de
+existir — só sobraram referências em comentários. São as jogadas combinadas
+(tabelinha, overlap, corrida ao espaço) que a sessão de 27 tinha acrescentado.
+
+```
+dd9a156  actRunIntoSpace=1  3167 linhas
+78b912a  actRunIntoSpace=0  2820      <- "refactor(ai): tiered team blocks"
+```
+
+Se a remoção foi deliberada, os testes têm de sair com ela. Se foi acidental, o
+`dd9a156` tem o ficheiro íntegro. **Fica por decidir** — nada foi restaurado por
+iniciativa própria.
+
+
 ### Sessão de 29 de Agosto de 2026 — Balística do lateral e posicionamento regulamentar em faltas
 
 **Cobrança de Lateral com Chegada Limpa ao Receptor** (`js/player.js`)
@@ -2447,6 +2767,25 @@ Spec em [docs/superpowers/specs/2026-08-24-reach-animacao-procedural-design.md](
 
 Coisas medidas e por resolver, para não se voltarem a descobrir por acaso:
 
+- **NA FASE OFENSIVA O BLOCO NÃO É USADO.** O `zTarget` que sai das três linhas
+  é substituído dentro do `if (bb.isAttacking)` por uma régua presa à bola, com
+  três valores de `distFrente` em código (0 para defesas e DM, 5 para o meio, 20
+  para atacantes e alas) mais um `+7.0` para os `isWideRole`. Medido: o CM está
+  saturado no tecto de 5 m e o CF no de 20 m — não é o bloco que os coloca, é o
+  clamp. Resultado: dois aglomerados mais o central isolado, e a equipa fica
+  MAIS CURTA a atacar (0.679 do bloco) do que a defender (0.862). O painel de
+  compactação não tem efeito nenhum na fase ofensiva.
+- **AS TRÊS LINHAS SÃO FATIAS DE UM RECTÂNGULO SÓ.** `zDef`/`zMid`/`zAtk`
+  derivam todos do mesmo `z0`/`z1`, com uma referência única da bola: mover uma
+  linha sem mover as outras é impossível por construção. E a largura de uma
+  linha não sabe quantos estão nela — o `u` vem só do slot da formação, e
+  `p.role` nunca muda, portanto um lateral que sobe continua a contar como
+  defesa. Trabalho decidido e por fazer: largura por ocupação primeiro, âncoras
+  por linha depois; a troca de linha sai da posição efectiva, com histerese.
+- **AS DUAS ÁRVORES VAZIAS.** `PositionBTs` e `PlayingStyleBTs` são ~40 linhas
+  de estrutura morta mais dois `if` por jogador por frame que nunca entram — e,
+  pior, fazem o código PARECER ter três níveis quando tem dois. Ou levam um
+  comentário a dizer que estão vazias de propósito, ou saem.
 - **NÃO EXISTE SEPARAÇÃO CORPO-A-CORPO ENTRE COMPANHEIROS** (o `separarAlvos`
   está apagado). Medido a 28 de Agosto: **23.7% dos frames têm dois colegas a
   menos de 1.5 m**, e há 0.71 pares de colegas a menos de 2.5 m por frame. É a
@@ -2568,12 +2907,54 @@ DOMContentLoaded (main.js)
 vários frames — muda o estado da FSM e devolve `SUCCESS`. A duração (um carrinho
 que leva 1.5 s, um passe em curso) vive sempre na `PlayerFSM`.
 
-> **ATENÇÃO: O NÍVEL 2 JÁ NÃO EXISTE.** O `js/bt/position_bt.js` foi apagado, e
-> com ele a marcação (`atribuirMarcacao`/cobertura), o `TacklingAI` e a malha de
-> passe de Delaunay (`TriangulacaoAI`). Ver o cabeçalho "ONDE CADA JOGADOR SE
-> POE" em `js/bt/team_bt.js`, que é onde o posicionamento vive agora. As
-> referências a `bt/position_bt.js` espalhadas por este documento são
-> HISTÓRICAS — o ficheiro não está no repositório.
+> **ATENÇÃO: DAS TRÊS ÁRVORES DO `PlayerAI.tick`, SÓ UMA CORRE.** Verificado em
+> runtime a 30 de Agosto: `PositionBTs` e `PlayingStyleBTs` são registos com
+> todas as chaves a `null` e um `register` que NINGUÉM CHAMA — zero chamadas em
+> todo o projecto. Os dois primeiros `if` do `PlayerAI.tick` nunca entram; só o
+> `PlayerBT` executa.
+>
+> O `js/bt/position_bt.js` foi apagado, e com ele a marcação
+> (`atribuirMarcacao`/cobertura), o `TacklingAI` e a malha de passe de Delaunay
+> (`TriangulacaoAI`). As referências a `bt/position_bt.js` espalhadas por este
+> documento são HISTÓRICAS — o ficheiro não está no repositório.
+>
+> **Os Playing Styles NÃO são uma árvore.** Têm efeito pelo
+> `aplicarEstiloPosicional` (playing_styles.js), chamado de dentro do
+> `tickBase`: o estilo é um DESLOCAMENTO do posto, não uma decisão. Desde 30 de
+> Agosto tem duas metades — a ofensiva (os campos soltos) e a defensiva (o bloco
+> `defensivo`), e a FASE da equipa escolhe qual corre.
+
+**As camadas de movimentação, na ordem real de execução:**
+
+```
+Match.runTeamAI()                        <- ANTES de qualquer player.update
+  TeamAI.tick(A) e (B)                   forma do bloco -> bb.bloco
+  otimizarSlotsPorPosicao                quem fica com que slot
+  tickBase(p)     -> p.postoBase         slot + inércia + afastar do portador
+                                         + aplicarEstiloPosicional
+  atribuirMarcacoesDaEquipa              -> p.marcRef
+  tickFinal(p)    -> p.dynamicTarget     marcação, inquietação, tecto, mola,
+                                         fora-de-jogo, clamp, alisamento
+player.update(dt)
+  runBehaviorTree -> PlayerAI.tick -> PlayerBT   <- pode REESCREVER o dynamicTarget
+  fsm.update
+```
+
+**ÚLTIMO A ESCREVER GANHA.** O `dynamicTarget` é escrito 8 vezes no `team_bt.js`
+e **25 vezes no `player_bt.js`**. A camada 1 calcula o posto com todos os cortes
+(bloco, estilo, marcação, mola, fora-de-jogo, clamp do campo) e qualquer folha do
+`PlayerBT` sobrepõe-lhe um ponto que não passou por nenhum deles — foi assim que
+apareceu um alvo a `|x| = 39.95` com o `tacticalTarget` dentro do campo.
+
+A cadeia de alvos, e o que cada elo acrescenta:
+
+```
+p.slotTarget      slot puro no bloco                 (anel grande do debug)
+p.postoBase       + estilo                           (fim do tickBase)
+p.styleTarget     cópia para o debug
+p.tacticalTarget  + marcação, inquietação, mola, fora-de-jogo, clamp, alisamento
+p.dynamicTarget   idem — e depois reescrito por quem quiser no PlayerBT
+```
 
 | Onde | Frequência | Pergunta que responde | Escreve em |
 |---|---|---|---|
@@ -4138,7 +4519,14 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Colocação do penálti (fila, cobertura, árbitro) | `config.js` → `PenaltyModel`; `match.js` → ramo `PENALTY` do `setupSetPiece` |
 | Som (ambiente, apito, chute) | `ambiente_sonoro.js`, `efeitos_sonoros.js` |
 | Medir comportamento sem abrir o browser | `tools/headless/` |
+| Rascunho e codemods gastos (podem ser apagados) | [tools/scratch/](../tools/scratch/) |
 | O que há para arrumar no `config/` e no `match/` | [docs/auditoria_config_match.md](auditoria_config_match.md) |
+| As três linhas do bloco (defesa/meio/ataque) | `config.js` → `BlockShape.linhas`; `team_bt.js` → `computeBlock` |
+| O rectângulo do bloco no ecrã (faixas, marcadores, diagonais) | `match/match_loop.js` → `updateRect`; malhas em `match/match_setup.js` |
+| Ler em que faixa do bloco está a bola | o marcador ACESO dos três — centros a 1/6, 1/2 e 5/6 da profundidade |
+| A metade DEFENSIVA de um Playing Style | `config.js` → `PlayingStyles.*.defensivo`; `playing_styles.js` → `estiloDefensivoDe` |
+| Quanto um estilo aperta a marcação | `config.js` → `.defensivo.pressao`; `playing_styles.js` → `distanciaComEstilo` |
+| Porque um jogador não chega à frente do bloco | `team_bt.js` → o ramo `if (bb.isAttacking)`: a atacar manda a distância à BOLA, não o bloco |
 | Tabelinha, overlap, passe que isola com o guarda-redes | `config.js` → `JogadasCombinadas`; `bt/player_bt.js` → `tratarJogadaCombinada` |
 | Quanto tempo o Dummy Runner corre, e onde o Fox espera | `config.js` → `PlayingStyleTuning` |
 | Quando um Playing Style está em vigor | `playing_styles.js` → `PlayingStyleTriggers` |
