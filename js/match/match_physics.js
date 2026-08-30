@@ -469,7 +469,33 @@ Object.assign(Match, {
         const atingiuLimiteCabeca = this.aerialHeaderCount >= maxHeaders;
 
         const maxPeitos = BallControl.maxPeitosSeguidos;
-        if ((bestAltura >= BallControl.peitoYMin && bestAltura <= BallControl.peitoYMax && best.jumpTimer <= 0) ||
+
+        /*
+        SEM NINGUÉM POR PERTO, O PEITO GANHA À CABEÇA.
+
+        A decisão era só de altura. Sem pressão, matar no peito e ficar com a
+        bola é melhor do que a cabecear para longe — a cabeça serve para
+        aliviar, ou para chegar à bola antes de quem vem a chegar. Com espaço,
+        ninguém cabeceia o que pode dominar.
+
+        A faixa do peito sobe até `peitoAlturaLivre` quando não há adversário a
+        menos de `peitoSemPressao`. Fora disso fica tudo como estava.
+        */
+        let tectoPeito = BallControl.peitoYMax;
+        if (typeof BallControl.peitoSemPressao === 'number' && best.jumpTimer <= 0) {
+            const rivais = (best.team === 'TeamA') ? this.opponents : this.players;
+            let maisPerto = Infinity;
+            for (const r of rivais) {
+                if (!r || r.role === 'gk' || !r.model) continue;
+                const d = r.model.position.distanceTo(best.model.position);
+                if (d < maisPerto) maisPerto = d;
+            }
+            if (maisPerto >= BallControl.peitoSemPressao) {
+                tectoPeito = Math.max(tectoPeito, BallControl.peitoAlturaLivre || tectoPeito);
+            }
+        }
+
+        if ((bestAltura >= BallControl.peitoYMin && bestAltura <= tectoPeito && best.jumpTimer <= 0) ||
             (atingiuLimiteCabeca && bestAltura <= (ALTURA_TESTA + HeaderModel.janelaContacto) && best.jumpTimer <= 0)) {
             /*
             LIMITE DE PEITOS SEGUIDOS. Sem ele, dois jogadores lado a lado

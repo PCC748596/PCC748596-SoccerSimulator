@@ -508,6 +508,29 @@ const BallControl = {
     maxPeitosSeguidos: 2,
 
     /*
+    =====================================================================
+    PEITO OU CABEÇA? DEPENDE DE QUEM VEM A CHEGAR
+    =====================================================================
+    A decisão era só de ALTURA: bola entre `peitoYMin` e `peitoYMax` ia ao
+    peito, mais alta ia à cabeça, e mais nada contava.
+
+    Falta a pressão. Sem ninguém por perto, matar no peito e ficar com a bola
+    é sempre melhor do que a cabecear para longe; com um adversário a chegar,
+    o peito é lento demais e o que serve é a cabeça — para aliviar ou para
+    atacar a bola antes dele.
+
+    `peitoSemPressao` é a distância ao adversário mais próximo a partir da
+    qual não há pressão. `peitoAlturaLivre` é até que altura ele aceita a bola
+    no peito quando está livre: acima da faixa normal, porque um jogador sem
+    ninguém em cima tem tempo de a ajeitar com o peito alto.
+
+    O limite de peitos seguidos continua a valer — isto não abre a porta ao
+    ping-pong que ele fecha.
+    */
+    peitoSemPressao: 7.0,      // metros ao adversário mais próximo
+    peitoAlturaLivre: 1.75,    // sem pressão, aceita a bola até esta altura
+
+    /*
     Distância a que a bola fica ADIANTADA depois da matada, por TEC. O máximo
     (TEC 0) é o pior amortecimento que ainda conta como matada — acima disto
     seria um ressalto, não uma recepção.

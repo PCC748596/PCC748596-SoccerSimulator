@@ -443,7 +443,31 @@ const LineShape = {
     laterais trocavam de papel a cada passe pelo meio — e um lateral a subir e a
     descer todos os frames é pior do que dois lá em cima.
     */
-    zonaMortaLado: 5.0
+    zonaMortaLado: 5.0,
+
+    /*
+    O OUTRO LATERAL NÃO PRECISA DE VOLTAR TANTO.
+
+    Com um lateral já na linha de trás, o outro não tem de correr até lá: pode
+    ficar com a LINHA MÉDIA, no meio-campo. É um PISO, não um empurrão — ele
+    fica onde estiver, desde que não caia abaixo da linha média do bloco.
+
+    Medido a 30 de Agosto, em fase DEFENSIVA e antes desta regra:
+
+        lateral mais recuado:   0.227 do bloco
+        lateral mais adiantado: 0.431 do bloco   <- abaixo da linha média (0.500)
+        com pelo menos um na linha de trás: 81.8% do tempo
+
+    Ou seja: os dois voltavam, e o adiantado ainda ficava aquém do meio-campo.
+
+    A CONDIÇÃO É O OUTRO ESTAR LÁ. Sem um lateral na linha de trás não há piso
+    nenhum — os dois voltam, como devem.
+
+    `pisoLinhaMedia` é a fracção do bloco abaixo da qual o adiantado não cai.
+    0.50 é a linha média; subir isto empurra-o mais para a frente e deixa a
+    equipa mais aberta ao contra-ataque pelo lado dele.
+    */
+    pisoLinhaMedia: 0.50
 };
 
 /*

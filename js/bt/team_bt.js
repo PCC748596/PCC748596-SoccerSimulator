@@ -1893,6 +1893,31 @@ function classificarLinhas(lista, bb) {
     }
 
     /*
+    COM UM LATERAL ATRÁS, O OUTRO NÃO VOLTA TANTO.
+
+    Se um dos laterais já está na linha de trás, o outro ganha um PISO na linha
+    média: não cai abaixo dela. Não é um empurrão para a frente — é deixá-lo
+    ficar onde está em vez de o obrigar a correr até à zaga.
+
+    Medido antes desta regra, em fase defensiva: o lateral mais adiantado ficava
+    a 0.431 do bloco, aquém da linha média, com um deles já atrás 81.8% do
+    tempo. Voltavam os dois.
+
+    A CONDIÇÃO É O OUTRO ESTAR LÁ: sem ninguém na linha de trás não há piso, e
+    os dois voltam como devem. Ver LineShape.pisoLinhaMedia.
+    */
+    if (latEsq && latDir) {
+        const naTras = (p) => p.linhaActual === 'def';
+        if (naTras(latEsq) !== naTras(latDir)) {
+            const adiantado = naTras(latEsq) ? latDir : latEsq;
+            adiantado.pisoLinhaMedia = true;
+        } else {
+            latEsq.pisoLinhaMedia = false;
+            latDir.pisoLinhaMedia = false;
+        }
+    }
+
+    /*
     O PAR DO MESMO LADO. Quando o lateral e o meia-lateral do mesmo flanco
     ficam na MESMA linha e no mesmo corredor, o de trás fecha para dentro — o
     corredor é de quem subiu. Ver LineShape.parDistX / parFecho.
@@ -1969,6 +1994,17 @@ const PosicionamentoAI = {
             const faixa = (L && typeof L.faixaDaLinha === 'number') ? L.faixaDaLinha : 6.0;
             const tecto = bb.bloco.z0 + faixa;
             if (targetZ * p.dirZ > tecto) targetZ = tecto * p.dirZ;
+        }
+
+        /*
+        E O CONTRÁRIO: com o outro lateral já na linha de trás, este não cai
+        abaixo da linha média. Ver LineShape.pisoLinhaMedia.
+        */
+        if (p.pisoLinhaMedia && bb.bloco) {
+            const L = (typeof LineShape !== 'undefined') ? LineShape : null;
+            const fr = (L && typeof L.pisoLinhaMedia === 'number') ? L.pisoLinhaMedia : 0.5;
+            const piso = bb.bloco.z0 + (bb.bloco.z1 - bb.bloco.z0) * fr;
+            if (targetZ * p.dirZ < piso) targetZ = piso * p.dirZ;
         }
 
         // Inércia pós-passe de 4 segundos: se a equipa estiver no ataque, não recua para trás da cota onde passou
