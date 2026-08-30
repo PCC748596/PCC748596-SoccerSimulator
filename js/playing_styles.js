@@ -790,7 +790,7 @@ marcação chega a 10 m, muito mais do que os 2.5 m de folga que este tecto dá.
 
 Corta só o excesso: nunca empurra para trás quem já estava aquém do tecto.
 */
-function aplicarTectoDoEstilo(p, targetZ) {
+function aplicarTectoDoEstilo(p, targetZ, bb) {
     if (typeof estiloAtivoDe !== 'function') return targetZ;
     const est = estiloAtivoDe(p);
     
@@ -805,10 +805,28 @@ function aplicarTectoDoEstilo(p, targetZ) {
     }
 
     if (est && est.travaNaIntermediaria) {
-        // Intermediária ofensiva: ~ 15m à frente do meio campo.
-        // Impede que o jogador avance muito além disso para organizar o jogo de trás.
-        const limIntermediaria = 15.0; 
-        if (zAtaque > limIntermediaria) return limIntermediaria * p.dirZ;
+        /*
+        A ENTRELINHA, e não uma distância absoluta.
+
+        Era 15 m à frente do meio-campo — um número fixo que não sabe nada de
+        onde a equipa está. Com o bloco subido, 15 m à frente do meio-campo é
+        à frente dos médios, e o Orquestrador aparecia no ataque. Medido: 0.392
+        do bloco, e acima da linha média 23.8% do tempo.
+
+        O Orquestrador organiza de TRÁS: o tecto dele é a LINHA MÉDIA do bloco
+        (`zMid`), ou seja o espaço entre os defesas e os médios. Sobe com a
+        equipa e desce com ela, que é o que a entrelinha quer dizer.
+
+        Sem bloco (bola parada, arranque) fica o limite antigo, que ao menos não
+        o deixa ir à área.
+        */
+        if (bb && bb.bloco) {
+            const tectoDir = bb.bloco.zMid * bb.dir * p.dirZ;
+            if (zAtaque > tectoDir) return tectoDir * p.dirZ;
+        } else {
+            const limIntermediaria = 15.0;
+            if (zAtaque > limIntermediaria) return limIntermediaria * p.dirZ;
+        }
     }
 
     return targetZ;

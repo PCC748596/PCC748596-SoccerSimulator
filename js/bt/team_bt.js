@@ -1081,7 +1081,7 @@ function deslocamentoDeCorredor(o) {
 /*
 Calcula a posição no mundo de um slot específico dentro do bloco tático.
 */
-function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPorPar) {
+function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPorPar, ordemNaLinha, totalNaLinha) {
     const bloco = bb.bloco;
     if (!bloco || !slot) return null;
 
@@ -1138,8 +1138,31 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPo
     const fechoPar = (fecharPorPar && LineShape && typeof LineShape.parFecho === 'number')
         ? LineShape.parFecho : 1.0;
 
+    /*
+    LINHA INCOMPLETA: REPARTE-SE POR INTERVALOS IGUAIS, CENTRADA.
+
+    Encolher a linha mantendo o `u` da formação preserva o espaçamento original,
+    e com a 442 isso dá dois juntos ao centro e um muito aberto — medido, 3.65 m
+    de diferença entre os dois intervalos de um trio.
+
+    Com `n` na linha, os lugares são 1/(n+1), 2/(n+1)... — três dão 0.25, 0.50 e
+    0.75, iguais e centrados. A ORDEM é a da formação (`ordemNaLinha`), portanto
+    ninguém troca de lado: o da esquerda continua à esquerda.
+
+    Com a linha completa não se toca em nada: o `u` da formação é a intenção do
+    treinador e é ela que manda.
+    */
+    let uBase = slot.u;
+    if (typeof ordemNaLinha === 'number' && typeof totalNaLinha === 'number' &&
+        totalNaLinha > 0 && bb.linhas && bb.linhas.nominal) {
+        const nom = bb.linhas.nominal[linhaActual || role] || 0;
+        if (nom > 0 && totalNaLinha < nom) {
+            uBase = (ordemNaLinha + 1) / (totalNaLinha + 1);
+        }
+    }
+
     const u = THREE.MathUtils.clamp(
-        0.5 + (slot.u - 0.5) * fecho * fechoSec * fechoAdicional * fechoOcup * fechoPar, 0.02, 0.98);
+        0.5 + (uBase - 0.5) * fecho * fechoSec * fechoAdicional * fechoOcup * fechoPar, 0.02, 0.98);
 
     const MARGEM_LINHA_SLOT = 1.5;
     const limX = CAMPO_LARG / 2 - MARGEM_LINHA_SLOT;
@@ -1298,7 +1321,8 @@ Onde este jogador fica dentro do bloco, em metros no mundo.
 */
 function slotNoBloco(p, bb) {
     if (!bb || !p || !p.slot) return null;
-    return calcularPontoDoSlot(p.slot, p.pos, p.role, p.fbStyle, bb, p.linhaActual, p.fecharPorPar);
+    return calcularPontoDoSlot(p.slot, p.pos, p.role, p.fbStyle, bb, p.linhaActual, p.fecharPorPar,
+        p.ordemNaLinha, p.totalNaLinha);
 }
 
 /*
@@ -1618,6 +1642,49 @@ function atribuirMarcacoesDaEquipa(lista, bb) {
         // So quem foi a leilao reinicia o relogio da histerese.
         if (!marcadores[i].manter) p.marcTimer = 0;
     }
+
+    marcarQuemVaiReceber(lista, bb);
+}
+
+/*
+O DEFESA MAIS PRÓXIMO DE QUEM VAI RECEBER FICA COM ELE.
+
+Enquanto a bola vai no ar para um destinatário, o defesa mais próximo desse
+destinatário — dentro de `MarkingModel.raioReceptor` — passa a tê-lo como
+marcação, por cima do que o leilão tinha decidido.
+
+Medido antes desta regra, defesas a menos de 6 m de quem ia receber: em 55.6%
+dos casos não tinham esse adversário atribuído, e o alvo deles apontava para
+2.30 m MAIS LONGE dele — o slot do bloco, que é atrás. O adversário recebia
+livre e de frente.
+
+SÓ O MAIS PRÓXIMO: dois defesas a largarem o bloco pelo mesmo passe abrem mais
+espaço do que fecham.
+
+Ao HOMEM e não à bola. Quem quer cortar tem o INTERCEPT, com critérios próprios
+— e o portador tem o chaser. Nenhum dos dois é tocado aqui.
+*/
+function marcarQuemVaiReceber(lista, bb) {
+    if (typeof Match === 'undefined' || typeof MarkingModel === 'undefined') return;
+    const raio = MarkingModel.raioReceptor;
+    if (typeof raio !== 'number') return;
+
+    const recv = Match.intendedReceiver;
+    if (!recv || !recv.model || recv.role === 'gk') return;
+    if (recv.team === bb.team) return;               // é nosso: não se marca
+    if (Match.ballCarrier) return;                   // a bola já não vai no ar
+
+    let melhor = null, melhorD = Infinity;
+    for (const p of lista) {
+        if (!p || p.role !== 'def' || !p.model) continue;
+        if (p === bb.chaser || p === bb.intercetor) continue;
+        const d = p.model.position.distanceTo(recv.model.position);
+        if (d < melhorD) { melhorD = d; melhor = p; }
+    }
+    if (!melhor || melhorD > raio) return;
+
+    melhor.marcRef = recv;
+    melhor.marcTimer = 0;
 }
 
 /*
@@ -1941,6 +2008,47 @@ function classificarLinhas(lista, bb) {
         (zLat < zAla ? lat : ala).fecharPorPar = true;
     }
 
+    /*
+    O CENTRAL MAIS PRÓXIMO NÃO FICA LONGE DA BOLA, com ela no próprio terço.
+    Medido antes desta regra: 11.9 m de média, e 72.4% dos frames acima de 9 m.
+    Ver MarkingModel.distMaxDaBola.
+    */
+    for (const o of comZ) o.p.puxarParaBola = false;
+
+    const MM = (typeof MarkingModel !== 'undefined') ? MarkingModel : null;
+    if (MM && typeof MM.distMaxDaBola === 'number' && !bb.isAttacking &&
+        typeof Match !== 'undefined' && Match.ball) {
+        const avancoBola = Match.ball.position.z * bb.dir;
+        if (avancoBola < (MM.tercoParaTectoDaBola ?? -17.7)) {
+            let maisPerto = null, dMin = Infinity;
+            for (const o of comZ) {
+                if (o.p.pos !== 'CB') continue;
+                const d = o.p.model.position.distanceTo(Match.ball.position);
+                if (d < dMin) { dMin = d; maisPerto = o.p; }
+            }
+            if (maisPerto && dMin > MM.distMaxDaBola) maisPerto.puxarParaBola = true;
+        }
+    }
+
+    /*
+    A ORDEM DE CADA UM DENTRO DA SUA LINHA, da esquerda para a direita, pelo `u`
+    da formação. É o que permite redistribuir uma linha incompleta por
+    intervalos IGUAIS sem ninguém trocar de lado — ver calcularPontoDoSlot.
+
+    Sem isto, encolher a linha mantinha o espaçamento ORIGINAL: com a 442, se o
+    lateral esquerdo subia, ficavam RB(0.150) CB(0.350) CB(0.650) — dois juntos
+    ao centro e um muito aberto à direita. Medido: 3.65 m de diferença entre os
+    dois intervalos do trio.
+    */
+    for (const nome of ['def', 'mid', 'atk']) {
+        const membros = linhas[nome].slice().sort((a, b) => {
+            const ua = (a.slot && typeof a.slot.u === 'number') ? a.slot.u : 0.5;
+            const ub = (b.slot && typeof b.slot.u === 'number') ? b.slot.u : 0.5;
+            return ua - ub;
+        });
+        membros.forEach((p, i) => { p.ordemNaLinha = i; p.totalNaLinha = membros.length; });
+    }
+
     bb.linhas = {
         def: linhas.def, mid: linhas.mid, atk: linhas.atk,
         nominal: nominal
@@ -2000,6 +2108,23 @@ const PosicionamentoAI = {
         E O CONTRÁRIO: com o outro lateral já na linha de trás, este não cai
         abaixo da linha média. Ver LineShape.pisoLinhaMedia.
         */
+        /*
+        TECTO DA DISTÂNCIA À BOLA: o central mais próximo aproxima-se até ficar
+        a `distMaxDaBola`. Não vai à bola — fica a essa distância, na direcção
+        dela. Ver MarkingModel.distMaxDaBola.
+        */
+        if (p.puxarParaBola && typeof Match !== 'undefined' && Match.ball &&
+            typeof MarkingModel !== 'undefined') {
+            const bx = Match.ball.position.x, bz = Match.ball.position.z;
+            const dx = targetX - bx, dz = targetZ - bz;
+            const d = Math.hypot(dx, dz);
+            const tecto = MarkingModel.distMaxDaBola;
+            if (d > tecto && d > 0.001) {
+                targetX = bx + (dx / d) * tecto;
+                targetZ = bz + (dz / d) * tecto;
+            }
+        }
+
         if (p.pisoLinhaMedia && bb.bloco) {
             const L = (typeof LineShape !== 'undefined') ? LineShape : null;
             const fr = (L && typeof L.pisoLinhaMedia === 'number') ? L.pisoLinhaMedia : 0.5;
@@ -2076,7 +2201,7 @@ const PosicionamentoAI = {
         voltava a furá-lo.
         */
         const comTecto = (typeof aplicarTectoDoEstilo === 'function')
-            ? aplicarTectoDoEstilo(p, comInquietacao.z)
+            ? aplicarTectoDoEstilo(p, comInquietacao.z, bb)
             : comInquietacao.z;
 
         let finalZ = comTecto;

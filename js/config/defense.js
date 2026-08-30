@@ -255,6 +255,52 @@ const MarkingModel = {
     distanciaMinimaEstilo: 1.2,
 
     /*
+    =====================================================================
+    VEM AÍ UMA BOLA PARA O HOMEM À MINHA FRENTE
+    =====================================================================
+    Com um adversário a receber a cinco metros, o defesa recuava para o slot do
+    bloco e deixava-o receber livre e de frente. Medido a 30 de Agosto, defesas
+    a menos de 6 m de quem ia receber:
+
+        o alvo dele estava mais LONGE do receptor do que ele: 57.2% dos casos
+        afastamento médio do alvo: +2.30 m
+        NÃO tinha esse adversário atribuído como marcação: 55.6%
+
+    A terceira linha é a causa. Não era um defesa a fugir — era um defesa a quem
+    ninguém tinha dito que aquele homem era dele, e por isso obedecia ao bloco.
+
+    Enquanto a bola vai no ar para um destinatário, o defesa MAIS PRÓXIMO desse
+    destinatário, dentro de `raioReceptor`, passa a tê-lo como marcação. Só o
+    mais próximo: dois defesas a largarem o bloco pelo mesmo passe abre mais
+    espaço do que fecha.
+
+    Vai ao HOMEM e não à bola — marcar a recepção, não tentar o corte. O corte
+    tem estado próprio (INTERCEPT) e critérios próprios.
+    */
+    raioReceptor: 8.0,
+
+    /*
+    =====================================================================
+    O CENTRAL NÃO FICA A VER A BOLA DE LONGE
+    =====================================================================
+    Com a bola no PRÓPRIO TERÇO, o central mais próximo dela não pode estar
+    mais longe do que `distMaxDaBola`. Medido a 30 de Agosto, a defender:
+
+        bola no próprio terço     média 11.9 m   acima de 9 m: 72.4%
+        bola no meio-campo        média 20.8 m   acima de 9 m: 97.5%
+        bola no terço adversário  média 44.7 m   acima de 9 m: 100%
+
+    SÓ NO PRÓPRIO TERÇO, e é uma decisão e não um esquecimento: aplicar o tecto
+    com a bola no meio-campo obrigava a linha de trás a subir atrás dela e
+    desfazia o bloco — os 20.8 m de lá são o bloco a fazer o que deve.
+
+    Vale para UM central, o mais próximo. Puxar os dois deixa o corredor
+    central aberto atrás deles, que é o oposto do que se quer.
+    */
+    distMaxDaBola: 9.0,
+    tercoParaTectoDaBola: -17.7,   // avanço abaixo disto é o próprio terço
+
+    /*
     QUANDO VALE A PENA SAIR À BOLA — o raio de accionamento do chaser.
 
     Antes não existia: a Defensive Pressure decidia só ONDE se perseguia (que
