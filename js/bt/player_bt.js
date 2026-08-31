@@ -1942,10 +1942,24 @@ function aproximarNoLateral(p) {
     }
     if (maisPertoQueEu >= T.apoioQuantos) return;
 
+    /*
+    A DIRECÇÃO SAI DO SLOT DELE, não de onde ele calhou estar.
+
+    O apoio era um clamp radial: mantinha o rumo em que o jogador já estava e
+    só corrigia a distância ao batedor. Dois apoios que chegam pela mesma banda
+    acabam no mesmo ponto do anel — é o RM e o CM em cima um do outro.
+
+    Com o slot do nível 1 como direcção, cada um fica do seu lado: o médio da
+    ala à frente pela linha, o lateral atrás, o CM para dentro. É também o que
+    o pedido diz — o médio da ala mais perto da posição dele, mais à frente.
+    */
+    const ref = p.slotTarget || p.baseTarget;
     const alvo = alvoDeApoioNoLateral(
         p.model.position.x, p.model.position.z,
         batedor.model.position.x, batedor.model.position.z,
-        T.apoioMin, T.apoioMax);
+        T.apoioMin, T.apoioMax,
+        ref ? ref.x - batedor.model.position.x : undefined,
+        ref ? ref.z - batedor.model.position.z : undefined);
     p.dynamicTarget.set(alvo.x, ALTURA_BASE_Y, alvo.z);
 }
 

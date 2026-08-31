@@ -611,8 +611,32 @@ vida real.
 
 const ThrowInModel = {
     alcanceMin: 9.0,
+
+    /*
+    ELEVAÇÃO SEM DESTINATÁRIO — o lançamento para o espaço, que só quer
+    distância. Sobe, e é suposto subir.
+    */
     elevMin: 16 * Math.PI / 180,
     elevMax: 26 * Math.PI / 180,
+
+    /*
+    ELEVAÇÃO COM DESTINATÁRIO — quase rasante, e pode ser NEGATIVA.
+
+    A bola sai das mãos a 1.82 m do chão. Com os 16°-26° do lançamento para o
+    espaço ela SOBE primeiro, e é geometricamente impossível chegar ao peito
+    (1.20 m) ou ao pé de alguém que a venha buscar: quem se aproxima encontra-a
+    a caminho do apex. Medido, com a balística já a acertar no ponto pedido:
+
+        altura de chegada ao receptor   1.85 m de média
+        17 de 19 lançamentos acima da cabeça (>1.7 m)
+
+    Um lateral para os pés é atirado a DESCER desde as mãos. Daí a faixa
+    negativa: o `velocidadeParaAlturaNoAlvo` resolve a velocidade para a bola
+    passar à altura pedida à distância pedida, e com a bola a descer desde a
+    saída ela está sempre abaixo da cabeça de toda a gente.
+    */
+    elevAlvoMin: -8 * Math.PI / 180,
+    elevAlvoMax: 4 * Math.PI / 180,
 
     /*
     ATÉ ONDE CHEGA UM LATERAL, POR STRENGTH — os dois extremos, escritos.
@@ -689,6 +713,22 @@ const ThrowInModel = {
     altura de chegada igual à de saída e portanto nunca mirou nada.
     */
     distanciaAosPes: 9.0,
+
+    /*
+    ANTECIPAÇÃO DO RECEPTOR — ver lancarLateral (player.js).
+
+    `velocidadeTipica` é a velocidade horizontal média de um lateral, usada só
+    para estimar o TEMPO de voo antes de se saber a velocidade real (que
+    depende do alcance, que depende do ponto, que depende do tempo). Medida:
+    um lateral de 9 m sai a ~11 m/s e leva ~0.85 s, ou seja ~10.5 m/s de média
+    horizontal.
+
+    `antecipacaoMax` é o tecto do tempo projectado: sem ele, um receptor a
+    correr e um lançamento longo mandavam a bola para um ponto onde ele nunca
+    chegaria.
+    */
+    velocidadeTipica: 10.5,
+    antecipacaoMax: 1.2,
 
     /*
     APOIO AO BATEDOR. Os companheiros ficavam nos slots do bloco, a vinte e

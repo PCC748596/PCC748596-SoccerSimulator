@@ -480,7 +480,40 @@ class FootballPlayer {
     quieta.
     */
     escolherAlvoDoLateral() {
-        this.lateralAlvo = this.findPassTarget() || this.findPassTargetRelaxed('frente') || null;
+        /*
+        SÓ QUEM ESTÁ AO ALCANCE DO BRAÇO DELE.
+
+        O `findPassTarget` é a busca do PASSE: não sabe nada de lançamentos e
+        devolvia gente a 27, 43 metros. O lateral chega, quando muito, aos
+        `alcanceMaximoDoLateral` (12 m a 20 m conforme o STRENGTH), portanto o
+        alvo era de partida inalcançável — e, pior, o `Match.intendedReceiver`
+        ficava a apontar para ele, ou seja ninguém mais ia à bola.
+
+        Medido com o erro de execução DESLIGADO, antes disto: em cinco
+        lançamentos seguidos a bola nunca se aproximou um metro que fosse do
+        destinatário — a distância mínima ao longo do voo era exactamente a
+        distância inicial, das duas uma, ou ele estava para trás ou a bola caía
+        a meio caminho.
+
+        A margem de 0.9 é para o alvo não ficar no limite exacto do alcance,
+        onde a bola chega morta.
+        */
+        const alcanceUtil = (typeof alcanceMaximoDoLateral === 'function' &&
+            typeof ThrowInModel !== 'undefined')
+            ? alcanceMaximoDoLateral(this.skillFor('STRENGTH'),
+                ThrowInModel.alcanceMaxFraco, ThrowInModel.alcanceMaxForte) * 0.9
+            : 16.0;
+
+        const aoAlcance = (alvo) => {
+            if (!alvo || !alvo.model) return null;
+            const d = Math.hypot(alvo.model.position.x - this.model.position.x,
+                alvo.model.position.z - this.model.position.z);
+            return (d <= alcanceUtil) ? alvo : null;
+        };
+
+        this.lateralAlvo = aoAlcance(this.findPassTarget()) ||
+            aoAlcance(this.findPassTargetRelaxed('frente')) ||
+            this.colegaMaisPertoNoLateral(alcanceUtil) || null;
         if (this.lateralAlvo && this.lateralAlvo.model) {
             this.prepararGiroLateral(
                 this.lateralAlvo.model.position.x, this.lateralAlvo.model.position.z);
@@ -489,6 +522,26 @@ class FootballPlayer {
             this.lateralGiroCorpo = 0;
         }
         return this.lateralAlvo;
+    }
+
+    /*
+    ÚLTIMO RECURSO DO LATERAL: o colega mais perto que ainda cabe no alcance.
+
+    Sem isto, um lançamento sem nenhum candidato "de passe" ao alcance ia para
+    o espaço a 12 m da linha — bola entregue a ninguém. Um lateral curto para o
+    companheiro mais próximo é sempre melhor do que isso, e é o que se vê fazer
+    quando não há nada melhor.
+    */
+    colegaMaisPertoNoLateral(alcanceUtil) {
+        const meus = (this.team === 'TeamA') ? Match.players : Match.opponents;
+        let melhor = null, dMin = Infinity;
+        for (const c of meus) {
+            if (c === this || c.role === 'gk' || !c.model) continue;
+            const d = Math.hypot(c.model.position.x - this.model.position.x,
+                c.model.position.z - this.model.position.z);
+            if (d < dMin && d <= alcanceUtil) { dMin = d; melhor = c; }
+        }
+        return melhor;
     }
 
     /*
@@ -540,8 +593,13 @@ class FootballPlayer {
         primeiro keyframe, e escolher outro agora punha a bola a sair para um
         lado com o corpo virado para o outro.
         */
-        const alvo = this.lateralAlvo ||
-            this.findPassTarget() || this.findPassTargetRelaxed('frente');
+        /*
+        O alvo tem de vir do `escolherAlvoDoLateral`, que é quem filtra pelo
+        alcance do braço. O recurso antigo (`findPassTarget` aqui à solta)
+        devolvia gente a 32 m e a bola morria a meio caminho — com o
+        `intendedReceiver` apontado a ele, ou seja ninguém a ir buscá-la.
+        */
+        const alvo = this.lateralAlvo || this.escolherAlvoDoLateral();
         this.lateralAlvo = null;
         const paraDentro = -Math.sign(this.model.position.x) || 1;
 
@@ -562,8 +620,30 @@ class FootballPlayer {
 
         let dx, dz;
         if (alvo && alvo.model) {
-            dx = alvo.model.position.x - Match.ball.position.x;
-            dz = alvo.model.position.z - Match.ball.position.z;
+            /*
+            MIRA ONDE ELE VAI ESTAR, não onde está.
+
+            O receptor vem ao encontro da bola: medido, a aproximação mais
+            curta entre bola e receptor acontecia ANTES do ponto pedido, e a
+            bola passava-lhe pela cabeça a 1.60 m — mesmo com a balística
+            certa, que punha 1.10 m no ponto pedido (o peito é 1.20 m).
+
+            Uma iteração chega: estima-se o tempo de voo pela distância actual,
+            projecta-se ele nesse tempo, e é para aí que se atira. O tempo sai
+            de `T.velocidadeTipica` porque a velocidade real só se conhece
+            depois de escolher o alcance — e o erro dessa aproximação é muito
+            menor do que os 2-3 m que ele anda entretanto.
+            */
+            let alvoX = alvo.model.position.x, alvoZ = alvo.model.position.z;
+            if (alvo.velocity && T.velocidadeTipica > 0) {
+                const dBruta = Math.hypot(alvoX - Match.ball.position.x,
+                    alvoZ - Match.ball.position.z);
+                const tempoVoo = Math.min(T.antecipacaoMax, dBruta / T.velocidadeTipica);
+                alvoX += alvo.velocity.x * tempoVoo;
+                alvoZ += alvo.velocity.z * tempoVoo;
+            }
+            dx = alvoX - Match.ball.position.x;
+            dz = alvoZ - Match.ball.position.z;
         } else {
             // Sem ninguém: campo adentro e um pouco para a frente.
             dx = dentroX * 12.0;
@@ -590,17 +670,40 @@ class FootballPlayer {
 
         const alcanceMax = alcanceMaximoDoLateral(
             this.skillFor('STRENGTH'), T.alcanceMaxFraco, T.alcanceMaxForte);
-        const alcance = THREE.MathUtils.clamp(dist * errePeso, T.alcanceMin, alcanceMax);
-        const elev = T.elevMin + Math.random() * (T.elevMax - T.elevMin);
+
+        /*
+        COM DESTINATÁRIO, O ALCANCE É A DISTÂNCIA A ELE — E MAIS NADA.
+
+        O piso de `alcanceMin` (9 m) só faz sentido a atirar para o ESPAÇO: com
+        um colega a 5 m, forçava um lançamento de 9 m, ou seja quatro metros
+        por cima dele. Agora o piso só se aplica quando não há ninguém a quem
+        atirar. O tecto do braço (`alcanceMax`) fica sempre — esse é físico.
+        */
+        const temAlvo = !!(alvo && alvo.model);
+        const piso = temAlvo ? 2.0 : T.alcanceMin;
+        const alcance = THREE.MathUtils.clamp(dist * errePeso, piso, alcanceMax);
+
+        /*
+        Com destinatário a bola sai a descer (faixa `elevAlvo*`); sem ele é o
+        lançamento para o espaço, que sobe. Ver ThrowInModel.
+        */
+        const eMin = temAlvo ? T.elevAlvoMin : T.elevMin;
+        const eMax = temAlvo ? T.elevAlvoMax : T.elevMax;
+        const elev = eMin + Math.random() * (eMax - eMin);
 
         /*
         ALVO EM ALTURA: os PÉS do receptor se o lateral for curto, o PEITO dele
         se for mais longo.
 
+        A escolha sai da distância REAL ao receptor, não do `alcance` já
+        deformado pelo erro de peso e pelos cortes: era o alcance, e como o
+        piso dele (9 m) era o mesmo número do `distanciaAosPes`, a bola ia
+        praticamente sempre ao peito — inclusive num lateral de três metros.
+
         A balística com arrasto do ar (velocidadeParaAlturaNoAlvo) garante que a bola
         chega directamente ao alvo (pé ou peito) sem ressaltar nem bater no chão antes.
         */
-        const alvoNoPeito = alcance > T.distanciaAosPes;
+        const alvoNoPeito = (temAlvo ? dist : alcance) > T.distanciaAosPes;
         const alturaAlvo = alvoNoPeito ? BallControl.peitoAltura : BallPhysics.raio;
         const alturaSaida = Match.ball.position.y;
 

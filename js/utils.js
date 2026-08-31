@@ -393,8 +393,32 @@ function arcoDeCanto(sx, sz) {
     return (sz > 0) ? 0 : -Math.PI / 2;
 }
 
-function alvoDeApoioNoLateral(px, pz, bx, bz, distMin, distMax) {
-    const dx = px - bx, dz = pz - bz;
+/*
+`dirX`/`dirZ` (opcionais): a direcção em que este apoio DEVE ficar em relação
+ao batedor. Sem eles usa-se a direcção em que ele já está, que é o que estava
+aqui e é o que juntava toda a gente: dois jogadores que chegam ao lance pela
+mesma banda são projectados no mesmo raio e ficam em cima um do outro — o RM e
+o CM da imagem. Com a direcção do SLOT de cada um, o médio da ala vai para a
+frente pela linha, o lateral fica atrás e o CM abre para dentro, que é onde
+cada um deles devia estar.
+*/
+function alvoDeApoioNoLateral(px, pz, bx, bz, distMin, distMax, dirX, dirZ) {
+    let dx = px - bx, dz = pz - bz;
+
+    if (typeof dirX === 'number' && typeof dirZ === 'number') {
+        const n = Math.hypot(dirX, dirZ);
+        if (n > 0.001) {
+            /*
+            A distância mantém-se a que ele já tem (para não o teleportar), mas
+            a DIRECÇÃO passa a ser a do slot dele. O clamp abaixo trata do
+            resto.
+            */
+            const dAtual = Math.hypot(dx, dz) || distMin;
+            dx = (dirX / n) * dAtual;
+            dz = (dirZ / n) * dAtual;
+        }
+    }
+
     const d = Math.hypot(dx, dz);
 
     // Em cima do batedor, sem direccao definida: manda-se para dentro do campo

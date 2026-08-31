@@ -117,6 +117,19 @@ Object.assign(Match, {
                 }
             });
 
+            /*
+            SEM BATEDOR DE CAMPO não se rebenta: acontece com a equipa
+            reduzida a onze menos expulsos, ou num estado em que a lista de
+            atacantes só tem o guarda-redes. A linha seguinte fazia
+            `null.hasBall` e derrubava o jogo inteiro — apanhado a correr o
+            lote de laterais.
+
+            O guarda-redes bate o canto, que é feio mas é jogo; sem ninguém
+            de todo, sai-se e o lance fica onde está.
+            */
+            if (!taker) taker = attackingPlayers.find(p => p.model) || null;
+            if (!taker) return;
+
             this.setPieceTaker = taker;
             this.setPieceTaker.hasBall = false;
 
