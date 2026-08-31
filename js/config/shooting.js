@@ -762,6 +762,21 @@ tratadas em FootballPlayer.updateGK().
 */
 
 const HeaderModel = {
+    /*
+    RAIO EM QUE SE CABECEIA À BALIZA. Fora dele a cabeçada é passe ou alívio,
+    nunca remate.
+
+    Era `distToGoal < 24 && |x| < 16`, e as duas medidas eram em EIXOS
+    separados: 24 m só em Z, 16 m só em X. Um jogador a 23 m da linha e 15 m
+    do eixo está a 27.5 m da baliza e continuava a cabecear ao golo — e daí
+    vinham os golos de cabeça de mais de 20 metros, que no futebol quase não
+    existem.
+
+    Agora é a distância a sério ao CENTRO da baliza (o ponto x=0 na linha), num
+    raio só. A guarda de estar virado para lá mantém-se.
+    */
+    raioRemateCabeca: 11.0,
+
     alcanceMax: 16.0,          // alcance máximo de um alívio de cabeça
     alcancePasse: 8.5,         // alcance de escora para colega
 

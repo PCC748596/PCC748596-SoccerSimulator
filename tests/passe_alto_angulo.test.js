@@ -98,16 +98,32 @@ test('a faixa pedida é 25°-35° e está no config', () => {
         'PassModel.encontro tem uma faixa de elevação diferente do passeArco');
 });
 
-test('resolverElevacaoPasse fica na faixa em toda a distância', () => {
+/*
+A FAIXA DE 25°-35° VALE A PARTIR DOS 30 m, E SÓ A PARTIR DAÍ.
+
+Abaixo dos 30 m o passe pelo alto deixou de existir: o que manda é o TECTO DE
+ALTURA da banda (o peito, 1.20 m), e um tecto de altura obriga a ângulos muito
+mais rasos — um passe de 20 m com 1.20 m de apex pede 13.5°. Subi-lo aos 25°
+punha a bola a 2.33 m, ou seja anulava o tecto. Ver passeArco.elevMinBaixa.
+*/
+test('acima de 30 m a elevação fica na faixa; abaixo, respeita o tecto de altura', () => {
     const fora = [];
+    const altos = [];
     for (let d = 15.5; d <= 70; d += 0.5) {
         // forcarArco: salta o sorteio rasteiro/arco e força o caminho alto.
         const e = resolverElevacaoPasse(d, true);
         if (e === null) continue;   // <= rasteiroMax
         const g = grau(e);
-        if (g < MIN - 0.01 || g > MAX + 0.01) fora.push(`${d}m -> ${g.toFixed(1)}°`);
+        if (d >= 30.0) {
+            if (g < MIN - 0.01 || g > MAX + 0.01) fora.push(`${d}m -> ${g.toFixed(1)}°`);
+        } else {
+            // apex ≈ tan(elev)·dist/4 (parábola plana, o mesmo que a config usa)
+            const apex = Math.tan(e) * d / 4;
+            if (apex > 1.21) altos.push(`${d}m -> apex ${apex.toFixed(2)}m`);
+        }
     }
-    assert.strictEqual(fora.length, 0, `fora da faixa: ${fora.slice(0, 6).join(', ')}`);
+    assert.strictEqual(fora.length, 0, `acima de 30 m, fora da faixa: ${fora.slice(0, 6).join(', ')}`);
+    assert.strictEqual(altos.length, 0, `abaixo de 30 m, acima do peito: ${altos.slice(0, 6).join(', ')}`);
 });
 
 test('até rasteiroMax continua rasteiro (a faixa não inventa passes altos)', () => {

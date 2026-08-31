@@ -68,9 +68,12 @@ function extrairFuncao(src, nome) {
 
 const deslocamentoDeCorredor = () => 0;
 
+// O `limitesDoBloco` entra junto: é dele que sai a moldura que o slot passou a
+// respeitar (ver o corte no fim do ramo isAttacking, team_bt.js).
 const calcularPontoDoSlot = new Function(
     'CAMPO_LARG', 'CAMPO_COMP', 'THREE', 'LineShape', 'PositionDepthNudge', 'FullBackStyle', 'TeamShape', 'Tatics', 'deslocamentoDeCorredor',
-    `${extrairFuncao(srcTeam, 'calcularPontoDoSlot')}; return calcularPontoDoSlot;`
+    `${extrairFuncao(srcTeam, 'limitesDoBloco')}
+     ${extrairFuncao(srcTeam, 'calcularPontoDoSlot')}; return calcularPontoDoSlot;`
 )(CAMPO_LARG, CAMPO_COMP, THREE, LineShape, PositionDepthNudge, FullBackStyle, TeamShape, Tatics, deslocamentoDeCorredor);
 
 let falhas = 0;

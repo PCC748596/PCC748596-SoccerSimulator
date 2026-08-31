@@ -2827,5 +2827,57 @@ const PlayerAI = {
 
         // 3. BT Base Unificado
         PlayerBT.tick(ctx);
+
+        /*
+        A ÂNCORA DO BOX-TO-BOX SOBREVIVE À ÁRVORE.
+
+        O nível 2 põe-no a 4 m à frente (ou 3 m atrás) da linha da bola — ver
+        PlayingStyles.box_to_box.ancoraNaBola e aplicarTectoDoEstilo. Medido, o
+        alvo táctico saía certo (+3.3 m em `ataque`) e a ÁRVORE reescrevia-o a
+        seguir para -0.6 m: o `dynamicTarget` tem 25 escritas no player_bt.js e
+        a última é que vale.
+
+        Por isso o corte é aqui, depois de a árvore falar, e é um TECTO de um
+        lado só: à frente da bola nas mentalidades ofensivas, atrás dela nas
+        defensivas. Não empurra ninguém para a frente — só impede que a folha o
+        deixe do lado errado da bola.
+
+        FORA DA REGRA quem tem tarefa com a bola: portador, chaser, intercetor e
+        destinatário do passe. É a mesma lista do `esperarPeloSlot` (team_bt.js),
+        e pela mesma razão — travar quem vai à bola não é posicionamento, é
+        estragar a jogada.
+        */
+        aplicarAncoraBoxToBox(player, bbEquipa);
     }
 };
+
+/*
+Ver a nota no fim do PlayerAI.tick. Vive à parte por ser o único sítio onde o
+nível 3 é corrigido de fora da árvore — se isto crescer para outros estilos, é
+aqui que se vê.
+*/
+function aplicarAncoraBoxToBox(p, bb) {
+    if (!bb || !p || p.role === 'gk') return;
+    if (p.playingStyle !== 'box_to_box' || p.playingStyleDesligado) return;
+    if (typeof Config !== 'undefined' && Config.usePlayingStyles === false) return;
+    if (typeof Tatics === 'undefined' || typeof PlayingStyles === 'undefined') return;
+
+    const cfg = PlayingStyles.box_to_box && PlayingStyles.box_to_box.ancoraNaBola;
+    const offset = cfg ? cfg[Tatics.estilo] : undefined;
+    if (typeof offset !== 'number') return;
+
+    const comTarefaDeBola = p.hasBall ||
+        (bb.chaser === p) || (bb.intercetor === p) ||
+        (typeof Match !== 'undefined' && Match.intendedReceiver === p);
+    if (comTarefaDeBola) return;
+
+    const bolaDir = (typeof bb.bolaZSuave === 'number' ? bb.bolaZSuave : (bb.ballZ || 0)) * bb.dir;
+    const linhaDir = bolaDir + offset;
+    const alvoDir = p.dynamicTarget.z * p.dirZ;
+
+    if (offset >= 0) {
+        if (alvoDir < linhaDir) p.dynamicTarget.z = linhaDir * p.dirZ;
+    } else if (alvoDir > linhaDir) {
+        p.dynamicTarget.z = linhaDir * p.dirZ;
+    }
+}

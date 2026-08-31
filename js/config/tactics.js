@@ -665,6 +665,28 @@ const PlayingStyles = {
     box_to_box: {
         nome: 'Box-to-Box', posicoes: ['AM', 'LM', 'RM', 'CM', 'DM'],
         amplitudeZ: 1.5, avancoComBola: 5,
+
+        /*
+        A LINHA DA BOLA É A ÂNCORA DELE, e é a MENTALIDADE do painel que diz de
+        que lado dela fica — pedido explícito. Metros no referencial de ataque:
+        positivo à frente da bola, negativo atrás.
+
+        As mentalidades que não estão aqui (equilibrada) não ancoram nada: fica
+        o posicionamento normal mais o `amplitudeZ`.
+
+        Isto não é um tecto, é um SÍTIO: ele é levado para lá, à frente ou
+        atrás, e não só impedido de o passar. Por isso corre no
+        aplicarTectoDoEstilo, que é o último a falar sobre o Z — a marcação
+        posicional, que corre depois do estilo, chega a desviar 10 m no terço
+        de ataque e desfazia qualquer âncora posta mais cedo.
+        */
+        ancoraNaBola: {
+            muito_ofensiva: 4.0,    // T.Offensive
+            ataque: 4.0,            // Offensive
+            defesa: -3.0,           // Defensive
+            muito_defensiva: -3.0   // T.Defensive
+        },
+
         // O que sobe é o mesmo que desce: recuo curto e marcação um pouco
         // mais apertada do que a do painel.
         defensivo: { pressao: 1.2, recuo: 2.0 },

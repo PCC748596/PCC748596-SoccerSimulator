@@ -43,6 +43,43 @@ const SlideTackleModel = {
         bracoLivreZ: 0.40,  // braço da frente, levantado
         bracoLivreX: -2.50, // atirado para cima/trás para equilíbrio
         cotoveloLivre: -0.60
+    },
+
+    /*
+    A MÃO DE APOIO NO RELVADO, POR IK.
+
+    Os ângulos `bracoApoio*` acima são uma pose fixa: com o corpo já rolado
+    sobre a anca a mão saía onde calhava — medido, 0.18 m ABAIXO do relvado a
+    meio do carrinho, e no ar noutros ângulos. Aqui é o contrário: o ponto no
+    chão é que manda, e o ombro/cotovelo saem da cadeia de dois ossos
+    (ver IK.resolverSuave, js/ik.js). Os ângulos fixos continuam a valer como
+    pose de partida — o `peso` mistura os dois, e a entrada/saída do carrinho
+    já é suave porque o peso é o próprio `intens` da pose.
+
+    alturaMao   altura do PIVÔ da mão, não da palma: o bloco da mão pendura
+                ~0.11 m abaixo do pivô, portanto isto é o que põe a palma a
+                roçar a relva sem a atravessar.
+    recuo       metros atrás do ombro (o braço escora, não fica debaixo do
+                corpo).
+    afastamento metros para fora, do lado em que está deitado.
+    peso        tecto da mistura IK vs pose fixa, multiplicado pelo `intens`.
+    */
+    apoioIK: {
+        /*
+        Comprimentos do braço EM UNIDADES DO MODELO, lidos do criarBraco
+        (pose.js): ombro->cotovelo 1.1, cotovelo->mão 0.95. Não se usa o
+        `IKChains.braco` (1.0/0.8) porque esse é aproximado — serve o mergulho
+        do GK, onde a mão só tem de ir na direcção da bola. Aqui a mão tem de
+        parar EXACTAMENTE à altura da relva, e 0.2 unidades de erro na cadeia
+        são ~5 cm de mão enterrada.
+        */
+        L1: 1.1,
+        L2: 0.95,
+        alturaMao: 0.11,
+        recuo: 0.30,
+        afastamento: 0.18,
+        poloCima: 0.5,
+        peso: 1.0
     }
 };
 

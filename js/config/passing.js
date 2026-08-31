@@ -140,10 +140,26 @@ const PassModel = {
     passeArco: {
         rasteiroMax: 15.0,
         chanceArco: 0.5,
+
+        /*
+        ABAIXO DOS 30 m A BOLA NÃO PASSA DA ALTURA DO PEITO.
+
+        Pedido explícito: passe PELO ALTO só acima dos 30 m. Até lá a bola pode
+        levantar-se — é preciso, para passar por cima de quem está na linha —
+        mas o tecto é o mesmo ponto onde o companheiro a mata no peito
+        (o `BallControl.peitoAltura`, 1.20 m — o número está aqui à mão porque o
+        player_behavior.js carrega depois deste ficheiro). A banda dos 20-30 m
+        estava em 4.2 m,
+        que é a parábola de um lançamento e não de um passe: chegava por cima
+        da cabeça de quem a esperava.
+
+        Continua a ser um TECTO e não um alvo: um passe de 16 m com o caminho
+        limpo sai rasteiro na mesma (o sorteio do `chanceArco` não mudou).
+        */
         bandas: [
             { max: 10.0, alturaMax: 1.0 },
-            { max: 20.0, alturaMax: 1.5 },
-            { max: 30.0, alturaMax: 4.2 }
+            { max: 20.0, alturaMax: 1.20 },
+            { max: 30.0, alturaMax: 1.20 }
         ],
 
         /*
@@ -169,6 +185,17 @@ const PassModel = {
         */
         elevMin: 25 * Math.PI / 180,
         elevMax: 35 * Math.PI / 180,
+
+        /*
+        PISO PRÓPRIO PARA QUEM ESTÁ DEBAIXO DO TECTO DO PEITO.
+
+        O `elevMin` de 25° é a faixa de um passe pelo alto de verdade, e a
+        clamp para cima ANULAVA o tecto da banda: um passe de 20 m com tecto de
+        1.20 m pede 13.5°, era subido para 25°, e o apex saía a 2.33 m — o dobro
+        do que o tecto dizia. Abaixo dos 30 m o que manda é a altura, portanto o
+        piso tem de ser baixo o suficiente para a bola poder sair rasante.
+        */
+        elevMinBaixa: 5 * Math.PI / 180,
 
         /*
         TECTO DE ALTURA, em metros. A faixa de ângulos descreve o gesto e é a
@@ -225,6 +252,19 @@ const PassModel = {
     alvo dele e um PONTO a frente de quem corre, nao o pe de ninguem.
     */
     vChegadaLancamento: 2.75,
+
+    /*
+    FRACÇÃO DO ALCANCE RASTEIRO ACIMA DA QUAL O LANÇAMENTO VAI PELO AR.
+
+    O rasteiro tem um tecto físico de ~28.8 m (ver alcanceRasteiroMaximo,
+    utils.js): pedir mais do que isso não dá erro nenhum, dá uma bola que morre
+    a meio caminho. Medido em 1200 s de jogo, 13 dos 167 lançamentos rasteiros
+    pediam mais de 28 m e ficaram em média 21.7 m aquém do ponto.
+
+    0.92 e não 1.0 porque na fronteira a bola chega ao ponto praticamente
+    parada — tecnicamente lá, inútil na prática.
+    */
+    fraccaoAlcanceRasteiro: 0.92,
 
     /*
     PASSE DE ENCONTRO — ver `passeDeEncontro` em utils.js.

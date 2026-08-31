@@ -793,7 +793,31 @@ Corta só o excesso: nunca empurra para trás quem já estava aquém do tecto.
 function aplicarTectoDoEstilo(p, targetZ, bb) {
     if (typeof estiloAtivoDe !== 'function') return targetZ;
     const est = estiloAtivoDe(p);
-    
+
+    /*
+    ÂNCORA NA LINHA DA BOLA (Box-to-Box) — ver PlayingStyles.box_to_box.
+
+    Corre ANTES dos tectos, e a partir do estilo CONFIGURADO e não do
+    `estiloAtivoDe`: este devolve `EstiloBase` sempre que o `styleAtivo` está
+    desligado, e o gatilho do Box-to-Box (`isCounter || distBola > 18`) desliga-o
+    metade do tempo. O pedido é "SEMPRE uns 4 m à frente / 3 m atrás", portanto
+    não pode depender do gatilho — só do estilo estar escolhido no painel e da
+    mentalidade do painel táctico.
+
+    O tecto da entrada da área, logo a seguir, continua a poder cortá-la: a
+    âncora diz onde ele quer estar, o tecto diz até onde pode ir.
+    */
+    if (bb && typeof Tatics !== 'undefined' && p && p.playingStyle === 'box_to_box' &&
+        !p.playingStyleDesligado &&
+        !(typeof Config !== 'undefined' && Config.usePlayingStyles === false)) {
+        const cfg = PlayingStyles.box_to_box && PlayingStyles.box_to_box.ancoraNaBola;
+        const offset = cfg ? cfg[Tatics.estilo] : undefined;
+        if (typeof offset === 'number') {
+            const bolaDir = (typeof bb.bolaZSuave === 'number' ? bb.bolaZSuave : (bb.ballZ || 0)) * bb.dir;
+            targetZ = (bolaDir + offset) * p.dirZ;
+        }
+    }
+
     const zAtaque = targetZ * p.dirZ;
 
     if (est && est.travaNaEntradaArea) {

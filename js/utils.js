@@ -921,6 +921,40 @@ function velocidadeRasteiraPara(dist, vChegada, opcoes) {
 }
 
 /*
+ATÉ ONDE CHEGA UM PASSE RASTEIRO — a inversa do que está acima.
+
+    d_max = ln( (k·vSaidaMax² + μg) / (k·v_alvo² + μg) ) / (2k)
+
+Existe porque o tecto de 18.5 m/s do `velocidadeRasteiraPara` é SILENCIOSO:
+pede-se 40 m, sai 18.5 m/s, e a bola morre aos ~30 m sem ninguém saber que o
+passe já nascera curto. Medido em 1200 s: 13 dos 167 lançamentos rasteiros
+pediam mais de 28 m, e ficaram em média 21.7 m aquém do ponto.
+
+Quem chama compara a distância pedida com isto e manda a bola pelo AR quando
+não cabe — ver o ramo do lançamento em executePassGameplay (fsm.js).
+
+O `vChegada` tem de ser o mesmo com que o passe vai ser resolvido, senão as
+duas contas discordam na fronteira.
+*/
+function alcanceRasteiroMaximo(vChegada, vSaidaMax) {
+    const k = BallPhysics.kArrasto;
+    const atrito = BallPhysics.atritoRolamento * BallPhysics.gravidade;
+    const vMax = (typeof vSaidaMax === 'number') ? vSaidaMax : 18.5;
+
+    /*
+    O `vAlvo` decai com a distância no `velocidadeRasteiraPara` (piso 1.5), e
+    é esse piso que dá o alcance máximo: qualquer distância grande o bastante
+    para interessar aqui já está na zona do piso.
+    */
+    const vAlvo = Math.max(1.5, vChegada);
+
+    const num = k * vMax * vMax + atrito;
+    const den = k * vAlvo * vAlvo + atrito;
+    if (!(num > den)) return 0;
+    return Math.log(num / den) / (2 * k);
+}
+
+/*
 =============================================================================
 VELOCIDADE PARA PASSAR NO ALVO *A UMA ALTURA PEDIDA*
 =============================================================================
@@ -1278,8 +1312,15 @@ function resolverElevacaoPasse(dist, forcarArco) {
         O tecto anterior eram 60°: um passe de 21 m pela banda dos 4.2 m saía
         a 38.7°, com a parábola de um chutão.
         */
+        /*
+        O piso é o `elevMinBaixa` e não o `elevMin`: com o tecto do peito
+        (1.20 m) um passe de 20 m pede 13.5°, e subi-lo aos 25° punha a bola a
+        2.33 m de apex — ou seja, o tecto da banda deixava de valer. Ver
+        passeArco.elevMinBaixa.
+        */
+        const piso = (typeof B.elevMinBaixa === 'number') ? B.elevMinBaixa : B.elevMin;
         return THREE.MathUtils.clamp(
-            Math.atan(4 * alturaMax / dist), B.elevMin, B.elevMax);
+            Math.atan(4 * alturaMax / dist), piso, B.elevMax);
     }
 
     const t = THREE.MathUtils.clamp((dist - 30.0) / 30.0, 0, 1);

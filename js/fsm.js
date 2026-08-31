@@ -1,3 +1,10 @@
+// Temporários do apoio do carrinho (ver applySlidePose). Próprios, e não os
+// `_v1/_v2` globais: a pose corre a meio do `update`, com esses já ocupados.
+const _slideOmbro = new THREE.Vector3();
+const _slideAlvoMao = new THREE.Vector3();
+const _slidePolo = new THREE.Vector3();
+const _slideFrente = new THREE.Vector3();
+
 function ownGoalZCenter(team) {
     return (team === 'TeamA') ? -48 : 48;
 }
@@ -179,6 +186,22 @@ function executePassGameplay(p) {
 
     if (ehLancamento) {
         /*
+        RASTEIRO QUE NÃO CHEGA VAI PELO AR.
+
+        O `findThroughBall` escolhe rasteiro ou alto pelos marcadores no
+        corredor, e nunca pergunta se a bola CHEGA lá rasteira. Não chega: o
+        `velocidadeRasteiraPara` satura em 18.5 m/s e a bola morre aos ~28.8 m,
+        sem aviso nenhum (ver alcanceRasteiroMaximo, utils.js).
+
+        O ramo aéreo, esse, resolve o alcance a sério — é só mandá-lo por ali.
+        */
+        if (!lancamentoAlto && typeof alcanceRasteiroMaximo === 'function') {
+            const alcanceMax = alcanceRasteiroMaximo(PassModel.vChegadaLancamento) *
+                (PassModel.fraccaoAlcanceRasteiro ?? 0.92);
+            if (distToTarget > alcanceMax) lancamentoAlto = true;
+        }
+
+        /*
         TIPO 2 — LANÇAMENTO. A bola vai para o ESPAÇO à frente do companheiro,
         nunca para cima dele: o alvo (`throughBallTarget`) já é esse ponto.
 
@@ -325,8 +348,28 @@ function executePassGameplay(p) {
                     PassModel.encontro.elevMin, PassModel.encontro.elevMax)
                 : elev;
 
+            /*
+            ABAIXO DOS 30 m O TECTO É A ALTURA DO PEITO.
+
+            Aqui e não só nas bandas do `resolverElevacaoPasse`: quando existe
+            `encontro`, a elevação é REESCRITA pelo `elevacaoParaTempoDeVoo`
+            dentro dos 25°-35° do `PassModel.encontro`, e a banda deixava de
+            valer. Medido antes disto, com o tecto das bandas já em 1.20 m: um
+            passe normal de menos de 30 m ainda subia a 5.53 m.
+
+            O piso de elevação tem de descer junto: com o `elevMinLonga` (15°)
+            um passe de 20 m ainda dá 1.34 m de apex, acima do peito.
+            */
+            const curto = alcancePasse < 30.0;
+            const apexTecto = curto
+                ? (BallControl.peitoAltura ?? 1.20)
+                : PassModel.passeArco.apexMax;
+            const pisoElev = curto
+                ? (PassModel.passeArco.elevMinBaixa ?? PassModel.passeArco.elevMinLonga)
+                : PassModel.passeArco.elevMinLonga;
+
             const elevComTecto = elevacaoComTectoDeApex(alcancePasse, elevFinal,
-                PassModel.passeArco.apexMax, PassModel.passeArco.elevMinLonga);
+                apexTecto, pisoElev);
 
             const v = velocidadeParaAlcance(alcancePasse, elevComTecto);
             Match.ballVel.y = v * Math.sin(elevComTecto);
@@ -791,6 +834,58 @@ class PlayerFSM {
         cotoveloLivre.rotation.x = P.cotoveloLivre * k;
 
         p.model.position.y = ALTURA_BASE_Y + SlideTackleModel.alturaAnca * k;
+
+        /*
+        A MÃO DE APOIO VAI AO RELVADO POR IK, e é a última coisa a falar sobre
+        esse braço. Os ângulos fixos acima ficam como pose de partida: com o
+        tronco rolado sobre a anca a mão saía onde calhasse — medido, 0.18 m
+        POR BAIXO do relvado a meio do carrinho.
+
+        Tem de correr DEPOIS de `p.model.position.y`, senão a cadeia resolve
+        para um ombro que ainda está à altura de quem está de pé, e a mão
+        aterra 0.55 m acima da relva.
+
+        Ver SlideTackleModel.apoioIK e IK.resolverSuave (js/ik.js).
+        */
+        const A = SlideTackleModel.apoioIK;
+        const maoApoio = (s > 0) ? rig.lHand : rig.rHand;
+        if (A && k > 0.01 && typeof IK !== 'undefined' && maoApoio) {
+            // O ombro já rolou com o tronco: a matriz tem de estar fresca ou
+            // o alvo é calculado a partir da pose do frame anterior.
+            p.model.updateWorldMatrix(true, true);
+            bracoApoio.getWorldPosition(_slideOmbro);
+
+            _slideFrente.set(0, 0, 1).applyQuaternion(p.model.quaternion).normalize();
+
+            /*
+            O ponto no chão: atrás do ombro (o braço ESCORA, não fica debaixo
+            do corpo) e para o lado em que está deitado. `-s` porque o braço de
+            apoio é o do lado oposto ao pé que estica.
+            */
+            _slideAlvoMao.copy(_slideOmbro)
+                .addScaledVector(_slideFrente, -A.recuo * k);
+            _slideAlvoMao.x += -s * _slideFrente.z * A.afastamento * k;
+            _slideAlvoMao.z += s * _slideFrente.x * A.afastamento * k;
+            _slideAlvoMao.y = ALTURA_BASE_Y + A.alturaMao;
+
+            /*
+            Pole vector para TRÁS E PARA BAIXO — e o "para baixo" é que levanta
+            o cotovelo, porque o +Z local do osso aponta para o LADO DE FORA da
+            dobra. Medido, com o ombro a 0.254 m e a mão a 0.110 m:
+
+                polo               cotovelo
+                cima do mundo       -0.015    enterrado (é o do mergulho do GK)
+                só para trás         0.071    forame quase deitado na relva
+                trás + 0.5 baixo     0.218    escora, cotovelo sob o ombro
+                trás + 1.0 baixo     0.312    cotovelo ACIMA do ombro, asa de galinha
+            */
+            _slidePolo.copy(_slideFrente).multiplyScalar(-1);
+            _slidePolo.y = -A.poloCima;
+            _slidePolo.normalize();
+
+            IK.resolverSuave(bracoApoio, cotoveloApoio, A.L1, A.L2,
+                _slideAlvoMao, _slidePolo, A.peso * k);
+        }
     }
 
     update(dt) {

@@ -2509,8 +2509,17 @@ class FootballPlayer {
             this.model.position.y + ALTURA_TESTA,
             this.model.position.z + _v1.z);
 
-        let distToGoal = Math.abs(this.targetGoalZ - this.model.position.z);
-        let inShootingRange = (distToGoal < 24 && Math.abs(this.model.position.x) < 16 && (this.targetGoalZ - this.model.position.z) * this.dirZ > 0);
+        /*
+        Distância ao CENTRO da baliza, não à linha: as duas medidas separadas
+        (24 m em Z, 16 m em X) deixavam cabecear ao golo de 27 m em diagonal.
+        Ver HeaderModel.raioRemateCabeca.
+        */
+        const raioRemate = (typeof HeaderModel !== 'undefined' && HeaderModel.raioRemateCabeca)
+            ? HeaderModel.raioRemateCabeca : 11.0;
+        const distToGoal = Math.hypot(this.model.position.x,
+            this.targetGoalZ - this.model.position.z);
+        const inShootingRange = (distToGoal < raioRemate &&
+            (this.targetGoalZ - this.model.position.z) * this.dirZ > 0);
 
         if (inShootingRange) {
             if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
@@ -3258,8 +3267,32 @@ class FootballPlayer {
     steerArrive(target, maxSpeed, brakingDist = 2.0) {
         let desired = _p_v1.subVectors(target, this.model.position);
         desired.y = 0; let d = desired.length();
+
+        /*
+        JÁ CHEGUEI? — com histerese, e é uma decisão só, usada duas vezes.
+
+        Entra-se abaixo de `OlharModel.perto` e só se sai acima de
+        `OlharModel.longe`. Sem a folga entre as duas, o alvo táctico (que
+        desliza com a bola ~0.47 m por frame) atravessava o limiar 1.5 vezes por
+        segundo, e de cada vez o corpo era mandado virar 84° em média e voltar
+        logo a seguir. Ver OlharModel (config/gait.js).
+        */
+        const O = (typeof OlharModel !== 'undefined') ? OlharModel : { perto: 0.9, longe: 1.8 };
+        if (this.chegouAoPosto) {
+            if (d > O.longe) this.chegouAoPosto = false;
+        } else if (d < O.perto) {
+            this.chegouAoPosto = true;
+        }
+
         if (d < 0.2) {
             this.velocity.set(0, 0, 0);
+            /*
+            Parado NÃO é sem cabeça: continua a acompanhar a bola com o corpo.
+            Antes voltava aqui antes de qualquer rotação, e o giro ficava
+            congelado a meio — a cada saída e entrada nesta zona (1.88 vezes por
+            segundo, medido) o corpo apanhava um pedaço de viragem e largava-o.
+            */
+            if (Match.ball) this.virarPara(Match.ball.position);
             return this.velocity;
         }
 
@@ -3300,26 +3333,39 @@ class FootballPlayer {
                         }
                     }
                 }
-            } else if (d < 0.5 && Match.ball) {
-                // Muito perto do alvo de movimento: evita que pequenas oscilações façam o corpo girar loucamente
+            } else if (this.chegouAoPosto && Match.ball) {
+                // Já no sítio: acompanha a bola. O limiar tem histerese (ver
+                // OlharModel) — era um 0.5 m seco, e o alvo atravessava-o para
+                // trás e para a frente uma vez e meia por segundo.
                 lookTarget = Match.ball.position;
             }
         }
-        _v1.set(this.model.position.x * 2 - lookTarget.x, this.model.position.y, this.model.position.z * 2 - lookTarget.z);
+        this.virarPara(lookTarget);
+        // Inércia ajustada para fator 5.0 (curvas bastante responsivas e quase sem derrapagem)
+        this.velocity.lerp(desired, Math.min(1.0, 5.0 * Match.delta));
+        return this.velocity;
+    }
+
+    /*
+    Roda o corpo para um ponto do mundo, ao ritmo do TurnModel.
+
+    Saiu de dentro do steerArrive porque passou a ser preciso em dois sítios: no
+    fim do movimento normal e no jogador parado em cima do posto, que também tem
+    de acompanhar a bola.
+
+    Giro: 5.5/s dava ~0.18 s de constante de tempo, quase um segundo para
+    completar uma inversão de 180°. Sai do TurnModel — com bola é mais lento,
+    que é o que separa mudar de direcção a conduzir de virar sem ela.
+    */
+    virarPara(alvo) {
+        if (!alvo) return;
+        _v1.set(this.model.position.x * 2 - alvo.x, this.model.position.y, this.model.position.z * 2 - alvo.z);
         _m1.lookAt(this.model.position, _v1, this.model.up);
         _q1.setFromRotationMatrix(_m1);
-        /*
-        Giro: 5.5/s dava ~0.18 s de constante de tempo, quase um segundo para
-        completar uma inversão de 180°. Agora sai do TurnModel — com bola é mais
-        lento, que é o que separa mudar de direcção a conduzir de virar sem ela.
-        */
         const giro = (typeof TurnModel !== 'undefined')
             ? (this.hasBall ? TurnModel.comBola : TurnModel.base)
             : 5.5;
         this.model.quaternion.slerp(_q1, Math.min(1.0, giro * Match.delta));
-        // Inércia ajustada para fator 5.0 (curvas bastante responsivas e quase sem derrapagem)
-        this.velocity.lerp(desired, Math.min(1.0, 5.0 * Match.delta));
-        return this.velocity;
     }
 
     /*

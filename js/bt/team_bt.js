@@ -1081,6 +1081,46 @@ function deslocamentoDeCorredor(o) {
 /*
 Calcula a posição no mundo de um slot específico dentro do bloco tático.
 */
+/*
+OS LIMITES DO BLOCO NO MUNDO, com o empurrão que o mete dentro das linhas.
+
+Existe porque o corte final do nível 1 (tickBase) e o corte de dentro do
+`calcularPontoDoSlot` têm de usar EXACTAMENTE a mesma moldura — dois cálculos
+do mesmo rectângulo é como se acaba com o anel do debug meio metro fora da
+linha desenhada.
+
+Devolve x/z já no referencial do mundo (o `bloco.z*` é do referencial de
+ataque da equipa, ver computeBlock).
+*/
+function limitesDoBloco(bb) {
+    const bloco = bb && bb.bloco;
+    if (!bloco) return null;
+
+    const MARGEM_LINHA_SLOT = 1.5;
+    const limX = CAMPO_LARG / 2 - MARGEM_LINHA_SLOT;
+    const limZ = CAMPO_COMP / 2 - MARGEM_LINHA_SLOT;
+
+    const dentro = (v0, v1, lim) => {
+        if (v1 > lim) return -(v1 - lim);      // empurra para dentro pela direita
+        if (v0 < -lim) return (-lim - v0);     // e pela esquerda
+        return 0;
+    };
+    const empurraX = dentro(bloco.x0, bloco.x1, limX);
+    const empurraZ = dentro(bloco.z0, bloco.z1, limZ);
+
+    const zA = (bloco.z0 + empurraZ) * bb.dir;
+    const zB = (bloco.z1 + empurraZ) * bb.dir;
+
+    return {
+        empurraX: empurraX,
+        empurraZ: empurraZ,
+        xMin: Math.min(bloco.x0, bloco.x1) + empurraX,
+        xMax: Math.max(bloco.x0, bloco.x1) + empurraX,
+        zMin: Math.min(zA, zB),
+        zMax: Math.max(zA, zB)
+    };
+}
+
 function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPorPar, ordemNaLinha, totalNaLinha) {
     const bloco = bb.bloco;
     if (!bloco || !slot) return null;
@@ -1163,18 +1203,10 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPo
 
     const u = THREE.MathUtils.clamp(
         0.5 + (uBase - 0.5) * fecho * fechoSec * fechoAdicional * fechoOcup * fechoPar, 0.02, 0.98);
-
-    const MARGEM_LINHA_SLOT = 1.5;
-    const limX = CAMPO_LARG / 2 - MARGEM_LINHA_SLOT;
-    const limZ = CAMPO_COMP / 2 - MARGEM_LINHA_SLOT;
-
-    const dentro = (v0, v1, lim) => {
-        if (v1 > lim) return -(v1 - lim);      // empurra para dentro pela direita
-        if (v0 < -lim) return (-lim - v0);     // e pela esquerda
-        return 0;
-    };
-    const empurraX = dentro(bloco.x0, bloco.x1, limX);
-    const empurraZ = dentro(bloco.z0, bloco.z1, limZ);
+    // Uma fonte só para a moldura — ver limitesDoBloco.
+    const limB = limitesDoBloco(bb);
+    const empurraX = limB.empurraX;
+    const empurraZ = limB.empurraZ;
 
     let xTarget = bloco.x0 + u * (bloco.x1 - bloco.x0) + empurraX;
     
@@ -1275,6 +1307,28 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPo
         if (zAlvoDir < minZDef) zAlvoDir = minZDef;
         const maxZAtk = (CAMPO_COMP / 2 - 1.5);
         if (zAlvoDir > maxZAtk) zAlvoDir = maxZAtk;
+
+        /*
+        O BLOCO É O ÚLTIMO A FALAR, E FALA SEMPRE.
+
+        Toda a régua acima — `distFrente`/`distTras` a partir da linha da bola,
+        o +7 dos corredores, o tecto do círculo central — é medida À BOLA, não
+        ao rectângulo, e podia pôr o slot a dezenas de metros fora dele. O caso
+        extremo era o tiro de meta: bola na própria linha de fundo, traseira do
+        bloco travada em `-(LINHA_FUNDO - Area.profundidade)`, e os slots iam
+        à bola 11 m atrás da moldura.
+
+        Com o corte aqui, o anel GRANDE do debug (`slotTarget`, o nível 1) está
+        SEMPRE dentro do rectângulo desenhado. O que sai de lá é obra do nível 2
+        (marcação, mola, inquietação — o anel médio), e isso é a diferença que
+        permite dizer qual das camadas desalinhou o jogador.
+
+        `empurraZ` entra porque é o mesmo desvio que o `targetZRaw` leva quando
+        o bloco assoma para fora das linhas do campo.
+        */
+        const zMinBloco = Math.min(bloco.z0, bloco.z1) + empurraZ;
+        const zMaxBloco = Math.max(bloco.z0, bloco.z1) + empurraZ;
+        zAlvoDir = THREE.MathUtils.clamp(zAlvoDir, zMinBloco, zMaxBloco);
 
         zTarget = zAlvoDir * bb.dir;
     }
@@ -2158,6 +2212,29 @@ const PosicionamentoAI = {
                     targetZ += uz * falta;
                 }
             }
+        }
+
+        /*
+        O RECTÂNGULO FECHA O NÍVEL 1.
+
+        Tudo o que corre acima — segurar a linha, o tecto da distância à bola,
+        o piso da linha média, a inércia pós-passe, o afastamento do portador —
+        mede-se à BOLA ou a um companheiro, nunca à moldura, e qualquer um
+        deles empurrava o slot para fora dela.
+
+        A regra pedida: o nível 1 fica SEMPRE dentro do rectângulo. Quem sai é
+        o nível 2 (marcação, inquietação, mola de coesão — o anel médio), e é
+        precisamente por os dois anéis poderem discordar que se consegue dizer
+        qual das camadas pôs o jogador onde ele está.
+
+        O `aplicarEstiloPosicional`, a seguir, fica DE FORA deste corte de
+        propósito: o desvio do playing style é a terceira leitura (anel pequeno)
+        e tem de poder ver-se a sair do bloco, senão não há como distingui-lo.
+        */
+        const limB = limitesDoBloco(bb);
+        if (limB) {
+            targetX = THREE.MathUtils.clamp(targetX, limB.xMin, limB.xMax);
+            targetZ = THREE.MathUtils.clamp(targetZ, limB.zMin, limB.zMax);
         }
 
         // Anel grande do debug: o slot puro, antes de qualquer desvio.
