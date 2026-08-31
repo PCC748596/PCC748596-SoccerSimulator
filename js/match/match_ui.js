@@ -213,9 +213,11 @@ Object.assign(Match, {
             targetPos.set(58 * zoom, 39 * zoom, 0);
             lookTarget.copy(this.ball.position);
         } else if (window.cameraMode === 'sideline') {
-            // Câmara Lateral bem mais próxima, acompanhando a bola no eixo Z
+            // Câmara Lateral bem mais próxima, acompanhando a bola no eixo Z.
+            // Altura subida de 14 para 21 m (pedido): a 14 m os jogadores da
+            // banda oposta tapavam-se uns aos outros.
             let bz = THREE.MathUtils.clamp(this.ball.position.z, -45, 45);
-            targetPos.set(35 * zoom, 14 * zoom, bz);
+            targetPos.set(35 * zoom, 21 * zoom, bz);
             lookTarget.copy(this.ball.position);
         } else if (window.cameraMode === 'lateraltv') {
             // Mistura de TV Centro e Lateral Móvel

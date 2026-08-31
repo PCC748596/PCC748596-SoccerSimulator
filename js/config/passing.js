@@ -549,6 +549,51 @@ const PassTypeModel = {
         pesosSobPressao: { progresso: 0.45, espaco: 1.00, distancia: 0.20, linha: 1.10 },
 
         /*
+        O DEFESA PRESSIONADO NÃO JOGA PARA A FRENTE — joga ao lado e para trás.
+
+        Medido em 40 minutos, passes de defesa que chegam a um colega:
+
+            sob pressão (<6 m), para a FRENTE      66%   (74 passes, 15.5 m)
+            sob pressão (<6 m), para trás/lado     85%   (85 passes, 12.6 m)
+            6-10 m, para a frente                  82%
+            livre (>10 m), para a frente           93%
+
+        Com alguém a menos de seis metros, quase metade dos passes do defesa
+        ainda ia para a frente — e é aí que se perde a bola no sítio onde ela
+        custa mais cara. O peso do progresso já cai de 1.0 para 0.45 com a
+        pressão, mas isso vale para toda a gente: um médio pressionado que
+        arrisca à frente perde uma jogada, um central perde um golo.
+
+        Este factor multiplica o peso do progresso SÓ para quem é `def`, e só
+        na medida da pressão (a 0 de pressão não muda nada, à pressão máxima
+        multiplica por isto). Não proíbe o passe em frente: se o companheiro da
+        frente for a melhor nota por espaço e linha, continua a ganhar.
+        */
+        progressoDefesaSobPressao: 0.25,
+
+        /*
+        E UM CORTE DURO, porque o peso sozinho não chegou.
+
+        Medido: baixar o peso do progresso do defesa pressionado mudou a ESCOLHA
+        (a fatia de passes para a frente caiu de 61% para 57-62%) e NÃO mudou o
+        resultado — 74% de sucesso nos passes em frente sob pressão, com e sem
+        ele, em 285 e 187 passes. A razão é que o que falha não é escolher o
+        companheiro errado: é atirar 15 m para a frente por uma linha meia
+        tapada, com alguém em cima.
+
+        Por isso: com o defesa pressionado, um passe PARA A FRENTE só é
+        candidato se a linha estiver mesmo limpa (`linhaMinDefesaFrente`, a
+        mesma escala 0..1 do `qualidadeDaLinha`). Os passes ao lado e para trás
+        não levam este corte — são os que têm 85-92% de sucesso.
+
+        Se nenhum candidato sobreviver, o `escolher` devolve null e o `actPass`
+        desce a cascata (atrasar a alguém perto, conduzir para trás), que é o
+        que um central faz com um avançado em cima.
+        */
+        linhaMinDefesaFrente: 0.55,
+        pressaoMinDefesa: 0.45,
+
+        /*
         `linha` é a FOLGA da linha de passe até ao ponto de mira, normalizada
         pela geometria do PassLineModel (corredor que cresce com a distância,
         `bloqueioDuro` como piso). Ver notaCandidato/escolher em pass_types.js.

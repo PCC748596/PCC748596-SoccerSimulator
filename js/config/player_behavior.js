@@ -373,6 +373,27 @@ const CarryModel = {
     margemDisputa: 0.15,
 
     /*
+    O DEFESA EXIGE MAIS FOLGA — perder a bola atrás custa um golo, à frente
+    custa um ataque.
+
+    A margem de 0.15 s pergunta só "chego primeiro?". Chegar primeiro à bola
+    adiantada com um adversário a fechar não é ficar com ela: é um duelo. E o
+    critério dá-se por satisfeito cedo de mais — medido, com o adversário entre
+    6 e 12 m o filtro NÃO cortava um único toque (0%) e o defesa perdia a bola
+    nos 3 segundos seguintes em 20-22% dos casos, contra 7% com o campo aberto
+    (>12 m).
+
+    Com 0.45 s, um defesa com alguém a 8 m deixa de poder dar o toque de 1.35 m
+    e fica com um de meio metro — a bola no pé. Com o campo aberto (>12 m) o
+    toque longo continua a passar, que é onde ele serve para alguma coisa.
+
+    Só o `def`: o médio e o avançado já são cortados com força pela margem
+    normal (o lead pedido cai de 1.12 para 0.63 no meio-campo e de 1.02 para
+    0.17 no ataque), e apertá-los mais era tirar-lhes a condução toda.
+    */
+    margemDisputaDefesa: 0.45,
+
+    /*
     Até onde um DEFESA conduz a bola, no referencial de ataque. Ele conduz para
     sair a jogar, não para atacar: passada esta linha tem de largar a bola.
     0 = meio-campo. Sem este tecto, um central que recebesse com campo aberto

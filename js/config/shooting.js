@@ -48,6 +48,51 @@ const ShootingModel = {
         táctica — e era mais um sítio onde o remate se perdia em silêncio.
         */
         ignoraGrid: true
+    },
+
+    /*
+    =====================================================================
+    O ÂNGULO DA BALIZA E O HOMEM À FRENTE — a decisão que faltava
+    =====================================================================
+    O `anguloDaBaliza` (utils.js) existe desde sempre e era usado APENAS para
+    a estatística de xG. A decisão de rematar nunca lhe pegou: dentro da área
+    remata-se e "mais nada tem voto", com um defesa colado à frente e a baliza
+    reduzida a uma fresta.
+
+    Medido em 50 minutos, 22 remates: 12 saíram com a baliza a subtender menos
+    de 0.30 rad (17°) e 3 com menos de 0.15 rad; dessas duas faixas, **zero
+    golos**. Seis remates saíram com um adversário a menos de 3 m em cima da
+    linha do remate, e 67% desses foram tapados.
+
+    A regra, e é a que o pedido descreve: um adversário perto derruba a vontade
+    de rematar, A NÃO SER que haja ângulo. As duas coisas juntas, porque
+    separadas nenhuma delas descreve o lance — um defesa colado à entrada da
+    área é remate impossível, o mesmo defesa colado com a baliza escancarada a
+    seis metros é golo.
+
+    `distBloqueio`   até onde conta um adversário NA LINHA do remate (dentro
+                     de `meiaLarguraLinha` de distância lateral à recta que vai
+                     do pé à baliza). Um adversário ao lado não tapa nada.
+    `anguloLivre`    acima deste ângulo o remate vale a pena mesmo com gente à
+                     frente — 0.35 rad (20°) é, à largura da baliza, estar a
+                     ~20 m no eixo ou a ~10 m em diagonal.
+    `chanceSobPressao` com bloqueador perto E sem ângulo, ainda assim remata
+                     nesta fracção das vezes: um remate de recurso continua a
+                     existir, e tirá-lo por completo era a árvore a ficar sem
+                     saída na área. Calibrado a medir: com 0.15 os remates por
+                     jogo caíam de ~17 para ~10, e este simulador já remata
+                     pouco; com 0.30 ficam em ~18, e os que desaparecem são os
+                     tapados (6 -> 4) e os de ângulo mínimo.
+    `anguloMinimo`   abaixo disto não se remata de todo, haja ou não gente à
+                     frente: é a fresta da linha de fundo, onde o passe para
+                     trás é sempre melhor.
+    */
+    angulo: {
+        distBloqueio: 3.0,
+        meiaLarguraLinha: 1.6,
+        anguloLivre: 0.35,
+        chanceSobPressao: 0.30,
+        anguloMinimo: 0.10
     }
 };
 

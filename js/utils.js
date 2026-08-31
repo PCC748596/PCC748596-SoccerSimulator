@@ -1699,10 +1699,12 @@ cima do guardião.
 
 Pura de propósito: sem Match, sem THREE — recebe listas de {x, z}.
 */
-function maiorToqueSeguro(px, pz, dirX, dirZ, velPortador, leadInicial, adversarios) {
+function maiorToqueSeguro(px, pz, dirX, dirZ, velPortador, leadInicial, adversarios, margemPedida) {
     const C = CarryModel;
     const vAdv = C.velAdversarioDisputa || 7.0;
-    const margem = C.margemDisputa || 0.15;
+    // `margemPedida` deixa quem chama exigir mais folga — é o que o defesa faz
+    // (ver CarryModel.margemDisputaDefesa).
+    const margem = (typeof margemPedida === 'number') ? margemPedida : (C.margemDisputa || 0.15);
     const a = BallPhysics.atritoRolamento * BallPhysics.gravidade;
 
     const candidatos = [leadInicial, C.touchMedium, C.touchShort, C.touchShort * 0.5]

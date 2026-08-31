@@ -1839,6 +1839,55 @@ const ehGK = (ctx) => ctx.p.role === 'gk';
 
 // Zona/ângulo de finalizar — usado por Rematar E por Dominar (para não fazer
 // o jogador "pensar" 3s com o guarda-redes já batido à sua frente).
+/*
+VALE A PENA REMATAR DAQUI? — o ângulo da baliza contra o homem à frente.
+
+O `anguloDaBaliza` (utils.js) já existia e só alimentava o xG das estatísticas;
+a decisão de rematar nunca soube dos postes. Media-se distância ao centro da
+baliza, que é outra coisa: 12 m no eixo e 12 m junto à linha de fundo têm a
+mesma distância e ângulos incomparáveis.
+
+Um adversário só TAPA se estiver na recta que vai do pé à baliza — dentro de
+`meiaLarguraLinha` de distância lateral a essa recta e à frente, não atrás. Um
+defesa ao lado do rematador não tapa nada e não devia contar.
+
+Devolve false quando não há ângulo nenhum, ou quando há alguém a tapar e o
+ângulo não compensa (aí ainda remata em `chanceSobPressao` das vezes — o
+remate de recurso existe).
+*/
+function valeAPenaRematar(p) {
+    const G = (typeof ShootingModel !== 'undefined') ? ShootingModel.angulo : null;
+    if (!G || typeof anguloDaBaliza !== 'function') return true;
+
+    const px = p.model.position.x, pz = p.model.position.z;
+    const gz = p.targetGoalZ;
+    const ang = anguloDaBaliza(px, pz, gz, LARGURA_BALIZA);
+
+    // Fresta: daqui não se remata, com ou sem gente à frente.
+    if (ang < G.anguloMinimo) return false;
+
+    // Com ângulo de sobra não interessa quem está à frente.
+    if (ang >= G.anguloLivre) return true;
+
+    const dx = 0 - px, dz = gz - pz;
+    const n = Math.hypot(dx, dz);
+    if (n < 0.001) return true;
+    const ux = dx / n, uz = dz / n;
+
+    const advs = (p.team === 'TeamA') ? Match.opponents : Match.players;
+    for (const o of advs) {
+        if (!o || o.role === 'gk' || !o.model) continue;
+        const ox = o.model.position.x - px, oz = o.model.position.z - pz;
+        const proj = ox * ux + oz * uz;                 // à frente, na direcção da baliza
+        if (proj <= 0 || proj > G.distBloqueio) continue;
+        const lat = Math.abs(ox * uz - oz * ux);        // afastamento lateral à recta
+        if (lat > G.meiaLarguraLinha) continue;
+
+        return Math.random() < G.chanceSobPressao;
+    }
+    return true;
+}
+
 function emZonaDeRemate(ctx) {
     const p = ctx.p;
 
@@ -1863,6 +1912,13 @@ function emZonaDeRemate(ctx) {
     O `zoneAhead` fica de fora pela mesma razão — quem está dentro da área do
     adversário está, por definição, à frente no campo.
     */
+    /*
+    O ÂNGULO E O HOMEM À FRENTE — corre ANTES do "dentro da área remata-se",
+    porque é justamente lá dentro que se rematava contra as costas de um
+    defesa. Ver ShootingModel.angulo.
+    */
+    if (!valeAPenaRematar(p)) return false;
+
     const A = ShootingModel.dentroDaArea;
     if (A) {
         const distFundo = Math.abs(p.targetGoalZ - p.model.position.z);

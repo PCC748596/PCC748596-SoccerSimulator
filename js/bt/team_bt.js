@@ -874,8 +874,45 @@ function computeBlock(bb) {
         typeof MentalidadeModel[Tatics.estilo].blocoZ === 'number')
         ? MentalidadeModel[Tatics.estilo].blocoZ : 0;
 
+    /*
+    O GUARDA-REDES COM A BOLA AFASTA OS DOIS BLOCOS DA BALIZA ONDE ELA ESTÁ.
+
+    `BlockShape.recuoGkComBola` (10 m) e `BlockShape.avancoTiroMeta` (15 m)
+    estavam escritos na config, com comentário e tudo, e NINGUÉM OS LIA — zero
+    referências em todo o projecto. Este é o efeito que faltava.
+
+    Sem eles o bloco continua colado à bola, e a bola está na linha de golo:
+    medido, com o guarda-redes de posse, os dez jogadores de campo repartiam-se
+    em **6.3 no terço defensivo, 3.7 no meio e 0.0 no ataque** — ninguém à
+    frente, os centrais lado a lado e o meio-campo cheio. É a figura 1 do
+    relato.
+
+    Quem tem a bola SOBE (+), quem defende RECUA (−), os dois no seu próprio
+    referencial de ataque: as duas equipas afastam-se da baliza onde a bola
+    está, que é o que abre campo para o relançamento em vez de o jogo ficar
+    amontoado à volta da área.
+
+    No tiro de meta soma-se o `avancoTiroMeta` por cima, com o mesmo sinal —
+    ali a bola está parada e há tempo para a equipa inteira subir.
+    */
+    let offsetGk = 0;
+    if (typeof Match !== 'undefined' && typeof BlockShape !== 'undefined') {
+        const gkTem = (eq) => (Match.gkHoldingBall && Match.gkHoldingBall[eq]) ||
+            !!(Match.ballCarrier && Match.ballCarrier.role === 'gk' && Match.ballCarrier.team === eq);
+        const outra = (bb.team === 'TeamA') ? 'TeamB' : 'TeamA';
+        const meu = gkTem(bb.team), dele = gkTem(outra);
+
+        if (meu !== dele) {
+            const sinal = meu ? 1 : -1;
+            offsetGk = sinal * (BlockShape.recuoGkComBola || 0);
+            if (Match.state === 'GOAL_KICK') {
+                offsetGk += sinal * (BlockShape.avancoTiroMeta || 0);
+            }
+        }
+    }
+
     const bolaZDir = bb.bolaZSuave * bb.dir;
-    let centroZ = bolaZDir + bb.blocoZSuave + mentalBloco;
+    let centroZ = bolaZDir + bb.blocoZSuave + mentalBloco + offsetGk;
 
     let z0 = centroZ - (profundidade / 2);
     let z1 = centroZ + (profundidade / 2);
@@ -1244,8 +1281,19 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPo
             distTras = 15;
             distFrente = 0; 
             
+            /*
+            O LATERAL SOBE MAIS DO QUE O CENTRAL, MAS NÃO MAIS DO QUE O MÉDIO.
+
+            Eram 10 m contra os 5 do meio-campo, e ainda levava o +7 dos
+            corredores por cima: 17 m à frente da linha da bola contra 5 do
+            médio-centro. Medido, o lateral aparecia à frente do CM mais
+            adiantado em 39% dos frames com posse.
+
+            6 põe-no entre o central (0) e o médio (5+), que é o lugar dele na
+            construção. O +7 saiu, e é dos médios de ala (ver isWideRole).
+            */
             if (pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB') {
-                distFrente = 10;
+                distFrente = 6;
             }
         }
         
@@ -1266,26 +1314,54 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPo
             distFrente = Math.min(distFrente, 3); 
         }
         
-        if (gkComBola) {
-            distFrente = Math.max(distFrente, 60); // Permite que o time se espalhe pelo campo todo
-            distTras = Math.max(distTras, 15);
+        /*
+        COM O GUARDA-REDES DE POSSE, QUEM MANDA É O BLOCO — não a régua da bola.
+
+        A régua mede tudo a partir da LINHA DA BOLA, e a bola está nas mãos do
+        guarda-redes, em cima da própria linha de golo. Mesmo com o
+        `distFrente` aberto para 60, o `distTras` de 15 e o resto da conta
+        prendiam a equipa ao fundo. Medido, com o GK de posse:
+
+            jogadores de campo por terço:  6.3 defesa | 3.7 meio | 0.0 ATAQUE
+
+        Zero jogadores no terço ofensivo, os dois centrais lado a lado e o
+        meio-campo cheio — é a figura 1 do relato.
+
+        O `zTarget` que vem das três linhas do bloco já sabe onde a equipa deve
+        estar para sair a jogar; aqui basta não lhe mexer.
+        */
+        // (o corte pela linha da bola, mais abaixo, fica desligado neste caso)
+
+        if (!gkComBola) {
+            if (zAlvoDir > bolaZDir + distFrente) {
+                zAlvoDir = bolaZDir + distFrente;
+            }
+
+            if (zAlvoDir < bolaZDir - distTras) {
+                zAlvoDir = bolaZDir - distTras;
+            }
         }
 
-        if (zAlvoDir > bolaZDir + distFrente) {
-            zAlvoDir = bolaZDir + distFrente;
-        }
-        
-        if (zAlvoDir < bolaZDir - distTras) {
-            zAlvoDir = bolaZDir - distTras;
-        }
+        /*
+        O +7 DOS CORREDORES É PARA OS MÉDIOS DE ALA, NÃO PARA OS LATERAIS.
 
-        const isWideRole = pos === 'LB' || pos === 'RB' || pos === 'LM' || pos === 'RM';
-        let forceOffensiveWide = isWideRole; // Aplica-se na T.Ofensiva e Ofensiva (que é bb.isAttacking)
+        O lateral já leva `distFrente = 10` (contra 0 do central e 5 do médio),
+        e o +7 por cima punha-o 17 m à frente da linha da bola — à frente do
+        médio, que só pode ir a 5. Medido, avanço médio com posse:
 
-        if (forceOffensiveWide) {
-            // Pedido: laterais e meias pelas laterais tem que se projetar uns 7 metros a frente da posição do teamsBT
+            CB -19.2 | LB -8.4 | RB -8.0 | CM -6.4 | LM 0.4 | RM 0.5 | CF 6.2
+
+        O lateral a 8 m do médio-centro e a 11 m à frente dos centrais: a linha
+        defensiva partida em dois e o lateral no meio-campo, que é a figura 2
+        do relato.
+        */
+        const isWideRole = pos === 'LM' || pos === 'RM';
+
+        if (isWideRole) {
+            // Pedido: os meias pelas laterais projectam-se uns 7 metros à frente
             zAlvoDir += 7.0;
         }
+        const forceOffensiveWide = isWideRole;
 
         if (role === 'def') {
             const limiteCirculo = (typeof TeamShape !== 'undefined' && typeof TeamShape.limiteSaidaCirculoCentral === 'number')
@@ -2340,8 +2416,27 @@ const PosicionamentoAI = {
 
         O guarda-redes fica de fora: a posicao dele vem do gkAnchor.
         */
+        /*
+        A MOLA NÃO PUXA PARA A BOLA QUE JÁ É NOSSA E ESTÁ NAS MÃOS DO GR.
+
+        A mola encolhe a equipa para a bola. Com o guarda-redes a segurá-la na
+        própria linha de golo não há nada para disputar ali, e o resultado
+        medido era a equipa inteira a descer:
+
+            CF: slot +11.5 m  ->  alvo táctico -1.3 m  ->  posição real -8.0 m
+
+        Doze metros e meio comidos pela mola, e daí "ninguém no ataque" com o
+        guarda-redes de posse — a figura 1 do relato. O bloco já mandava o
+        avançado para a linha do meio-campo; era o nível 2 que o trazia de
+        volta.
+        */
+        const gkNossoComBola = (typeof Match !== 'undefined') &&
+            ((Match.gkHoldingBall && Match.gkHoldingBall[p.team]) ||
+                !!(Match.ballCarrier && Match.ballCarrier.role === 'gk' &&
+                    Match.ballCarrier.team === p.team));
+
         let molaX = comInquietacao.x;
-        if (p.role !== 'gk' && typeof MolaDeCoesao !== 'undefined' &&
+        if (p.role !== 'gk' && !gkNossoComBola && typeof MolaDeCoesao !== 'undefined' &&
             typeof molaParaABola === 'function' &&
             typeof Match !== 'undefined' && Match.ball) {
             const M = MolaDeCoesao;

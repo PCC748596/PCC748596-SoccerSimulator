@@ -44,9 +44,15 @@ const _v1 = {
 };
 const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
-const emZonaDeRemate = new Function('ShootingModel', '_v1', 'SpatialGrid',
+/*
+O `valeAPenaRematar` (o ângulo da baliza contra o homem à frente) entra como
+dependência injectada: este teste mede a ZONA de remate, não a decisão pelo
+ângulo, e sem geometria de adversários à volta a resposta dele é sempre "sim".
+Testar o ângulo pede um teste próprio, com posições de adversários.
+*/
+const emZonaDeRemate = new Function('ShootingModel', '_v1', 'SpatialGrid', 'valeAPenaRematar',
     `${extrairFuncao(srcBT, 'emZonaDeRemate')}; return emZonaDeRemate;`
-)(ShootingModel, _v1, undefined);
+)(ShootingModel, _v1, undefined, () => true);
 
 /*
 Jogador de teste. `targetGoalZ` é a baliza atacada; a distância é medida em 3D

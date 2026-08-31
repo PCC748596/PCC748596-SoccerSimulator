@@ -1549,9 +1549,17 @@ class PlayerFSM {
                         for (const opp of allOpps) {
                             p._advDisputa.push({ x: opp.model.position.x, z: opp.model.position.z });
                         }
+                        /*
+                        O defesa exige mais folga do que o resto da equipa —
+                        ver CarryModel.margemDisputaDefesa.
+                        */
+                        const margemToque = (p.role === 'def' &&
+                            typeof CarryModel.margemDisputaDefesa === 'number')
+                            ? CarryModel.margemDisputaDefesa : CarryModel.margemDisputa;
                         leadDist = maiorToqueSeguro(
                             p.model.position.x, p.model.position.z,
-                            forward.x, forward.z, curSpeed, leadDist, p._advDisputa);
+                            forward.x, forward.z, curSpeed, leadDist, p._advDisputa,
+                            margemToque);
                         if (leadDist <= 0) break;   // sem toque seguro: bola no pé
                     }
 
