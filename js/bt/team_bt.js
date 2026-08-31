@@ -1277,8 +1277,10 @@ function formaDaEquipa(slot, pos, role, fbStyle, bb, linhaActual, fecharPorPar, 
     let uBase = slot.u;
     if (typeof ordemNaLinha === 'number' && typeof totalNaLinha === 'number' &&
         totalNaLinha > 0 && bb.linhas && bb.linhas.nominal) {
-        const nom = bb.linhas.nominal[linhaActual || role] || 0;
-        if (nom > 0 && totalNaLinha < nom) {
+        const chaveLinha = linhaActual || role;
+        const nom = bb.linhas.nominal[chaveLinha] || 0;
+        const mexida = !!(bb.linhas.mexida && bb.linhas.mexida[chaveLinha]);
+        if (nom > 0 && (totalNaLinha !== nom || mexida)) {
             uBase = (ordemNaLinha + 1) / (totalNaLinha + 1);
         }
     }
@@ -2078,6 +2080,7 @@ function classificarLinhas(lista, bb) {
         const naTraseira = (o.z <= traseira + faixa);
         const linha = naTraseira ? 'def' : (nom === 'def' ? 'mid' : nom);
         p.linhaActual = linha;
+        p.linhaNominal = nom;
         linhas[linha].push(p);
     }
 
@@ -2233,9 +2236,34 @@ function classificarLinhas(lista, bb) {
         membros.forEach((p, i) => { p.ordemNaLinha = i; p.totalNaLinha = membros.length; });
     }
 
+    /*
+    A LINHA ESTÁ "MEXIDA"? — não basta contar cabeças.
+
+    A repartição por intervalos iguais só entrava quando a linha tinha MENOS
+    gente do que a formação prevê. Ora o caso que se vê em campo é outro: um
+    central sobe, um médio desce, e a linha continua com quatro. A contagem
+    diz "completa, não mexer", e o médio entra com o `u` DELE — que na 442 é
+    0.65, exactamente o mesmo do central que ficou.
+
+    Medido: 8737 pares colados a menos de 4 m na linha defensiva, e a
+    esmagadora maioria são CB-CM com `gap 0.0 m` e `u` 0.65 nos dois. É o
+    lateral encostado ao central da imagem (e o mesmo do outro lado).
+
+    Portanto marca-se a linha como mexida quando algum dos membros não é de lá
+    — e aí reparte-se. Com os quatro defesas de origem lá dentro, `mexida` é
+    falso e cada um volta ao lugar que o treinador lhe deu.
+    */
+    const mexida = { def: false, mid: false, atk: false };
+    for (const chave of ['def', 'mid', 'atk']) {
+        for (const p of linhas[chave]) {
+            if (p.linhaNominal !== chave) { mexida[chave] = true; break; }
+        }
+    }
+
     bb.linhas = {
         def: linhas.def, mid: linhas.mid, atk: linhas.atk,
-        nominal: nominal
+        nominal: nominal,
+        mexida: mexida
     };
 }
 
@@ -2789,6 +2817,37 @@ const PosicionamentoAI = {
                         const uz = (d > 0.001) ? dz / d : 0;
                         estiloX += ux * falta;
                         estiloZ += uz * falta;
+                    }
+                }
+            }
+        }
+
+        /*
+        A LINHA TEM ESPACAMENTO REGULAR — ver EspacamentoModel.linhaMinX.
+
+        Vizinhos da mesma linha nao ficam a menos de `linhaMinX` um do outro em
+        X. Corre depois de tudo porque e o unico sitio onde o resultado e o que
+        se ve: as camadas de cima comprimem a linha em 36% entre o nivel 1 e o
+        nivel 3 (11.6 m de intervalo medio no slot contra 7.4 m no alvo final),
+        e o que faltava era um piso.
+
+        So conta quem esta na mesma linha E a profundidade parecida: um
+        avancado recuado nao empurra um medio de lado.
+        */
+        {
+            const E = (typeof EspacamentoModel !== 'undefined') ? EspacamentoModel : null;
+            if (E && typeof E.linhaMinX === 'number' && p.linhaActual) {
+                const meus = (p.team === 'TeamA' ? Match.players : Match.opponents);
+                for (const c of meus) {
+                    if (c === p || c.role === 'gk' || !c.styleTarget) continue;
+                    if (c.linhaActual !== p.linhaActual) continue;
+                    if (Math.abs(estiloZ - c.styleTarget.z) > E.linhaFaixaZ) continue;
+                    const dx = estiloX - c.styleTarget.x;
+                    const d = Math.abs(dx);
+                    if (d < E.linhaMinX) {
+                        const falta = (E.linhaMinX - d) * 0.5;
+                        const ux = (d > 0.001) ? Math.sign(dx) : ((p.slot && p.slot.u >= 0.5) ? 1 : -1);
+                        estiloX += ux * falta;
                     }
                 }
             }

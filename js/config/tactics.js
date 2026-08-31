@@ -261,7 +261,27 @@ const EspacamentoModel = {
         CB: 9.0,
         CM: 8.0,
         CF: 8.0
-    }
+    },
+
+    /*
+    ESPACAMENTO LATERAL MINIMO ENTRE VIZINHOS DA MESMA LINHA.
+
+    O `paresIguais` acima so olha para jogadores da MESMA posicao (dois
+    centrais, dois medios-centro). Nao apanha o caso mais comum: um medio que
+    desce para a linha defensiva e fica encostado ao central ou ao lateral —
+    posicoes diferentes, mesma linha.
+
+    Medido no alvo final: intervalo medio de 7.4 m entre vizinhos da linha
+    defensiva, mas MENOR intervalo de 5.0 m e 46% dos frames com dois vizinhos
+    a menos de 4 m. A linha existe, mas tem sempre dois colados algures.
+
+    Isto e uma regra dura e corre no fim, depois do estilo: separa em X (uma
+    linha e espacamento lateral) e so entre quem esta MESMO na mesma linha, com
+    a profundidade parecida (`faixaZ`) — senao um avancado recuado empurrava um
+    medio de lado.
+    */
+    linhaMinX: 8.5,
+    linhaFaixaZ: 8.0
 };
 
 const WingPairModel = {
@@ -395,9 +415,27 @@ const BlockShape = {
     fora-de-jogo), mas deixa de ser um sítio onde há gente.
     */
     linhas: {
+        /*
+        CALIBRADO PARA 15 m ENTRE LINHAS (pedido).
+
+        As fracções não são a posição das linhas: são onde o `v` da formação
+        aterra. O `v` da 442 é CB 0.000, CM 0.455, CF 1.000, portanto o CM cai
+        em `0.91 * meio` e o CF em `ataque`. Com o bloco de 40 m que a
+        compacidade dá por omissão:
+
+            defesa -> meio    36.4 * meio    = 15 m  ->  meio   = 0.41
+            meio -> ataque    40 * ataque - 15 = 15  ->  ataque = 0.75
+
+        Medido depois:  CB -21.6 | CM -6.6 | CF +8.4,  ou seja 15.0 e 15.0.
+
+        Isto ESCALA com a profundidade do bloco: o painel de compacidade mexe
+        na profundidade, e 15 m é o espaçamento no valor por omissão. Com o
+        bloco mais curto as linhas juntam-se na mesma proporção, que é o que a
+        compacidade quer dizer.
+        */
         defesa: 0.0,
-        meio: 0.5,
-        ataque: 0.82
+        meio: 0.41,
+        ataque: 0.75
     },
 
     /*

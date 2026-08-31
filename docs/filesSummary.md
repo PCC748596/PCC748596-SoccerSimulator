@@ -5,6 +5,199 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 31 de Agosto de 2026 — os três níveis separados a sério
+
+Suite: **182 casos, 5 a falhar** (as mesmas de sempre — ver o aviso da sessão de
+30 de Agosto; juntou-se-lhes o `pose_partilhada`, que já falhava e não estava
+listado).
+
+O tema foi um só, ainda que tenha entrado por sete portas diferentes: **o nível
+1 estava a ser reescrito pelas camadas de baixo**, e por isso nenhuma delas se
+conseguia depurar. Ficou arrumado, e a arquitectura está descrita em
+`docs/level_2_rules.md`.
+
+#### A CADEIA, AGORA
+
+```
+slotTarget       NÍVEL 1   o slot da FORMAÇÃO no rectângulo      (anel GRANDE)
+tacticalTarget   NÍVEL 2   nível 1 + deslocamentos               (anel MÉDIO)
+styleTarget      NÍVEL 3   nível 2 + playing style               (anel PEQUENO)
+dynamicTarget    = styleTarget, e depois a árvore pode reescrevê-lo
+```
+
+Cada nível é um OFFSET do anterior. Nenhum reescreve o de cima.
+
+**O `calcularPontoDoSlot` passou de 127 linhas para onze.** Pega no `u`/`v` do
+`FormationsData` e mapeia-o no bloco. Não lê a bola, não lê a fase, não lê quem
+está em que linha, não lê adversários. Saíram de lá NOVE regras — desvio de
+linha por fase, `PositionDepthNudge`, os quatro fechos laterais, a régua da
+linha da bola na fase ofensiva e o deslize por corredor — todas para
+`formaDaEquipa`, que corre no nível 2 como deslocamento.
+
+Medido, estabilidade do slot DENTRO do rectângulo (972 100 amostras):
+
+```
+                                antes    agora
+fracção u (largura)            0.00087   0.00011
+fracção v (profundidade)       0.00101   0.00013
+maior salto de u num frame     0.466     0.059
+```
+
+**O playing style passou a ser a última camada.** Corria dentro do `tickBase`,
+antes da marcação e da mola, portanto tudo o resto era calculado por cima do
+desvio dele.
+
+#### A ORDEM DO NÍVEL 2, E AS REGRAS QUE SE DESFAZIAM
+
+Os desejos primeiro, as regras duras no fim. As trocas que custaram medição:
+
+  - **a mola de coesão passou para PRIMEIRO deslocamento**, não último. Com 9 m
+    de puxão desfazia a marcação e o tecto do estilo que corriam antes dela;
+  - **a distância mínima no lateral deixou de ser uma regra** e passou a ser um
+    piso da própria mola. Era uma regra cujo único propósito era desfazer a
+    anterior no mesmo frame — o comentário no código dizia-o com todas as
+    letras;
+  - **a mola não corre com a bola nas mãos do nosso guarda-redes.** Medido:
+    comia 12.8 m do avançado (slot +11.5 m, alvo táctico −1.3 m);
+  - **tecto de soma no espaçamento** (`EspacamentoModel.deslocacaoMax`): cada
+    colega contribuía até 3 m e cada adversário até 4 m, sem limite;
+  - **regresso ao bloco** (`BlockShape.folgaForaDoBloco`, 5 m): o alvo pode
+    discordar do slot, não pode andar a dez metros do rectângulo;
+  - **funil do nível 3** (`validarAlvoDoNivel3`, player_bt.js): as catorze
+    escritas da árvore passam por um sítio que repõe os limites do campo e o
+    bloco para quem não tem tarefa com a bola.
+
+#### O TREMOR DE QUEM ESTÁ PARADO À ESPERA DA BOLA
+
+Duas causas, encontradas em sessões diferentes:
+
+1. **O alvo de olhar trocava num limiar seco.** Abaixo de 0.5 m do alvo o corpo
+   virava-se para a BOLA, acima para o ALVO — dois pontos a 84° um do outro, e
+   o alvo táctico atravessava o limiar 1.5 vezes por segundo. Corrigido com
+   histerese (`OlharModel`, 0.9/1.8 m).
+2. **As folhas da árvore não escrevem o alvo todos os frames.** Medido: a
+   árvore reescreve o `dynamicTarget` em 31% dos frames de um jogador lento, e
+   quando o faz o alvo está a 12.2 m do que o nível 2 tinha posto; liga e
+   desliga 1.36% dos frames. O jogador dá meio passo para lá e meio para cá.
+   `AlvoDaArvore.persistencia` (0.6 s) faz a intenção da folha sobreviver ao
+   buraco.
+
+```
+jogador parado, por frame            sem      com persistência
+movimento do dynamicTarget         0.210 m       0.107 m
+deslocação do corpo                0.030 m       0.013 m
+rotação do corpo                    1.85°         1.10°
+```
+
+**Custo por confirmar:** a persistência pode estar a piorar a aglomeração
+(colegas a menos de 1.5 m deu 7.1% sem ela e 6.3%, 9.9% e 21.7% com ela). A
+variância entre corridas é maior do que o efeito — falta medir com sementes.
+
+#### O LATERAL E O MÉDIO DE ALA
+
+Regra nova (`WingPairModel`): de cada lado, **um ocupa a linha e o outro fecha
+para o meio-espaço**. O médio é o dono por omissão; o lateral só lha tira
+quando o médio cai mesmo pelo meio ou no overlap de uma tabela.
+
+O critério lê a INTENÇÃO do médio (o ponto da forma da equipa, antes desta
+regra) e não a posição dele — com a posição era um círculo: o médio está
+fechado porque a regra o mandou fechar, e o lateral ficava dono da linha uma
+vez e nunca mais a largava (45% do tempo).
+
+Mais um tecto de avanço (`limiteAvanco`, 30 m): um lateral não acaba a jogada
+dentro da área. O `fullback_finisher` está isento.
+
+```
+                                          antes    agora
+lateral dentro da grande área adversária  16.0%     0.5%
+par a menos de 6 m um do outro            12.3%     2.3%
+```
+
+#### AS TRÊS LINHAS A 15 METROS
+
+O `v` da 442 salta de 0.545 (médios de ala) para 1.000 (avançados) sem nada
+pelo meio. Com `BlockShape.linhas.ataque` em 1.0 isso punha o avançado na borda
+da frente do rectângulo, sozinho: medido, CF a +18.3 m do meio-campo com o CM a
+−3.6, ou seja **21.8 m de buraco entre o meio-campo e o ataque**.
+
+As fracções passaram a `meio: 0.41, ataque: 0.75`, calibradas para **15 m entre
+linhas** no bloco de 40 m que a compacidade dá por omissão:
+
+```
+  CB −21.5      CM −6.6      CF +8.5      (14.9 e 15.1 m)
+```
+
+Escala com a compacidade — o painel encolhe o bloco e as linhas juntam-se na
+mesma proporção. Consequência assumida: os últimos 25% do rectângulo ficam
+vazios.
+
+#### O MÉDIO QUE DESCE E FICA COLADO AO CENTRAL
+
+A repartição da linha por intervalos iguais só entrava quando a linha tinha
+MENOS gente do que a formação prevê. O caso real é outro: um central sobe, um
+médio desce, a linha continua com quatro, a contagem diz "completa" e o médio
+entra com o `u` DELE — que na 442 é 0.65, **exactamente o mesmo do central que
+ficou**. Medido: 8737 pares colados, quase todos CB-CM com `gap 0.0 m`.
+
+Duas correcções:
+
+  - `bb.linhas.mexida` — a linha marca-se como mexida quando algum membro não é
+    de lá, e aí reparte-se. Com os quatro defesas de origem lá dentro cada um
+    volta ao lugar do treinador, que era o pedido;
+  - `EspacamentoModel.linhaMinX` (8.5 m) — piso de espaçamento lateral entre
+    vizinhos da mesma linha, aplicado no fim, depois do estilo. O `paresIguais`
+    que já existia só olhava para jogadores da MESMA posição e não apanhava
+    este caso.
+
+```
+linha defensiva, alvo final    antes    agora
+menor intervalo entre vizinhos  5.0 m    6.7 m
+dois vizinhos a menos de 4 m   46.4%     9.5%
+```
+
+#### O RESTO, MAIS CURTO
+
+  - **Cabeçada ao golo só dentro de 11 m do centro da baliza**
+    (`HeaderModel.raioRemateCabeca`). Era `distToGoal < 24 && |x| < 16`, dois
+    eixos separados: a 23 m da linha e 15 m do eixo está-se a 27.5 m da baliza
+    e cabeceava-se ao golo à mesma. Fora do raio é passe ou alívio.
+  - **Passe pelo alto só acima de 30 m.** Abaixo, o tecto é a altura do peito
+    (1.20 m). Foram precisos TRÊS sítios: as bandas, o `elevMinBaixa` (o clamp
+    de 25° anulava o tecto) e o ramo do `encontro`, que reescrevia a elevação.
+    Apex de um passe curto: 5.53 m → 1.42 m.
+  - **O remate olha para o ângulo da baliza** (`ShootingModel.angulo`). O
+    `anguloDaBaliza` existia desde sempre e só alimentava o xG. Com bloqueador
+    a menos de 3 m NA LINHA do remate e ângulo abaixo de 0.35 rad, remata em
+    30% das vezes; abaixo de 0.10 rad não remata.
+  - **Lateral: o alvo tem de estar ao alcance do braço.** O `findPassTarget`
+    devolvia gente a 27 e 43 m; o braço chega aos 12-20 m. Com o erro de
+    execução desligado, a bola nunca se aproximava do destinatário. Mais a
+    elevação negativa quando há destinatário (`elevAlvoMin/Max`): a bola sai
+    das mãos a 1.82 m e com 16°-26° SUBIA — 17 de 19 lançamentos chegavam acima
+    da cabeça. Agora 0 de 14.
+  - **Guarda-redes: os braços deixaram de estar colados ao corpo no mergulho.**
+    O ramo "preparar a queda" tinha guardas largas de mais (`y < 0.8` com o
+    corpo deitado a 0.42) e corria em 41% dos frames de voo; agora 3%. Mais a
+    mão trocada acima de 1.55 m — a de fora vai à bola, a de dentro estica
+    atrás.
+  - **Tiro de meta: o clip corria a 60% da velocidade** (12 frames em 0.82 s
+    contra 0.50 s do remate do jogador) e a perna TRAVAVA na bola (velocidade
+    da coxa −6.0, −4.7, **−2.7 no contacto**). Agora 0.55 s e a velocidade sobe
+    até ao impacto (−7.6, **−10.4**).
+  - **Defesa pressionado não joga para a frente por linha apertada.** Medido:
+    sob pressão (<6 m), para a frente 66-79% de sucesso contra 85-92% para
+    trás/lado. Baixar o peso do progresso não chegou — foi preciso um corte
+    duro (`linhaMinDefesaFrente`).
+  - **`recuoGkComBola` e `avancoTiroMeta` estavam na config e NINGUÉM OS LIA.**
+    Ligados no `computeBlock`.
+  - **A bola que cai no pano de cima da rede rola para trás e desce pela
+    descaída** (`GoalNet.rolarTopo`), em vez de saltitar.
+  - **Câmara Lateral Móvel** 14 → 21 m de altura; **minimapa** com círculos
+    maiores e sem números.
+  - **Crash corrigido:** `match_setpieces.js` fazia `null.hasBall` no canto sem
+    batedor de campo.
+
+
 ### Sessão de 30 de Agosto de 2026 — as camadas de movimentação, esclarecidas e medidas
 
 Testes novos: `bloco_tres_linhas`. Suite: **182 casos, 4 a falhar** — ver o aviso
