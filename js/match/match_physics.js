@@ -813,9 +813,32 @@ Object.assign(Match, {
                 const dCross = prevD + t * (d - prevD);
                 if (dCross >= 0 && dCross <= N.profTopo) {
                     if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.y);
-                    if (v.y > 0) { b.y = ALTURA_BALIZA - rB; } else { b.y = ALTURA_BALIZA + rB; }
-                    v.y = -v.y * N.restituicao;
-                    v.x *= N.atrito; v.z *= N.atrito;
+
+                    const deCima = (v.y <= 0);
+                    if (deCima) {
+                        /*
+                        POUSA E ROLA. Uma bola que cai em cima da rede não
+                        salta: afunda no pano e rola para trás até à descaída.
+                        Ver GoalNet.rolarTopo/atritoTopo.
+
+                        `vd` é a velocidade no eixo do fundo, positiva PARA
+                        DENTRO da baliza — dar-lhe um piso é o que a leva à
+                        inclinação de trás em vez de a deixar parada em cima do
+                        travessão.
+                        */
+                        b.y = ALTURA_BALIZA + rB;
+                        v.y = 0;
+                        vd = Math.max(vd, N.rolarTopo);
+                        vd *= N.atritoTopo;
+                        v.x *= N.atritoTopo;
+                    } else {
+                        // De baixo para cima: bateu no pano por dentro da baliza.
+                        b.y = ALTURA_BALIZA - rB;
+                        v.y = -v.y * N.restituicao;
+                        v.x *= N.atrito; vd *= N.atrito;
+                    }
+                    b.z = (d + CAMPO_COMP / 2) * zSinal;
+                    v.z = vd * zSinal;
                     d = (b.z * zSinal) - CAMPO_COMP / 2;
                 }
             }

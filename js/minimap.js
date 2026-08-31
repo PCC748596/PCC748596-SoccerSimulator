@@ -23,8 +23,14 @@ const Minimap = {
     get altura() { return Math.round(this.largura * (CAMPO_LARG / CAMPO_COMP)); },
 
     margem: 6,        // relva à volta das linhas, para a bola na linha se ver
-    raioJogador: 2.6,
-    raioBola: 1.8,
+    /*
+    Os pontos eram 2.6 px com o número do jogador escrito por dentro, a 3.5 px
+    de fonte — ilegível a esta escala e a encolher o próprio ponto. Pedido:
+    círculos maiores e sem números; quem se quer distinguir de relance é o
+    portador, e esse tem o anel branco.
+    */
+    raioJogador: 4.2,
+    raioBola: 2.4,
 
     visivel: true,
     _canvas: null,
@@ -171,8 +177,7 @@ const Minimap = {
                 const c = (p.role === 'gk') ? this.cores.gk : cor;
                 this._ponto(ctx, p.model.position.x, p.model.position.z,
                     this.raioJogador, c,
-                    (p === portador) ? this.cores.portador : null,
-                    p.num ? p.num.toString() : '');
+                    (p === portador) ? this.cores.portador : null);
             }
         };
         desenharEquipa(Match.players, this.cores.TeamA);

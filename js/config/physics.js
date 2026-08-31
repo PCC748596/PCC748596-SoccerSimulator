@@ -36,6 +36,25 @@ const GoalNet = {
     atrito: 0.35,
 
     /*
+    A BOLA QUE CAI EM CIMA DO PANO DE CIMA ROLA PARA TRÁS E DESCE PELA
+    DESCAÍDA.
+
+    O pano de cima é horizontal (de 0 a `profTopo` a partir da linha) e a
+    colisão tratava-o como qualquer outra: invertia o `v.y` com restituição e
+    a bola saltitava lá em cima ou caía outra vez para o campo. Uma bola que
+    cai em cima de uma rede não salta — afunda no pano, rola para trás e desce
+    pela inclinação de trás.
+
+    `rolarTopo`   velocidade mínima para TRÁS (para dentro da baliza) que se dá
+                  a uma bola pousada no pano de cima, para ela chegar à
+                  descaída em vez de ficar parada lá em cima.
+    `atritoTopo`  travagem por frame enquanto rola no pano. Alto de propósito:
+                  o pano é macio mas quase não trava o rolamento.
+    */
+    rolarTopo: 1.4,
+    atritoTopo: 0.985,
+
+    /*
     MALHA — quantos quadrados por face. Antes cada face era UM quad de quatro
     vértices, e por isso a rede não podia deformar-se: era uma chapa rígida com
     textura de rede. Os laterais são estreitos e levam menos divisões ao longo

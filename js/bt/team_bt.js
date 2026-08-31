@@ -2240,7 +2240,52 @@ function aplicarRecuoAposApoio(p, bb, targetZ) {
     return targetZ - T.recuoAposApoio * p.dirZ;
 }
 
+/*
+QUEM OCUPA A LINHA, DE CADA LADO — ver WingPairModel (config/tactics.js).
+
+Corre uma vez por equipa por frame, ANTES do tickBase, porque é uma decisão de
+par e não de indivíduo: cada um a decidir sozinho "eu vou à linha" dá os dois
+na linha, que é exactamente o que se via.
+
+Escreve `p.corredorAberto` (vai à linha) e `p.corredorFechado` (fecha para o
+meio-espaço). Quem não está num par fica com os dois a falso e não é tocado.
+
+Só com posse: a defender o bloco já fecha os corredores por si (LineShape.fecho)
+e mandar o lateral para dentro em cima disso abria a ala ao adversário.
+*/
+function atribuirParesDeCorredor(lista, bb) {
+    const W = (typeof WingPairModel !== 'undefined') ? WingPairModel : null;
+    for (const p of lista) { p.corredorAberto = false; p.corredorFechado = false; }
+    if (!W || !bb || !bb.isAttacking) return;
+
+    const pares = [['LB', 'LM'], ['RB', 'RM']];
+    for (const [posLat, posMid] of pares) {
+        const lat = lista.find(p => p.pos === posLat && p.model);
+        const mid = lista.find(p => p.pos === posMid && p.model);
+        if (!lat || !mid) continue;
+
+        const avLat = lat.model.position.z * lat.dirZ;
+        const avMid = mid.model.position.z * mid.dirZ;
+
+        /*
+        Histerese: mantém-se quem já lá estava até o outro o passar por
+        `margemTroca`. O médio é o dono por omissão da linha — é a posição
+        dele, e o lateral é quem sobe por excepção.
+        */
+        let naLinha = lat.corredorDono || mid.corredorDono || mid;
+        if (naLinha === mid && avLat > avMid + W.margemTroca) naLinha = lat;
+        else if (naLinha === lat && avMid > avLat + W.margemTroca) naLinha = mid;
+
+        lat.corredorDono = naLinha; mid.corredorDono = naLinha;
+
+        const dentro = (naLinha === lat) ? mid : lat;
+        naLinha.corredorAberto = true;
+        dentro.corredorFechado = true;
+    }
+}
+
 const PosicionamentoAI = {
+    atribuirParesDeCorredor: atribuirParesDeCorredor,
     otimizarSlotsPorPosicao: otimizarSlotsPorPosicao,
     classificarLinhas: classificarLinhas,
 
@@ -2258,6 +2303,18 @@ const PosicionamentoAI = {
         const slot = slotNoBloco(p, bb);
         let targetX = slot ? slot.x : p.baseTarget.x;
         let targetZ = slot ? slot.z : p.baseTarget.z;
+
+        /*
+        O PAR DO CORREDOR — quem fecha para o meio-espaço fecha aqui, logo a
+        seguir ao slot e antes de tudo o resto: é uma correcção do LUGAR no
+        bloco, não um desvio por cima dele. Ver atribuirParesDeCorredor e
+        WingPairModel.
+        */
+        if (p.corredorFechado && typeof WingPairModel !== 'undefined') {
+            const lado = Math.sign(targetX) || (Math.sign(p.baseTarget.x) || 1);
+            targetX -= lado * WingPairModel.fechoDentro;
+            targetZ -= WingPairModel.recuoDeDentro * p.dirZ;
+        }
 
         /*
         SEGURAR A LINHA: quem foi chamado para completar o mínimo atrás não

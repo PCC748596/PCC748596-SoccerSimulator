@@ -619,6 +619,11 @@ Object.assign(Match, {
         PosicionamentoAI.classificarLinhas(this.players, bbA);
         PosicionamentoAI.classificarLinhas(this.opponents, bbB);
 
+        // Quem ocupa a linha e quem fecha para dentro, de cada lado. Decisão de
+        // PAR, e por isso antes de qualquer posicionamento individual.
+        PosicionamentoAI.atribuirParesDeCorredor(this.players, bbA);
+        PosicionamentoAI.atribuirParesDeCorredor(this.opponents, bbB);
+
         PosicionamentoAI.otimizarSlotsPorPosicao(this.players, bbA);
         PosicionamentoAI.otimizarSlotsPorPosicao(this.opponents, bbB);
 

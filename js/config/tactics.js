@@ -204,6 +204,33 @@ Tudo aqui em fracções, no REFERENCIAL DE ATAQUE:
 // 3.0 => ~0.33 s de constante de tempo.
 const PositionSmoothing = 3.0;
 
+/*
+=============================================================================
+O PAR DO CORREDOR — o lateral e o médio de ala não correm no mesmo espaço
+=============================================================================
+Um de cada vez ocupa a linha. O outro fecha para dentro e dá a opção de passe
+pelo meio-espaço. Qual deles vai à linha decide-se por quem está mais
+ADIANTADO: é isso que faz o lateral só ultrapassar o médio quando o médio já
+caiu para dentro, ou durante o overlap de uma tabela — e não por ter um estilo
+ligado no painel.
+
+Sem isto os dois recebiam o mesmo corredor do bloco (o `u` do slot) mais o
+mesmo empurrão para a frente, e corriam colados o jogo inteiro.
+
+    fechoDentro   metros que o de dentro fecha em direcção ao eixo. Não é ir
+                  para o meio: é o meio-espaço, entre o corredor e o eixo.
+    margemTroca   histerese. O de trás só toma a linha quando passa o outro
+                  por esta margem — sem ela trocavam de papel a cada frame em
+                  que se cruzassem.
+    recuoDeDentro metros que o de dentro fica atrás do de fora, para os dois
+                  não ficarem na mesma linha horizontal também.
+*/
+const WingPairModel = {
+    fechoDentro: 7.0,
+    margemTroca: 2.5,
+    recuoDeDentro: 2.0
+};
+
 const BlockShape = {
     /*
     Guarda-redes com a bola nas mãos: quanto se AFASTAM da baliza dele os dois
