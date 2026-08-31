@@ -1179,9 +1179,14 @@ function podeDriblar(ctx) {
     // Se a tendência for menor que 1.0, o jogador pode "desistir" da ideia do drible por mentalidade
     if (mult < 1.0 && Math.random() > mult) return false;
 
-    // Regra 4: Adversário próximo, espaço atrás do adversário, técnica >= 75 - Driblar
-    // Jogadores com tendência alta (ex: Pontas) arriscam driblar mesmo com técnica ligeiramente menor
-    let baseTec = 75 / Math.max(0.5, mult);
+    // No último terço ofensivo (zoneAhead >= 15 ou campo ofensivo avançado), os jogadores
+    // são incentivados a tentar o 1v1 com mais ousadia
+    const noUltimoTerco = (ctx.zoneAhead !== undefined && ctx.zoneAhead >= 15) || (p.model.position.z * p.dirZ > 17);
+    const bonusUltimoTerco = noUltimoTerco ? 1.35 : 1.0;
+
+    // Regra 4: Adversário próximo, espaço atrás do adversário - Driblar
+    // No último terço a barreira técnica necessária é mais baixa (ex: 60-65 em vez de 75)
+    let baseTec = (noUltimoTerco ? 60 : 72) / Math.max(0.5, mult * bonusUltimoTerco);
     const tec = p.skillFor ? p.skillFor('TEC') : ctx.skillTec;
     if (tec < baseTec) return false;
 
@@ -1193,16 +1198,18 @@ function podeDriblar(ctx) {
     if (p.role === 'def') return false;
 
     // Verificar se há adversário próximo à sua frente bloqueando a passagem
+    // No último terço a janela de distância para engajar o drible é mais ampla (até 5.5m)
+    const maxEngageDist = noUltimoTerco ? 5.5 : 4.8;
     let oppProximo = null;
     let menorDist = Infinity;
     for (const opp of ctx.opponents) {
         if (opp.role === 'gk') continue;
         const d = p.model.position.distanceTo(opp.model.position);
-        if (d >= 0.8 && d <= 4.8) {
+        if (d >= 0.8 && d <= maxEngageDist) {
             const dz = (opp.model.position.z - p.model.position.z) * p.dirZ;
-            if (dz > -0.5 && dz < 4.8) {
+            if (dz > -0.5 && dz < maxEngageDist) {
                 const dx = Math.abs(opp.model.position.x - p.model.position.x);
-                if (dx < 3.6 && d < menorDist) {
+                if (dx < 3.8 && d < menorDist) {
                     menorDist = d;
                     oppProximo = opp;
                 }
@@ -1212,15 +1219,19 @@ function podeDriblar(ctx) {
     if (!oppProximo) return false;
 
     // Verificar espaço atrás do adversário (costas do adversário desimpedidas para progressão)
+    // No último terço é mais permissivo com tráfego denso da área
     const oppZ = oppProximo.model.position.z;
     const oppX = oppProximo.model.position.x;
     let espacoAtrasLivre = true;
+    const distAtrasTol = noUltimoTerco ? 5.0 : 6.5;
+    const dxAtrasTol = noUltimoTerco ? 2.6 : 3.2;
+
     for (const opp2 of ctx.opponents) {
         if (opp2 === oppProximo || opp2.role === 'gk') continue;
         const dzAtras = (opp2.model.position.z - oppZ) * p.dirZ;
-        if (dzAtras > 0 && dzAtras < 6.5) {
+        if (dzAtras > 0 && dzAtras < distAtrasTol) {
             const dxAtras = Math.abs(opp2.model.position.x - oppX);
-            if (dxAtras < 3.2) {
+            if (dxAtras < dxAtrasTol) {
                 espacoAtrasLivre = false;
                 break;
             }

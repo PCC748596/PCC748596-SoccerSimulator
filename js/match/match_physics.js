@@ -29,7 +29,19 @@ Object.assign(Match, {
             }
         }
 
-        if (this.ball.position.y > r + 0.001) this.ballVel.y -= B.gravidade * dt;
+        if (this.ball.position.y > r + 0.001) {
+            let grav = B.gravidade;
+            // Efeito folha seca / topspin na falta direta: após superar a barreira ou no topo da parábola, cai mais acentuadamente
+            if (this.freeKickDip && this.freeKickDip.active) {
+                this.freeKickDip.timer += dt;
+                // Aumenta a aceleração descendente proporcionalmente ao efeito/técnica
+                grav += this.freeKickDip.extraGrav;
+                if (this.ball.position.y <= r + 0.05 || this.freeKickDip.timer > 2.5) {
+                    this.freeKickDip.active = false;
+                }
+            }
+            this.ballVel.y -= grav * dt;
+        }
 
         if (!this.prevBallPos) this.prevBallPos = new THREE.Vector3();
         this.prevBallPos.copy(this.ball.position);

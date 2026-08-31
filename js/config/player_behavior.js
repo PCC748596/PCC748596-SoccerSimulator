@@ -416,14 +416,14 @@ oposto (30-45°). Se tentar ir reto, probabilidade de perda é muito maior.
 jogador e pela proximidade do adversário.
 */
 const DribbleModel = {
-    triggerDist: 2.5,     // distância para activar drible 1v1 (adversário à frente)
+    triggerDist: 3.2,     // distância para activar drible 1v1 (adversário à frente)
     angleSide: 0.6,       // ângulo lateral do toque (~35°, entre 30 e 45)
-    touchPower: 8.25,     // força do toque lateral
-    successBase: 0.60,    // chance base de sucesso
+    touchPower: 8.5,      // força do toque lateral
+    successBase: 0.65,    // chance base de sucesso
     successSideBonus: 0.20, // bónus por ir para o lado (vs reto)
-    failLossBall: 0.70,   // prob. de perder a bola se falhar
-    sprintBoost: 6.2,     // boost de velocidade após toque lateral
-    cooldown: 1.2         // tempo antes de poder driblar novamente
+    failLossBall: 0.65,   // prob. de perder a bola se falhar
+    sprintBoost: 6.5,     // boost de velocidade após toque lateral
+    cooldown: 0.9         // tempo antes de poder driblar novamente
 };
 
 /*

@@ -114,17 +114,18 @@ Por exemplo, um CF com passe 80 prefere chutar do que passar, enquanto um CM com
 */
 window.PositionalTendencies = {
     'CB': { shoot: 0.50, dribble: 0.40, pass: 1.00, forwardPass: 0.80, cross: 0.20, clearance: 1.30 },
-    'LB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
-    'RB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
+    'LB': { shoot: 0.60, dribble: 0.90, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
+    'RB': { shoot: 0.60, dribble: 0.90, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
     'DM': { shoot: 0.70, dribble: 0.70, pass: 1.30, forwardPass: 1.10, cross: 0.50, clearance: 1.10 },
-    'CM': { shoot: 0.80, dribble: 0.90, pass: 1.20, forwardPass: 1.20, cross: 0.80, clearance: 0.90 },
-    'LM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
-    'RM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
-    'AM': { shoot: 1.00, dribble: 1.10, pass: 1.10, forwardPass: 1.40, cross: 0.90, clearance: 0.50 },
-    'LW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
-    'RW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
-    'CF': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
-    'ST': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
+    'CM': { shoot: 0.80, dribble: 0.95, pass: 1.20, forwardPass: 1.20, cross: 0.80, clearance: 0.90 },
+    'LM': { shoot: 0.80, dribble: 1.25, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
+    'RM': { shoot: 0.80, dribble: 1.25, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
+    'AM': { shoot: 1.00, dribble: 1.30, pass: 1.10, forwardPass: 1.40, cross: 0.90, clearance: 0.50 },
+    'LW': { shoot: 1.10, dribble: 1.55, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
+    'RW': { shoot: 1.10, dribble: 1.55, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
+    'SS': { shoot: 1.25, dribble: 1.40, pass: 1.00, forwardPass: 1.10, cross: 0.80, clearance: 0.30 },
+    'CF': { shoot: 1.40, dribble: 1.25, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
+    'ST': { shoot: 1.40, dribble: 1.25, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
     'GK': { shoot: 0.10, dribble: 0.10, pass: 1.00, forwardPass: 1.00, cross: 0.10, clearance: 1.50 }
 };
 
@@ -141,7 +142,7 @@ window.getPositionalTendency = function (pos, action) {
 /*
 Altura da TESTA acima da base do modelo.
 
-`model.position` está nos PÉS (y = ALTURA_BASE_Y). O rig, à escala 1.8/5.5,
+`model.position` está nos PÉS (y = ALTURA_BASE_Y). O rig, à escala 1.8/6.0,
 põe o centro da cabeça a ~1.64 m e a testa a ~1.75 m. Este valor é o ponto de
 contacto de um cabeceio — ver distanciaAoCorpo() em utils.js.
 */

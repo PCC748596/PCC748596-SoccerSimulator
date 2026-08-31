@@ -769,14 +769,210 @@ class FootballPlayer {
     }
 
     /*
-    O CONTACTO da falta: o que já existia, agora disparado no `contactTime` do
-    clip em vez de no mesmo frame da decisão. Ver `baterFalta`.
+    O CONTACTO da falta: disparado no `contactTime` do clip. Ver `baterFalta`.
     */
     executarFalta(decisao) {
         if (decisao === 'remate') {
-            this.hasBall = true;          // o remate exige posse (ver executeShotGameplay)
-            Match.ballCarrier = this;
-            this.initiateShoot();
+            const F = FreeKickModel;
+            const defendingPlayers = (this.team === 'TeamA') ? Match.opponents : Match.players;
+            const gk = defendingPlayers.find(p => p.role === 'gk');
+            const gkSkill = gk ? gk.skillFor('GK') : 50;
+            const gkTec = gk ? gk.skillFor('TEC') : 50;
+            const tec = this.skillFor('TEC');
+            const forca = this.skillFor('STRENGTH');
+
+            // Média ponderada do batedor (Técnica 60%, Força 40%) vs Goleiro (GK 60%, Técnica 40%)
+            const takerRating = tec * 0.60 + forca * 0.40;
+            const gkRating = gkSkill * 0.60 + gkTec * 0.40;
+
+            // Duelos de D10 como no pênalti
+            const d10Taker = Math.floor(Math.random() * 10) + 1;
+            const d10GK = Math.floor(Math.random() * 10) + 1;
+            const diff = (takerRating + d10Taker) - (gkRating + d10GK);
+
+            // Grelha de mira na baliza (9 colunas horizontais, 5 linhas verticais)
+            const colsX = [4.16, 3.66, 2.928, 1.464, 0, -1.464, -2.928, -3.66, -4.16];
+            const rowsY = [0.406, 1.22, 2.033, 2.44, 2.94];
+
+            const colsGolCantos = [2, 3, 5, 6];
+            const colsTrave = [1, 7];
+            const rowTrave = 3;
+            const colsFora = [0, 8];
+            const rowFora = 4;
+
+            const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+            const oppositeCol = (c) => {
+                if (c <= 3) return pick([5, 6, 7, 8]);
+                if (c >= 5) return pick([0, 1, 2, 3]);
+                return pick([1, 2, 6, 7]);
+            };
+
+            // Lado da barreira (x > 0 ou x < 0)
+            const ladoBarreira = Math.sign(Match.ball.position.x) || 1;
+            // O canto por cima da barreira corresponde ao lado da barreira; o canto do GK é o oposto
+            const cantoBarreiraCol = (ladoBarreira > 0) ? pick([2, 3]) : pick([5, 6]);
+            const cantoGkCol = (ladoBarreira > 0) ? pick([5, 6]) : pick([2, 3]);
+
+            let targetCol, targetRow, gkDiveCol;
+
+            if (diff > 5) {
+                // Perfeito: bola com curva por cima da barreira exatamente na gaveta do lado da barreira
+                targetCol = cantoBarreiraCol;
+                targetRow = 2; // gaveta superior
+                gkDiveCol = oppositeCol(targetCol); // GK estava deslocado para o outro lado
+            } else if (diff >= 3 && diff <= 5) {
+                // Bom: bate por cima da barreira buscando o canto alto ou o canto aberto
+                targetCol = (Math.random() < 0.70) ? cantoBarreiraCol : cantoGkCol;
+                targetRow = pick([1, 2]); // meia altura ou ângulo
+                gkDiveCol = oppositeCol(targetCol);
+            } else if (diff === 1 || diff === 2) {
+                // Médio: raspando na trave ou no travessão
+                if (Math.random() < 0.40) {
+                    targetCol = pick(colsGolCantos);
+                    targetRow = rowTrave;
+                } else {
+                    targetCol = pick(colsTrave);
+                    targetRow = pick([1, 2]);
+                }
+                gkDiveCol = oppositeCol(targetCol);
+            } else if (diff <= 0 && diff >= -2) {
+                // Fraco: bola pega na trave, travessão ou vai para fora por cima
+                targetCol = (Math.random() < 0.5) ? pick(colsTrave) : cantoBarreiraCol;
+                targetRow = (Math.random() < 0.5) ? rowTrave : rowFora;
+                gkDiveCol = oppositeCol(targetCol);
+            } else if (diff === -3 || diff === -4) {
+                // Erro para fora
+                targetCol = (Math.random() < 0.5) ? pick(colsFora) : cantoBarreiraCol;
+                targetRow = pick([2, 3, 4]);
+                gkDiveCol = oppositeCol(targetCol);
+            } else {
+                // diff <= -5: GK lê a trajetória e defende
+                targetCol = (Math.random() < 0.5) ? cantoBarreiraCol : cantoGkCol;
+                targetRow = pick([1, 2]);
+                gkDiveCol = targetCol;
+            }
+
+            // Chance de o goleiro se recuperar e defender mesmo se bateu para o lado certo
+            const colsGol = [2, 3, 4, 5, 6];
+            const rowsGol = [0, 1, 2];
+            const alvoNaBaliza = colsGol.includes(targetCol) && rowsGol.includes(targetRow);
+            if (alvoNaBaliza && gkDiveCol !== targetCol) {
+                const CD = F.chanceDefesa || {};
+                let pDef = 0;
+                if (diff > 5) pDef = CD.perfeito || 0.03;
+                else if (diff >= 3) pDef = CD.bom || 0.16;
+                else if (diff >= 1) pDef = CD.medio || 0.38;
+                else pDef = CD.fraco || 0.65;
+                if (Math.random() < pDef) gkDiveCol = targetCol;
+            }
+
+            let alvoX = colsX[targetCol];
+            let alvoY = rowsY[targetRow];
+
+            if (colsTrave.includes(targetCol)) {
+                if (diff > 0) {
+                    alvoX += (alvoX > 0) ? -0.14 : 0.14; // entra raspando
+                } else if (diff === 0) {
+                    alvoX += (Math.random() * 0.08 - 0.04); // carimba o poste
+                } else {
+                    alvoX += (alvoX > 0) ? (0.05 + Math.random() * 0.08) : -(0.05 + Math.random() * 0.08);
+                }
+            }
+
+            if (targetRow === rowTrave) {
+                if (diff > 0) {
+                    alvoY -= 0.14; // entra raspando por baixo do travessão
+                } else if (diff === 0) {
+                    alvoY += (Math.random() * 0.08 - 0.04); // carimba o travessão
+                } else {
+                    alvoY += (0.05 + Math.random() * 0.08);
+                }
+            }
+
+            if (gk) {
+                gk.isPenaltyDive = true;
+                gk.penaltyDiveX = colsX[gkDiveCol];
+                gk.penaltyDiveY = (gkDiveCol === targetCol) ? alvoY : rowsY[targetRow];
+                gk.gkDelayReacao = 0.12 + Math.random() * 0.15;
+                gk.gkReagiu = true;
+            }
+
+            const golZ = this.targetGoalZ;
+            const dx = alvoX - Match.ball.position.x;
+            const dz = golZ - Match.ball.position.z;
+            const distH = Math.hypot(dx, dz) || 1;
+
+            // Potência e elevação: parábola mais alta (passando com folga por cima da barreira)
+            // combinada com aceleração de queda (dip/topspin) proporcional à técnica do batedor
+            const pow = Math.max(21.0, F.potenciaBase + ((forca - 50) / 50) * F.potenciaPorForca);
+            
+            // Efeito folha seca (topspin/dip): gravidade extra atuando na bola
+            const extraGrav = 9.0 + (tec / 100) * 11.0; // 14.5 a 20.0 m/s² adicionais
+            Match.freeKickDip = {
+                active: true,
+                timer: 0,
+                extraGrav: extraGrav
+            };
+
+            // Para que a bola passe por cima da barreira (~2.3m a 9.15m) e caia no alvo,
+            // calculamos a elevação com a gravidade efetiva (gravidade + extraGrav)
+            const gEfetiva = BallPhysics.gravidade + extraGrav;
+            const k = BallPhysics.kArrasto;
+            const startY = BallPhysics.raio;
+
+            // Solver numérico com gravidade efetiva para achar o ângulo que atinge o alvo com curva descendente
+            const alturaEmEfetiva = (ang) => {
+                let x = 0, y = startY;
+                let vx = pow * Math.cos(ang), vy = pow * Math.sin(ang);
+                const dtSim = 1 / 120;
+                for (let i = 0; i < 600; i++) {
+                    const s = Math.hypot(vx, vy);
+                    if (s > 0.001) { const dv = k * s * s * dtSim; vx -= vx / s * dv; vy -= vy / s * dv; }
+                    vy -= gEfetiva * dtSim;
+                    const xAnt = x, yAnt = y;
+                    x += vx * dtSim; y += vy * dtSim;
+                    if (x >= distH) {
+                        const f = (distH - xAnt) / Math.max(1e-6, x - xAnt);
+                        return yAnt + (y - yAnt) * f;
+                    }
+                    if (y < -5) return -Infinity;
+                }
+                return -Infinity;
+            };
+
+            let lo = -0.10, hi = Math.PI / 3; // até 60 graus para permitir parábola alta
+            let eResolvido = 26 * Math.PI / 180;
+            if (alturaEmEfetiva(hi) >= alvoY - startY) {
+                for (let i = 0; i < 16; i++) {
+                    const mid = (lo + hi) / 2;
+                    if (alturaEmEfetiva(mid) < alvoY - startY) lo = mid; else hi = mid;
+                }
+                eResolvido = (lo + hi) / 2;
+            } else {
+                // Se potência for baixa para atingir com gravidade alta, usa ângulo ótimo elevado
+                eResolvido = 28 * Math.PI / 180;
+            }
+
+            const vh = pow * Math.cos(eResolvido);
+
+            Match.ballVel.set((dx / distH) * vh, pow * Math.sin(eResolvido), (dz / distH) * vh);
+
+            if (typeof EfeitosSonoros !== 'undefined') {
+                EfeitosSonoros.chute(Match.ball.position, 1.0);
+            }
+
+            this.showActionBanner('SHOT');
+            this.hasBall = false;
+            this.touchLock = BallControl.touchLock;
+            Match.ballCarrier = null;
+            Match.intendedReceiver = null;
+            Match.lastTouchedTeam = this.team;
+            Match.lastTouchedPlayer = this;
+            window.bolaChutada = true;
+            if (typeof MatchStats !== 'undefined') {
+                MatchStats[this.team].remates.tentados++;
+                if (alvoNaBaliza) MatchStats[this.team].remates.noAlvo++;
+            }
             return;
         }
 
@@ -1082,10 +1278,13 @@ class FootballPlayer {
         let rig = this.rig;
         if (!rig) return;
         
-        let isPenalty = (typeof Match !== 'undefined' && Match.state === 'PENALTY' && this.role === 'gk');
+        let isPenaltyOrDirectFK = (typeof Match !== 'undefined' && this.role === 'gk' && (
+            Match.state === 'PENALTY' ||
+            (Match.state === 'FREE_KICK' && this.team !== Match.setPieceTeam)
+        ));
         
-        if (isPenalty) {
-            rig.pelvis.position.set(0, 2.45, 0); 
+        if (isPenaltyOrDirectFK) {
+            rig.pelvis.position.set(0, 2.85, 0); 
             rig.pelvis.rotation.set(Math.PI / 16, 0, 0);
             rig.chest.rotation.set(Math.PI / 24, 0, 0);
             
@@ -1104,7 +1303,7 @@ class FootballPlayer {
             rig.lFoot.rotation.set(Math.PI / 24, Math.PI / 12, 0);
             rig.rFoot.rotation.set(Math.PI / 24, -Math.PI / 12, 0);
         } else {
-            rig.pelvis.position.set(0, 2.6, 0);
+            rig.pelvis.position.set(0, 3.02, 0);
             rig.pelvis.rotation.set(0, 0, 0);
             rig.chest.rotation.set(0, 0, 0);
             
@@ -2606,7 +2805,7 @@ class FootballPlayer {
             // de mergulho/salto anterior (ajoelhado, de costas).
             if (this.role === 'gk') {
                 if (!headless) {
-                    if (Match.state === 'PENALTY') this.updateGK(dt);
+                    if (Match.state === 'PENALTY' || Match.state === 'FREE_KICK') this.updateGK(dt);
                     else this.resetBonesToDefault();
                 }
             } else {
@@ -4178,7 +4377,7 @@ class FootballPlayer {
                 gkCorpo.position.y = lerpTo(gkCorpo.position.y, ALTURA_BASE_Y + P.altura + balanco, 0.2);
             } else {
                 let P;
-                if (Match.state === 'PENALTY' && this.team !== Match.setPieceTeam) {
+                if ((Match.state === 'PENALTY' || Match.state === 'FREE_KICK') && this.team !== Match.setPieceTeam) {
                     P = GoalkeeperPose.penalti;
                 } else {
                     P = emAlerta ? GoalkeeperPose.espera : GoalkeeperPose.repouso;
@@ -4306,7 +4505,7 @@ class FootballPlayer {
                 gkRig.rArm.rotation.z = lerpTo(gkRig.rArm.rotation.z, -P.bracos, 0.2);
                 gkRig.chest.rotation.x = lerpTo(gkRig.chest.rotation.x, P.chest, 0.2);
                 gkRig.chest.rotation.z = lerpTo(gkRig.chest.rotation.z, 0, 0.2);
-                gkRig.pelvis.position.set(0, 2.6, 0);
+                gkRig.pelvis.position.set(0, 3.02, 0);
                 gkRig.pelvis.rotation.set(0, 0, 0);
                 gkCorpo.position.y = lerpTo(gkCorpo.position.y, ALTURA_BASE_Y, 0.3);
             }

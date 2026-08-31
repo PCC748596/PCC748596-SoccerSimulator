@@ -425,11 +425,18 @@ Object.assign(Match, {
             }
 
             /*
-            Barreira: mais gente quanto mais perto da baliza. Perpendicular à
-            linha bola->baliza, ombro com ombro, centrada nessa linha.
+            Barreira: mais gente quanto mais perto da baliza.
+            Quando a falta é direta/no terço ofensivo, a barreira cobre o lado do poste
+            mais próximo da bola, e o goleiro desloca-se ligeiramente para o lado oposto da barreira.
             */
             const avancoFK = bolaFK.z * attDir;
             const nBarreira = (avancoFK > F.barreiraZonaZ) ? F.barreiraMax : F.barreiraMin;
+
+            // Determina de que lado a barreira protege (lado do poste correspondente ao lado da bola)
+            // Se bolaFK.x > 0 (lado direito do ataque), barreira alinha cobrindo o poste direito (x > 0).
+            // Se bolaFK.x < 0, cobre o poste esquerdo (x < 0). Se central, cobre o centro/lado mais próximo.
+            const ladoBarreira = Math.sign(bolaFK.x) || 1;
+            const offsetCentroBarreira = (Math.abs(bolaFK.x) > 3.0) ? ladoBarreira * 0.45 : 0;
 
             const defesaOrdenada = defendingPlayers
                 .filter(p => p.role !== 'gk')
@@ -437,7 +444,7 @@ Object.assign(Match, {
 
             defesaOrdenada.forEach((p, i) => {
                 if (i < nBarreira) {
-                    const off = (i - (nBarreira - 1) / 2) * F.espacamentoBarreira;
+                    const off = (i - (nBarreira - 1) / 2) * F.espacamentoBarreira + offsetCentroBarreira;
                     p.model.position.set(
                         bolaFK.x + dirFK.x * F.distanciaBarreira + perpFK.x * off, ALTURA_BASE_Y,
                         bolaFK.z + dirFK.z * F.distanciaBarreira + perpFK.z * off);
@@ -455,6 +462,33 @@ Object.assign(Match, {
                 lookAtBola(p.model, bolaFK);
                 p.fsm.changeState('SET_PIECE_WAIT');
             });
+
+            /*
+            POSICIONAMENTO DO GOLEIRO NA FALTA:
+            Quando há barreira protegendo um lado do gol, o goleiro fica ligeiramente
+            deslocado do centro do gol para o lado oposto da barreira (visão desobstruída do batedor).
+            */
+            const defendingTeam = (team === 'TeamA') ? 'TeamB' : 'TeamA';
+            const gkDefensor = defendingPlayers.find(p => p.role === 'gk');
+            if (gkDefensor) {
+                let gkOffX = 0;
+                if (avancoFK > F.setores.tercoDefensivo) {
+                    // Desloca para o lado oposto da barreira: se barreira está no lado X > 0, GK vai para X < 0
+                    gkOffX = -ladoBarreira * F.deslocamentoGK;
+                    // Limita dentro da largura da baliza
+                    gkOffX = THREE.MathUtils.clamp(gkOffX, -LARGURA_BALIZA / 2 + 0.6, LARGURA_BALIZA / 2 - 0.6);
+                }
+                const linhaBalizaZ = attDir * (CAMPO_COMP / 2) - attDir * 0.4;
+                gkDefensor.model.position.set(gkOffX, ALTURA_BASE_Y, linhaBalizaZ);
+                gkDefensor.dynamicTarget.set(gkOffX, ALTURA_BASE_Y, linhaBalizaZ);
+                gkDefensor.velocity.set(0, 0, 0);
+                gkDefensor.gkEstado = 'idle';
+                gkDefensor.gkReagiu = false;
+                gkDefensor.dive = null;
+                lookAtBola(gkDefensor.model, bolaFK);
+                gkDefensor.resetBonesToDefault();
+                gkDefensor.fsm.changeState('SET_PIECE_WAIT');
+            }
 
             /*
             ==========================================================
@@ -960,6 +994,28 @@ Object.assign(Match, {
         const team = forceTeam ||
             (this.ballCarrier ? this.ballCarrier.team : null) ||
             this.possessionTeam || this.lastTouchedTeam || 'TeamA';
+        this.setupSetPiece('FREE_KICK', team);
+    },
+
+    triggerDirectFreeKick: function (forceTeam = null) {
+        const team = forceTeam ||
+            (this.ballCarrier ? this.ballCarrier.team : null) ||
+            this.possessionTeam || this.lastTouchedTeam || 'TeamA';
+        const attDir = (team === 'TeamA') ? 1 : -1;
+        const golZ = attDir * (CAMPO_COMP / 2);
+
+        // Distância de 17 a 23 metros da baliza
+        const distBaliza = 17 + Math.random() * (23 - 17);
+        // Posição Z correspondente
+        const bolaZ = golZ - attDir * distBaliza;
+        // Posição X de -10m a +10m do centro do gol
+        const bolaX = (Math.random() * 20) - 10;
+
+        if (this.ball) {
+            this.ball.position.set(bolaX, BallPhysics.raio, bolaZ);
+            this.ballVel.set(0, 0, 0);
+        }
+
         this.setupSetPiece('FREE_KICK', team);
     },
 

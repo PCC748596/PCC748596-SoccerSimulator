@@ -326,6 +326,15 @@ const FreeKickModel = {
     barreiraMax: 4,            // e perto dela
     barreiraZonaZ: 30.0,       // no referencial de ataque: daqui p/ a frente é barreira cheia
     espacamentoBarreira: 0.85, // ombro com ombro
+    deslocamentoGK: 1.85,      // metros que o GK se desloca para o lado oposto da barreira
+    potenciaBase: 28.5,        // m/s base no remate direto
+    potenciaPorForca: 6.0,     // variação com atributo FOR
+    chanceDefesa: {
+        perfeito: 0.03,   // diff > 5   — bola teleguiada na gaveta por cima da barreira
+        bom: 0.16,        // diff 3..5
+        medio: 0.38,      // diff 1..2
+        fraco: 0.65       // diff <= 0  — remate sem força/efeito suficiente
+    },
     /*
     ATRÁS DA BOLA, na linha bola->baliza. Estava em 1.4 m — praticamente em
     cima dela, sem espaço nenhum para a corrida, e como o gesto era instantâneo

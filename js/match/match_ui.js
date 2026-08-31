@@ -219,10 +219,23 @@ Object.assign(Match, {
             lookTarget.copy(this.ball.position);
         } else if (window.cameraMode === 'lateraltv') {
             // Mistura de TV Centro e Lateral Móvel
-            // Acompanha até metade do meio-campo, depois fica parada e só roda
+            // Acompanha até metade do meio-campo (|z| <= 26.5m), depois fixa a posição e gira focando o ataque
             let bz = THREE.MathUtils.clamp(this.ball.position.z, -26.5, 26.5);
             targetPos.set(48 * zoom, 23 * zoom, bz);
             lookTarget.copy(this.ball.position);
+
+            // Quando a bola passa do ponto de corrida (|z| > 26.5m) e a câmera gira,
+            // o enquadramento desloca o ponto focal à frente na direção do ataque:
+            // 2/3 da visão voltada para o ataque e 1/3 para a defesa.
+            const zReal = this.ball.position.z;
+            if (Math.abs(zReal) > 26.5) {
+                const dirAtaqueZ = (zReal > 0) ? 1 : -1;
+                // Distância extra que a bola passou além do limite de corrida
+                const excedenteZ = Math.abs(zReal) - 26.5;
+                // Deslocamento de 2/3 para o ataque (avança o foco no eixo Z proporcional ao avanço do ataque)
+                const offsetAtaqueZ = dirAtaqueZ * (excedenteZ * 0.65 + 4.5);
+                lookTarget.z += offsetAtaqueZ;
+            }
 
             if (typeof TeamAI !== 'undefined') {
                 const teamA = TeamAI.get('TeamA');

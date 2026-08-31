@@ -1,0 +1,36 @@
+--- js/config/defense.js
++++ js/config/defense.js
+@@ -25,23 +25,23 @@
+     // A pose, em radianos. `lado` = +1 estica a perna direita, -1 a esquerda.
+     pose: {
+-        ancaRolar: 0.85,    // deita-se sobre a anca do lado oposto ao pé que estica
+-        ancaTras: -0.25,
+-        peito: -0.15,
++        ancaRolar: 1.1,     // deita-se mais sobre a anca do lado oposto
++        ancaTras: 0.10,     // pélvis ligeiramente inclinada para trás
++        peito: -0.25,       // tronco inclinado para trás
+         peitoRolar: 0.15,
+ 
+-        coxaEstendida: -0.95,
++        coxaEstendida: -1.10, // perna que estica mais alta/frente
+         joelhoEstendido: 0.10,
+         peEstendido: -0.20,
+ 
+-        coxaDobrada: -0.10,
+-        joelhoDobrado: 1.55,
++        coxaDobrada: 0.70,    // perna de baixo fica para trás
++        joelhoDobrado: 1.80,  // joelho bem dobrado
+ 
+-        bracoApoioZ: 1.35,  // braço de trás, aberto e no chão a apoiar
+-        bracoApoioX: 0.70,
++        bracoApoioZ: 0.60,  // braço de trás, aberto e no chão a apoiar
++        bracoApoioX: 0.50,
+         cotoveloApoio: -0.30,
+ 
+-        bracoLivreZ: 0.50,  // braço da frente, para equilíbrio
+-        bracoLivreX: -0.50,
++        bracoLivreZ: 0.40,  // braço da frente, bem alto para equilíbrio
++        bracoLivreX: -2.00,
+         cotoveloLivre: -0.60
+     }
+ };
