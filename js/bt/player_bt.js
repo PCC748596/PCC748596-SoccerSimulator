@@ -2926,8 +2926,51 @@ const PlayerAI = {
         estragar a jogada.
         */
         aplicarAncoraBoxToBox(player, bbEquipa);
+        validarAlvoDoNivel3(player, bbEquipa);
     }
 };
+
+/*
+O FUNIL DO NIVEL 3 — as folhas escrevem, mas os limites duros voltam a valer.
+
+O `dynamicTarget` e escrito em catorze sitios desta arvore, cada um com a sua
+conta, e nenhum deles passa pelo bloco, pelo fora-de-jogo ou pelos limites do
+campo. Era assim que aparecia um alvo a |x| = 39.95 com o `tacticalTarget`
+dentro do campo, e e a razao de o nivel 3 ter 2.75% dos alvos a mais de cinco
+metros do rectangulo contra 0.71% do nivel 2 (medido).
+
+O que isto NAO faz: nao discute o alvo da folha. Se ela mandou o jogador a um
+sitio, e la que ele vai — desde que o sitio exista dentro das regras.
+
+FORA DA REGRA quem tem tarefa com a bola: portador, chaser, intercetor e
+destinatario. Esses saem do bloco por definicao, e e para isso que servem.
+Mesma lista do `esperarPeloSlot` e da ancora do Box-to-Box.
+*/
+function validarAlvoDoNivel3(p, bb) {
+    if (!p || !p.dynamicTarget || p.role === 'gk') return;
+
+    // O campo vale sempre, tenha ele a bola ou nao.
+    p.dynamicTarget.x = THREE.MathUtils.clamp(p.dynamicTarget.x, -34, 34);
+    p.dynamicTarget.z = THREE.MathUtils.clamp(p.dynamicTarget.z, -50, 50);
+
+    if (!bb || typeof limitesDoBloco !== 'function') return;
+
+    const comTarefa = p.hasBall ||
+        (bb.chaser === p) || (bb.intercetor === p) ||
+        (typeof Match !== 'undefined' && Match.intendedReceiver === p) ||
+        (typeof Match !== 'undefined' && Match.state !== 'PLAY');
+    if (comTarefa) return;
+
+    const folga = (typeof BlockShape !== 'undefined' &&
+        typeof BlockShape.folgaForaDoBloco === 'number') ? BlockShape.folgaForaDoBloco : null;
+    if (folga === null) return;
+
+    const lim = limitesDoBloco(bb);
+    if (!lim) return;
+
+    p.dynamicTarget.x = THREE.MathUtils.clamp(p.dynamicTarget.x, lim.xMin - folga, lim.xMax + folga);
+    p.dynamicTarget.z = THREE.MathUtils.clamp(p.dynamicTarget.z, lim.zMin - folga, lim.zMax + folga);
+}
 
 /*
 Ver a nota no fim do PlayerAI.tick. Vive à parte por ser o único sítio onde o

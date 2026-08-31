@@ -1,144 +1,130 @@
-# As restrições do nível 2 — árvore de prioridades
+# Os três níveis do posicionamento — árvore de prioridades
 
-Auditoria de tudo o que mexe na posição de um jogador depois de o nível 1
-(TeamBT / bloco) ter decidido o slot dele, pela ordem REAL de execução.
-
-Escrito porque a ordem estava só no código, espalhada por duas funções de
-duzentas linhas, e porque há camadas aqui que desfazem o trabalho das camadas
-anteriores — a única maneira de ver isso é pô-las em fila.
+Onde é que a posição de um jogador é decidida, por que ordem, e o que cada
+camada pode e não pode fazer.
 
 ## A regra que manda em tudo
 
-**O nível 1 é intocável.** O `p.slotTarget` é o lugar do jogador no rectângulo
-do bloco e mais nada; nenhuma camada posterior pode reescrevê-lo. Quem quiser
-deslocar o jogador escreve por cima do RESULTADO (`p.tacticalTarget`,
-`p.dynamicTarget`), nunca do slot.
-
-Verificado a medir, 1800 s de jogo, 410 096 amostras de slots de central:
-**16 slots fora do rectângulo (0.004%)**, e são frames de transição em que o
-bloco salta de ponta a ponta do campo. O corte que garante isto está no fim do
-`tickBase` (`limitesDoBloco`, team_bt.js) e no fim do ramo `isAttacking` do
-`calcularPontoDoSlot`.
-
-## A cadeia de alvos
-
 ```
-p.slotTarget       nível 1: slot puro no bloco            (anel GRANDE do debug)
-p.postoBase        + playing style                        (fim do tickBase)
-p.styleTarget      cópia do postoBase para o debug        (anel PEQUENO)
-p.tacticalTarget   + tudo o que está nesta lista          (anel MÉDIO)
-p.dynamicTarget    = tacticalTarget, e depois REESCRITO pelo nível 3
+slotTarget       NÍVEL 1   o slot da FORMAÇÃO no rectângulo do bloco
+tacticalTarget   NÍVEL 2   nível 1 + deslocamentos
+styleTarget      NÍVEL 3   nível 2 + playing style
+dynamicTarget    = styleTarget, e depois a árvore do jogador pode reescrevê-lo
 ```
 
-## Ordem de execução, com o que cada passo pode fazer
+**Cada nível é um OFFSET do anterior. Nenhum reescreve o de cima.**
 
-`Match.runTeamAI()` (match_loop.js) corre, por frame, e por esta ordem:
+No debug: anel grande = nível 1, anel médio = nível 2, anel pequeno = nível 3.
+A distância entre dois anéis é exactamente o que essa camada fez.
 
-| # | Passo | Onde | Escreve | Pode empurrar para fora do bloco? |
-|---|---|---|---|---|
-| 0 | `TeamAI.tick` → `computeBlock` | team_bt.js | `bb.bloco` | — (é ele que o define) |
-| 1 | `classificarLinhas` | team_bt.js | `p.linhaActual`, `ordemNaLinha`, `seguraLinha`, `pisoLinhaMedia`, `fecharPorPar` | não |
-| 2 | `atribuirParesDeCorredor` | team_bt.js | `p.corredorAberto` / `p.corredorFechado` | não |
-| 3 | `otimizarSlotsPorPosicao` | team_bt.js | nada (está vazia) | não |
-| 4 | `tickBase` | team_bt.js | `p.slotTarget`, `p.postoBase` | **não** (corte no fim) |
-| 5 | `atribuirMarcacoesDaEquipa` | team_bt.js | `p.marcRef`, `p.puxarParaBola` | não |
-| 6 | `tickFinal` | team_bt.js | `p.tacticalTarget`, `p.dynamicTarget`, `p.styleTarget` | **sim** |
-| 7 | `atribuirApoiosDaEquipa` | team_bt.js | `p.apoioPonto` | — |
-| 8 | `player.update` → `PlayerAI.tick` | player_bt.js | `p.dynamicTarget` (25 sítios) | **sim** |
+## Nível 1 — a formação, e mais nada
 
-### Dentro do `tickBase` (passo 4) — o LUGAR no bloco
+`calcularPontoDoSlot` (team_bt.js) pega no `u`/`v` que vem do `FormationsData`
+(config/tactics.js) e mapeia-o no rectângulo: o `u` na largura, o `v`
+interpolado entre as três linhas do bloco.
 
-Tudo aqui corrige o lugar DENTRO do rectângulo, e o corte final garante-o.
+**Não lê a bola. Não lê a fase. Não lê quem está em que linha. Não lê
+adversários.** Dois frames com o mesmo rectângulo dão exactamente o mesmo
+ponto.
 
-1. **`slotNoBloco`** — o `u`/`v` da formação interpolado nas três linhas do
-   bloco. É o nível 1 propriamente dito.
-2. **Par do corredor** (`WingPairModel`) — o lateral e o médio de ala não
-   ocupam a mesma faixa: quem está mais adiantado fica na linha, o outro fecha
-   `fechoDentro` metros para o meio-espaço e `recuoDeDentro` atrás. Histerese
-   de `margemTroca` para não trocarem de papel a cada cruzamento.
-3. **`seguraLinha`** — quem foi chamado para completar o mínimo atrás não passa
-   de `LineShape.faixaDaLinha` acima da traseira do bloco.
-4. **`puxarParaBola`** — o central mais próximo aproxima-se até
-   `MarkingModel.distMaxDaBola` da bola. Só a defender.
-5. **`pisoLinhaMedia`** — com o outro lateral já na linha de trás, este não cai
-   abaixo da linha média do bloco.
-6. **Inércia pós-passe** — a atacar, não recua para trás da cota onde passou,
-   durante `passInertiaTimer`.
-7. **Afastamento do portador** — 7.5 m de raio mínimo ao companheiro com a bola.
-8. **CORTE PELO RECTÂNGULO** (`limitesDoBloco`) — e só depois disto se escreve
-   o `slotTarget`.
-9. **`aplicarEstiloPosicional`** — o playing style. Fica DE FORA do corte de
-   propósito: é a terceira leitura do debug (anel pequeno) e tem de poder
-   ver-se a sair do bloco.
+O rectângulo, esse, mexe-se — segue a bola, é o `computeBlock`. O que não pode
+mexer-se é a posição do jogador DENTRO dele.
 
-### Dentro do `tickFinal` (passo 6) — o DESVIO ao lugar
+Medido, 972 100 amostras, variação por frame da fracção do jogador dentro do
+rectângulo:
 
-Daqui para baixo já se pode sair do rectângulo, e é isso que distingue o anel
-médio do anel grande no debug.
+```
+                                antes    agora
+fracção u (largura)            0.00087   0.00011
+fracção v (profundidade)       0.00101   0.00013
+maior salto de u num frame     0.466     0.059
+```
 
-| Ordem | Regra | Eixo | Tecto |
+O que sobra é o rectângulo a ser empurrado para dentro das linhas do campo
+(`empurraX`/`empurraZ`), a troca de lados ao intervalo e mudanças de formação.
+
+## Nível 2 — os deslocamentos
+
+`PosicionamentoAI.tickFinal`, por esta ordem. Regra geral: **os DESEJOS
+primeiro, as REGRAS DURAS no fim** — quem corre depois tem a última palavra.
+
+| # | Regra | O que faz | Tecto |
 |---|---|---|---|
-| 1 | `aplicarMarcacaoPosicional` — acompanha o homem do sector | x, z | até 10 m no terço de ataque |
-| 2 | `aplicarInquietacao` — quem chegou não fica estátua | x, z | `RestlessModel.raio` = 2 m |
-| 3 | `aplicarTectoDoEstilo` — âncora do Box-to-Box, trava da entrada da área, entrelinha do Orquestrador | z | — |
-| 4 | Inércia pós-passe (outra vez) | z | — |
-| 5 | `aplicarRecuoAposApoio` — o apoio do lateral que não recebeu e viu o jogo virar | z | 6 m |
-| 6 | **Mola de coesão** — encolhe a equipa para a bola | x, z | `MolaDeCoesao.puxaoMax` = 9 m |
-| 7 | Fora-de-jogo | z | linha do penúltimo defesa − 0.5 |
-| 8 | Distância mínima no lateral (`ThrowInModel`) | x, z | por posição |
-| 9 | Repulsão entre companheiros | x, z | raio 3.5 m, força ×3 |
-| 10 | Fuga dos adversários (só a atacar, e só de `z > -5`) | x, z | raio 6 m, força ×4 |
-| 11 | Clamp do campo (±34, ±50) | x, z | — |
-| 12 | Alisamento (`PositionSmoothing` = 3.0) | x, z | 4.9% do erro por frame |
-| 13 | `esperarPeloSlot` — quem vê o posto vir na sua direcção espera por ele | — | — |
+| 1 | **`formaDaEquipa`** | desvio de linha por fase, nudge por posição, os quatro fechos laterais, a régua da linha da bola na fase ofensiva, deslize por corredor | — |
+| 2 | Par do corredor (`WingPairModel`) | o lateral e o médio de ala não ocupam a mesma faixa | 7 m para dentro |
+| 3 | Segurar a linha | quem completa o mínimo atrás não sobe | `LineShape.faixaDaLinha` |
+| 4 | Tecto da distância à bola | o central mais perto aproxima-se até `distMaxDaBola` | — |
+| 5 | Piso da linha média | com o outro lateral atrás, este não cai | — |
+| 6 | Inércia pós-passe | a atacar, não recua para trás de onde passou | — |
+| 7 | Afastar do portador | ninguém a menos de 7.5 m de quem tem a bola | — |
+| 8 | **Mola de coesão** | encolhe a equipa para a bola | `puxaoMax` 9 m |
+| 9 | Marcação | acompanha o homem do sector (só a defender) | — |
+| 10 | Inquietação | quem chegou não fica estátua | `RestlessModel.raio` 2 m |
+| 11 | Espaçamento | repulsão a colegas + fuga a adversários | **soma cortada em `deslocacaoMax`** |
+| 12 | Inércia pós-passe (z) | — | — |
+| 13 | Recuo do apoio no lateral | quem apoiou e viu o jogo virar recua | 6 m |
+| 14 | Fora-de-jogo | regra do jogo | linha do penúltimo − 0.5 |
+| 15 | Regresso ao bloco | o alvo pode sair do rectângulo, mas não mais do que isto | `BlockShape.folgaForaDoBloco` 5 m |
+| 16 | Limites do campo | ±34, ±50 | — |
+| 17 | Alisamento | `PositionSmoothing` 3.0 | 4.9%/frame |
 
-## Onde é que uma camada desfaz outra — os conflitos por resolver
+Notas de ordem que custaram medições:
 
-Isto é o inventário do problema, não a solução.
+- **A mola corre ANTES da marcação e dos tectos**, não depois. Com 9 m de
+  puxão desfazia os dois: o Box-to-Box saía da entrada da área que o tecto lhe
+  dava e a distância de marcação deixava de ser a do painel.
+- **A distância mínima no lateral deixou de ser uma regra** e passou a ser um
+  piso da própria mola. Era uma regra cujo único propósito era desfazer a
+  anterior no mesmo frame.
+- **A mola não corre com a bola nas mãos do nosso guarda-redes.** Não há nada a
+  disputar na própria linha de golo, e ela comia 12.8 m do avançado.
+- **O espaçamento compara com o alvo FINAL do colega** (nível 3 do frame
+  anterior), não com o slot dele: desde que o estilo passou a ser a última
+  camada, dois slots afastados podem dar dois alvos em cima um do outro.
 
-1. **A mola de coesão (6) desfaz a marcação (1) e o tecto do estilo (3).**
-   9 metros de puxão contra os 2.5 m de folga que o tecto do Box-to-Box dá. O
-   `aplicarTectoDoEstilo` já foi movido para depois da marcação por esta razão
-   exacta — a marcação furava-o — mas a mola continua a correr depois dos dois.
+## Nível 3 — o playing style
 
-2. **A regra 8 existe só para desfazer a 6.** O comentário no código diz-lo com
-   todas as letras: "corre DEPOIS da mola — é ela que causa a aproximação, e
-   desfazê-la antes era só vê-la voltar no mesmo frame". Uma regra cujo único
-   propósito é cancelar a anterior é sinal de que a anterior está no sítio
-   errado.
+Corre no fim do `tickFinal`, a partir do `tacticalTarget`:
 
-3. **A mola some com o bloco quando a bola está na linha de fundo.** Medido com
-   o guarda-redes de posse: o slot do avançado ficava em +11.5 m e o alvo
-   táctico em −1.3 m — 12.8 m comidos pela mola. Já está desligada nesse caso
-   (guarda `gkNossoComBola`), mas o mecanismo geral mantém-se.
+1. `aplicarEstiloPosicional` — o deslocamento do estilo.
+2. `aplicarTectoDoEstilo` — entrada da área do Box-to-Box, entrelinha do
+   Orquestrador, âncora na linha da bola.
+3. **Distância entre pares da mesma posição** (`EspacamentoModel.paresIguais`:
+   CB 9 m, CM 8, CF 8). Regra dura, e por isso a última: separá-los antes não
+   serve de nada se o estilo os volta a juntar. Separam-se os dois, metade da
+   falta cada um.
+4. Limites do campo.
 
-4. **As regras 9 e 10 somam-se sem tecto e sem voltar ao bloco.** Cada
-   adversário dentro de 6 m contribui até 4 m de deslocação e cada companheiro
-   dentro de 3.5 m até 3 m; nada limita a soma, e o único corte a seguir é o do
-   campo inteiro.
+## A árvore do jogador (o que corre depois de tudo)
 
-5. **O nível 3 reescreve o `dynamicTarget` em 25 sítios**, depois de tudo isto.
-   Uma folha da árvore sobrepõe um ponto que não passou por nenhuma destas
-   regras — nem pelo bloco, nem pelo fora-de-jogo, nem pelo clamp do campo.
-   Duas excepções já correm DEPOIS da árvore para sobreviverem:
-   `aplicarAncoraBoxToBox` (player_bt.js) e o recuo do apoio no lateral.
+`PlayerAI.tick` (player_bt.js) pode reescrever o `dynamicTarget` em catorze
+sítios. Duas correcções correm DEPOIS dela, de propósito:
 
-6. **Os dois centrais podem colapsar no mesmo ponto.** Medido em 205 048 pares:
-   distância média 9.3 m no slot, 8.8 m no alvo táctico, 9.5 m na posição real,
-   mas **1.1% dos frames com os dois a menos de 4 m**. Não é o slot que os junta
-   (o bloco separa-os), é a soma da marcação com o `puxarParaBola`: os dois
-   podem ficar com referências próximas e nada no nível 2 os obriga a manter
-   distância entre si por POSIÇÃO — a repulsão da regra 9 é genérica, com 3.5 m
-   de raio, e é aplicada depois de a mola já os ter juntado.
+- `aplicarAncoraBoxToBox` — a âncora na linha da bola tem de sobreviver à folha.
+- `validarAlvoDoNivel3` — o funil: repõe os limites do campo e, para quem não
+  tem tarefa com a bola, o bloco mais a folga. Não discute o alvo da folha; só
+  garante que o sítio existe dentro das regras.
 
-## O que fazer a seguir, por ordem de retorno
+Fora da regra do funil: portador, chaser, intercetor e destinatário do passe.
+Esses saem do bloco por definição.
 
-1. Passar a mola de coesão para ANTES da marcação e do tecto do estilo, e
-   apagar a regra 8, que deixa de ter razão de existir.
-2. Fechar as regras 9 e 10 com um tecto de soma e um corte final que devolva o
-   alvo ao bloco quando ele estiver fora dele sem razão táctica.
-3. Distância mínima entre pares da mesma linha (os dois centrais), aplicada
-   depois de tudo, como a repulsão mas por posição e não por proximidade.
-4. Reduzir as escritas do nível 3 no `dynamicTarget`: uma folha que só quer
-   deslocar o jogador devia escrever um OFFSET que o nível 2 lê, não o alvo
-   final.
+## Efeito medido da reorganização (30 min de jogo)
+
+```
+                                          antes    agora
+CB a menos de 4 m um do outro             1.05%    0.11%
+dois colegas a menos de 1.5 m             9.5%     5.8%
+par lateral/ala a menos de 6 m            12.3%    0.6%
+alvo do nível 3 fora do bloco por >5 m    2.75%    (só quem vai à bola)
+```
+
+## O que falta
+
+1. **A régua da fase ofensiva** (dentro do `formaDaEquipa`): a atacar, o z do
+   jogador não vem das três linhas, vem da linha da bola com tectos por função
+   (0 m para defesas, 5 para o meio, 20 para os atacantes). É o item antigo
+   "na fase ofensiva o bloco não é usado". Está agora no sítio certo (nível 2)
+   mas continua a ser uma régua presa à bola em vez de uma forma.
+2. **As catorze escritas do nível 3** continuam a ser alvos absolutos. O funil
+   repõe os limites, mas uma folha que só quer deslocar o jogador devia
+   escrever um offset.

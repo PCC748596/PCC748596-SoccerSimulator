@@ -225,6 +225,45 @@ mesmo empurrão para a frente, e corriam colados o jogo inteiro.
     recuoDeDentro metros que o de dentro fica atrás do de fora, para os dois
                   não ficarem na mesma linha horizontal também.
 */
+/*
+=============================================================================
+ESPACAMENTO — os empurroes que separam quem esta demasiado junto
+=============================================================================
+Duas forcas somadas no fim do nivel 2 (ver docs/level_2_rules.md, passo 4):
+
+    colega       ninguem ocupa o posto de outro
+    adversario   com a bola, procura-se espaco livre
+
+O que faltava era o TECTO DA SOMA. Cada colega dentro do raio contribuia ate
+`forcaColega` metros e cada adversario ate `forcaAdversario`, sem limite: com
+quatro pessoas a volta o alvo saltava dez e tal metros e saia do bloco. Agora a
+soma e cortada em `deslocacaoMax` — e um empurrao, nao um teletransporte.
+
+`zonaMinimaFuga` no referencial de ataque: abaixo disto nao se foge de ninguem,
+senao um medio a fugir de um avancado corre para a propria baliza na saida de
+bola.
+
+`paresIguais` e outra coisa e vive aqui por ser da mesma familia: a distancia
+que dois jogadores da MESMA posicao tem de manter entre si. A repulsao acima e
+generica e reactiva (so age quando ja estao perto); esta e por posicao e e uma
+regra dura. Medido antes de existir: 1.1% dos frames com os dois centrais a
+menos de 4 m um do outro.
+*/
+const EspacamentoModel = {
+    raioColega: 3.5,
+    forcaColega: 3.0,
+    raioAdversario: 6.0,
+    forcaAdversario: 4.0,
+    zonaMinimaFuga: -5.0,
+    deslocacaoMax: 4.0,
+
+    paresIguais: {
+        CB: 9.0,
+        CM: 8.0,
+        CF: 8.0
+    }
+};
+
 const WingPairModel = {
     fechoDentro: 7.0,
     margemTroca: 2.5,
@@ -254,6 +293,19 @@ const BlockShape = {
     definição de compacidade do painel. A traseira deste rectângulo é a linha
     do fora-de-jogo da equipa — ver computeBlock em team_bt.js.
     */
+    /*
+    QUANTO O ALVO DO NIVEL 2 PODE SAIR DO RECTANGULO DO BLOCO.
+
+    O anel medio do debug tem de poder discordar do anel grande — e nisso que
+    se ve a marcacao, a mola e o espacamento a trabalhar. O que nao pode e o
+    alvo andar a dez metros do bloco por soma de desvios: isso ja nao e
+    tactica, e a camada a fugir.
+
+    Medido antes de existir: 6.2% dos alvos tacticos fora do rectangulo, alguns
+    a dezenas de metros. Ver docs/level_2_rules.md, passo 10.
+    */
+    folgaForaDoBloco: 5.0,
+
     profundidade: {
         short: 30 / 106,          // 30 m — bloco curto
         mediumSmall: 40 / 106,    // 40 m — médio-curto
