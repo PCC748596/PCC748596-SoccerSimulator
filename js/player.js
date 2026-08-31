@@ -890,11 +890,13 @@ class FootballPlayer {
             }
 
             if (gk) {
-                gk.isPenaltyDive = true;
-                gk.penaltyDiveX = colsX[gkDiveCol];
-                gk.penaltyDiveY = (gkDiveCol === targetCol) ? alvoY : rowsY[targetRow];
-                gk.gkDelayReacao = 0.12 + Math.random() * 0.15;
-                gk.gkReagiu = true;
+                // Na falta direta (17-23m), o GK não mergulha instantaneamente como no pênalti (11m).
+                // Ele reage com delay humano e mergulha no momento preciso do voo da bola.
+                gk.isPenaltyDive = false;
+                const defendingTeam = (this.team === 'TeamA') ? 'TeamB' : 'TeamA';
+                const gkSkill = (typeof TeamSkills !== 'undefined' && TeamSkills[defendingTeam]) ? TeamSkills[defendingTeam].gk : 50;
+                gk.gkDelayReacao = 0.32 - ((gkSkill - 50) / 50) * 0.18; // Delay realista de reação visual
+                gk.gkReagiu = false;
             }
 
             const golZ = this.targetGoalZ;

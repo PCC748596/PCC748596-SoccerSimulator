@@ -192,7 +192,9 @@ Object.assign(Match, {
                             gk.gkTipoMergulho = 'baixo';
                             gk.gkReagiu = false;
                             gk.gkDelayReacao = 0;
-                            gk.dive = null;
+                            // NUNCA zerar o mergulho abruptamente — se o goleiro está voando,
+                            // deixe-o terminar a parábola e cair no chão para levantar-se
+                            // gk.dive = null; 
                         }
                     });
 

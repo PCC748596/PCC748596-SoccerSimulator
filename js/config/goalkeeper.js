@@ -335,26 +335,28 @@ Valores no referencial de ataque.
 
 const GoalkeeperDive = {
     tempoLer: 0.05,        // reacção: transferência de peso antes de sair
+    tempoPassos: 0.35,     // duração máxima dos passos laterais de ajuste
     tempoImpulso: 0.12,    // agachar e estender as pernas
     tempoChao: 0.35,       // deslizar no relvado depois de aterrar
     tempoLevantar: 0.75,   // pôr-se de pé
 
     vooMin: 0.28,          // duração mínima/máxima do voo (s)
-    vooMax: 0.62,
+    vooMax: 0.85,          // aumentado para permitir saltos no ângulo
     velLateral: 6.0,       // velocidade lateral base do salto (m/s)
     velLateralSkill: 4.0,  // ± conforme a skill de GK
-    vySubidaMax: 4.5,      // velocidade vertical máxima do impulso (m/s)
+    velPassos: 5.0,        // velocidade da passada lateral antes do voo
+    vySubidaMax: 7.5,      // velocidade vertical máxima aumentada para parábola alta
 
-    alcanceBraco: 0.75,    // quanto a mão chega além do corpo — o corpo não
+    alcanceBraco: 0.85,    // quanto a mão chega além do corpo — o corpo não
     // precisa de percorrer a distância toda
     alturaDeitado: 0.42,   // y da origem do modelo com ele deitado de lado
     atritoChao: 3.5,       // desaceleração do deslize no relvado (m/s²)
 
     // Ângulo do tombo, por tipo de defesa. Uma bola rasteira não precisa de
     // deitar tanto como uma no ângulo.
-    anguloMax: { baixo: 1.22, meio: 1.48, alto: 1.75 },   // 70° / 85° / 100°
+    anguloMax: { baixo: 1.22, meio: 1.48, alto: 1.65 },   // 70° / 85° / 95°
 
-    fracContacto: 0.55,    // fracção do voo em que a mão deve chegar ao alvo
+    fracContacto: 0.65,    // fracção do voo em que a mão deve chegar ao alvo
     raioMao: 0.42,         // raio de contacto da mão com a bola
     // `apanhaBase` saiu daqui: quem decide agarrar/espalmar/roçar é o
     // GkCatchModel (mais abaixo), para os quatro tipos de defesa.

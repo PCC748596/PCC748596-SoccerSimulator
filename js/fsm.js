@@ -109,6 +109,7 @@ function executePassGameplay(p) {
     passes saiam absurdamente longos ou curtos.
     */
     const erroDist = 1 + (Math.random() * 2 - 1) * PassModel.erroPesoMax * (1 - passSkill / 100);
+    const distIntencionada = distToTarget;
     distToTarget *= erroDist * fatorForcaSobPressao(distAdversario);
 
     /*
@@ -187,7 +188,7 @@ function executePassGameplay(p) {
         recebe-a a correr.
         */
         if (lancamentoAlto) {
-            let elevL = resolverElevacaoPasse(distToTarget, true) ?? PassModel.elevacaoLancamento;
+            let elevL = resolverElevacaoPasse(distIntencionada, true) ?? PassModel.elevacaoLancamento;
             /*
             O alcance é o mesmo para duas elevações; usa-se essa liberdade para
             casar o TEMPO com a corrida do companheiro, sem mexer no sítio onde
@@ -259,7 +260,7 @@ function executePassGameplay(p) {
         de `rasteiroMax` (`forcarArco`), como já fazia antes.
         */
         const forcarArco = (Tatics.passe === 'longo');
-        let elev = resolverElevacaoPasse(distToTarget, forcarArco);
+        let elev = resolverElevacaoPasse(distIntencionada, forcarArco);
 
         if (p.isGkThrow) {
             elev = null; // forçar passe rasteiro no lançamento com a mão

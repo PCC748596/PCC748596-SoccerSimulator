@@ -49,6 +49,15 @@ const GkDive = {
         const D = GoalkeeperDive;
         const corpo = p.model;
 
+        // Erro de Leitura: Goleiros piores erram a predição do ponto de interceptação
+        const skill = p.skillFor ? p.skillFor('GK') : 50;
+        const erroMulti = Math.max(0, (100 - skill) / 50); // 0 se 100, 1 se 50
+        const erroX = (Math.random() - 0.5) * 1.5 * erroMulti;
+        const erroY = (Math.random() - 0.5) * 1.2 * erroMulti;
+
+        const alvoFinalX = alvoX + erroX;
+        const alvoFinalY = Math.max(0, alvoY + erroY);
+
         /*
         A direcção que ele encara fica CONGELADA no início. Sem isto, o
         lookAt continuava a correr durante o mergulho e reescrevia o
@@ -62,8 +71,8 @@ const GkDive = {
             t: 0,
             dirX: dirX || 1,
             tipo: tipo || 'meio',
-            alvoX: alvoX,
-            alvoY: alvoY,
+            alvoX: alvoFinalX,
+            alvoY: alvoFinalY,
             x0: corpo.position.x,
             y0: corpo.position.y,
             v0x: 0, v0y: 0,
@@ -140,8 +149,28 @@ const GkDive = {
             case 'ler':
                 // Agacha e carrega o peso na perna do lado do mergulho.
                 this.poseCarregar(rig, Math.min(1, d.t / D.tempoLer) * 0.4);
-                if (d.t >= D.tempoLer) { d.fase = 'impulso'; d.t = 0; }
+                if (d.t >= D.tempoLer) { d.fase = 'passos'; d.t = 0; }
                 break;
+                
+            case 'passos': {
+                // Passada lateral curta para transferir momento
+                const k = Math.min(1, d.t / D.tempoPassos);
+                this.poseCarregar(rig, 0.4 + Math.sin(k * Math.PI) * 0.2); // Shuffle
+                
+                const dx = d.alvoX - corpo.position.x;
+                const passoDir = Math.sign(dx);
+                // Se ainda está longe, dá passada
+                if (Math.abs(dx) > D.alcanceBraco * 1.5) {
+                    corpo.position.x += passoDir * D.velPassos * dt;
+                }
+                
+                // Transita para impulso
+                if (d.t >= D.tempoPassos || Math.abs(dx) <= D.alcanceBraco) {
+                    d.fase = 'impulso';
+                    d.t = 0;
+                }
+                break;
+            }
 
             case 'impulso': {
                 const k = Math.min(1, d.t / D.tempoImpulso);
@@ -166,9 +195,9 @@ const GkDive = {
                 d.ang = d.angMax * (0.18 + 0.82 * s);
 
                 this.poseVoo(rig);
-                this.mirarBola(p, rig);
+                this.mirarBola(p, rig, true);
 
-                if (corpo.position.y <= D.alturaDeitado) {
+                if (corpo.position.y <= D.alturaDeitado && d.v0y - g * t <= 0) { // Só aterra se estiver a cair
                     corpo.position.y = D.alturaDeitado;
                     d.fase = 'chao';
                     d.t = 0;
@@ -242,9 +271,27 @@ const GkDive = {
     baixo da linha ombro-mão, mesmo com o corpo deitado. Ver a nota sobre pole
     vectors em js/ik.js.
     */
-    mirarBola(p, rig) {
+    mirarBola(p, rig, isVoo = false) {
         const D = GoalkeeperDive;
         const C = IKChains.braco;
+        const d = p.dive;
+
+        // Verifica se a bola já passou do guarda-redes ou se ele está caindo e perto do chão
+        const bolaPassou = (Math.sign(p.dirZ) * (Match.ball.position.z - p.model.position.z) < -1.0); // Se passou a linha dele
+        const caindo = (isVoo && d.v0y - BallPhysics.gravidade * d.t < 0);
+        const pertoDoChao = (p.model.position.y < 0.8);
+        const aPrepararQueda = !d.agarrou && (bolaPassou || (caindo && pertoDoChao));
+
+        if (aPrepararQueda) {
+            // "Braços para baixo, paralelos ao corpo" - prepara a queda no chão
+            rig.lArm.rotation.x = lerpTo(rig.lArm.rotation.x, 0.2, 0.3);
+            rig.rArm.rotation.x = lerpTo(rig.rArm.rotation.x, 0.2, 0.3);
+            rig.lArm.rotation.z = lerpTo(rig.lArm.rotation.z, 0.1, 0.3);
+            rig.rArm.rotation.z = lerpTo(rig.rArm.rotation.z, -0.1, 0.3);
+            rig.lElbow.rotation.x = lerpTo(rig.lElbow.rotation.x, 0.1, 0.3);
+            rig.rElbow.rotation.x = lerpTo(rig.rElbow.rotation.x, 0.1, 0.3);
+            return;
+        }
 
         // Ligeira antecipação: mira onde a bola vai estar, não onde está.
         const prev = (typeof preverBolaEm === 'function') ? preverBolaEm(0.06) : null;
