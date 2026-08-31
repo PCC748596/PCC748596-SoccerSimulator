@@ -2127,6 +2127,43 @@ function fechoPorOcupacao(bb, linha) {
     return Math.max(chao, 1.0 - falta * L.porFalta);
 }
 
+/*
+O APOIO DO LATERAL QUE NÃO RECEBEU — ver ThrowInModel.recuoAposApoio.
+
+Quem subiu a dar apoio num lançamento fica marcado (`apoioLateralLado` /
+`apoioLateralTimer`, escritos no aproximarNoLateral, player_bt.js). Se a bola
+sair dali e passar o eixo do campo para a OUTRA banda, ele ficou à frente da
+jogada do lado errado: recua `recuoAposApoio` metros e fica pronto para a perda.
+
+A marca apaga-se assim que ele tem alguma coisa a ver com a bola (recebeu,
+persegue, é o portador) — nesse caso não está a recompor-se, está a jogar.
+
+Devolve o z já corrigido, no mundo.
+*/
+function aplicarRecuoAposApoio(p, bb, targetZ) {
+    const T = (typeof ThrowInModel !== 'undefined') ? ThrowInModel : null;
+    if (!T || !p || !(p.apoioLateralTimer > 0)) return targetZ;
+
+    const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
+    p.apoioLateralTimer -= dt;
+
+    const temABola = p.hasBall ||
+        (bb && (bb.chaser === p || bb.intercetor === p)) ||
+        (typeof Match !== 'undefined' && Match.intendedReceiver === p);
+    if (temABola) { p.apoioLateralTimer = 0; return targetZ; }
+
+    if (typeof Match === 'undefined' || !Match.ball) return targetZ;
+
+    // A bola passou o eixo para a banda contrária à do lance?
+    const bolaX = Match.ball.position.x;
+    const virou = (p.apoioLateralLado || 1) > 0
+        ? (bolaX < T.recuoGatilhoX)
+        : (bolaX > T.recuoGatilhoX);
+    if (!virou) return targetZ;
+
+    return targetZ - T.recuoAposApoio * p.dirZ;
+}
+
 const PosicionamentoAI = {
     otimizarSlotsPorPosicao: otimizarSlotsPorPosicao,
     classificarLinhas: classificarLinhas,
@@ -2281,7 +2318,8 @@ const PosicionamentoAI = {
             ? aplicarTectoDoEstilo(p, comInquietacao.z, bb)
             : comInquietacao.z;
 
-        let finalZ = comTecto;
+        // O apoio do lateral que não recebeu e viu o jogo virar de banda.
+        let finalZ = aplicarRecuoAposApoio(p, bb, comTecto);
         // Inércia pós-passe de 4 segundos: mantém a presença ofensiva sem recuar contra o fluxo do jogo
         if (bb && bb.isAttacking && p.passInertiaTimer > 0 && typeof p.passInertiaZDir === 'number') {
             const zDirFinal = finalZ * p.dirZ;

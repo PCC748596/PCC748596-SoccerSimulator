@@ -386,7 +386,38 @@ const GoalkeeperDive = {
     // Pose das pernas em voo: estendidas e ligeiramente abertas.
     coxaVoo: -0.25, joelhoVoo: 0.55, aberturaVoo: 0.18,
 
-    pesoIK: 0.45           // suavização do IK dos braços por frame
+    pesoIK: 0.45,          // suavização do IK dos braços por frame
+
+    /*
+    QUANDO É QUE OS BRAÇOS SE RECOLHEM PARA A QUEDA — e não é a meio do voo.
+
+    A guarda era `y < 0.8`, e o corpo deitado fica a `alturaDeitado` = 0.42:
+    ou seja, quase todo o mergulho conta como "perto do chão". Medido em 40
+    minutos de jogo, **41% dos frames de voo tinham os braços colados ao
+    corpo** — o guarda-redes voava de braços fechados, que é exactamente o que
+    se via.
+
+    Agora é a folga acima da altura de deitado, e só na descida. O `bolaPassou`
+    também subiu de 1.0 para `passouFolga`: a bola a passar-lhe a um metro
+    ainda é uma bola que se tenta.
+    */
+    quedaFolga: 0.18,      // metros acima de alturaDeitado
+    passouFolga: 2.0,      // metros para lá dele antes de desistir
+
+    /*
+    MÃO TROCADA — a bola alta e no ângulo defende-se com a mão de FORA.
+
+    Num mergulho para a direita, a bola no ângulo direito fica alta de mais
+    para a mão direita: quem lá chega é a esquerda, que cruza por cima da
+    cabeça e ganha os 30-40 cm que faltam. É a defesa da imagem de referência.
+
+    Acima de `maoTrocadaY` a mão de fora é a que persegue a bola; a de dentro
+    fica `atrasoMaoSecundaria` metros atrás dela, no mesmo alinhamento — as
+    duas esticadas, sem se sobreporem. Abaixo dessa altura vão as duas à bola,
+    que é a defesa normal.
+    */
+    maoTrocadaY: 1.55,
+    atrasoMaoSecundaria: 0.45
 };
 
 /*

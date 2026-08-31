@@ -276,11 +276,24 @@ const GkDive = {
         const C = IKChains.braco;
         const d = p.dive;
 
-        // Verifica se a bola já passou do guarda-redes ou se ele está caindo e perto do chão
-        const bolaPassou = (Math.sign(p.dirZ) * (Match.ball.position.z - p.model.position.z) < -1.0); // Se passou a linha dele
+        /*
+        DESISTIR É A ÚLTIMA COISA, não a primeira. Ver GoalkeeperDive.quedaFolga
+        e passouFolga: com o limiar antigo (`y < 0.8`, corpo deitado a 0.42)
+        41% dos frames de voo tinham os braços recolhidos.
+        */
+        const bolaPassou = (Math.sign(p.dirZ) * (Match.ball.position.z - p.model.position.z) < -D.passouFolga);
         const caindo = (isVoo && d.v0y - BallPhysics.gravidade * d.t < 0);
-        const pertoDoChao = (p.model.position.y < 0.8);
-        const aPrepararQueda = !d.agarrou && (bolaPassou || (caindo && pertoDoChao));
+        const pertoDoChao = (p.model.position.y < D.alturaDeitado + D.quedaFolga);
+        /*
+        E a queda perto do chão só conta DEPOIS de a bola ter sido tocada: num
+        mergulho rasteiro o `v0y` é quase zero, portanto `caindo` é verdade
+        desde o primeiro frame e o corpo nunca sobe dos 0.60 m — com a regra
+        anterior ele ia buscar a bola no chão de braços fechados. Medido: dos
+        25% de frames que ainda recolhiam os braços, a esmagadora maioria eram
+        estes.
+        */
+        const aPrepararQueda = !d.agarrou &&
+            (bolaPassou || (d.tocou && caindo && pertoDoChao));
 
         if (aPrepararQueda) {
             // "Braços para baixo, paralelos ao corpo" - prepara a queda no chão
@@ -298,8 +311,39 @@ const GkDive = {
         if (prev) this._alvoMao.set(prev.x, prev.y, prev.z);
         else this._alvoMao.copy(Match.ball.position);
 
-        IK.resolverSuave(rig.lArm, rig.lElbow, C.L1, C.L2, this._alvoMao, this._cima, D.pesoIK);
-        IK.resolverSuave(rig.rArm, rig.rElbow, C.L1, C.L2, this._alvoMao, this._cima, D.pesoIK);
+        /*
+        BOLA ALTA: MÃO TROCADA. A mão de FORA (a do lado contrário ao mergulho)
+        é a que vai à bola — é ela que cruza por cima da cabeça e chega ao
+        ângulo. A de dentro estica no mesmo alinhamento, um pouco atrás, para
+        as duas lerem como braços abertos e não como um braço a tapar o outro.
+
+        `ladoLocal` diz se o +X do modelo aponta para o lado do mergulho (ver
+        iniciar). O braço esquerdo está em +X local, portanto com ladoLocal=+1
+        o esquerdo é o de DENTRO e o direito o de fora.
+        */
+        const alta = this._alvoMao.y >= D.maoTrocadaY;
+        const dentroEsquerda = (d.ladoLocal || 1) > 0;
+        const bracoDentro = dentroEsquerda
+            ? { raiz: rig.lArm, meio: rig.lElbow } : { raiz: rig.rArm, meio: rig.rElbow };
+        const bracoFora = dentroEsquerda
+            ? { raiz: rig.rArm, meio: rig.rElbow } : { raiz: rig.lArm, meio: rig.lElbow };
+
+        if (alta) {
+            // O secundário mira um ponto atrás da bola, na linha ombro->bola.
+            bracoDentro.raiz.getWorldPosition(this._v2);
+            this._v.subVectors(this._alvoMao, this._v2);
+            const n = this._v.length() || 1;
+            this._v2.copy(this._alvoMao).addScaledVector(this._v, -D.atrasoMaoSecundaria / n);
+
+            IK.resolverSuave(bracoFora.raiz, bracoFora.meio, C.L1, C.L2,
+                this._alvoMao, this._cima, D.pesoIK);
+            IK.resolverSuave(bracoDentro.raiz, bracoDentro.meio, C.L1, C.L2,
+                this._v2, this._cima, D.pesoIK);
+        } else {
+            // Defesa normal: os dois braços à bola, esticados.
+            IK.resolverSuave(rig.lArm, rig.lElbow, C.L1, C.L2, this._alvoMao, this._cima, D.pesoIK);
+            IK.resolverSuave(rig.rArm, rig.rElbow, C.L1, C.L2, this._alvoMao, this._cima, D.pesoIK);
+        }
 
         this.defender(p, rig);
     },

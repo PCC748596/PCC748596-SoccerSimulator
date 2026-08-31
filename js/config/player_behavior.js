@@ -731,6 +731,26 @@ const ThrowInModel = {
     antecipacaoMax: 1.2,
 
     /*
+    O APOIO QUE NÃO RECEBEU, E O JOGO FOI PARA O OUTRO LADO.
+
+    Quem sobe a dar apoio no lateral fica adiantado. Se a bola sair dali e
+    atravessar o corredor central para a outra banda, ele ficou à frente da
+    jogada com a equipa a defender do lado oposto — é o buraco por onde entra o
+    contra-ataque. Pedido: recua um pouco, para estar pronto se a bola se
+    perder.
+
+    `recuoAposApoio`  metros atrás do posto dele, no referencial de ataque.
+    `recuoDuracao`    quanto tempo a regra vale depois do lance. Não é para
+                      sempre: passado isto o lance acabou e o posicionamento
+                      normal já o pôs onde tem de estar.
+    `recuoGatilhoX`   o "meio do corredor central" — a bola tem de passar daqui
+                      para o outro lado. É zero: o eixo do campo.
+    */
+    recuoAposApoio: 6.0,
+    recuoDuracao: 12.0,
+    recuoGatilhoX: 0.0,
+
+    /*
     APOIO AO BATEDOR. Os companheiros ficavam nos slots do bloco, a vinte e
     tal metros, e o lateral saia para ninguem — via-se no ecra o batedor
     sozinho com meio campo a frente.

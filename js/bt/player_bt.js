@@ -1961,6 +1961,14 @@ function aproximarNoLateral(p) {
         ref ? ref.x - batedor.model.position.x : undefined,
         ref ? ref.z - batedor.model.position.z : undefined);
     p.dynamicTarget.set(alvo.x, ALTURA_BASE_Y, alvo.z);
+
+    /*
+    Fica marcado que ele subiu para este lance, e de que lado. Quem lê é o
+    `aplicarRecuoAposApoio` (team_bt.js): se a bola atravessar o eixo para a
+    outra banda sem lhe chegar, ele recua. Ver ThrowInModel.recuoAposApoio.
+    */
+    p.apoioLateralLado = Math.sign(batedor.model.position.x) || 1;
+    p.apoioLateralTimer = T.recuoDuracao;
 }
 
 function tratarBolaParada(p) {
