@@ -2949,6 +2949,37 @@ Mesma lista do `esperarPeloSlot` e da ancora do Box-to-Box.
 function validarAlvoDoNivel3(p, bb) {
     if (!p || !p.dynamicTarget || p.role === 'gk') return;
 
+    /*
+    A INTENCAO DA FOLHA SOBREVIVE AO BURACO — ver AlvoDaArvore.
+
+    As folhas nao escrevem o alvo todos os frames, e nos frames em que nao
+    escrevem fica a valer o do nivel 2, doze metros ao lado. Medido: o alvo
+    liga e desliga 1.36% dos frames, ou seja cerca de uma vez por segundo, e o
+    jogador da meio passo para um lado e meio para o outro. E o tremor de quem
+    esta parado a espera da bola.
+
+    Aqui guarda-se o que a folha escreveu e reafirma-se durante
+    `persistencia` segundos. Nao e alisamento: e a mesma intencao a valer nos
+    frames em que ninguem a repetiu.
+    */
+    const A = (typeof AlvoDaArvore !== 'undefined') ? AlvoDaArvore : null;
+    if (A && p.alvoNivel2) {
+        const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
+        const escreveu = Math.hypot(p.dynamicTarget.x - p.alvoNivel2.x,
+            p.dynamicTarget.z - p.alvoNivel2.z) > A.limiarReescrita;
+
+        if (escreveu) {
+            if (!p.alvoFolha) p.alvoFolha = { x: 0, z: 0 };
+            p.alvoFolha.x = p.dynamicTarget.x;
+            p.alvoFolha.z = p.dynamicTarget.z;
+            p.alvoFolhaTimer = A.persistencia;
+        } else if (p.alvoFolhaTimer > 0 && p.alvoFolha) {
+            p.alvoFolhaTimer -= dt;
+            p.dynamicTarget.x = p.alvoFolha.x;
+            p.dynamicTarget.z = p.alvoFolha.z;
+        }
+    }
+
     // O campo vale sempre, tenha ele a bola ou nao.
     p.dynamicTarget.x = THREE.MathUtils.clamp(p.dynamicTarget.x, -34, 34);
     p.dynamicTarget.z = THREE.MathUtils.clamp(p.dynamicTarget.z, -50, 50);

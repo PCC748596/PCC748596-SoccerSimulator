@@ -58,18 +58,33 @@ function fraccaoDe(v) {
     return L.meio + ((v - 0.5) / 0.5) * (L.ataque - L.meio);
 }
 
-test('as três linhas existem e cobrem o bloco INTEIRO', () => {
+test('as três linhas existem e estão ordenadas', () => {
     assert.ok(L, 'BlockShape.linhas desapareceu');
     assert.strictEqual(L.defesa, 0.0, 'a linha de defesa é a traseira do bloco');
-    assert.strictEqual(L.ataque, 1.0,
-        'a linha de ataque tem de ser a FRENTE do bloco — a 2/3 deixa o terço da frente vazio');
     assert.ok(L.meio > L.defesa && L.meio < L.ataque, 'o meio fica entre as outras duas');
+
+    /*
+    A LINHA DE ATAQUE JÁ NÃO É A FRENTE DO BLOCO, e é deliberado.
+
+    Este teste exigia `L.ataque === 1.0`, que foi a correcção do bug dos 2/3 —
+    ali o problema era o oposto, a formação inteira comprimida para trás. Com
+    1.0 apareceu o defeito simétrico: o `v` da 442 salta de 0.545 (médios de
+    ala) para 1.000 (avançados) sem nada pelo meio, portanto o avançado ficava
+    sozinho na borda da frente. Medido num bloco de 40 m: CF a +18.3 m do
+    meio-campo com o CM a -3.6, ou seja 21.8 m de buraco entre o meio-campo e
+    o ataque.
+
+    O que se exige agora é a faixa útil: à frente do meio e sem ir à borda.
+    */
+    assert.ok(L.ataque > 0.6 && L.ataque <= 0.95,
+        'a linha de ataque está em ' + L.ataque + ' — abaixo de 0.6 comprime a ' +
+        'formação (o bug dos 2/3), acima de 0.95 deixa o avançado isolado na borda');
 });
 
-test('o jogador mais adiantado da formação chega à frente do bloco', () => {
-    assert.ok(Math.abs(fraccaoDe(1.0) - 1.0) < 1e-9,
-        'v=1.0 dá ' + fraccaoDe(1.0).toFixed(3) + ' do bloco e devia dar 1.0');
-    assert.ok(Math.abs(fraccaoDe(0.0) - 0.0) < 1e-9, 'v=0 é a traseira');
+test('o v da formação mapeia-se na faixa das três linhas, por ordem', () => {
+    assert.ok(Math.abs(fraccaoDe(0.0)) < 1e-9, 'v=0 é a traseira');
+    assert.ok(Math.abs(fraccaoDe(0.5) - L.meio) < 1e-9, 'v=0.5 é a linha média');
+    assert.ok(Math.abs(fraccaoDe(1.0) - L.ataque) < 1e-9, 'v=1.0 é a linha de ataque');
 });
 
 test('a interpolação é monótona: quem está à frente na formação fica à frente no bloco', () => {
@@ -86,15 +101,34 @@ test('a interpolação é monótona: quem está à frente na formação fica à 
     }
 });
 
-test('as posições da formação 442 caem onde o v delas manda', () => {
-    // v reais da 442 (ver assignFormations): CB 0, LB/RB 0.091, CM 0.455,
-    // LM/RM 0.545, CF 1.0.
+test('as posições da formação 442 mantêm a ordem e as distâncias relativas', () => {
+    /*
+    v reais da 442 (ver assignFormations): CB 0, LB/RB 0.091, CM 0.455,
+    LM/RM 0.545, CF 1.0.
+
+    Já não se exige `fracção == v` — isso equivalia a exigir `L.ataque = 1.0`,
+    que é o que se acabou de deixar de querer. O que tem de valer é a ORDEM e
+    a proporção dentro de cada metade: a linha de ataque pode estar mais atrás,
+    mas quem está à frente na formação tem de continuar à frente no bloco.
+    */
     const casos = [['CB', 0.0], ['LB', 0.091], ['CM', 0.455], ['LM', 0.545], ['CF', 1.0]];
+    let ant = -1;
     for (const [pos, v] of casos) {
         const f = fraccaoDe(v);
-        assert.ok(Math.abs(f - v) < 0.02,
-            pos + ' (v=' + v + ') cai em ' + f.toFixed(3) + ' do bloco');
+        assert.ok(f > ant, pos + ' (v=' + v + ') cai em ' + f.toFixed(3) +
+            ', atrás de quem devia estar à sua frente');
+        ant = f;
     }
+
+    // A metade de trás da formação continua a mapear-se um-para-um.
+    assert.ok(Math.abs(fraccaoDe(0.091) - 0.091 * (L.meio / 0.5)) < 1e-9,
+        'a metade de trás deixou de ser proporcional');
+
+    // E o buraco entre o meio e o ataque tem de ser menor do que meia
+    // profundidade de bloco — foi esse o defeito que trouxe o 0.82.
+    assert.ok(fraccaoDe(1.0) - fraccaoDe(0.545) < 0.45,
+        'entre os médios de ala e os avançados vão ' +
+        (fraccaoDe(1.0) - fraccaoDe(0.545)).toFixed(3) + ' do bloco');
 });
 
 test('o computeBlock lê as fracções da config e não números em código', () => {

@@ -267,7 +267,36 @@ const EspacamentoModel = {
 const WingPairModel = {
     fechoDentro: 7.0,
     margemTroca: 2.5,
-    recuoDeDentro: 2.0
+    recuoDeDentro: 2.0,
+
+    /*
+    QUANDO E QUE O LATERAL TOMA A LINHA.
+
+    Era "quem esta mais adiantado" — e isso e um ciclo: o lateral adianta-se um
+    metro, ganha a linha, o medio fecha, e ja nada segura o lateral. Medido, o
+    lateral acabava dentro da grande area adversaria em 16% dos frames com
+    posse.
+
+    O pedido era outro: o lateral so ultrapassa o medio SE O MEDIO CAIR PELO
+    MEIO. Portanto o criterio e a posicao LATERAL do medio, nao a profundidade
+    do lateral: enquanto o medio estiver no corredor, a linha e dele.
+
+    `midDentroX` e a distancia ao eixo abaixo da qual se considera que o medio
+    fechou. `avancoParaOverlap` e a excepcao da tabela: o lateral tambem toma a
+    linha se estiver mesmo lancado a frente dele.
+    */
+    midDentroX: 6.5,
+    avancoParaOverlap: 6.0,
+
+    /*
+    ATE ONDE O LATERAL SOBE, no referencial de ataque. E uma regra de lugar
+    (nivel 2), nao um estilo: um lateral nao acaba a jogada dentro da area,
+    quem faz isso e o `fullback_finisher`, que esta explicitamente isento.
+
+    36.0 seria a linha da grande area; 30 deixa-o chegar a zona do cruzamento e
+    nao a do remate.
+    */
+    limiteAvanco: 30.0
 };
 
 const BlockShape = {
@@ -342,11 +371,33 @@ const BlockShape = {
     ajustáveis em vez de decorativas: aproximar `meio` da `defesa` dá um
     bloco com o miolo recuado (defesa e meio juntos, ataque isolado à
     frente); afastá-lo dá o contrário.
+
+    O `ataque` NÃO é 1.0, e é de propósito. Com 1.0 o avançado (v = 1.000 na
+    442) ia parar à borda da frente do rectângulo e ficava sozinho lá à frente:
+    medido, num bloco de 40 m, o CF caía a +18.3 m do meio-campo com o CM a
+    -3.6 — **21.8 m entre o meio-campo e o ataque**, que é uma equipa partida
+    em duas.
+
+    O `v` da formação salta de 0.545 (médios de ala) para 1.000 (avançados) sem
+    nada pelo meio, portanto essa distância é 45% da profundidade do bloco. É
+    a linha do ataque que tem de vir para trás, e não a formação que tem de
+    mudar — a formação é do treinador.
+
+        ataque   CF (m do meio-campo)   distância CM -> CF
+        1.00           +18.3                 21.8 m
+        0.85           +12.4                 15.8 m
+        0.82           +10.5                 14.2 m   <- é este
+        0.78            +9.0                 13.0 m
+        0.70            +6.1                  9.8 m
+
+    Consequência assumida: ninguém ocupa os últimos 18% do rectângulo. A borda
+    da frente do bloco continua a servir para o que sempre serviu (o desenho, o
+    fora-de-jogo), mas deixa de ser um sítio onde há gente.
     */
     linhas: {
         defesa: 0.0,
         meio: 0.5,
-        ataque: 1.0
+        ataque: 0.82
     },
 
     /*

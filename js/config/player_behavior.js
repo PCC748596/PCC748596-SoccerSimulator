@@ -194,6 +194,35 @@ const GiroDeCostasModel = {
     zonaLivre: 17.0
 };
 
+/*
+=============================================================================
+O ALVO QUE A ARVORE ESCREVE — quanto tempo ele vale
+=============================================================================
+As folhas do PlayerBT reescrevem o `dynamicTarget` e NAO o escrevem todos os
+frames: a mesma folha corre num frame e no seguinte a arvore vai por outro
+ramo, ou a condicao dela falha por um triz. Nos frames em que ninguem escreve,
+fica a valer o alvo do nivel 2 — que esta noutro sitio.
+
+Medido em 15 minutos, jogadores a menos de 0.6 m/s:
+
+    a arvore reescreve o alvo em            31.1% dos frames
+    distancia media ao alvo do nivel 2      12.2 m
+    LIGA/DESLIGA a reescrita entre frames    1.36% dos frames
+
+Ou seja: cerca de uma vez por segundo o alvo salta doze metros e volta atras no
+frame seguinte. O jogador da meio passo para la, meio passo para ca — e o
+tremor que se ve em quem esta parado a espera da bola.
+
+`persistencia` e quanto tempo o alvo da folha continua a valer depois de ela
+deixar de o escrever. Nao e um alisamento: e a intencao a sobreviver ao buraco.
+Curto de proposito — passado este tempo sem ninguem o reafirmar, o alvo era
+mesmo para ser abandonado.
+*/
+const AlvoDaArvore = {
+    persistencia: 0.6,   // segundos
+    limiarReescrita: 0.05
+};
+
 const CarryModel = {
     leque: [-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2],
     lookAhead: 10.0,      // base de distância (sobrescrita por player.tec * 0.5)

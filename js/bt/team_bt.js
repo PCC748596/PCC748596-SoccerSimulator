@@ -2322,13 +2322,31 @@ function atribuirParesDeCorredor(lista, bb) {
         const avMid = mid.model.position.z * mid.dirZ;
 
         /*
-        Histerese: mantém-se quem já lá estava até o outro o passar por
-        `margemTroca`. O médio é o dono por omissão da linha — é a posição
-        dele, e o lateral é quem sobe por excepção.
+        O MEDIO E O DONO DA LINHA POR OMISSAO. O lateral so lha tira quando o
+        medio CAI PELO MEIO — ou quando vai mesmo lancado a frente dele, que e
+        a tabela do overlap. Ver WingPairModel.
+
+        O criterio antigo era a profundidade, e realimentava-se: o lateral
+        adianta-se um metro, ganha a linha, o medio fecha, e ja nada segura o
+        lateral.
         */
+        /*
+        O "medio caiu pelo meio" le-se na INTENCAO dele (o ponto da forma da
+        equipa, antes desta regra), nao na posicao onde ele esta.
+
+        Com a posicao era um circulo: o medio fecha porque esta regra o mandou
+        fechar, e isso mantinha a condicao verdadeira para sempre — o lateral
+        ficava dono da linha uma vez e nunca mais a largava (medido: 45% do
+        tempo). A intencao nao depende de nos, portanto nao realimenta.
+        */
+        const formaMid = (typeof formaNoBloco === 'function') ? formaNoBloco(mid, bb) : null;
+        const midX = formaMid ? formaMid.x : mid.model.position.x;
+        const midFechou = Math.abs(midX) < W.midDentroX;
+        const latLancado = avLat > avMid + W.avancoParaOverlap;
+
         let naLinha = lat.corredorDono || mid.corredorDono || mid;
-        if (naLinha === mid && avLat > avMid + W.margemTroca) naLinha = lat;
-        else if (naLinha === lat && avMid > avLat + W.margemTroca) naLinha = mid;
+        if (naLinha === mid && (midFechou || latLancado)) naLinha = lat;
+        else if (naLinha === lat && !midFechou && avMid > avLat - W.margemTroca) naLinha = mid;
 
         lat.corredorDono = naLinha; mid.corredorDono = naLinha;
 
@@ -2371,9 +2389,24 @@ function aplicarRegrasDeLugar(p, bb, targetX, targetZ) {
     pouco atras. Ver atribuirParesDeCorredor.
     */
     if (p.corredorFechado && typeof WingPairModel !== 'undefined') {
-        const lado = Math.sign(targetX) || (Math.sign(p.baseTarget.x) || 1);
+        /*
+        O lado sai da FORMACAO (`baseTarget`), nao de onde o jogador esta: a
+        forma da equipa ja o pode ter levado para perto do eixo ou para o outro
+        lado, e nesse frame o fecho empurrava-o para a banda errada.
+        */
+        const lado = (Math.sign(p.baseTarget.x) || Math.sign(targetX) || 1);
         targetX -= lado * WingPairModel.fechoDentro;
         targetZ -= WingPairModel.recuoDeDentro * p.dirZ;
+    }
+
+    /*
+    O TECTO DO LATERAL — ver WingPairModel.limiteAvanco. Um lateral nao acaba
+    a jogada dentro da area; quem o faz e o `fullback_finisher`, isento.
+    */
+    if ((p.pos === 'LB' || p.pos === 'RB' || p.pos === 'LWB' || p.pos === 'RWB') &&
+        typeof WingPairModel !== 'undefined' && p.playingStyle !== 'fullback_finisher') {
+        const tecto = WingPairModel.limiteAvanco;
+        if (targetZ * p.dirZ > tecto) targetZ = tecto * p.dirZ;
     }
 
     // Segurar a linha de tras.
@@ -2824,5 +2857,14 @@ const PosicionamentoAI = {
         p.dynamicTarget.x = lerp(p.dynamicTarget.x, p.styleTarget.x, k);
         p.dynamicTarget.z = lerp(p.dynamicTarget.z, p.styleTarget.z, k);
         p.dynamicTarget.y = ALTURA_BASE_Y;
+
+        /*
+        FICA GUARDADO O QUE O NIVEL 2 ESCREVEU. Quem o le e o funil do nivel 3
+        (validarAlvoDoNivel3, player_bt.js): e comparando com isto que ele sabe
+        se a arvore reescreveu o alvo neste frame ou se o deixou como estava.
+        */
+        if (!p.alvoNivel2) p.alvoNivel2 = { x: 0, z: 0 };
+        p.alvoNivel2.x = p.dynamicTarget.x;
+        p.alvoNivel2.z = p.dynamicTarget.z;
     }
 };
