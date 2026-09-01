@@ -5,6 +5,40 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 1 de Setembro de 2026 — na transição defensiva ninguém sobe
+
+Relato: cinco jogadores a irem para o ataque com a equipa em **T.Defensive**.
+Medido, e eram duas coisas ao mesmo tempo.
+
+**A camada posicional.** O bloco continua desenhado à volta da BOLA, e se ela
+ficou no meio-campo adversário o slot de quem estava recuado fica À FRENTE
+dele. A 0.05 s da troca de posse: quatro defesas com o alvo alisado **10 a 21 m
+à frente**, a subir. E não bastava cortar o alvo cru — o `PositionSmoothing`
+(3.0) traz o valor da fase ofensiva durante mais de um segundo, portanto o
+corte repete-se DEPOIS do alisamento.
+
+**A marcação.** O `pontoDeMarcacao` põe o marcador do lado da própria baliza
+EM RELAÇÃO AO HOMEM — se o homem está à frente, o ponto também está. Medido:
+cinco jogadores em MARKING (RM, CM, LM, CF, CF) com o alvo 3 a 6 m à frente,
+com a equipa em T.Defensive. O `actMarcar` corre DEPOIS da camada posicional e
+reescrevia o alvo, por isso leva a mesma guarda.
+
+A regra: em T.Defensive o alvo de quem não tem tarefa de bola nunca fica à
+frente do jogador (folga de `folgaTransicao`, 1 m). Fora dela ficam o
+**chaser**, o intercetor e o guarda-redes — quem vai à bola tem de poder ir
+para a frente, que é o que pressão quer dizer. Botão:
+`BlockShape.transicaoDefensivaRecuaSo`.
+
+Depois da regra, os alvos à frente que sobram em T.Defensive são todos para a
+BOLA (chaser, jockey, bola solta junto à linha) — verificado caso a caso; a
+média de jogadores com alvo mais de 3 m à frente caiu de 1.0 para 0.65, e
+nenhum vem já da marcação. Teste: `tests/transicao_defensiva.test.js`
+(4 casos), que fixa os três sítios onde o corte tem de existir.
+
+Nota do que NÃO é isto: seis jogadores a convergirem para o mesmo ponto junto à
+bandeirola, todos com o mesmo alvo absoluto, é bola solta — a aglomeração à
+volta da bola, que já está na lista de problemas conhecidos.
+
 ### Sessão de 1 de Setembro de 2026 — o centro do bloco passa a 8 m
 
 O centro do rectângulo táctico fica agora **8 m à frente da linha da bola** com
@@ -4252,6 +4286,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Mudar uma formação ou dimensão do campo | `config.js` |
 | Mudar quando a equipa pressiona / recua / bascula | `bt/team_bt.js` → a árvore |
 | Equipa compacta demais / esticada demais | `config.js` → `TeamShape.blockDepth*` |
+| Equipa a subir logo depois de perder a bola | `config.js` → `BlockShape.transicaoDefensivaRecuaSo` / `.folgaTransicao` |
 | Centro do bloco mais à frente/atrás da bola | `config.js` → `BlockShape.avancoDoCentroComBola` / `.recuoDoCentroSemBola` |
 | Alturas do ajuste Low/Medium/High da linha | `config.js` → `TeamShape.linhaDefensiva` |
 | Dar personalidade a uma postura sem mexer nas posições | `bt/team_bt.js` → `TeamPostureTuning` |

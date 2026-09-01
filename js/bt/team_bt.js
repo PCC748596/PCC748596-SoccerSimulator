@@ -1959,6 +1959,27 @@ const PosicionamentoAI = {
             }
         }
 
+        /*
+        TRANSICAO DEFENSIVA: NINGUEM SOBE.
+
+        Ver BlockShape.transicaoDefensivaRecuaSo. Nos 3 s a seguir a perder a
+        bola o bloco ainda esta desenhado a volta dela, e quem estava recuado
+        via o proprio slot a frente de si — subia, com a equipa a recuperar.
+        Aqui o slot e cortado para nunca ficar a frente do jogador.
+
+        Excepcoes: quem vai a bola, quem intercepta e o guarda-redes.
+        */
+        if (bb && bb.state === TeamState.TRANSITION_DEFENSIVE &&
+            typeof BlockShape !== 'undefined' && BlockShape.transicaoDefensivaRecuaSo &&
+            p.role !== 'gk' && bb.chaser !== p && bb.intercetor !== p && !p.hasBall) {
+            const folga = BlockShape.folgaTransicao || 0;
+            const meuZDir = p.model.position.z * p.dirZ;
+            const alvoZDir = finalZ * p.dirZ;
+            if (alvoZDir > meuZDir + folga) {
+                finalZ = (meuZDir + folga) * p.dirZ;
+            }
+        }
+
         const tx = THREE.MathUtils.clamp(molaX, -34, 34);
         const tz = THREE.MathUtils.clamp(finalZ, -50, 50);
 
@@ -2033,5 +2054,28 @@ const PosicionamentoAI = {
         p.dynamicTarget.x = lerp(p.dynamicTarget.x, tx, k);
         p.dynamicTarget.z = lerp(p.dynamicTarget.z, tz, k);
         p.dynamicTarget.y = ALTURA_BASE_Y;
+
+        /*
+        E O CORTE DA TRANSICAO REPETE-SE DEPOIS DO ALISAMENTO.
+
+        Cortar so o alvo CRU nao chega: o `PositionSmoothing` faz o alvo
+        alisado convergir devagar, e nos primeiros segundos a seguir a perder
+        a bola ele ainda traz o valor da fase ofensiva. Medido a 0.05 s da
+        troca de posse: quatro defesas com o alvo alisado 10 a 21 m a frente
+        deles, a subir, com a equipa ja em T.Defensive. Sao esses os segundos
+        que se veem no ecra.
+        */
+        if (bb && bb.state === TeamState.TRANSITION_DEFENSIVE &&
+            typeof BlockShape !== 'undefined' && BlockShape.transicaoDefensivaRecuaSo &&
+            p.role !== 'gk' && bb.chaser !== p && bb.intercetor !== p && !p.hasBall) {
+            const folga = BlockShape.folgaTransicao || 0;
+            const tectoZDir = p.model.position.z * p.dirZ + folga;
+            if (p.dynamicTarget.z * p.dirZ > tectoZDir) {
+                p.dynamicTarget.z = tectoZDir * p.dirZ;
+            }
+            if (p.tacticalTarget && p.tacticalTarget.z * p.dirZ > tectoZDir) {
+                p.tacticalTarget.z = tectoZDir * p.dirZ;
+            }
+        }
     }
 };

@@ -257,6 +257,30 @@ const BlockShape = {
     recuoDoCentroSemBola: 5.0,
 
     /*
+    NA TRANSICAO DEFENSIVA NINGUEM SOBE.
+
+    Team State T.Defensive sao os primeiros 3 s depois de perder a bola (ver
+    TeamBlackboard.tick). O bloco continua a ser desenhado a volta da BOLA, e
+    se ela ficou no meio-campo adversario o slot de quem estava recuado fica a
+    FRENTE dele — o jogador vai para a frente enquanto a equipa devia estar a
+    recuperar. Medido: em media 0.8 jogadores com o alvo mais de 3 m a frente,
+    e ate 8 no pior caso, sempre em T.Defensive.
+
+    Com isto ligado, o slot de quem nao tem tarefa de bola nunca fica a frente
+    do jogador durante a transicao: ele fica ou recua, nunca sobe. A postura e
+    o bloco nao mudam — o que muda e so o SENTIDO permitido do movimento
+    enquanto a equipa se reorganiza.
+
+    `folgaTransicao` e o que se tolera antes de cortar (nem toda a subida de
+    meio metro e uma subida).
+
+    FICAM DE FORA quem vai a bola (chaser), quem intercepta e o guarda-redes:
+    esses tem de poder ir para a frente, que e o que pressao quer dizer.
+    */
+    transicaoDefensivaRecuaSo: true,
+    folgaTransicao: 1.0,
+
+    /*
     Largura do bloco. É a amplitude da equipa — a manípula que o senhor pediu:
     um número só, e todas as posições abrem ou fecham em proporção.
     */

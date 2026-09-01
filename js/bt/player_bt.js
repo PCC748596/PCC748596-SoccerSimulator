@@ -2090,7 +2090,32 @@ function actMarcar(ctx) {
     const ponto = pontoDeMarcacao(base.x, base.z, hx, hz,
         p.ownGoalZ, dist, MarkingModel.biasMaxPara(base.z * p.dirZ));
 
-    p.dynamicTarget.set(ponto.x, ALTURA_BASE_Y, ponto.z);
+    /*
+    NA TRANSICAO DEFENSIVA NAO SE SOBE PARA MARCAR.
+
+    O ponto de marcacao fica do lado da propria baliza EM RELACAO AO HOMEM —
+    mas se o homem esta a frente do marcador, o ponto tambem esta, e o que se
+    ve nos primeiros segundos depois de perder a bola e meia equipa a SUBIR
+    para colar aos seus homens enquanto o adversario sai em contra-ataque.
+    Medido: cinco jogadores em MARKING, todos com o alvo 3 a 6 m a frente,
+    com a equipa em T.Defensive.
+
+    A camada posicional ja corta isto (ver BlockShape.transicaoDefensivaRecuaSo
+    em team_bt.js); a marcacao corre DEPOIS dela e reescrevia o alvo, por isso
+    o corte tem de se repetir aqui. Quem vai a bola nao entra nesta guarda: o
+    chaser tem de poder ir para a frente.
+    */
+    let alvoZ = ponto.z;
+    const bbM = ctx.bb;
+    if (bbM && bbM.state === TeamState.TRANSITION_DEFENSIVE &&
+        typeof BlockShape !== 'undefined' && BlockShape.transicaoDefensivaRecuaSo &&
+        bbM.chaser !== p && bbM.intercetor !== p && !p.hasBall) {
+        const folga = BlockShape.folgaTransicao || 0;
+        const meuZDir = p.model.position.z * p.dirZ;
+        if (alvoZ * p.dirZ > meuZDir + folga) alvoZ = (meuZDir + folga) * p.dirZ;
+    }
+
+    p.dynamicTarget.set(ponto.x, ALTURA_BASE_Y, alvoZ);
     p.speedMult = (5.8 + ((ctx.skillSpeed - 50) / 50) * 1.4) * 1.25 * 0.9;
     p.apoioAtivo = false;
     p.fsm.changeState('MARKING');
