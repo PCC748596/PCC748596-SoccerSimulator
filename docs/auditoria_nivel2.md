@@ -206,6 +206,61 @@ adversários livres nas
 costas da equipa que ataca  0,51 -> 0,18  (três ou mais: 6% -> 2%)
 ```
 
+### 4.8 A formação era alterada em jogo (CORRIGIDO)
+
+Pedido explícito: *"a formação original não pode ser alterada nunca; o nível 2
+e 3 podem gerar outros targets de movimento, mas a formação só pode mudar se o
+treinador mudar o Formation Team A ou B"*.
+
+Medido em jogo, comparando com a fotografia tirada no arranque:
+
+```
+p.baseTarget alterado em jogo     0,0%    (já estava certo)
+p.slot diferente do da formação  29,5%    (CM 37%, CF 37%, CB 26%)
+```
+
+O culpado é o `otimizarSlotsPorPosicao`, que troca entre si os dois jogadores
+da mesma posição (os dois centrais, os dois avançados) quando um está mais
+perto do lugar do outro. A troca de **ocupante** é legítima; escrevê-la por
+cima do desenho do treinador não é — a partir daí ninguém no jogo consegue
+dizer onde a formação punha aquele jogador.
+
+Agora há dois campos: `p.slot` é a FORMAÇÃO (só o `assignFormations` lhe toca,
+e esse só corre quando o painel muda) e `p.slotAtribuido` é a atribuição do
+frame, que é o que o nível 2 lê (`slotEfectivo`). Depois: **0,0%** nos dois.
+
+### 4.9 A camada posicional afastava o jogador do seu slot sem limite (CORRIGIDO)
+
+O slot é o desenho do treinador mapeado no bloco; a partir daí a marcação, a
+mola, o pêndulo e as faixas mexem-lhe. Media-se quanto:
+
+```
+desvio do alvo final ao slot     CB 6,2 m média, p95 20,8 m
+                                 LB 12,7 m média | RB 13,3 m média
+```
+
+Vinte metros não é um ajuste, é outra formação. Tecto novo por função
+(`BlockShape.desvioMaxDoSlot`: def 9 m, mid 15 m, ata 22 m), aplicado **duas
+vezes**: antes das regras de faixa (corta a soma da marcação, da mola e da
+inquietação) e outra vez a seguir, folgado por uma faixa
+(`+separacaoLateral`), porque senão as regras de faixa voltavam a esticá-lo.
+
+A ordem foi medida, não escolhida:
+
+```
+tecto só no fim      lateral por dentro dos centrais 9,3%, lado errado 4,5%
+tecto só no início   desvio dos defesas p95 27,9 m
+os dois, e a folga do central por último   3,5% / 0,4% / p95 15,2 m
+```
+
+E o nível 3 não passa por aqui: uma corrida ou uma ida à bola são ACÇÃO ou BOLA
+e ganham ao tecto (é o desenho que fica preso ao desenho, não o jogo).
+
+Ainda no mesmo varrimento: **15% dos casos em que um CENTRAL estava a mais de
+8 m do slot vinham de `RUN_INTO_SPACE`**. O `podeCorrerNoEspaco` já filtrava
+por posição, mas a tabelinha e o overlap metiam o jogador nesse estado sem
+passar pelo filtro. Passaram a passar (`posicaoPodeArrancar`).
+
 ---
 
 ## 5. Prioridades — IMPLEMENTADAS

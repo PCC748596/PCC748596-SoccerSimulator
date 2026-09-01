@@ -376,6 +376,26 @@ const BlockShape = {
     folgaDoCentral: 4.0,
 
     /*
+    ATE ONDE A CAMADA POSICIONAL PODE AFASTAR ALGUEM DO SEU SLOT.
+
+    O slot e o desenho do treinador (Formation Team A/B) mapeado no bloco. A
+    partir dai a marcacao, a mola de coesao, o pendulo e as faixas mexem-lhe —
+    e medido, mexiam de mais: **o alvo final de um central estava em media a
+    6,2 m do slot dele, com p95 de 20,8 m**; nos laterais, 13 m de media.
+    Vinte metros nao e um ajuste, e outra formacao.
+
+    Este tecto e por FUNCAO, e e o que o treinador esperaria: um central quase
+    nao sai do sitio, um medio ajusta, um avancado anda. Corta a soma de todos
+    os desvios da camada posicional, e nao cada um deles — cada regra continua
+    a poder pedir o que quer.
+
+    NAO trava o nivel 3: uma corrida, um apoio ou uma ida a bola sao ACCAO ou
+    BOLA (ver js/bt/alvo.js) e passam por cima disto. E o desenho que fica
+    preso ao desenho; o jogo continua livre.
+    */
+    desvioMaxDoSlot: { def: 9.0, mid: 15.0, ata: 22.0 },
+
+    /*
     REST DEFENSE — o que fica em casa enquanto a equipa ataca.
 
     Nao existia (esta na lista de problemas conhecidos), e via-se: os centrais

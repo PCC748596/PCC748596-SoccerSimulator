@@ -5,6 +5,48 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 1 de Setembro de 2026 — a formação é do treinador
+
+Relato: *"a posição do CB está desalinhando com o TeamBT, saindo do Formation
+Team. A formação original não pode ser alterada nunca"*.
+
+Duas coisas diferentes, e as duas mediram-se.
+
+**A formação era mesmo alterada em jogo.** O `p.baseTarget` estava certo (0,0%
+de alterações), mas o `p.slot` — o lugar da formação dentro do bloco — era
+reescrito pelo `otimizarSlotsPorPosicao`, que troca entre si os dois jogadores
+da mesma posição: **29,5% das leituras tinham o `slot` diferente do da
+formação** (CM 37%, CF 37%, CB 26%). A troca de OCUPANTE é legítima; escrevê-la
+por cima do desenho do treinador não é.
+
+Agora `p.slot` é a formação (só o `assignFormations` lhe toca) e
+`p.slotAtribuido` é a atribuição do frame, que é o que o nível 2 lê pelo
+`slotEfectivo`. Depois da mudança: **0,0%** nos dois.
+
+**E a camada posicional afastava-o do slot sem limite.** Medido: o alvo final
+de um central estava a 6,2 m do slot em média, com p95 de **20,8 m**; nos
+laterais, 13 m de média. Tecto novo por função — `BlockShape.desvioMaxDoSlot`
+(def 9 m, mid 15 m, ata 22 m) — aplicado duas vezes: antes das regras de faixa
+e outra vez depois, folgado por uma faixa. A ordem foi medida:
+
+```
+tecto só no fim       lateral por dentro dos centrais 9,3%, lado errado 4,5%
+tecto só no início    desvio dos defesas p95 27,9 m
+os dois + folga do central no fim    3,5%  /  0,4%  /  p95 15,2 m
+```
+
+O nível 3 não passa pelo tecto: corridas e idas à bola são ACÇÃO ou BOLA e
+ganham-lhe. É o desenho que fica preso ao desenho, não o jogo.
+
+Ainda: **15% dos casos de um CENTRAL a mais de 8 m do slot vinham de
+`RUN_INTO_SPACE`** — a tabelinha e o overlap punham qualquer um a arrancar sem
+passar pelo filtro de posição que o `podeCorrerNoEspaco` já tinha. Passaram a
+passar.
+
+Teste: `tests/formacao_imutavel.test.js` (5 casos) — varre os ficheiros e falha
+se alguém voltar a escrever no `baseTarget` ou no `slot` fora do
+`assignFormations`.
+
 ### Sessão de 1 de Setembro de 2026 — a defender, ninguém vai para a frente
 
 Relato: cinco jogadores a subirem com a equipa em T.Defensive/Defensive. A
@@ -4518,6 +4560,8 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Defesas e médio a subirem de mais no ataque | `config.js` → `BlockShape.restDefense` |
 | Lateral e extremo do mesmo lado embolados | `config.js` → `BlockShape.separacaoLateral` |
 | Jogador em fora-de-jogo apesar do bloco o cortar | `bt/player_bt.js` → `cortarForaDeJogo`; `config.js` → `BlockShape.cortarForaDeJogoNoAlvo` |
+| Jogador a sair do desenho da formação | `config.js` → `BlockShape.desvioMaxDoSlot`; `p.slot` vs `p.slotAtribuido` |
+| Trocar dois jogadores da mesma posição de lugar | `bt/team_bt.js` → `otimizarSlotsPorPosicao` (escreve `slotAtribuido`) |
 | Equipa a subir quando devia defender | `config.js` → `BlockShape.limiteAlemDaBolaSemBola` / `.limiteFrenteDoBlocoSemBola` |
 | Saber que camada escreveu o alvo de um jogador | `p.alvoFonte` / `p.alvoCortadoPor` (postos por `bt/alvo.js`) |
 | Decidir o que ganha quando duas camadas querem o mesmo jogador | `bt/alvo.js` → `AlvoPrio` e `resolverAlvo` |

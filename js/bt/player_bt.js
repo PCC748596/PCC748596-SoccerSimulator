@@ -1043,8 +1043,23 @@ O `overlapTimer` é o que diz a quem tem a bola que eu sou opção (ver o ramo 4
 do tratarJogadaCombinada) — e era ele que estava permanentemente a zero desde
 que o overlap foi desligado.
 */
+/*
+UM CENTRAL NAO ARRANCA PARA O ESPACO.
+
+O `podeCorrerNoEspaco` ja filtrava por posicao (`posicaoCorreAoEspaco`: os
+defesas so correm se forem laterais), mas a tabelinha e o overlap metiam o
+jogador em RUN_INTO_SPACE sem passar por esse filtro. Medido: 15% dos casos em
+que um CENTRAL estava a mais de 8 m do slot dele vinham de RUN_INTO_SPACE.
+*/
+function posicaoPodeArrancar(p) {
+    return (typeof posicaoCorreAoEspaco !== 'function') ||
+        posicaoCorreAoEspaco(p.role, p.pos);
+}
+
 function podeEsperarDevolucao(ctx) {
     const p = ctx.p;
+    // Um central nao arranca para o espaco — ver posicaoPodeArrancar.
+    if (!posicaoPodeArrancar(p)) return false;
     return !!(p.esperarDevolucao && p.esperarDevolucao.timer > 0 && p !== Match.ballCarrier);
 }
 
@@ -1071,6 +1086,8 @@ function podeCorrerOverlap(ctx) {
     const p = ctx.p;
     const O = (typeof JogadasCombinadas !== 'undefined') ? JogadasCombinadas.overlap : null;
     if (!O || p.role === 'gk') return false;
+    // Idem: quem nao corre ao espaco tambem nao faz overlap.
+    if (!posicaoPodeArrancar(p)) return false;
 
     // Já a correr: mantém-se até o tempo acabar.
     if (p.overlapTimer > 0) return true;

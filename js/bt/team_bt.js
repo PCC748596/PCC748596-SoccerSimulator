@@ -1224,9 +1224,19 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
 /*
 Onde este jogador fica dentro do bloco, em metros no mundo.
 */
+/*
+O slot que o nivel 2 usa: a ATRIBUICAO deste frame se houver, senao a
+FORMACAO. Ver o cabecalho do otimizarSlotsPorPosicao — `p.slot` e o desenho do
+treinador e nao se toca.
+*/
+function slotEfectivo(p) {
+    return p.slotAtribuido || p.slot;
+}
+
 function slotNoBloco(p, bb) {
-    if (!bb || !p || !p.slot) return null;
-    return calcularPontoDoSlot(p.slot, p.pos, p.role, p.fbStyle, bb);
+    const slot = slotEfectivo(p);
+    if (!bb || !p || !slot) return null;
+    return calcularPontoDoSlot(slot, p.pos, p.role, p.fbStyle, bb);
 }
 
 /*
@@ -1234,6 +1244,28 @@ SISTEMA DE DETECÇÃO DO ALVO MAIS PRÓXIMO PARA JOGADORES DA MESMA POSIÇÃO
 Evita que dois atacantes (CF), dois médios (CM) ou dois centrais (CB) corram
 para o mesmo lugar. Pareia os slots da formação dinamicamente por proximidade,
 com tratamento dedicado para quando um deles é o portador da bola.
+*/
+/*
+A FORMACAO E IMUTAVEL — o que isto muda e a ATRIBUICAO, nao o desenho.
+
+Dois jogadores da mesma posicao (os dois centrais, os dois avancados) podem
+trocar de lugar entre si: o que estava mais perto do lugar da direita fica com
+o da direita. Isso e uma troca de OCUPANTE, e e legitima.
+
+O que NAO e legitimo — e era o que se fazia — e escrever isso no `p.slot`, que
+e o registo da formacao escolhida pelo treinador. Medido: **29,5% das leituras
+tinham o `slot` diferente do que a formacao dizia** (CM 37%, CF 37%, CB 26%).
+A partir dai, ninguem no jogo conseguia dizer onde a formacao punha aquele
+jogador: o desenho do painel deixava de existir como referencia.
+
+Agora:
+
+    p.slot           a FORMACAO. So o assignFormations lhe toca, e esse so
+                     corre quando o treinador muda o Formation Team A/B (ou a
+                     compacidade, que tambem e do painel).
+    p.slotAtribuido  a atribuicao deste frame, que e o que o nivel 2 usa.
+
+Quem le tem de usar `p.slotAtribuido || p.slot` — ver slotNoBloco.
 */
 function otimizarSlotsPorPosicao(lista, bb) {
     if (!lista || !bb || !bb.bloco) return;
@@ -1280,11 +1312,11 @@ function otimizarSlotsPorPosicao(lista, bb) {
                 const d0_s0 = Math.hypot(pos0.x - s0.x, pos0.z - s0.z);
                 const d0_s1 = Math.hypot(pos0.x - s1.x, pos0.z - s1.z);
                 if (d0_s0 <= d0_s1) {
-                    p0.slot = slots[0];
-                    p1.slot = slots[1];
+                    p0.slotAtribuido = slots[0];
+                    p1.slotAtribuido = slots[1];
                 } else {
-                    p0.slot = slots[1];
-                    p1.slot = slots[0];
+                    p0.slotAtribuido = slots[1];
+                    p1.slotAtribuido = slots[0];
                 }
                 continue;
             } else if (isP1Carrier && !isP0Carrier) {
@@ -1292,11 +1324,11 @@ function otimizarSlotsPorPosicao(lista, bb) {
                 const d1_s0 = Math.hypot(pos1.x - s0.x, pos1.z - s0.z);
                 const d1_s1 = Math.hypot(pos1.x - s1.x, pos1.z - s1.z);
                 if (d1_s1 <= d1_s0) {
-                    p1.slot = slots[1];
-                    p0.slot = slots[0];
+                    p1.slotAtribuido = slots[1];
+                    p0.slotAtribuido = slots[0];
                 } else {
-                    p1.slot = slots[0];
-                    p0.slot = slots[1];
+                    p1.slotAtribuido = slots[0];
+                    p0.slotAtribuido = slots[1];
                 }
                 continue;
             }
@@ -1312,23 +1344,24 @@ function otimizarSlotsPorPosicao(lista, bb) {
             const custoInvertido = d01 + d10;
 
             const HISTERESE = 4.0; // metros quadrados de folga para estabilidade dinâmica
-            const atualmenteDireto = (!p0.slot || (p0.slot.u === slots[0].u && p0.slot.v === slots[0].v));
+            const atual0 = p0.slotAtribuido || p0.slot;
+            const atualmenteDireto = (!atual0 || (atual0.u === slots[0].u && atual0.v === slots[0].v));
 
             if (atualmenteDireto) {
                 if (custoInvertido < custoDireto - HISTERESE) {
-                    p0.slot = slots[1];
-                    p1.slot = slots[0];
+                    p0.slotAtribuido = slots[1];
+                    p1.slotAtribuido = slots[0];
                 } else {
-                    p0.slot = slots[0];
-                    p1.slot = slots[1];
+                    p0.slotAtribuido = slots[0];
+                    p1.slotAtribuido = slots[1];
                 }
             } else {
                 if (custoDireto < custoInvertido - HISTERESE) {
-                    p0.slot = slots[0];
-                    p1.slot = slots[1];
+                    p0.slotAtribuido = slots[0];
+                    p1.slotAtribuido = slots[1];
                 } else {
-                    p0.slot = slots[1];
-                    p1.slot = slots[0];
+                    p0.slotAtribuido = slots[1];
+                    p1.slotAtribuido = slots[0];
                 }
             }
         }
@@ -1838,7 +1871,8 @@ const PosicionamentoAI = {
                 const RAIO_MIN_PORTADOR = 7.5;
                 if (distCarrier < RAIO_MIN_PORTADOR) {
                     const falta = RAIO_MIN_PORTADOR - distCarrier;
-                    const ux = distCarrier > 0.001 ? dx / distCarrier : ((p.slot && p.slot.u >= 0.5) ? 1 : -1);
+                    const slotP = slotEfectivo(p);
+                    const ux = distCarrier > 0.001 ? dx / distCarrier : ((slotP && slotP.u >= 0.5) ? 1 : -1);
                     const uz = distCarrier > 0.001 ? dz / distCarrier : 0;
                     targetX += ux * falta;
                     targetZ += uz * falta;
@@ -2000,6 +2034,38 @@ const PosicionamentoAI = {
             }
             // E como LIMITE, para valer sobre o que a arvore escrever depois.
             proporLimiteAvanco(p, AlvoPrio.SEGURO, meuZDir + folga, 'transicao defensiva');
+        }
+
+        /*
+        O TECTO DO DESVIO AO SLOT — ver BlockShape.desvioMaxDoSlot.
+
+        Corre ANTES das regras de faixa (pendulo, separacao lateral/extremo, folga
+        do central) e depois de tudo o resto: corta a SOMA da marcacao, da mola e
+        da inquietacao, que era o que
+        tirava o central do desenho do treinador — 6,2 m de desvio medio e 20,8
+        no p95. Cada regra continua a pedir o que quer; o que muda e o total.
+
+        A ORDEM IMPORTA: com o tecto no fim, ele desfazia as regras de faixa —
+        medido, o lateral voltava a aparecer por dentro dos centrais em 9,3%
+        das leituras (eram 1,6%) e do lado errado do campo em 4,5% (eram 0%).
+        As regras de faixa sao invariantes do desenho; o tecto e um limite de
+        distancia. Primeiro corta-se a distancia, depois arruma-se a faixa.
+
+        O nivel 3 nao passa por aqui: uma corrida ou uma ida a bola sao ACCAO
+        ou BOLA e ganham a isto (js/bt/alvo.js).
+        */
+        if (p.slotTarget && typeof BlockShape !== 'undefined' && BlockShape.desvioMaxDoSlot) {
+            const tecto = BlockShape.desvioMaxDoSlot[p.role];
+            if (tecto) {
+                const dxS = molaX - p.slotTarget.x;
+                const dzS = finalZ - p.slotTarget.z;
+                const dS = Math.hypot(dxS, dzS);
+                if (dS > tecto && dS > 0.001) {
+                    const k = tecto / dS;
+                    molaX = p.slotTarget.x + dxS * k;
+                    finalZ = p.slotTarget.z + dzS * k;
+                }
+            }
         }
 
         /*
@@ -2166,29 +2232,55 @@ const PosicionamentoAI = {
                     molaX = ladoDele * Math.min(Math.abs(molaX), Math.max(0, Math.abs(alvoPar) - sep));
                 }
             }
+        }
 
-            /*
-            E O LATERAL NAO ENTRA POR DENTRO DO SEU CENTRAL.
+        /*
+        E O TECTO OUTRA VEZ, FOLGADO, DEPOIS DAS FAIXAS.
 
-            Fechar por dentro do extremo, sozinho, metia-o dentro da dupla de
-            centrais — medido, 21,6% das leituras de lateral, e 72% delas
-            vindas do proprio slot. Ver BlockShape.folgaDoCentral.
-            */
-            if (ehLateral && BlockShape.folgaDoCentral) {
-                let central = null;
-                for (const o of (bb.own || [])) {
-                    if (!o || !o.model || o === p) continue;
-                    if (o.pos !== 'CB' && o.pos !== 'DC') continue;
-                    const ox = (o.tacticalTarget) ? o.tacticalTarget.x : o.model.position.x;
-                    // O central DO LADO DELE: o que esta mais para este lado.
-                    if (!central || ox * ladoDele > central.x * ladoDele) {
-                        central = { x: ox };
-                    }
+        As regras de faixa correm depois do tecto de proposito (senao ele
+        desfazia-as), mas sem nada a seguir elas voltavam a esticar o desvio:
+        p95 de 27,9 m nos defesas. Aqui repete-se o tecto com a folga de uma
+        faixa (`separacaoLateral`), que e exactamente o que elas precisam de
+        pedir. Fica o desenho arrumado E o desvio limitado.
+        */
+        if (p.slotTarget && typeof BlockShape !== 'undefined' && BlockShape.desvioMaxDoSlot) {
+            const tectoBase = BlockShape.desvioMaxDoSlot[p.role];
+            if (tectoBase) {
+                const tectoFolgado = tectoBase + (BlockShape.separacaoLateral || 0);
+                const dxS = molaX - p.slotTarget.x;
+                const dzS = finalZ - p.slotTarget.z;
+                const dS = Math.hypot(dxS, dzS);
+                if (dS > tectoFolgado && dS > 0.001) {
+                    const k = tectoFolgado / dS;
+                    molaX = p.slotTarget.x + dxS * k;
+                    finalZ = p.slotTarget.z + dzS * k;
                 }
-                if (central) {
-                    const minimo = central.x * ladoDele + BlockShape.folgaDoCentral;
-                    if (molaX * ladoDele < minimo) molaX = minimo * ladoDele;
-                }
+            }
+        }
+
+        /*
+        E, POR FIM, O LATERAL NUNCA POR DENTRO DO SEU CENTRAL.
+
+        Esta e a ultima palavra em X, e tem de ser: quando corria antes do
+        tecto de desvio, o tecto puxava o lateral de volta para dentro dos
+        centrais — medido, 5,5% das leituras contra 1,6% com a regra no fim.
+        E uma invariante do desenho (uma linha de quatro tem quatro faixas),
+        nao um ajuste de distancia.
+        */
+        if (bb && typeof BlockShape !== 'undefined' && BlockShape.folgaDoCentral &&
+            p.role === 'def' &&
+            (p.pos === 'LB' || p.pos === 'RB' || p.pos === 'LWB' || p.pos === 'RWB')) {
+            const ladoLat = Math.sign(p.baseTarget.x) || 1;
+            let central = null;
+            for (const o of (bb.own || [])) {
+                if (!o || !o.model || o === p) continue;
+                if (o.pos !== 'CB' && o.pos !== 'DC') continue;
+                const ox = (o.tacticalTarget) ? o.tacticalTarget.x : o.model.position.x;
+                if (!central || ox * ladoLat > central * ladoLat) central = ox;
+            }
+            if (central !== null) {
+                const minimo = central * ladoLat + BlockShape.folgaDoCentral;
+                if (molaX * ladoLat < minimo) molaX = minimo * ladoLat;
             }
         }
 
