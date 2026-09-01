@@ -45,7 +45,12 @@ const corpoTick = src.slice(iTick, src.indexOf(LF + '    }', iTick));
 
 console.log(LF + '1 — os dois cortes sao condicionais');
 {
-    const cortes = corpoTick.match(/if \(res === SUCCESS[^)]*\) return;/g) || [];
+    /*
+    Os dois cortes continuam iguais no que interessa (`!comBola`); o que mudou
+    foi o corpo do `if`, que agora propõe o alvo da árvore e resolve-o antes de
+    sair — ver js/bt/alvo.js.
+    */
+    const cortes = corpoTick.match(/if \(res === SUCCESS && !comBola\)/g) || [];
     if (cortes.length !== 2) {
         erro(`esperados 2 cortes (estilo e posicao), encontrados ${cortes.length}`);
     } else ok('dois cortes, um por arvore');

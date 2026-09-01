@@ -281,6 +281,100 @@ const BlockShape = {
     folgaTransicao: 1.0,
 
     /*
+    O PENDULO — ninguem fica na outra ponta do campo.
+
+    O rectangulo tem 47.6 m de largura e o centro dele acompanha a bola em X,
+    portanto os slots espalham-se ate 23.8 m para cada lado dela: com a bola
+    numa ala, o homem do lado contrario fica na linha lateral oposta. Medido
+    com a bola a mais de 12 m do eixo: o jogador mais afastado tinha o alvo a
+    **27.5 m** da bola em X (pior caso 45.6 m), e em media **1.34** jogadores
+    ficavam a mais de 25 m. Dali nao ha linha de passe nenhuma — e a queixa da
+    figura 1.
+
+    `distanciaMaxX` e o tecto de afastamento LATERAL a bola. Quem passa dele e
+    puxado em x (so em x: a profundidade e do bloco) ate ao tecto. Nao e
+    encolher o bloco — a largura continua a mesma; e nao deixar um jogador
+    ficar fora do jogo pelo lado.
+
+    Nao se aplica a quem tem tarefa de bola, e so com posse: sem bola, fechar o
+    lado contrario entrega a ala ao adversario, que e outra conversa (ver
+    deslocamentoDeCorredor).
+    */
+    penduloParaABola: true,
+    distanciaMaxX: 22.0,
+
+    /*
+    O PENDULO NAO PODE EMBOLAR O LATERAL COM O EXTREMO.
+
+    Medido depois de o ligar: o par lateral/extremo do mesmo lado passou a
+    estar a menos de 4 m um do outro em 10% do tempo (era 4%). Puxar os dois
+    para o lado da bola sem mais nada mete-os na mesma faixa.
+
+    `separacaoLateral` e a distancia MINIMA em x entre os dois. Quem cede e o
+    LATERAL — o extremo e que da a largura, e o lateral tem de ficar por
+    dentro dele quando sobe, que e a forma como o par funciona no futebol.
+    */
+    separacaoLateral: 6.0,
+
+    /*
+    REST DEFENSE — o que fica em casa enquanto a equipa ataca.
+
+    Nao existia (esta na lista de problemas conhecidos), e via-se: os centrais
+    e o medio organizador subiam com a jogada e o adversario tinha 3 ou 4
+    homens livres nas costas. Medido com a equipa a atacar: 0.76 adversarios
+    sem NINGUEM entre eles e a nossa baliza, e tres ou mais em 12% do tempo.
+
+    Duas regras, ambas so com posse:
+
+      `defesasAtrasDaBola`  quantos jogadores de `role: 'def'` tem de ficar
+                            atras da linha da bola. Sao os que estao mais
+                            recuados; os outros sobem na mesma.
+      `recuoDaBola`         quanto atras dela, no minimo.
+
+    O organizador (o CM mais recuado) entra na mesma conta com
+    `medioAtrasDaBola`: o medio que fica e o seguro contra o contra-ataque
+    pelo meio, e era ele que aparecia na area adversaria.
+    */
+    restDefense: {
+        defesasAtrasDaBola: 3,
+        medioAtrasDaBola: 1,
+        recuoDaBola: 3.0
+    },
+
+    /*
+    O CORTE DE FORA-DE-JOGO TEM DE SER O ULTIMO A FALAR.
+
+    A camada posicional ja o fazia (ver computeBlock/tickFinal), mas media-se e
+    nao servia de nada: **9.4% dos alvos da equipa com bola estavam alem da
+    linha, e 100% deles tinham sido escritos DEPOIS** — pela arvore (nivel 3)
+    ou pelos estilos, que reescrevem o `dynamicTarget` em 45% das leituras. O
+    corte do nivel 2 nunca vazava; o problema e que ninguem o respeitava a
+    seguir.
+
+    Agora ha uma guarda no fim do `PlayerAI.tick`, depois de as tres arvores
+    correrem: e o unico sitio por onde todos os ramos passam.
+
+    FICAM DE FORA, e cada um por uma razao:
+      - quem tem a bola (nao ha fora-de-jogo com a bola nos pes);
+      - quem vai a bola (chaser/intercetor): a bola nao esta impedida;
+      - tudo o que nao seja jogo corrido (`Match.state !== 'PLAY'`): num
+        lateral, num canto ou num pontape de baliza nao ha fora-de-jogo.
+
+    `folga` e o meio metro de margem com que a camada posicional ja cortava.
+    */
+    cortarForaDeJogoNoAlvo: true,
+    folgaForaDeJogo: 0.5,
+
+    /*
+    O RESOLVEDOR DE ALVOS (js/bt/alvo.js) — as prioridades.
+
+    `false` volta ao comportamento antigo: cada camada escreve o alvo e ganha
+    quem escrever por ultimo. Existe para se poder medir a diferenca com o
+    mesmo binario, que e como se percebe se uma regra nova ajuda ou atrapalha.
+    */
+    resolverAlvoActivo: true,
+
+    /*
     Largura do bloco. É a amplitude da equipa — a manípula que o senhor pediu:
     um número só, e todas as posições abrem ou fecham em proporção.
     */
@@ -482,7 +576,23 @@ const PlayingStyleTuning = {
     foxInTheBox: {
         entradaArea: 30.0,   // nunca espera mais atrás do que isto
         esperaAtras: 8.0,    // metros à frente da bola, enquanto ela não chega
-        avancoMax: 46.0      // e nunca além disto (linha de fundo aos 53)
+        avancoMax: 46.0,     // e nunca além disto (linha de fundo aos 53)
+
+        /*
+        O QUADRADO CENTRAL DA ÁREA É A CASA DELE.
+
+        A escolha do x era um leque de -16 a +16 (o `melhorVaoX`), portanto o
+        vão mais vazio podia ser junto ao poste ou já fora dos ferros: um Fox
+        in the Box encostado à linha da área grande, a 16 m do eixo, não está
+        onde os golos se marcam.
+
+        Agora o leque começa no quadrado central (`meiaLarguraCentral`, ±7 m —
+        pouco mais do que a largura da baliza) e só abre para os lados quando
+        lá dentro não há vão nenhum livre. `bonusCentral` é o desconto que o
+        quadrado leva na comparação, para empates irem sempre para o meio.
+        */
+        meiaLarguraCentral: 7.0,
+        bonusCentral: 3.0
     },
 
     dummyRunner: {
@@ -492,7 +602,30 @@ const PlayingStyleTuning = {
         Só arranca com a jogada viva à frente dele — uma corrida de
         arrastamento com a bola na própria defesa não arrasta ninguém.
         */
-        bolaAvancoMin: -15.0
+        bolaAvancoMin: -15.0,
+
+        /*
+        A CORRIDA PUXA PARA O LADO DA JOGADA, não para a outra ponta.
+
+        Estava a correr para o `ladoEst * 15` (o lado do posto dele) quando o
+        portador estava no eixo, e a AFASTAR-SE 7 m do portador quando ele
+        estava numa ala. Com a jogada na direita e o posto dele à esquerda,
+        arrancava para a extrema esquerda: puxava marcação, sim, mas para um
+        sítio de onde não participa da jogada e onde a linha de passe já não
+        existe. É o defeito do relato.
+
+        O objectivo do Dummy Runner é levar o marcador com ele PERTO da
+        jogada — o espaço que ele abre só serve se alguém o puder usar, e a
+        bola tem de conseguir lá chegar.
+
+        `lateralDoPortador` é a distância em x a que ele corre do portador (do
+        lado de fora, para arrastar o central para a ala do lance);
+        `distanciaMax` é o tecto de afastamento — acima disto a corrida deixa
+        de ser uma opção de passe.
+        */
+        lateralDoPortador: 9.0,
+        distanciaMax: 22.0,
+        profundidadeMin: 6.0
     }
 };
 

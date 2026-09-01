@@ -1805,6 +1805,15 @@ const PosicionamentoAI = {
     tickBase: function (p, bb) {
         if (p.role === 'gk') return;   // o GK posiciona-se em updateGK()
 
+        /*
+        O FRAME COMECA AQUI: fora as propostas do frame anterior.
+
+        Sem isto, uma proposta de uma tarefa que ja acabou sobrevivia e o
+        jogador ficava presa a ela — e a prioridade dela ganhava a tudo o que
+        se propusesse de novo. Ver js/bt/alvo.js.
+        */
+        if (typeof limparPropostas === 'function') limparPropostas(p);
+
         const slot = slotNoBloco(p, bb);
         let targetX = slot ? slot.x : p.baseTarget.x;
         let targetZ = slot ? slot.z : p.baseTarget.z;
@@ -1916,11 +1925,22 @@ const PosicionamentoAI = {
             finalZ = puxado.z;
         }
 
-        // Respeito ao limite legal de fora-de-jogo (offside) mesmo com inércia
+        /*
+        FORA-DE-JOGO — LEIS DO JOGO, a prioridade mais forte de todas.
+
+        Era so um corte no alvo aqui, e media-se que nao valia nada: 9,4% dos
+        alvos da equipa com bola estavam alem da linha e 100% deles tinham sido
+        escritos DEPOIS disto (ver docs/auditoria_nivel2.md). Como LIMITE, vale
+        sobre tudo o que se propuser no frame — so o portador e quem vai a bola
+        lhe escapam, e esses escapam pela regra e nao por acidente.
+        */
         if (bb && bb.isAttacking && bb.offsideLimitDir !== undefined && bb.offsideLimitDir !== null) {
             const maxLegalZDir = bb.offsideLimitDir - 0.5;
             if (finalZ * p.dirZ > maxLegalZDir) {
                 finalZ = maxLegalZDir * p.dirZ;
+            }
+            if (!temTarefaDeBola(p, bb)) {
+                proporLimiteAvanco(p, AlvoPrio.LEIS, maxLegalZDir, 'fora-de-jogo');
             }
         }
 
@@ -1977,6 +1997,141 @@ const PosicionamentoAI = {
             const alvoZDir = finalZ * p.dirZ;
             if (alvoZDir > meuZDir + folga) {
                 finalZ = (meuZDir + folga) * p.dirZ;
+            }
+            // E como LIMITE, para valer sobre o que a arvore escrever depois.
+            proporLimiteAvanco(p, AlvoPrio.SEGURO, meuZDir + folga, 'transicao defensiva');
+        }
+
+        /*
+        PENDULO PARA O LADO DA JOGADA. Ver BlockShape.penduloParaABola: com a
+        bola numa ala, quem fica na ala oposta esta a 25-45 m dela em x e nao
+        tem linha de passe nenhuma. O tecto puxa-o em x — a profundidade
+        continua a ser a do bloco, e a largura do rectangulo nao muda.
+
+        O LATERAL DO LADO CONTRARIO NAO ENTRA. Ele nao esta ali a dar largura
+        ao ataque: esta a cobrir o extremo adversario do lado dele, que e
+        exactamente quem sai no contra-ataque quando a bola se perde do outro
+        lado. Puxa-lo para a bola era abrir esse corredor.
+        */
+        const lateralOposto = (p.role === 'def' &&
+            (p.pos === 'LB' || p.pos === 'RB' || p.pos === 'LWB' || p.pos === 'RWB') &&
+            typeof Match !== 'undefined' && Match.ball &&
+            Math.sign(p.baseTarget.x) !== 0 &&
+            Math.sign(Match.ball.position.x) !== 0 &&
+            Math.sign(p.baseTarget.x) !== Math.sign(Match.ball.position.x));
+
+        if (bb && bb.isAttacking && typeof BlockShape !== 'undefined' &&
+            BlockShape.penduloParaABola && p.role !== 'gk' && !p.hasBall &&
+            bb.chaser !== p && !lateralOposto &&
+            typeof Match !== 'undefined' && Match.ball) {
+            const tecto = BlockShape.distanciaMaxX;
+            const bolaX = Match.ball.position.x;
+            const dxPendulo = molaX - bolaX;
+            if (Math.abs(dxPendulo) > tecto) {
+                molaX = bolaX + Math.sign(dxPendulo) * tecto;
+            }
+        }
+
+        /*
+        REST DEFENSE — ver BlockShape.restDefense.
+
+        Com posse, os `defesasAtrasDaBola` defesas mais recuados e o
+        `medioAtrasDaBola` medio mais recuado nao passam a linha da bola (menos
+        `recuoDaBola`). Medido sem esta regra: 0.76 adversarios sem ninguem
+        entre eles e a propria baliza, e tres ou mais em 12% do tempo — os
+        centrais e o organizador subiam com a jogada e ficava tudo aberto.
+
+        Quem fica e escolhido pela POSICAO ACTUAL (os mais recuados), nao pela
+        etiqueta: assim o par de centrais que ja esta atras e que segura, e o
+        lateral que subiu nao e chamado de volta a meio caminho.
+        */
+        if (bb && bb.isAttacking && typeof BlockShape !== 'undefined' &&
+            BlockShape.restDefense && p.role !== 'gk' && !p.hasBall &&
+            bb.chaser !== p && typeof Match !== 'undefined' && Match.ball) {
+            const R = BlockShape.restDefense;
+            const meus = (bb.own || []).filter(o => o && o.role !== 'gk' && o.model);
+            /*
+            A ESCOLHA E PELO POSTO, NAO PELA POSICAO DO MOMENTO.
+
+            Escolher os mais recuados AGORA cria uma porta giratoria: o defesa
+            que sobe deixa de ser dos mais recuados, perde o limite, e sobe
+            mais — e outro qualquer herda o limite no lugar dele. Medido com a
+            escolha pela posicao: os centrais em -12.0 m de avanco medio,
+            contra -18.0 m quando o limite se aguenta.
+
+            Pelo `baseTarget` (o posto na formacao) o grupo e sempre o mesmo, e
+            o limite vale para quem tem mesmo de ficar.
+            */
+            const ordenar = (arr) => arr.slice().sort(
+                (a, b) => ((a.baseTarget ? a.baseTarget.z : a.model.position.z) * a.dirZ) -
+                    ((b.baseTarget ? b.baseTarget.z : b.model.position.z) * b.dirZ));
+
+            const defesas = ordenar(meus.filter(o => o.role === 'def'))
+                .slice(0, R.defesasAtrasDaBola);
+            const medios = ordenar(meus.filter(o => o.role === 'mid'))
+                .slice(0, R.medioAtrasDaBola);
+
+            if (defesas.indexOf(p) >= 0 || medios.indexOf(p) >= 0) {
+                /*
+                LIMITE, e nao um corte no alvo: assim ele vale tambem sobre o
+                que a arvore escrever a seguir (era ai que se perdia), mas
+                cede a uma tarefa de bola — o central que vai a bola vai.
+                Ver js/bt/alvo.js.
+                */
+                const tectoAvanco = Match.ball.position.z * p.dirZ - R.recuoDaBola;
+                proporLimiteAvanco(p, AlvoPrio.SEGURO, tectoAvanco, 'rest defense');
+                if (finalZ * p.dirZ > tectoAvanco) finalZ = tectoAvanco * p.dirZ;
+            }
+        }
+
+        /*
+        LATERAL E EXTREMO NAO PARTILHAM A FAIXA (BlockShape.separacaoLateral).
+
+        Com o pendulo a puxar gente para o lado da bola, o par do mesmo lado
+        colava-se: medido, a menos de 4 m um do outro em 10% do tempo (eram
+        4%), e em 211 desses 269 casos os ALVOS estavam juntos — nao era so
+        inercia dos corpos.
+
+        QUEM FICA POR FORA DEPENDE DO LADO, e e a mesma regra dos dois lados:
+
+          lado da bola      o EXTREMO da a largura (e a ala do ataque);
+                            o lateral sobe por dentro dele.
+          lado contrario    o LATERAL segura a ala (esta a cobrir o extremo
+                            adversario, que e quem sai no contra-ataque);
+                            o extremo fecha por dentro.
+
+        Cada um dos dois aplica a regra a si proprio, comparando com o ALVO do
+        outro — assim o resultado nao depende da ordem por que os jogadores
+        sao processados, e os dois convergem para a mesma separacao. Comparar
+        com a POSICAO do outro nao chega: os dois estao em movimento e vao os
+        dois atras um do outro.
+        */
+        const ehExtremo = (p.pos === 'LM' || p.pos === 'RM' || p.pos === 'LW' || p.pos === 'RW');
+        const ehLateral = (p.role === 'def' &&
+            (p.pos === 'LB' || p.pos === 'RB' || p.pos === 'LWB' || p.pos === 'RWB'));
+
+        if (bb && typeof BlockShape !== 'undefined' && BlockShape.separacaoLateral &&
+            (ehExtremo || ehLateral)) {
+            const ladoDele = Math.sign(p.baseTarget.x) || 1;
+            const parPos = ehExtremo
+                ? [(ladoDele < 0 ? 'LB' : 'RB'), (ladoDele < 0 ? 'LWB' : 'RWB')]
+                : [(ladoDele < 0 ? 'LM' : 'RM'), (ladoDele < 0 ? 'LW' : 'RW')];
+            const par = (bb.own || []).find(o => o && o.model && o !== p &&
+                parPos.indexOf(o.pos) >= 0);
+
+            if (par) {
+                const alvoPar = (par.tacticalTarget) ? par.tacticalTarget.x : par.model.position.x;
+                const bolaXsep = (typeof Match !== 'undefined' && Match.ball)
+                    ? Match.ball.position.x : 0;
+                const ladoDaBola = (Math.sign(bolaXsep) === ladoDele);
+                const souODeFora = ladoDaBola ? ehExtremo : ehLateral;
+                const sep = BlockShape.separacaoLateral;
+
+                if (souODeFora) {
+                    molaX = ladoDele * Math.max(Math.abs(molaX), Math.abs(alvoPar) + sep);
+                } else {
+                    molaX = ladoDele * Math.min(Math.abs(molaX), Math.max(0, Math.abs(alvoPar) - sep));
+                }
             }
         }
 
@@ -2044,16 +2199,44 @@ const PosicionamentoAI = {
         p.slotAnterior.x = tx;
         p.slotAnterior.z = tz;
 
+        /*
+        DAQUI PARA A FRENTE NINGUEM ESCREVE O ALVO: PROPOE.
+
+        Ver js/bt/alvo.js. A camada posicional propoe em ESTRUTURA (4) e a
+        espera pelo slot em MICRO (6) — que e a prioridade mais fraca de todas,
+        e por isso qualquer coisa que aconteca no frame (uma tarefa de bola,
+        um estilo) passa-lhe a frente, como deve ser.
+
+        O `dynamicTarget` continua a ser lido por toda a gente; o que mudou e
+        quem o escreve, e que passou a ser um so sitio (resolverAlvo).
+        */
+        const alisadoX = lerp(p._alvoEstruturaX !== undefined ? p._alvoEstruturaX : tx, tx, k);
+        const alisadoZ = lerp(p._alvoEstruturaZ !== undefined ? p._alvoEstruturaZ : tz, tz, k);
+        p._alvoEstruturaX = alisadoX;
+        p._alvoEstruturaZ = alisadoZ;
+
+        const comResolvedor = (typeof BlockShape !== 'undefined' &&
+            BlockShape.resolverAlvoActivo && typeof proporAlvo === 'function');
+
         if (esperar) {
-            p.dynamicTarget.x = p.model.position.x;
-            p.dynamicTarget.z = p.model.position.z;
-            p.dynamicTarget.y = ALTURA_BASE_Y;
+            if (comResolvedor) {
+                proporAlvo(p, AlvoPrio.MICRO, p.model.position.x, p.model.position.z,
+                    'espera pelo slot');
+            } else {
+                p.dynamicTarget.x = p.model.position.x;
+                p.dynamicTarget.z = p.model.position.z;
+                p.dynamicTarget.y = ALTURA_BASE_Y;
+            }
             return;
         }
 
-        p.dynamicTarget.x = lerp(p.dynamicTarget.x, tx, k);
-        p.dynamicTarget.z = lerp(p.dynamicTarget.z, tz, k);
-        p.dynamicTarget.y = ALTURA_BASE_Y;
+        if (comResolvedor) {
+            proporAlvo(p, AlvoPrio.ESTRUTURA, alisadoX, alisadoZ, 'slot no bloco');
+        } else {
+            p.dynamicTarget.x = alisadoX;
+            p.dynamicTarget.z = alisadoZ;
+            p.dynamicTarget.y = ALTURA_BASE_Y;
+        }
 
         /*
         E O CORTE DA TRANSICAO REPETE-SE DEPOIS DO ALISAMENTO.

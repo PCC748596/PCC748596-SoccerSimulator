@@ -5,6 +5,200 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 1 de Setembro de 2026 — as prioridades do alvo, implementadas
+
+O `js/bt/alvo.js` é novo e é o coração disto: **ninguém escreve o alvo, cada
+camada propõe**, e o alvo é resolvido uma vez por frame.
+
+```
+p.proporAlvo(prio, x, z, fonte)          "quero ir para aqui"
+p.proporLimiteAvanco(prio, max, fonte)   "não passes daqui para a frente"
+resolverAlvo(p, bb)                      decide, e escreve o dynamicTarget
+
+1 LEIS   2 BOLA   3 SEGURO   4 ACÇÃO   5 ESTRUTURA   6 MICRO
+```
+
+A regra tem duas linhas: ganha a proposta mais forte, e aplicam-se-lhe os
+limites de prioridade igual ou mais forte. Uma corrida é cortada pelo rest
+defense; um chaser não é — mas nenhum dos dois escapa às leis do jogo.
+
+Carrega ANTES do `bt/core.js` (ver a ordem no index.html e no harness).
+
+**A ACÇÃO teve de ficar acima da ESTRUTURA.** A tabela da auditoria tinha o
+slot por cima; implementada, matou o jogo — **24 passes em 10 minutos de
+física, contra ~140**. Sem poder sair do slot para se oferecer não há a quem
+passar. O slot é onde se está quando não se está a fazer nada.
+
+Três coisas que a implementação obrigou a aprender, todas medidas:
+
+- **não chega ver se a árvore mudou o alvo**: o chaser vai à bola em
+  `MOVE_TO_POS` e escreve o mesmo alvo do frame anterior; sem propor, a
+  estrutura ganhava e ninguém ia à bola (17 passes em 8 minutos). Quem tem
+  tarefa de bola propõe sempre;
+- **o rest defense escolhe pelo POSTO**, não pela posição do momento — pela
+  posição havia porta giratória (o que sobe perde o limite e sobe mais):
+  centrais a -12,0 m de avanço médio contra -15,9 m;
+- **o alisamento é da posição, não da acção**: aliza-se quando ganha ESTRUTURA
+  ou MICRO, BOLA e ACÇÃO entram a direito. Foi isto que devolveu a percentagem
+  de passe ao valor de antes.
+
+Oito minutos de física por configuração, com o interruptor
+`BlockShape.resolverAlvoActivo`:
+
+```
+                              SEM resolvedor    COM resolvedor
+passes certos/tentados         87/116 = 75,0%    82/109 = 75,2%
+adversários livres nas costas       0,77              0,51
+   três ou mais                      12%                6%
+pares com alvos a menos de 3 m       1,3%              0,1%
+alvos em fora-de-jogo                9,4%(*)           3,0%  (63% do portador)
+```
+
+(*) medição original, antes de existir qualquer corte final.
+
+Não é jogo melhor — é jogo **controlável**: uma regra nova escreve-se como um
+limite com prioridade e sabe-se de antemão o que vence e a quem cede.
+
+As folhas da árvore ainda escrevem no `dynamicTarget`; o `PlayerAI.tick` apanha
+essa escrita e transforma-a numa proposta com a prioridade da TAREFA. Migrar
+folha a folha é o passo seguinte, e é trabalho mecânico.
+
+Testes: `tests/alvo_prioridades.test.js` (10 casos, corre o resolvedor a sério)
+e `tests/nivel2_prioridades.test.js` (7). Três testes antigos que liam o
+formato do `PlayerAI.tick` foram actualizados — o corpo dos `return` mudou,
+não a regra.
+
+### Sessão de 1 de Setembro de 2026 — auditoria do nível 2
+
+Pedido depois de ver três jogadores em fora-de-jogo e quase no mesmo sítio:
+*"tem muita coisa errada, deve ter código sobrescrevendo outros; organiza as
+prioridades em ataque e defesa"*.
+
+A auditoria completa está em **[docs/auditoria_nivel2.md](auditoria_nivel2.md)**
+e a ferramenta que produz os números é
+`node tools/headless/nivel2_auditoria.js`. O essencial:
+
+**A cadeia tem 19 passos e cada um escreve por cima do anterior.** Quanto cada
+troço mexe no alvo, por jogador de campo:
+
+    slot puro   -> posto com estilo    média 1,24 m   p95 10,3 m
+    posto       -> alvo do nível 2     média 8,76 m   p95 27,9 m
+    alvo nível 2-> alvo FINAL          média 7,91 m   p95 41,9 m
+
+Ou seja: **o slot é a coisa que menos manda no sítio onde o jogador acaba**, e
+é por isso que afinar o bloco quase não se nota. O nível 3 reescreve o alvo
+(desvio > 3 m) em **45% das leituras** — 55% delas em `MOVE_TO_POS`, que é o
+estado "sem tarefa".
+
+**O corte de fora-de-jogo não valia nada.** 9,4% dos alvos da equipa com bola
+estavam além da linha, e **100% deles tinham sido escritos depois** do nível 2:
+o corte do bloco nunca vazou, o que faltava era alguém respeitá-lo a seguir (o
+`AtacarArea`, por exemplo, escreve um z absoluto da área). Guarda nova no fim
+do `PlayerAI.tick`, o único sítio por onde todos os ramos passam — excepções:
+portador, quem vai à bola, e tudo o que não seja jogo corrido.
+
+    alvos em fora-de-jogo    9,4%  ->  2,1%    (o que sobra é portador e bola parada)
+    corpos em fora-de-jogo   1,8%  ->  0,2%
+
+**Rest defense, que não existia.** Medido: 0,76 adversários sem ninguém entre
+eles e a própria baliza, três ou mais em 12% do tempo — os centrais e o médio
+organizador subiam com a jogada. Agora os três defesas e o médio mais recuados
+não passam a linha da bola (`BlockShape.restDefense`).
+
+    adversários livres nas costas   0,76 -> 0,51     (>=3 em 12% -> 5..7%)
+    avanço médio dos centrais      -9,8 m -> -14,3 m
+    avanço médio dos médios         4,9 m ->  -0,7 m
+
+**O lateral e o extremo partilhavam a faixa** depois de o pêndulo entrar: a
+menos de 4 m um do outro em 10% do tempo (eram 4%), e em 211 de 269 casos eram
+os ALVOS que estavam juntos. Regra nova: quem fica por fora depende do lado —
+no lado da bola é o extremo (a largura é dele), no lado contrário é o lateral
+(está a cobrir o extremo adversário, que é quem sai no contra-ataque). Cada um
+aplica a regra a si próprio comparando com o ALVO do outro, para não depender
+da ordem de processamento.
+
+    par a menos de 4 m   10% -> 2..4%      distância média   12,6 m -> 21 m
+
+**E o pêndulo deixou de puxar o lateral do lado contrário**: ele não está ali a
+dar largura ao ataque, está a cobrir o extremo adversário.
+
+O documento fecha com a **tabela de prioridades proposta** para as duas fases
+(leis do jogo > tarefa de bola > rest defense > estrutura > identidade > micro,
+com bola; leis > bola > estrutura > marcação > transição > micro, sem bola) e
+com o que é preciso para ela ser verdade: os passos deixarem de escrever
+directamente no alvo e passarem a PROPOR um deslocamento com prioridade,
+resolvido uma vez no fim. Enquanto cada passo escrever por cima do anterior, a
+ordem do ficheiro é que é a política.
+
+Ficam registados dois defeitos ainda POR CORRIGIR, ambos por leitura de código:
+o tecto do estilo corre antes da mola e dos cortes (três passos podem furá-lo
+depois), e a inércia pós-passe está escrita duas vezes, nos dois lados da
+cadeia.
+
+Teste: `tests/nivel2_prioridades.test.js` (5 casos).
+
+### Sessão de 1 de Setembro de 2026 — o lado da jogada
+
+Três queixas do mesmo tipo, todas de ver o jogo: gente com o alvo na ponta
+oposta à da jogada, sem linha de passe possível.
+
+**O Dummy Runner corria para o lado errado.** Ia para `ladoEst * 15` — o lado
+do POSTO dele — com o portador no eixo, e AFASTAVA-SE 7 m do portador quando
+ele estava numa ala. Com a jogada na direita e o posto à esquerda, arrancava
+para a extrema esquerda: arrastava o marcador, sim, mas para fora do lance. O
+objectivo do estilo é levar o marcador com ele PERTO da jogada — o espaço que
+abre só serve se alguém o puder usar. Agora corre para o lado do portador,
+`lateralDoPortador` (9 m) por fora dele, com tecto `distanciaMax` (22 m) e
+profundidade `profundidadeMin` à frente dele. Medido em jogo, com o estilo
+activo: **405 corridas para o lado da jogada, 0 para o lado contrário** (antes
+da correcção da referência: 452/94).
+
+E a corrida deixou de morrer no voo do passe: exigia `bb.carrier`, que é null
+enquanto a bola voa, e nesses frames o alvo voltava ao slot do bloco — medido,
+alvos a 55 m do lance no meio de uma corrida que o `correCorridaDeArrasto` dava
+por viva. Sem portador, a referência é a BOLA.
+
+**O Fox in the Box escolhia o vão mais livre, que é quase sempre o do poste.**
+O `melhorVaoX` varria de -16 a +16 e o mais vazio raramente é o meio. Agora o
+quadrado central (`meiaLarguraCentral`, ±7 m — pouco mais do que a baliza) leva
+`bonusCentral` na nota; continua a poder sair de lá quando o meio está tapado,
+e há um teste para isso. Medido:
+
+    sem bónus   15% dos alvos dentro de |x| <= 7 m,  |x| médio 13.8 m
+    com bónus   68%                                  |x| médio  7.7 m
+
+O `melhorVaoX` passou a aceitar um bónus por candidato — é o mecanismo, e serve
+para qualquer outro estilo que queira preferir uma zona sem ficar preso a ela.
+
+**O pêndulo.** O rectângulo tem 47.6 m de largura e o centro acompanha a bola
+em x, portanto os slots espalham-se até 23.8 m para cada lado dela: com a bola
+numa ala, o homem do lado contrário fica na linha lateral oposta. Medido com a
+bola a mais de 12 m do eixo, equipa a atacar:
+
+                                          antes      depois
+    alvo mais afastado da bola em x       27.5 m     24.1 m  (pior 45.6 -> 66*)
+    jogadores com alvo a mais de 25 m      1.34       0.42
+    distância mínima entre dois alvos      4.6 m      4.0 m
+
+(*) o pior caso passa a vir de alvos escritos pela árvore — o chaser a ir a uma
+bola longe — e não do slot do bloco.
+
+`BlockShape.penduloParaABola` / `.distanciaMaxX` (22 m): quem passa do tecto é
+puxado EM X para ele. A largura do bloco não muda — o que muda é não deixar um
+jogador ficar fora do jogo pelo lado. Só com posse (sem bola, fechar o lado
+contrário entrega a ala) e nunca a quem tem tarefa de bola.
+
+Não fez mal ao resto, em 15 minutos de física por configuração:
+
+    sem pêndulo   passes 168/212 = 79.2%   remates 16   golos 5
+    com pêndulo   passes 171/211 = 81.0%   remates 33   golos 10
+
+(uma corrida por lado, portanto direcção e não medida fina.)
+
+Teste: `tests/estilos_lado_da_jogada.test.js` (5 casos), que corre o
+`melhorVaoX` a sério nos dois cenários (meio livre e meio tapado) e fixa os
+tectos dos três.
+
 ### Sessão de 1 de Setembro de 2026 — na transição defensiva ninguém sobe
 
 Relato: cinco jogadores a irem para o ataque com a equipa em **T.Defensive**.
@@ -4286,6 +4480,15 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Mudar uma formação ou dimensão do campo | `config.js` |
 | Mudar quando a equipa pressiona / recua / bascula | `bt/team_bt.js` → a árvore |
 | Equipa compacta demais / esticada demais | `config.js` → `TeamShape.blockDepth*` |
+| Defesas e médio a subirem de mais no ataque | `config.js` → `BlockShape.restDefense` |
+| Lateral e extremo do mesmo lado embolados | `config.js` → `BlockShape.separacaoLateral` |
+| Jogador em fora-de-jogo apesar do bloco o cortar | `bt/player_bt.js` → `cortarForaDeJogo`; `config.js` → `BlockShape.cortarForaDeJogoNoAlvo` |
+| Decidir o que ganha quando duas camadas querem o mesmo jogador | `bt/alvo.js` → `AlvoPrio` e `resolverAlvo` |
+| Desligar as prioridades e voltar ao comportamento antigo | `config.js` → `BlockShape.resolverAlvoActivo` |
+| Perceber quem sobrescreve o alvo de quem | [docs/auditoria_nivel2.md](auditoria_nivel2.md); `node tools/headless/nivel2_auditoria.js` |
+| Jogador na ponta oposta à da jogada | `config.js` → `BlockShape.penduloParaABola` / `.distanciaMaxX` |
+| Dummy Runner a puxar marcação para longe do lance | `config.js` → `PlayingStyleTuning.dummyRunner.lateralDoPortador` / `.distanciaMax` |
+| Fox in the Box longe do quadrado central da área | `config.js` → `PlayingStyleTuning.foxInTheBox.meiaLarguraCentral` / `.bonusCentral` |
 | Equipa a subir logo depois de perder a bola | `config.js` → `BlockShape.transicaoDefensivaRecuaSo` / `.folgaTransicao` |
 | Centro do bloco mais à frente/atrás da bola | `config.js` → `BlockShape.avancoDoCentroComBola` / `.recuoDoCentroSemBola` |
 | Alturas do ajuste Low/Medium/High da linha | `config.js` → `TeamShape.linhaDefensiva` |

@@ -3095,9 +3095,23 @@ function tratarMarcacaoNoCanto(p) {
 const PlayerAI = {
     tick: function (player, dt) {
         const s = player.fsm ? player.fsm.currentState : "";
+        const bbAlvo = (typeof TeamAI !== 'undefined') ? TeamAI.get(player.team) : null;
+
+        /*
+        O ALVO E RESOLVIDO UMA VEZ, NO FIM — ver js/bt/alvo.js.
+
+        Mesmo quando a arvore nao corre (gesto em curso, passe, remate), as
+        propostas da camada posicional deste frame tem de ser resolvidas: sem
+        isso o `dynamicTarget` ficava congelado no valor do frame anterior
+        durante todo o gesto.
+        */
+        const fechar = () => {
+            if (typeof resolverAlvo === 'function') resolverAlvo(player, bbAlvo);
+        };
+
         // LATERAL entra na lista: é um gesto com duração própria (ThrowInClip),
         // e deixar o BT decidir por cima dele tirava-lhe a bola das mãos a meio.
-        if (player.actionState || s === "PASS" || s === "SHOOT" || s === "CROSS" || s === "TACKLE" || s === "SLIDE_TACKLE" || s === "CHEST_CONTROL" || s === "LATERAL") return;
+        if (player.actionState || s === "PASS" || s === "SHOOT" || s === "CROSS" || s === "TACKLE" || s === "SLIDE_TACKLE" || s === "CHEST_CONTROL" || s === "LATERAL") { fechar(); return; }
 
         if (!player.btCtx) player.btCtx = new PlayerContext(player);
         const ctx = player.btCtx.prepare(dt);
@@ -3116,7 +3130,7 @@ const PlayerAI = {
         marcação individual do canto tem prioridade sobre o bloco e sobre os
         estilos. Ver tratarMarcacaoNoCanto.
         */
-        if (tratarMarcacaoNoCanto(player)) return;
+        if (tratarMarcacaoNoCanto(player)) { fechar(); return; }
 
         /*
         1. BT do Playing Style — só na FASE DE ATAQUE da equipa.
@@ -3127,8 +3141,27 @@ const PlayerAI = {
         puxar o jogador para a sua zona preferida enquanto a equipa defende
         é exactamente o que abre buracos no bloco.
         */
-        const bbEquipa = (typeof TeamAI !== 'undefined') ? TeamAI.get(player.team) : null;
+        const bbEquipa = bbAlvo;
         const emAtaque = !!(bbEquipa && bbEquipa.isAttacking);
+
+        /*
+        O QUE A ARVORE ESCREVER NESTE FRAME VIRA UMA PROPOSTA.
+
+        As folhas continuam a escrever no `dynamicTarget` — sao dezenas e
+        migra-las uma a uma seria outro trabalho. Guarda-se o alvo ANTES de
+        elas correrem; se mudarem alguma coisa, essa mudanca entra como
+        proposta, com a prioridade da TAREFA e nao da folha:
+
+            tarefa de bola (portador, chaser, intercetor, receptor)  -> BOLA
+            tudo o resto (estilos, corridas, apoios, marcacao)        -> ACCAO
+
+        E por isso que um apoio deixa de furar o rest defense e o fora-de-jogo,
+        e um chaser continua a poder ir aonde tem de ir.
+        */
+        const alvoAntes = {
+            x: player.dynamicTarget.x,
+            z: player.dynamicTarget.z
+        };
 
         /*
         QUEM TEM A BOLA CHEGA SEMPRE AO PlayerBT.
@@ -3149,18 +3182,65 @@ const PlayerAI = {
         */
         const comBola = !!player.hasBall || (player.carryTouchGrace || 0) > 0;
 
+        /*
+        O que a arvore escreve entra como proposta (ver `alvoAntes`); a
+        prioridade sai da TAREFA. Fica numa funcao para os tres pontos de
+        saida da arvore a usarem.
+        */
+        const proporOQueAArvoreEscreveu = () => {
+            if (typeof proporAlvo !== 'function') return;
+            /*
+            NAO CHEGA VER SE O ALVO MUDOU.
+
+            Um chaser que ja vai a caminho escreve o MESMO alvo que escreveu no
+            frame anterior — e o frame anterior ja o tinha resolvido para o
+            `dynamicTarget`. Sem proposta, a estrutura ganhava e puxava-o de
+            volta ao slot: medido, o jogo parava (9 passes em 15 minutos de
+            fisica, contra ~210).
+
+            Por isso a evidencia de que a arvore quer o alvo dela e o ESTADO:
+            `MOVE_TO_POS` e `IDLE` sao os estados sem tarefa, tudo o resto e
+            uma accao em curso.
+            */
+            const est = player.fsm ? player.fsm.currentState : '';
+            const semTarefa = (est === 'MOVE_TO_POS' || est === 'IDLE' || est === '');
+            const mudou = Math.abs(player.dynamicTarget.x - alvoAntes.x) > 0.001 ||
+                Math.abs(player.dynamicTarget.z - alvoAntes.z) > 0.001;
+
+            /*
+            E QUEM VAI A BOLA PROPOE SEMPRE, mude ou nao mude o alvo.
+
+            O chaser vai a bola no estado MOVE_TO_POS — o estado nao distingue
+            "vou buscar a bola" de "estou a ocupar posicao", e o alvo dele nao
+            muda de frame para frame porque a bola esta parada. Sem esta linha
+            ele nao propunha nada, a estrutura ganhava, e ninguem ia a bola:
+            medido, 17 passes em 8 minutos de fisica contra 100 com o
+            resolvedor desligado.
+            */
+            const tarefaDeBola = (typeof temTarefaDeBola === 'function') &&
+                temTarefaDeBola(player, bbEquipa);
+            if (!mudou && semTarefa && !tarefaDeBola) return;
+            const prio = tarefaDeBola ? AlvoPrio.BOLA : AlvoPrio.ACCAO;
+            proporAlvo(player, prio, player.dynamicTarget.x, player.dynamicTarget.z,
+                'arvore:' + (player.fsm ? player.fsm.currentState : '?'));
+        };
+
         if (emAtaque && player.playingStyle && player.styleAtivo && PlayingStyleBTs[player.playingStyle]) {
             const res = PlayingStyleBTs[player.playingStyle].tick(ctx);
-            if (res === SUCCESS && !comBola) return;
+            if (res === SUCCESS && !comBola) { proporOQueAArvoreEscreveu(); fechar(); return; }
         }
 
         // 2. Prioridade: BT específico da Posição (se registado)
         if (player.pos && PositionBTs[player.pos]) {
             const res = PositionBTs[player.pos].tick(ctx);
-            if (res === SUCCESS && !comBola) return;
+            if (res === SUCCESS && !comBola) { proporOQueAArvoreEscreveu(); fechar(); return; }
         }
 
         // 3. BT Base Unificado
         PlayerBT.tick(ctx);
+
+        // 4. As propostas do frame resolvem-se aqui, e so aqui.
+        proporOQueAArvoreEscreveu();
+        fechar();
     }
 };

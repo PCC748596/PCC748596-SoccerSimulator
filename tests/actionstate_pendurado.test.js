@@ -125,7 +125,9 @@ console.log(LF + '4 — o tick continua a travar em quem TEM um gesto a decorrer
     estado que o justificava.
     */
     const i = srcBt.indexOf('    tick: function (player, dt) {');
-    const bloco = srcBt.slice(i, i + 400);
+    // A guarda ganhou um `fechar()` antes do return (o resolvedor de alvos,
+    // js/bt/alvo.js) e o bloco de cima cresceu — daí a janela maior.
+    const bloco = srcBt.slice(i, i + 1600);
     if (!/if \(player\.actionState \|\|/.test(bloco)) {
         erro('a guarda do tick desapareceu — um gesto pode agora ser interrompido a meio');
     } else ok('a guarda do tick continua la');

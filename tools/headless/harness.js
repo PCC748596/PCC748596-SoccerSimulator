@@ -65,7 +65,7 @@ const FICHEIROS = [
     'js/utils.js', 'js/ik.js', 'js/reach.js', 'js/gk_dive.js',
     'js/bt/action_state.js', 'js/perception.js', 'js/playing_styles.js',
     'js/spatial_grid.js', 'js/pass_candidates.js', 'js/pass_types.js',
-    'js/bt/core.js', 'js/bt/team_bt.js', 'js/bt/player_bt.js',
+    'js/bt/alvo.js', 'js/bt/core.js', 'js/bt/team_bt.js', 'js/bt/player_bt.js',
     'js/goal_net.js',
     // O monólito js/match.js foi dividido; a ordem é a do index.html.
     'js/match/match_state.js', 'js/match/match_setup.js', 'js/match/match_physics.js',

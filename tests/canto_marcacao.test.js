@@ -84,7 +84,8 @@ test('o ramo da marcação corre antes do resto da árvore', () => {
     assert.ok(/function tratarMarcacaoNoCanto/.test(srcBt), 'tratarMarcacaoNoCanto desapareceu');
     const ini = srcBt.indexOf('tick: function (player, dt)');
     const topo = srcBt.slice(ini, ini + 3000);
-    assert.ok(/if \(tratarMarcacaoNoCanto\(player\)\) return;/.test(topo),
+    // O `return` passou a fechar o alvo antes de sair (resolvedor de alvos).
+    assert.ok(/if \(tratarMarcacaoNoCanto\(player\)\) \{? ?(fechar\(\); )?return;/.test(topo),
         'a marcação do canto deixou de ter prioridade sobre o bloco e os estilos');
 
     const corpo = srcBt.slice(srcBt.indexOf('function tratarMarcacaoNoCanto'));
