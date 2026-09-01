@@ -319,8 +319,16 @@ function executePassGameplay(p) {
                     PassModel.encontro.elevMin, PassModel.encontro.elevMax)
                 : elev;
 
+            /*
+            O tecto de apex depende da distância: abaixo de `distanciaAlto`
+            (30 m) a bola não passa de `apexMaxCurto` (1 m), com um piso de
+            ângulo próprio para lá caber. Acima, vale o tecto normal.
+            */
+            const B = PassModel.passeArco;
+            const curto = alcancePasse < B.distanciaAlto;
             const elevComTecto = elevacaoComTectoDeApex(alcancePasse, elevFinal,
-                PassModel.passeArco.apexMax, PassModel.passeArco.elevMinLonga);
+                curto ? B.apexMaxCurto : B.apexMax,
+                curto ? B.elevMinCurto : B.elevMinLonga);
 
             const v = velocidadeParaAlcance(alcancePasse, elevComTecto);
             Match.ballVel.y = v * Math.sin(elevComTecto);

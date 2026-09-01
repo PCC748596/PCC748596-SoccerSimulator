@@ -105,30 +105,11 @@ Object.assign(Match, {
         this.btPosRectB.visible = false;
         this.scene.add(this.btPosRectB);
 
-        /*
-        DIAGONAIS DO BLOCO: as duas diagonais do rectângulo, que se cruzam no
-        centro dele. Servem para ler de relance se o centro do bloco está
-        mesmo sobre a bola — a olho, num rectângulo grande, não se distingue
-        um centro certo de um centro 8 m atrás.
 
-        LineSegments com 4 vértices = dois segmentos independentes (canto a
-        canto), ao contrário do LineLoop do contorno.
-        */
-        const criarDiagonais = (cor) => {
-            const g = new THREE.BufferGeometry();
-            g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(4 * 3), 3));
-            const linha = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: 0.45 }));
-            linha.visible = false;
-            this.scene.add(linha);
-            return linha;
-        };
-        this.btPosDiagA = criarDiagonais(0x3498db);
-        this.btPosDiagB = criarDiagonais(0xe74c3c);
-
-        // Marca do centro do bloco — o ponto onde as diagonais se cruzam.
+        // Marca do centro do bloco — quadrado cheio no meio do rectângulo.
         const criarCentro = (cor) => {
             const m = new THREE.Mesh(
-                new THREE.RingGeometry(0.55, 0.85, 24),
+                new THREE.PlaneGeometry(0.85, 0.85),
                 new THREE.MeshBasicMaterial({ color: cor, side: THREE.DoubleSide })
             );
             m.rotation.x = -Math.PI / 2;

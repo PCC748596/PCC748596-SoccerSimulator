@@ -418,12 +418,10 @@ Object.assign(Match, {
 
         this.btPosRectA.visible = false;
         this.btPosRectB.visible = false;
-        this.btPosDiagA.visible = false;
-        this.btPosDiagB.visible = false;
         this.btPosCentroA.visible = false;
         this.btPosCentroB.visible = false;
 
-        const updateRect = (teamName, rectMesh, diagMesh, centroMesh) => {
+        const updateRect = (teamName, rectMesh, centroMesh) => {
             const bb = (typeof TeamAI !== 'undefined' && TeamAI.blackboards) ? TeamAI.blackboards[teamName] : null;
             if (bb) {
                 rectMesh.visible = true;
@@ -442,15 +440,6 @@ Object.assign(Match, {
                 pts[9] = x0; pts[10] = 0.05; pts[11] = maxZ;
                 rectMesh.geometry.attributes.position.needsUpdate = true;
 
-                // Diagonais canto a canto, e a marca no cruzamento delas.
-                diagMesh.visible = true;
-                const d = diagMesh.geometry.attributes.position.array;
-                d[0] = x0; d[1] = 0.05; d[2] = minZ;
-                d[3] = x1; d[4] = 0.05; d[5] = maxZ;
-                d[6] = x1; d[7] = 0.05; d[8] = minZ;
-                d[9] = x0; d[10] = 0.05; d[11] = maxZ;
-                diagMesh.geometry.attributes.position.needsUpdate = true;
-
                 centroMesh.visible = true;
                 centroMesh.position.x = (x0 + x1) / 2;
                 centroMesh.position.z = (minZ + maxZ) / 2;
@@ -458,10 +447,10 @@ Object.assign(Match, {
         };
 
         if (window.teamBTPosState === 'TeamA' || window.teamBTPosState === 'Both') {
-            updateRect('TeamA', this.btPosRectA, this.btPosDiagA, this.btPosCentroA);
+            updateRect('TeamA', this.btPosRectA, this.btPosCentroA);
         }
         if (window.teamBTPosState === 'TeamB' || window.teamBTPosState === 'Both') {
-            updateRect('TeamB', this.btPosRectB, this.btPosDiagB, this.btPosCentroB);
+            updateRect('TeamB', this.btPosRectB, this.btPosCentroB);
         }
 
         if (!this._allPlayersCache || this._allPlayersCache.length !== this.players.length + this.opponents.length) {

@@ -13,9 +13,10 @@
     <div id="painel-comandos">
         <div id="painel-cabecalho">
             <div style="flex: 1;">
-                <h2 id="app-title" style="font-size: 0.85em; font-weight: bold; margin: 0; padding: 0;">SOCCER SIM | FPS: --
+                <h2 id="app-title" style="font-size: 0.85em; font-weight: bold; margin: 0; padding: 0;">SOCCER SIM |
+                    FPS: --
                 </h2>
-                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0621</div>
+                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0622</div>
             </div>
             <button type="button" id="btn-painel" title="Minimizar / maximizar (X) — Shift: todos"
                 onclick="togglePainel(undefined, event)">&minus;</button>
@@ -23,19 +24,26 @@
 
         <div id="painel-conteudo">
             <div style="display: flex; gap: 4px; margin-bottom: 4px;">
-                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.resetPlay()">Reset KickOff</button>
-                <button class="btn-action" style="flex: 1; margin-top: 0;" id="btn-pause" onclick="Match.togglePause()">Continue</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.resetPlay()">Reset
+                    KickOff</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;" id="btn-pause"
+                    onclick="Match.togglePause()">Continue</button>
             </div>
             <div style="display: flex; gap: 4px; margin-bottom: 8px;">
-                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerGoalKick()">Tiro de Meta</button>
-                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerCornerKick()">Corner</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerGoalKick()">Tiro de
+                    Meta</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;"
+                    onclick="Match.triggerCornerKick()">Corner</button>
             </div>
             <div style="display: flex; gap: 4px; margin-bottom: 8px;">
-                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerFreeKick()">Falta</button>
-                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerPenalty()">Pênalti</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;"
+                    onclick="Match.triggerFreeKick()">Falta</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;"
+                    onclick="Match.triggerPenalty()">Pênalti</button>
             </div>
             <div style="display: flex; gap: 4px; margin-bottom: 8px;">
-                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerThrowIn()">Lateral</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;"
+                    onclick="Match.triggerThrowIn()">Lateral</button>
             </div>
 
             <label>Formation Team A</label>
@@ -86,7 +94,8 @@
                 <option value="short">Small (60%)</option>
             </select>
 
-            <label title="Comprimento do bloco COM bola. A defender o bloco é sempre curto (30 m), por fase.">Length Compactness (com bola)</label>
+            <label title="Comprimento do bloco COM bola. A defender o bloco é sempre curto (30 m), por fase.">Length
+                Compactness (com bola)</label>
             <select id="t-length-compactness" onchange="Tatics.update()">
                 <option value="large">Large (70m)</option>
                 <option value="mediumLarge">Medium-Large (60m)</option>
@@ -140,14 +149,14 @@
                     onclick="Match.setSpeed(1.2)">1.2x</button>
                 <!-- 10x corre em passos partidos (ver o animate em main.js):
                      são ~7 updates normais por frame, não um update gigante. -->
-                <button type="button" class="btn-sector btn-speed" id="spd-10"
-                    onclick="Match.setSpeed(10)">10x</button>
+                <button type="button" class="btn-sector btn-speed" id="spd-10" onclick="Match.setSpeed(10)">10x</button>
             </div>
 
 
             <div class="subpainel-cabecalho">
                 <h2 style="border-bottom: 2px solid #3498db; color: #3498db;">BLUE AVERAGE</h2>
-                <button type="button" class="btn-subpainel" id="btn-skills-a" title="Minimizar / maximizar — Shift: todos"
+                <button type="button" class="btn-subpainel" id="btn-skills-a"
+                    title="Minimizar / maximizar — Shift: todos"
                     onclick="toggleSkillsTeam('a', undefined, event)">&plus;</button>
             </div>
             <div id="skills-conteudo-a" class="oculto">
@@ -170,7 +179,8 @@
 
             <div class="subpainel-cabecalho">
                 <h2 style="border-bottom: 2px solid #e74c3c; color: #e74c3c;">RED AVERAGE</h2>
-                <button type="button" class="btn-subpainel" id="btn-skills-b" title="Minimizar / maximizar — Shift: todos"
+                <button type="button" class="btn-subpainel" id="btn-skills-b"
+                    title="Minimizar / maximizar — Shift: todos"
                     onclick="toggleSkillsTeam('b', undefined, event)">&plus;</button>
             </div>
             <div id="skills-conteudo-b" class="oculto">
@@ -209,7 +219,11 @@
                 <div id="estat-relogio">a aguardar jogo…</div>
                 <table id="estat-tabela">
                     <thead>
-                        <tr><th>Estatística</th><th>Medido</th><th>Alvo</th></tr>
+                        <tr>
+                            <th>Estatística</th>
+                            <th>Medido</th>
+                            <th>Alvo</th>
+                        </tr>
                     </thead>
                     <tbody id="estat-linhas"></tbody>
                 </table>
@@ -219,102 +233,107 @@
     </div>
 
     <div id="coluna-direita">
-    <div id="painel-direito">
-        <div id="painel-direito-cabecalho">
-            <h2>Teams States</h2>
-            <button type="button" id="btn-painel-direito" title="Minimizar / maximizar (X) — Shift: todos"
-                onclick="togglePainelDireito(undefined, event)">&minus;</button>
-        </div>
-
-        <div id="painel-direito-conteudo">
-            <div id="hud-info" style="margin-bottom: 10px; font-weight: bold;">
-                <span id="hud-state-a" style="color:#3498db">Construção</span> | <span id="hud-state-b"
-                    style="color:#e74c3c">Defesa</span>
+        <div id="painel-direito">
+            <div id="painel-direito-cabecalho">
+                <h2>Teams States</h2>
+                <button type="button" id="btn-painel-direito" title="Minimizar / maximizar (X) — Shift: todos"
+                    onclick="togglePainelDireito(undefined, event)">&minus;</button>
             </div>
 
-            <hr class="linha-sep">
-
-            <label>Visibilidade</label>
-            <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;">
-                <button type="button" class="btn-sector" id="btn-offside" onclick="toggleOffside()">OffSide:
-                    OFF</button>
-                <button type="button" class="btn-sector" id="btn-playernumber"
-                    onclick="togglePlayerNumber()">PlayerNumber: OFF</button>
-                <button type="button" class="btn-sector" id="btn-playerpoints"
-                    onclick="togglePlayerPoints()">PlayerPoints: OFF</button>
-                <button type="button" class="btn-sector" id="btn-playerbt" onclick="togglePlayerBT()">PlayerBT:
-                    OFF</button>
-                <button type="button" class="btn-sector" id="btn-playerpos" onclick="togglePlayerPOS()">PlayerPOS:
-                    OFF</button>
-                <button type="button" class="btn-sector" id="btn-playerplayingstyle" onclick="togglePlayerPlayingStyle()">Player Playing Style:
-                    OFF</button>
-                <button type="button" class="btn-sector active" id="btn-all-playing-styles" onclick="toggleAllPlayingStyles()">All Playing Styles:
-                    ON</button>
-                <button type="button" class="btn-sector" id="btn-teambtpos" onclick="toggleTeamBTPos()">Team BT POS:
-                    OFF</button>
-
-                <button type="button" class="btn-sector" id="btn-positionbt" onclick="togglePositionBT()">PositionBT:
-                    OFF</button>
-
-                <button type="button" class="btn-sector" id="btn-playingstylebt" onclick="togglePlayingStyleBT()">PlayingStyleBT:
-                    OFF</button>
-                <button type="button" class="btn-sector active" id="btn-minimapa"
-                    onclick="toggleMinimapa()">Minimapa: ON</button>
-                <button type="button" class="btn-sector active" id="btn-arbitragem"
-                    onclick="toggleArbitragem()">Arbitragem: ON</button>
-                <button type="button" class="btn-sector active" id="btn-fans"
-                    onclick="toggleFans()">Fans: ON</button>
-                <button type="button" class="btn-sector" id="btn-som"
-                    onclick="toggleSom()">Som: OFF</button>
-                <button type="button" class="btn-sector active" id="btn-sombras"
-                    onclick="toggleSombras()">Sombras: ON</button>
-                <button type="button" class="btn-sector" id="btn-passgrid"
-                    onclick="toggleUsarPasseGrid()">PassGrid (decisão): OFF</button>
-                <button type="button" class="btn-sector" id="btn-touch-toggle"
-                    onclick="TouchControls.toggle(); this.classList.toggle('active', TouchControls.enabled); this.innerText = 'Touch Controls: ' + (TouchControls.enabled ? 'ON' : 'OFF');">Touch Controls: OFF</button>
-                <button type="button" class="btn-sector" id="btn-teambtview"
-                    onclick="window.open('teamBtView.html', 'teamBtView', 'width=900,height=700')">TeamBT
-                    Fluxograma (nova aba)</button>
-            </div>
-
-            <hr class="linha-sep">
-            <label>Simulação em lote (sem ecrã)</label>
-            <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;">
-                <div style="display: flex; gap: 6px;">
-                    <label style="flex: 1; margin: 0;">Jogos
-                        <input type="number" id="sim-jogos" min="1" max="100" step="1" value="2" oninput="actualizarAvisoDoLote()"
-                            style="width: 100%;"></label>
-                    <label style="flex: 1; margin: 0;" title="Minutos do RELÓGIO DO JOGO, não tempo real de espera">Min/jogo (jogo)
-                        <input type="number" id="sim-minutos" min="1" max="90" step="1" value="25" oninput="actualizarAvisoDoLote()"
-                            style="width: 100%;"></label>
+            <div id="painel-direito-conteudo">
+                <div id="hud-info" style="margin-bottom: 10px; font-weight: bold;">
+                    <span id="hud-state-a" style="color:#3498db">Construção</span> | <span id="hud-state-b"
+                        style="color:#e74c3c">Defesa</span>
                 </div>
-                <!-- Os 21 playing styles só ficam todos cobertos com 11 jogos:
+
+                <hr class="linha-sep">
+
+                <label>Visibilidade</label>
+                <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;">
+                    <button type="button" class="btn-sector" id="btn-offside" onclick="toggleOffside()">OffSide:
+                        OFF</button>
+                    <button type="button" class="btn-sector" id="btn-playernumber"
+                        onclick="togglePlayerNumber()">PlayerNumber: OFF</button>
+                    <button type="button" class="btn-sector" id="btn-playerpoints"
+                        onclick="togglePlayerPoints()">PlayerPoints: OFF</button>
+                    <button type="button" class="btn-sector" id="btn-playerbt" onclick="togglePlayerBT()">PlayerBT:
+                        OFF</button>
+                    <button type="button" class="btn-sector" id="btn-playerpos" onclick="togglePlayerPOS()">PlayerPOS:
+                        OFF</button>
+                    <button type="button" class="btn-sector" id="btn-playerplayingstyle"
+                        onclick="togglePlayerPlayingStyle()">Player Playing Style:
+                        OFF</button>
+                    <button type="button" class="btn-sector active" id="btn-all-playing-styles"
+                        onclick="toggleAllPlayingStyles()">All Playing Styles:
+                        ON</button>
+                    <button type="button" class="btn-sector" id="btn-teambtpos" onclick="toggleTeamBTPos()">Team BT POS:
+                        OFF</button>
+
+                    <button type="button" class="btn-sector" id="btn-positionbt"
+                        onclick="togglePositionBT()">PositionBT:
+                        OFF</button>
+
+                    <button type="button" class="btn-sector" id="btn-playingstylebt"
+                        onclick="togglePlayingStyleBT()">PlayingStyleBT:
+                        OFF</button>
+                    <button type="button" class="btn-sector active" id="btn-minimapa"
+                        onclick="toggleMinimapa()">Minimapa: ON</button>
+                    <button type="button" class="btn-sector active" id="btn-arbitragem"
+                        onclick="toggleArbitragem()">Arbitragem: ON</button>
+                    <button type="button" class="btn-sector active" id="btn-fans" onclick="toggleFans()">Fans:
+                        ON</button>
+                    <button type="button" class="btn-sector" id="btn-som" onclick="toggleSom()">Som: OFF</button>
+                    <button type="button" class="btn-sector active" id="btn-sombras" onclick="toggleSombras()">Sombras:
+                        ON</button>
+                    <button type="button" class="btn-sector" id="btn-passgrid" onclick="toggleUsarPasseGrid()">PassGrid
+                        (decisão): OFF</button>
+                    <button type="button" class="btn-sector" id="btn-touch-toggle"
+                        onclick="TouchControls.toggle(); this.classList.toggle('active', TouchControls.enabled); this.innerText = 'Touch Controls: ' + (TouchControls.enabled ? 'ON' : 'OFF');">Touch
+                        Controls: OFF</button>
+                    <button type="button" class="btn-sector" id="btn-teambtview"
+                        onclick="window.open('teamBtView.html', 'teamBtView', 'width=900,height=700')">TeamBT
+                        Fluxograma (nova aba)</button>
+                </div>
+
+                <hr class="linha-sep">
+                <label>Simulação em lote (sem ecrã)</label>
+                <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;">
+                    <div style="display: flex; gap: 6px;">
+                        <label style="flex: 1; margin: 0;">Jogos
+                            <input type="number" id="sim-jogos" min="1" max="100" step="1" value="2"
+                                oninput="actualizarAvisoDoLote()" style="width: 100%;"></label>
+                        <label style="flex: 1; margin: 0;"
+                            title="Minutos do RELÓGIO DO JOGO, não tempo real de espera">Min/jogo (jogo)
+                            <input type="number" id="sim-minutos" min="1" max="90" step="1" value="25"
+                                oninput="actualizarAvisoDoLote()" style="width: 100%;"></label>
+                    </div>
+                    <!-- Os 21 playing styles só ficam todos cobertos com 11 jogos:
                      cada jogo usa uma formação e há 4 estilos à espera do único
                      LW do 433 (ver construirPlanoCobertura em js/simulate.js). -->
-                <div id="sim-aviso-cobertura" style="font-size: 11px; opacity: 0.75;"></div>
-                <button type="button" class="btn-sector" id="btn-fastsim" onclick="runFastSim()">Simular
-                    lote</button>
+                    <div id="sim-aviso-cobertura" style="font-size: 11px; opacity: 0.75;"></div>
+                    <button type="button" class="btn-sector" id="btn-fastsim" onclick="runFastSim()">Simular
+                        lote</button>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div id="painel-jogadores">
-        <div id="painel-jogadores-cabecalho">
-            <h2>Player Skills</h2>
-            <button type="button" id="btn-painel-jogadores" title="Minimizar / maximizar — Shift: todos"
-                onclick="togglePainelJogadores(undefined, event)">&minus;</button>
-        </div>
-        <div id="painel-jogadores-conteudo">
-            <div class="jogadores-col">
-                <h3 style="color:#3498db">Blue</h3>
-                <div id="lista-jogadores-a"></div>
+        <div id="painel-jogadores">
+            <div id="painel-jogadores-cabecalho">
+                <h2>Player Skills</h2>
+                <button type="button" id="btn-painel-jogadores" title="Minimizar / maximizar — Shift: todos"
+                    onclick="togglePainelJogadores(undefined, event)">&minus;</button>
             </div>
-            <div class="jogadores-col">
-                <h3 style="color:#e74c3c">Red</h3>
-                <div id="lista-jogadores-b"></div>
+            <div id="painel-jogadores-conteudo">
+                <div class="jogadores-col">
+                    <h3 style="color:#3498db">Blue</h3>
+                    <div id="lista-jogadores-a"></div>
+                </div>
+                <div class="jogadores-col">
+                    <h3 style="color:#e74c3c">Red</h3>
+                    <div id="lista-jogadores-b"></div>
+                </div>
             </div>
         </div>
-    </div>
     </div><!-- /coluna-direita -->
 
     <!-- Portador da bola (esquerda) e marcador mais próximo dele (direita) -->
@@ -323,7 +342,8 @@
         <div class="hud-jog-info">
             <div class="hud-jog-nome">-</div>
             <div class="hud-jog-stamina-bar">
-                <span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span>
+                <span class="seg"></span><span class="seg"></span><span class="seg"></span><span
+                    class="seg"></span><span class="seg"></span>
             </div>
         </div>
     </div>
@@ -332,7 +352,8 @@
         <div class="hud-jog-info">
             <div class="hud-jog-nome">-</div>
             <div class="hud-jog-stamina-bar">
-                <span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span>
+                <span class="seg"></span><span class="seg"></span><span class="seg"></span><span
+                    class="seg"></span><span class="seg"></span>
             </div>
         </div>
     </div>

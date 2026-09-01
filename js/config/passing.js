@@ -182,6 +182,20 @@ const PassModel = {
         apexMax: 7.0,
 
         /*
+        TECTO DE ALTURA DOS PASSES ABAIXO DE `distanciaAlto` (pedido
+        explícito). Um passe de 18 m saía com 3-4 m de apex — pelo ar, mas
+        sem nada no caminho que justificasse levantá-lo. Abaixo dos 30 m a
+        bola pode sair do chão, mas no máximo `apexMaxCurto`; acima, vale o
+        `apexMax` normal.
+
+        `elevMinCurto` é o piso de ângulo que este tecto precisa: 1 m de apex
+        a 25 m dá 9.1°, e o `elevMinLonga` (15°) não deixaria lá chegar.
+        */
+        apexMaxCurto: 1.0,
+        distanciaAlto: 30.0,
+        elevMinCurto: 4 * Math.PI / 180,
+
+        /*
         E quando nem no mínimo da faixa o apex cabe — um passe de 55 m a 25°
         ainda sobe 11 m — a bola sai MAIS TENSA do que a faixa do gesto
         permite. É o que um jogador faz mesmo: a alternativa a um passe longo
