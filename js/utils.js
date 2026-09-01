@@ -3205,6 +3205,319 @@ function distanciaMinimaNoLateral(pos) {
     return (typeof v === 'number') ? v : (T.distanciaMinimaOmissao || 0);
 }
 
+/*
+=============================================================================
+FALTA DIRECTA - geometria e desfecho
+=============================================================================
+Tudo aqui e PURO: sem Match, sem THREE, com o sorteio injectavel (`rnd`). E a
+unica forma de varrer mil cobrancas num teste sem montar um jogo - ver
+tests/falta_directa.test.js. Constantes em DirectFreeKickModel (config).
+*/
+
+/*
+ONDE A BOLA FICA numa falta directa forcada.
+
+Duas condicoes, e e a segunda que desenha a faixa:
+
+    |x| <= xMaxDoCentro                            (ate 10 m do centro da baliza)
+    dist(bola, poste mais perto) <= distPosteMax   (23 m)
+
+mais a grande area, de onde nao se bate falta nenhuma. Dado o x, a
+profundidade maxima sai de Pitagoras sobre a distancia ao poste, e a minima e a
+linha da area com folga. De frente chega-se aos ~23 m; muito aberto, menos.
+
+`attDir` e a direccao de ataque de quem bate: a baliza esta em attDir * 53.
+*/
+function pontoDaFaltaDirecta(attDir, rnd) {
+    const D = (typeof DirectFreeKickModel !== 'undefined') ? DirectFreeKickModel : {
+        xMaxDoCentro: 10.0, distPosteMax: 23.0, folgaArea: 0.8
+    };
+    const r = rnd || Math.random;
+    const meiaBaliza = (typeof LARGURA_BALIZA !== 'undefined') ? LARGURA_BALIZA / 2 : 3.66;
+    const profArea = (typeof Area !== 'undefined') ? Area.profundidade : 16.5;
+    const linhaFundo = (typeof LINHA_FUNDO !== 'undefined') ? LINHA_FUNDO : 53;
+
+    const x = (r() * 2 - 1) * D.xMaxDoCentro;
+
+    // Distancia transversal ao poste mais perto (zero quando a bola esta entre
+    // os postes).
+    const dxPoste = Math.max(0, Math.abs(x) - meiaBaliza);
+    const restante = D.distPosteMax * D.distPosteMax - dxPoste * dxPoste;
+    const profMax = Math.sqrt(Math.max(0, restante));
+    const profMin = profArea + D.folgaArea;
+
+    // Se a faixa fechar (nao fecha com os valores de omissao), fica na borda.
+    const prof = (profMax > profMin) ? (profMin + r() * (profMax - profMin)) : profMin;
+
+    return { x: x, z: attDir * linhaFundo - attDir * prof, prof: prof };
+}
+
+/*
+ONDE A BARREIRA SE POE.
+
+Nao e centrada na linha bola->baliza: e encostada ao CANTO DO REMATE. A ponta
+de fora da barreira fica na linha bola->poste mais perto, com `sobraPoste` de
+margem para la dela - e a barreira que fecha esse canto, e o guarda-redes cobre
+o outro, que e o que ele alcanca a mergulhar.
+
+Centrada, como esta no ramo FREE_KICK generico, deixa os dois cantos meio
+abertos e nenhum fechado.
+
+Devolve `n` lugares, ombro a ombro, perpendiculares a linha bola->baliza.
+*/
+function lugaresDaBarreira(bolaX, bolaZ, attDir, n, cfg) {
+    const D = cfg || ((typeof DirectFreeKickModel !== 'undefined') ? DirectFreeKickModel : null) || {
+        distanciaBarreira: 9.15, espacamentoBarreira: 0.55, sobraPoste: 0.45
+    };
+    const meiaBaliza = (typeof LARGURA_BALIZA !== 'undefined') ? LARGURA_BALIZA / 2 : 3.66;
+    const linhaFundo = (typeof LINHA_FUNDO !== 'undefined') ? LINHA_FUNDO : 53;
+    const golZ = attDir * linhaFundo;
+
+    // Linha bola -> centro da baliza, e a perpendicular dela.
+    let dx = 0 - bolaX, dz = golZ - bolaZ;
+    const d = Math.hypot(dx, dz) || 1;
+    dx /= d; dz /= d;
+    const px = -dz, pz = dx;
+
+    // O poste MAIS PERTO e o do lado de onde a bola esta.
+    const ladoTiro = Math.sign(bolaX) || 1;
+    const postX = ladoTiro * meiaBaliza;
+
+    // Onde a linha bola->poste corta o circulo de `distanciaBarreira`.
+    let qx = postX - bolaX, qz = golZ - bolaZ;
+    const q = Math.hypot(qx, qz) || 1;
+    qx /= q; qz /= q;
+    const bordaX = bolaX + qx * D.distanciaBarreira;
+    const bordaZ = bolaZ + qz * D.distanciaBarreira;
+
+    // Centro da barreira: da borda para dentro, meia barreira mais a sobra.
+    const meiaBarreira = ((n - 1) / 2) * D.espacamentoBarreira;
+    const desloca = meiaBarreira + D.sobraPoste;
+
+    // O sentido "para fora" (na perpendicular) e o do lado do poste.
+    const sinalPerp = ((postX - bolaX) * px + (golZ - bolaZ) * pz) >= 0 ? 1 : -1;
+
+    const cx = bordaX - sinalPerp * px * desloca;
+    const cz = bordaZ - sinalPerp * pz * desloca;
+
+    const lugares = [];
+    for (let i = 0; i < n; i++) {
+        const off = (i - (n - 1) / 2) * D.espacamentoBarreira;
+        lugares.push({ x: cx + px * off, z: cz + pz * off });
+    }
+    return lugares;
+}
+
+/*
+Altura da bola ao passar por `dist` metros em planta, com arrasto - a mesma
+integracao do updateBall. O `velocidadeParaAlturaNoAlvo` tem esta conta fechada
+dentro dele; aqui e preciso le-la de fora, para saber se o remate LIMPA A
+BARREIRA.
+*/
+function alturaDaBolaEm(dist, v, elev, y0) {
+    const g = BallPhysics.gravidade;
+    const k = BallPhysics.kArrasto;
+    let x = 0, y = (typeof y0 === 'number') ? y0 : BallPhysics.raio;
+    let vx = v * Math.cos(elev), vy = v * Math.sin(elev);
+    const dt = 1 / 120;
+    for (let i = 0; i < 900; i++) {
+        const s = Math.hypot(vx, vy);
+        if (s > 0.001) { const dv = k * s * s * dt; vx -= vx / s * dv; vy -= vy / s * dv; }
+        vy -= g * dt;
+        const xAnt = x, yAnt = y;
+        x += vx * dt; y += vy * dt;
+        if (x >= dist) {
+            const f = (dist - xAnt) / Math.max(1e-6, x - xAnt);
+            return yAnt + (y - yAnt) * f;
+        }
+        if (y < -2) return -Infinity;
+    }
+    return -Infinity;
+}
+
+/*
+QUAL DOS DOZE DESFECHOS. Banda de `diff` -> tabela de pesos -> sorteio.
+
+O `diff` e o mesmo do penalti: (TEC + d10) - (GK + d10). Devolve o NOME do
+desfecho; quem o realiza e o `alvoDaFaltaDirecta`, mais abaixo.
+*/
+function bandaDaFaltaDirecta(diff) {
+    if (diff > 5) return 'perfeito';
+    if (diff >= 3) return 'bom';
+    if (diff >= 1) return 'medio';
+    if (diff >= -2) return 'fraco';
+    if (diff >= -4) return 'mau';
+    return 'pessimo';
+}
+
+function desfechoDaFaltaDirecta(diff, rnd) {
+    const D = DirectFreeKickModel;
+    const r = rnd || Math.random;
+    const tabela = D.desfechos[bandaDaFaltaDirecta(diff)];
+    const nomes = Object.keys(tabela);
+    let total = 0;
+    for (const k of nomes) total += tabela[k];
+    let s = r() * total;
+    for (const k of nomes) {
+        s -= tabela[k];
+        if (s <= 0) return k;
+    }
+    return nomes[nomes.length - 1];
+}
+
+/*
+ONDE CADA DESFECHO APONTA, no plano da baliza.
+
+Devolve `{ x, y, naBaliza, batidaNaBarreira, porBaixo }`:
+
+  x, y              o ponto mirado no plano da linha de fundo
+  naBaliza          o remate ia mesmo para dentro (e o que autoriza a defesa)
+  batidaNaBarreira  a bola vai a barreira (bate, desvia para dentro ou fora)
+  porBaixo          rasteiro, por baixo da barreira ja no ar
+
+`ladoTiro` e o lado do campo de onde se bate (sinal do x da bola): o canto
+FECHADO pela barreira e esse, portanto os remates colocados vao ao canto
+oposto - e o que se ve num jogo.
+*/
+function alvoDaFaltaDirecta(nome, ladoTiro, rnd) {
+    const D = DirectFreeKickModel;
+    const r = rnd || Math.random;
+    const meiaBaliza = (typeof LARGURA_BALIZA !== 'undefined') ? LARGURA_BALIZA / 2 : 3.66;
+    const altBaliza = (typeof ALTURA_BALIZA !== 'undefined') ? ALTURA_BALIZA : 2.44;
+    const lado = ladoTiro >= 0 ? 1 : -1;
+    const oposto = -lado;
+
+    const alturaGol = () => D.alturaGoloMin + r() * (D.alturaGoloMax - D.alturaGoloMin);
+    // Sempre para lá do alcance de quem está de pé ao meio (xGoloMin) — ver a
+    // nota no DirectFreeKickModel.
+    const xGol = () => oposto * (D.xGoloMin + r() * (D.xGoloMax - D.xGoloMin));
+    const xDefesa = () => oposto * (D.defesaXMin + r() * (D.defesaXMax - D.defesaXMin));
+    const yDefesa = () => D.alturaGoloMin + r() * (D.defesaYMax - D.alturaGoloMin);
+
+    switch (nome) {
+        case 'gol':
+            return { x: xGol(), y: alturaGol(), naBaliza: true, nome: nome };
+        case 'defesa':
+        case 'defesa_fora':
+            // Ao alcance do mergulho: é uma defesa, não um golo que ele não
+            // chegou a ver.
+            return { x: xDefesa(), y: yDefesa(), naBaliza: true, defesa: nome, nome: nome };
+        case 'trave_gol':
+            return { x: oposto * (meiaBaliza - D.margemDentro), y: alturaGol(), naBaliza: true, nome: nome };
+        case 'trave_fora':
+            return { x: oposto * (meiaBaliza + D.margemFora), y: alturaGol(), naBaliza: false, nome: nome };
+        case 'travessao_gol':
+            return { x: xGol(), y: altBaliza - D.margemDentro, naBaliza: true, nome: nome };
+        case 'travessao_fora':
+            return { x: xGol(), y: altBaliza + D.margemFora, naBaliza: false, nome: nome };
+        case 'fora':
+            return (r() < 0.5)
+                ? { x: oposto * (meiaBaliza + D.foraLargura), y: alturaGol(), naBaliza: false, nome: nome }
+                : { x: xGol(), y: altBaliza + D.foraAltura, naBaliza: false, nome: nome };
+        case 'na_barreira':
+        case 'barreira_gol':
+        case 'barreira_fora':
+            // Aponta ao meio da barreira; o desvio resolve-se no impacto.
+            return { x: lado * 1.2, y: 1.4, naBaliza: false, batidaNaBarreira: nome, nome: nome };
+        case 'por_baixo':
+            /*
+            Rasteiro por baixo da barreira: tem de ir ao CANTO. Ao meio, uma
+            bola no chao a 19 m/s e uma bola que o guarda-redes recolhe de pe —
+            medido, 20 em 20 acabavam nas maos dele.
+            */
+            return {
+                x: oposto * (D.xGoloMax - 0.3 + r() * 0.3),
+                y: BallPhysics.raio, naBaliza: true, porBaixo: true, nome: nome
+            };
+        default:
+            return { x: 0, y: 1.2, naBaliza: true, nome: nome };
+    }
+}
+
+/*
+A BALISTICA DA COBRANCA.
+
+Procura a elevacao MAIS BAIXA (o remate mais tenso) que faz duas coisas ao
+mesmo tempo: passa por cima da barreira com `folgaSobreBarreira` e chega ao
+ponto pedido no plano da baliza. A velocidade de cada tentativa sai do
+`velocidadeParaAlturaNoAlvo`, que ja resolve o arrasto.
+
+O desfecho `por_baixo` e o contrario: quer-se a bola ABAIXO dos pes da barreira
+no ar, portanto rasteira, e nao se pede folga nenhuma.
+
+Devolve `{ v, elev, alturaNaBarreira }` ou null quando dali nao sai remate
+nenhum - o chamador decide.
+*/
+function tiroDaFaltaDirecta(distGol, distBarreira, alvoY, porBaixo, cfg) {
+    const D = cfg || DirectFreeKickModel;
+    const y0 = BallPhysics.raio;
+    const topo = porBaixo
+        ? D.alturaSaltoBarreira * 0.85
+        : D.alturaSalto + D.folgaSobreBarreira;
+
+    /*
+    O REMATE POR BAIXO E RASTEIRO, e nao uma parabola baixa.
+
+    Pedir ao solver uma parabola que aterre no chao a 20 m da-lhe um arco: a
+    bola passava a 0.42 m sobre a barreira, ou seja pelos pes de quem saltou.
+    Um remate por baixo da barreira e uma bola no CHAO, que rola por baixo dos
+    pes no ar — a mesma conta de um passe rasteiro (velocidadeRasteiraPara),
+    com a velocidade de chegada de um remate.
+    */
+    if (porBaixo) {
+        const vRas = velocidadeRasteiraPara(distGol, D.vChegadaPorBaixo);
+        return { v: vRas, elev: 0, alturaNaBarreira: y0 };
+    }
+
+    const PASSOS = 26;
+    let melhor = null;
+    for (let i = 0; i <= PASSOS; i++) {
+        const elev = D.elevMin + (D.elevMax - D.elevMin) * (i / PASSOS);
+        const v = velocidadeParaAlturaNoAlvo(distGol, elev, alvoY, y0);
+        if (v === null) continue;
+        const hBarreira = alturaDaBolaEm(distBarreira, v, elev, y0);
+        const passa = porBaixo ? (hBarreira <= topo) : (hBarreira >= topo);
+        if (passa) return { v: v, elev: elev, alturaNaBarreira: hBarreira };
+        /*
+        Guarda a tentativa que menos falha o criterio: um remate que so falha a
+        folga por centimetros e melhor do que devolver null e nao haver
+        cobranca nenhuma.
+        */
+        const erro = porBaixo ? (hBarreira - topo) : (topo - hBarreira);
+        if (!melhor || erro < melhor.erro) {
+            melhor = { v: v, elev: elev, alturaNaBarreira: hBarreira, erro: erro };
+        }
+    }
+    return melhor ? { v: melhor.v, elev: melhor.elev, alturaNaBarreira: melhor.alturaNaBarreira } : null;
+}
+
+/*
+ONDE OS COMPANHEIROS DE QUEM BATE SE POEM.
+
+Duas regras, e sao as do pedido: NUNCA em fora-de-jogo, e nunca a tapar a
+cobranca. A primeira resolve-se pondo-os atras da linha da bola - com a bola a
+frente deles nao ha fora-de-jogo possivel, seja qual for a ultima linha. A
+segunda, mantendo-os fora do corredor bola->baliza.
+
+Ficam em leque atras da bola, alternando os lados a partir do corredor.
+*/
+function lugaresDoApoioNaFaltaDirecta(bolaX, bolaZ, attDir, quantos, cfg) {
+    const D = cfg || DirectFreeKickModel;
+    const meiaLarg = (typeof MEIA_LARGURA_CAMPO !== 'undefined') ? MEIA_LARGURA_CAMPO : 34;
+    const lugares = [];
+    for (let i = 0; i < quantos; i++) {
+        const lado = (i % 2 === 0) ? 1 : -1;
+        const passo = Math.floor(i / 2);
+        const x = bolaX + lado * (D.corredorLivre + passo * D.espacamentoApoio);
+        const z = bolaZ - attDir * (D.recuoOnside + passo * 1.5);
+        lugares.push({
+            x: Math.max(-(meiaLarg - 1), Math.min(meiaLarg - 1, x)),
+            z: z
+        });
+    }
+    return lugares;
+}
+
 if (typeof window !== 'undefined') {
     Object.assign(window, {
         gkAnchor, gkAlvoSegurando, gkPodeLancar, gkSweepTarget,
@@ -3212,6 +3525,9 @@ if (typeof window !== 'undefined') {
         pontoDeCanto, fechoDoSector, atribuirApoios,
         hashAparencia, repartirPorPeso, baralharPorHash, escolherAparencia,
         offsetInquietacao, coneVisao, alcanceVisao,
-        esperarPeloSlot, eixoDeConducao, distanciaMinimaNoLateral
+        esperarPeloSlot, eixoDeConducao, distanciaMinimaNoLateral,
+        pontoDaFaltaDirecta, lugaresDaBarreira, alturaDaBolaEm,
+        bandaDaFaltaDirecta, desfechoDaFaltaDirecta, alvoDaFaltaDirecta,
+        tiroDaFaltaDirecta, lugaresDoApoioNaFaltaDirecta
     });
 }

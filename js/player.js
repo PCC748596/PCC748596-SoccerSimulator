@@ -1110,11 +1110,203 @@ class FootballPlayer {
         this.fsm.changeState('SHOOT');
     }
 
+    /*
+    COBRAR A FALTA DIRECTA.
+
+    Mesmo desenho do penalti — ActionState com o clip do remate, resolucao
+    propria no `onContact` — com o que so existe quando ha barreira: passar-lhe
+    por cima, bater nela, desviar nela, ou passar-lhe por baixo enquanto ela
+    salta.
+
+    O duelo e o mesmo do penalti: `diff = (TEC + d10) - (GK + d10)`. A banda de
+    diff escolhe a tabela de pesos (DirectFreeKickModel.desfechos) e dela sai UM
+    dos doze desfechos; o `alvoDaFaltaDirecta` diz onde esse desfecho aponta e o
+    `tiroDaFaltaDirecta` procura a elevacao mais tensa que limpa a barreira e la
+    chega. Tudo em utils.js, puro e medido em tests/falta_directa.test.js.
+
+    Ao contrario do penalti, o guarda-redes NAO parte com a bola: o
+    `gkDelayReacao` sai da habilidade dele (ver o atraso mais abaixo), porque a
+    bola aparece-lhe por cima da barreira e ele perde-a de vista.
+    */
+    baterFaltaDirecta() {
+        const DF = DirectFreeKickModel;
+        const contactTime = ActionAnimClips['shot'] ? ActionAnimClips['shot'].contactTime : (7 / 11);
+        const paragem = FreeKickModel.paragemNoContacto;
+
+        const inicioDF = { x: this.model.position.x, z: this.model.position.z };
+        const bolaDF = { x: Match.ball.position.x, z: Match.ball.position.z };
+        const dxDF = bolaDF.x - inicioDF.x, dzDF = bolaDF.z - inicioDF.z;
+        const distDF = Math.hypot(dxDF, dzDF) || 1;
+        const fimDF = {
+            x: bolaDF.x - (dxDF / distDF) * paragem,
+            z: bolaDF.z - (dzDF / distDF) * paragem
+        };
+
+        // Como no penalti: quem move o corpo daqui para a frente e o
+        // `onPrepare`, e com velocidade o `animateBones` escrevia a passada por
+        // cima da pose do ShotClip.
+        this.velocity.set(0, 0, 0);
+
+        this.actionState = new ActionState('shot', {
+            onPrepare: (ctx, norm) => {
+                const k = Math.min(1, norm / contactTime);
+                this.model.position.x = inicioDF.x + (fimDF.x - inicioDF.x) * k;
+                this.model.position.z = inicioDF.z + (fimDF.z - inicioDF.z) * k;
+            },
+            onContact: () => {
+                Match.mudarEstado('PLAY', 'direct_free_kick_taken');
+
+                const defendingPlayers = (this.team === 'TeamA') ? Match.opponents : Match.players;
+                const gk = defendingPlayers.find(p => p.role === 'gk');
+                const gkSkill = gk ? gk.skillFor('GK') : 50;
+                const tec = this.skillFor('TEC');
+
+                const d10Taker = Math.floor(Math.random() * 10) + 1;
+                const d10GK = Math.floor(Math.random() * 10) + 1;
+                const diff = (tec + d10Taker) - (gkSkill + d10GK);
+
+                const desfecho = desfechoDaFaltaDirecta(diff, Math.random);
+                const ladoTiro = Math.sign(Match.ball.position.x) || 1;
+                const alvo = alvoDaFaltaDirecta(desfecho, ladoTiro, Math.random);
+
+                const golZ = this.targetGoalZ;
+                const bx = Match.ball.position.x, bz = Match.ball.position.z;
+
+                /*
+                A BARREIRA fica entre a bola e a baliza; a distancia dela mede-se
+                ao longo da linha do REMATE, que e a que a balistica integra.
+                */
+                const barreira = Match.faltaDirectaBarreira || [];
+                const distGol = Math.hypot(alvo.x - bx, golZ - bz);
+                const distBarreira = Math.min(DF.distanciaBarreira, distGol - 0.5);
+
+                /*
+                Bater NA barreira e apontar a barreira, nao a baliza: o alvo
+                fica no plano dela, e o desvio resolve-se no impacto (ver o ramo
+                da falta directa no match_loop).
+                */
+                const vaiABarreira = !!alvo.batidaNaBarreira;
+                const distAlvo = vaiABarreira ? distBarreira : distGol;
+                const tiro = tiroDaFaltaDirecta(
+                    distAlvo, distBarreira, alvo.y, !!alvo.porBaixo, DF);
+
+                let v, elev;
+                if (tiro) { v = tiro.v; elev = tiro.elev; }
+                else {
+                    // Recurso: a potencia do modelo com a elevacao do alvo.
+                    v = DF.potencia;
+                    elev = Math.atan2(Math.max(0.1, alvo.y - BallPhysics.raio), distAlvo);
+                }
+
+                const alvoX = vaiABarreira ? (bx + (alvo.x - bx) * 0.35) : alvo.x;
+                const dx = alvoX - bx;
+                const dz = golZ - bz;
+                const distH = Math.hypot(dx, dz) || 1;
+                const vh = v * Math.cos(elev);
+                Match.ballVel.set((dx / distH) * vh, v * Math.sin(elev), (dz / distH) * vh);
+
+                /*
+                A BARREIRA NAO INTERCEPTA A BOLA POR ACIDENTE. O
+                `resolveBallContact` daria o toque a quem estiver ao alcance, e
+                cinco homens a 9 m em cima da linha do remate apanhavam metade
+                das cobrancas — o desfecho sorteado nunca chegava a acontecer.
+                Quem bate na barreira e o plano, no frame em que a bola chega ao
+                plano dela.
+                */
+                barreira.forEach(p => { p.touchLock = Math.max(p.touchLock || 0, 2.0); });
+
+                /*
+                E TODA A GENTE VOLTA A JOGAR.
+
+                O `setPieceTarget` prende o jogador ao lugar do lance parado
+                (ver `EsperarNaArea` em player_bt.js) e so se solta quando a
+                bola desce abaixo de z=25 ou alguem a domina — numa falta a 20 m
+                da baliza isso pode nao acontecer durante segundos, e a equipa
+                que cobrou ficava especada nos lugares da cobranca enquanto a
+                outra saia a jogar. E o mesmo que o canto faz ao ser batido
+                (ver o case SET_PIECE_TAKER em fsm.js).
+                */
+                Match.players.concat(Match.opponents).forEach(pl => {
+                    pl.setPieceTarget = null;
+                    pl.jostleAncora = null;
+                    if (pl.fsm.currentState === 'SET_PIECE_WAIT') {
+                        pl.fsm.changeState('MOVE_TO_POS');
+                    }
+                });
+
+                /*
+                O PLANO DO LANCE, lido pelo match_loop: o salto da barreira e,
+                se for caso disso, o desvio nela.
+                */
+                Match.faltaDirectaPlano = {
+                    desfecho: desfecho,
+                    ladoTiro: ladoTiro,
+                    origem: { x: bx, z: bz },
+                    distBarreira: distBarreira,
+                    golZ: golZ,
+                    tempo: 0,
+                    saltou: false,
+                    resolvido: false,
+                    alvo: { x: alvo.x, y: alvo.y },
+                    equipa: this.team
+                };
+
+                /*
+                O GUARDA-REDES. O atraso da reaccao sai da habilidade dele — e
+                a diferenca para o penalti, onde e zero. O mergulho vai ao sitio
+                certo quando o desfecho e uma defesa; nos outros ele parte, mas
+                para o lado que o remate ja nao usa.
+                */
+                if (gk) {
+                    let atraso = THREE.MathUtils.clamp(
+                        DF.atrasoBase - ((gkSkill - 50) / 50) * DF.atrasoAmplitude,
+                        DF.atrasoMin, DF.atrasoMax);
+                    /*
+                    Numa DEFESA o atraso não pode comer o tempo de voo todo:
+                    ver fraccaoAtrasoDefesa no DirectFreeKickModel. Continua a
+                    sair da habilidade — só deixa de poder ser maior do que a
+                    janela onde a defesa ainda existe.
+                    */
+                    if (desfecho === 'defesa' || desfecho === 'defesa_fora') {
+                        const tempoVoo = distGol / Math.max(1, vh);
+                        atraso = Math.min(atraso, tempoVoo * DF.fraccaoAtrasoDefesa);
+                    }
+                    gk.gkDelayReacao = atraso;
+                    gk.gkReagiu = false;
+                    gk.isPenaltyDive = true;
+                    const defende = (desfecho === 'defesa' || desfecho === 'defesa_fora');
+                    gk.penaltyDiveX = defende ? alvo.x : -alvo.x;
+                    gk.penaltyDiveY = alvo.y;
+                    gk.faltaDirectaDefesaFora = (desfecho === 'defesa_fora');
+                }
+
+                if (typeof EfeitosSonoros !== 'undefined') {
+                    EfeitosSonoros.chute(Match.ball.position, 1.0);
+                }
+
+                this.hasBall = false;
+                this.touchLock = BallControl.touchLock;
+                Match.ballCarrier = null;
+                Match.intendedReceiver = null;
+                Match.lastTouchedTeam = this.team;
+                Match.lastTouchedPlayer = this;
+                window.bolaChutada = true;
+                if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
+                if (typeof EventBus !== 'undefined') {
+                    EventBus.emit('DIRECT_FREE_KICK_TAKEN',
+                        { team: this.team, p: this, desfecho: desfecho });
+                }
+            }
+        });
+        this.fsm.changeState('SHOOT');
+    }
+
     resetBonesToDefault() {
         let rig = this.rig;
         if (!rig) return;
         
-        let isPenalty = (typeof Match !== 'undefined' && Match.state === 'PENALTY' && this.role === 'gk');
+        let isPenalty = (typeof Match !== 'undefined' && this.role === 'gk' &&
+            (Match.state === 'PENALTY' || Match.faltaDirecta));
         
         if (isPenalty) {
             rig.pelvis.position.set(0, 2.45, 0); 
@@ -3735,7 +3927,14 @@ class FootballPlayer {
         }
 
         if (this.gkEstado === 'idle') {
-            let alvoGkX = (typeof Match !== 'undefined' && (Match.state === 'GOAL' || Match.state === 'OUT' || Match.state === 'PENALTY')) ? 0 : gkCorpo.position.x;
+            /*
+            Na falta directa ele espera como num penalti: ao centro e em cima
+            da linha (pedido explicito). A flag vive no Match e apaga-se
+            quando o lance acaba — ver o ramo da falta directa no match_loop.
+            */
+            const paradoNaLinha = (typeof Match !== 'undefined' &&
+                (Match.state === 'PENALTY' || Match.faltaDirecta));
+            let alvoGkX = (typeof Match !== 'undefined' && (Match.state === 'GOAL' || Match.state === 'OUT' || paradoNaLinha)) ? 0 : gkCorpo.position.x;
 
             /*
             Posição de repouso: sai toda de gkAnchor() (config.js), a mesma
@@ -3745,7 +3944,7 @@ class FootballPlayer {
             ele saía da baliza — e uma base de repouso já 5 m fora da linha.
             */
             const gkStyleAtual = GoalkeeperStyle[this.gkStyle] || GoalkeeperStyle.defensive;
-            const ancora = (typeof Match !== 'undefined' && Match.state === 'PENALTY')
+            const ancora = paradoNaLinha
                 ? { x: 0, z: this.ownGoalZ }
                 : gkAnchor(Match.ball.position.x, Match.ball.position.z,
                     this.ownGoalZ, this.dirZ, gkStyleAtual);
@@ -3754,7 +3953,7 @@ class FootballPlayer {
                 ? (-48 * this.dirZ)
                 : ancora.z;
 
-            let speedLerp = (typeof Match !== 'undefined' && (Match.state === 'GOAL' || Match.state === 'PENALTY')) ? 4.0 : 2.0;
+            let speedLerp = (typeof Match !== 'undefined' && (Match.state === 'GOAL' || paradoNaLinha)) ? 4.0 : 2.0;
 
             let gkSkill = this.skillFor('GK');
 
@@ -3794,7 +3993,20 @@ class FootballPlayer {
                 }
                 speedLerp = 3.0 + ((gkSkill - 50) / 50) * 6.0;
             } else if (Match.state === 'PLAY') {
-                this.isPenaltyDive = false;
+                /*
+                O MERGULHO GUIADO SOBREVIVE A VOLTA AO PLAY.
+
+                Aqui apagava-se o isPenaltyDive no primeiro frame de jogo
+                corrido — e numa falta directa o guarda-redes ainda nem tinha
+                reagido (o atraso e dele, ver DirectFreeKickModel). Sem a flag
+                ele passava a ler a trajectoria REAL da bola e defendia tudo:
+                20 em 20 remates rasteiros ao canto acabavam nas maos dele, e
+                o desfecho sorteado deixava de valer.
+
+                Enquanto houver lance de falta directa a decorrer, o alvo do
+                mergulho e o que a cobranca escreveu.
+                */
+                if (!Match.faltaDirectaPlano) this.isPenaltyDive = false;
                 let isAttacking = (Match.possessionTeam === this.team);
                 let bolaNaArea = Area.contem(Match.ball.position.x, Match.ball.position.z, this.ownGoalZ);
                 

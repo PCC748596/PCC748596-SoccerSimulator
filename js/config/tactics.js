@@ -237,6 +237,26 @@ const BlockShape = {
     profundidadeMinima: 20.0,
 
     /*
+    AVANÇO E RECUO DO CENTRO DO BLOCO em relação à linha da bola, em metros e
+    no referencial de ataque da equipa. É a Regra 4 do bloco:
+
+        Team State  T.Offensive / Offensive  ->  +avancoDoCentroComBola  (bola
+                                                 -> baliza ATACADA)
+        Team State  T.Defensive / Defensive  ->  -recuoDoCentroSemBola  (bola
+                                                 -> baliza DEFENDIDA)
+
+    Estavam escritos à mão no `computeBlock` (`bb.isAttacking ? 5.0 : -5.0`) —
+    o número que mais se afina no bloco todo e o único que não tinha manípula.
+    O avanço com bola passou de 5 para 8 m a pedido.
+
+    Não distinguem TRANSIÇÃO de fase instalada: quem lê isto é o `isAttacking`,
+    que é um booleano de posse. Separar T.Offensive de Offensive obriga a ler o
+    Team State, não a posse.
+    */
+    avancoDoCentroComBola: 8.0,
+    recuoDoCentroSemBola: 5.0,
+
+    /*
     Largura do bloco. É a amplitude da equipa — a manípula que o senhor pediu:
     um número só, e todas as posições abrem ou fecham em proporção.
     */

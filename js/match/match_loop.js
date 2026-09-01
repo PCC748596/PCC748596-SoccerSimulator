@@ -187,7 +187,14 @@ Object.assign(Match, {
                 if (this.faltaAtraso <= 0) {
                     this.faltaPendente = false;
                     const t = this.setPieceTaker;
-                    if (t) t.baterFalta();
+                    /*
+                    A falta directa tem cobranca propria (barreira, desfecho
+                    sorteado, atraso do guarda-redes). O resto da montagem — a
+                    espera, a caminhada, o prazo — e o mesmo, e por isso vive
+                    aqui e nao num estado novo.
+                    */
+                    if (t && this.faltaDirecta) t.baterFaltaDirecta();
+                    else if (t) t.baterFalta();
                     else this.mudarEstado('PLAY', 'falta_sem_batedor');
                 }
             }
@@ -240,6 +247,227 @@ Object.assign(Match, {
             }
             const prazoPenalti = SetPiecePrazos.penalti;
             if (this.setPieceTimer > prazoPenalti) { this.mudarEstado('PLAY', 'timeout_penalti'); }
+        }
+
+        /*
+        ==================================================================
+        O LANCE DA FALTA DIRECTA, depois da batida
+        ==================================================================
+        Duas coisas que a fisica sozinha nao faz:
+
+          O SALTO DA BARREIRA. Todos saltam, com `atrasoSaltoBarreira` a
+          contar do contacto — e esse atraso que abre a janela do remate
+          rasteiro por baixo (desfecho `por_baixo`).
+
+          O DESVIO NA BARREIRA. Os tres desfechos que passam por ela
+          (`na_barreira`, `barreira_gol`, `barreira_fora`) resolvem-se no
+          frame em que a bola chega ao plano dela. Nao e o
+          `resolveBallContact` que o faz: os cinco homens estao com
+          `touchLock` posto na batida, de proposito, senao apanhavam a bola
+          por acidente e o desfecho sorteado nunca acontecia.
+
+        Ver baterFaltaDirecta (player.js) e DirectFreeKickModel (config).
+        */
+        if (this.faltaDirectaPlano) {
+            const DF = DirectFreeKickModel;
+            const plano = this.faltaDirectaPlano;
+            plano.tempo += dt;
+
+            if (!plano.saltou && plano.tempo >= DF.atrasoSaltoBarreira) {
+                plano.saltou = true;
+                (this.faltaDirectaBarreira || []).forEach(p => {
+                    p.jumpTimer = SaltoCabeceio.duracao;
+                    p.jumpApex = DF.alturaSaltoBarreira;
+                    p.hasHeaderedInJump = true;   // saltam a tapar, nao a cabecear
+                });
+            }
+
+            const percorrido = Math.hypot(
+                this.ball.position.x - plano.origem.x,
+                this.ball.position.z - plano.origem.z);
+
+            if (!plano.resolvido && percorrido >= plano.distBarreira) {
+                plano.resolvido = true;
+                const bate = (plano.desfecho === 'na_barreira' ||
+                    plano.desfecho === 'barreira_gol' ||
+                    plano.desfecho === 'barreira_fora');
+
+                if (bate) {
+                    const bx = this.ball.position.x, bz = this.ball.position.z;
+                    const by = Math.max(BallPhysics.raio, this.ball.position.y);
+                    const golZ = plano.golZ;
+                    const distGol = Math.hypot(0 - bx, golZ - bz) || 1;
+
+                    if (plano.desfecho === 'na_barreira') {
+                        /*
+                        A BOLA SAI DE LADO, NUNCA PARA QUEM BATEU.
+
+                        Estava a ser devolvida na linha do remate, invertida:
+                        ia direita ao batedor, que a cabeceava para dentro
+                        sozinho — o lance do relato. Um ressalto numa barreira
+                        e um choque contra um ombro ou uma perna: a bola cospe
+                        para o lado, para a area, para a linha, ou fica com o
+                        guarda-redes. Nunca refaz o caminho por onde veio.
+
+                        O angulo sai de `ricocheteAnguloMin/Max` (>= 65 graus
+                        da direccao do remate), portanto fica sempre fora do
+                        cone de onde a bola veio.
+                        */
+                        const vIn = Math.hypot(this.ballVel.x, this.ballVel.z) || 1;
+                        const ux = this.ballVel.x / vIn, uz = this.ballVel.z / vIn;
+                        const paraGK = Math.random() < DF.ricocheteParaGK;
+
+                        if (paraGK) {
+                            // Sobra para o guarda-redes: mole, na direccao da
+                            // baliza, para ele sair e agarrar.
+                            const gx = 0 - this.ball.position.x;
+                            const gz = plano.golZ - this.ball.position.z;
+                            const gd = Math.hypot(gx, gz) || 1;
+                            const vG = vIn * DF.barreiraTravagem * 0.7;
+                            this.ballVel.set((gx / gd) * vG, 2.0, (gz / gd) * vG);
+                        } else {
+                            const lado = (Math.random() < 0.5) ? 1 : -1;
+                            const ang = lado * (DF.ricocheteAnguloMin +
+                                Math.random() * (DF.ricocheteAnguloMax - DF.ricocheteAnguloMin));
+                            const c = Math.cos(ang), sn = Math.sin(ang);
+                            const vR = vIn * DF.barreiraTravagem;
+                            this.ballVel.set(
+                                (ux * c + uz * sn) * vR,
+                                Math.abs(this.ballVel.y) * 0.5 + 2.0,
+                                (-ux * sn + uz * c) * vR);
+                        }
+                    } else {
+                        /*
+                        DESVIO. A bola muda de direccao e sobe — um desvio na
+                        cabeca ou no ombro levanta-a. Para dentro aponta-se um
+                        ponto da baliza; para fora, um ponto ao lado dela.
+                        */
+                        const meiaBaliza = LARGURA_BALIZA / 2;
+                        const paraDentro = (plano.desfecho === 'barreira_gol');
+                        /*
+                        O desvio que ENTRA tem de entrar longe do guarda-redes:
+                        ele esta ao meio da linha, e o
+                        GoalkeeperPose.mergulhoLateralMin diz que uma bola a
+                        menos de 2 m do corpo dele nem sequer e mergulho — fica
+                        de pe e agarra. Medido antes disto: 1 golo em 6 desvios
+                        para dentro.
+                        */
+                        const ladoDesvio = (Math.random() < 0.5) ? 1 : -1;
+                        const alvoX = paraDentro
+                            ? ladoDesvio * (2.4 + Math.random() * (meiaBaliza - 3.0))
+                            : -plano.ladoTiro * (meiaBaliza + 1.2 + Math.random() * 1.5);
+                        const alvoY = paraDentro
+                            ? (0.8 + Math.random() * 1.2)
+                            : (ALTURA_BALIZA + 0.4 + Math.random());
+
+                        /*
+                        A ELEVACAO DO DESVIO PROCURA-SE, nao se calcula em
+                        linha recta. A recta bola->alvo nao tem solucao quando
+                        o alvo esta ACIMA da bola: nem a 45 m/s uma bola lancada
+                        a 3.6 graus sobe 0.5 m em 8 m, e o solver devolvia null.
+                        Media do desvio antes disto: 5.9 m/s (a queda para a
+                        velocidade de recurso), ou seja a bola morria a meio
+                        caminho — 1 golo em 24 desvios para dentro.
+                        */
+                        let elevD = null, vD = null;
+                        for (let g = 3; g <= 34; g += 2) {
+                            const e = g * Math.PI / 180;
+                            const tentativa = (typeof velocidadeParaAlturaNoAlvo === 'function')
+                                ? velocidadeParaAlturaNoAlvo(distGol, e, alvoY, by)
+                                : null;
+                            if (tentativa !== null && tentativa !== undefined) {
+                                elevD = e; vD = tentativa; break;
+                            }
+                        }
+                        if (elevD === null) elevD = 8 * Math.PI / 180;
+                        /*
+                        A velocidade e a que POE A BOLA NO PONTO — nao a que
+                        sobra do impacto. Multiplicar a solucao pela travagem
+                        (0.55 x 1.6 = 0.88) deixava-a curta: 20 dos 24 desvios
+                        para dentro morriam antes da linha e o desfecho
+                        "desvio na barreira e golo" quase nao acontecia.
+                        Quem paga o impacto e a FORMA (a bola sobe, muda de
+                        direccao), nao o alcance.
+                        */
+                        const vFinal = (vD !== null && vD !== undefined)
+                            ? vD
+                            : this.ballVel.length() * DF.barreiraTravagem;
+
+                        const dxD = alvoX - bx, dzD = golZ - bz;
+                        const dD = Math.hypot(dxD, dzD) || 1;
+                        const vhD = vFinal * Math.cos(elevD);
+                        this.ballVel.set(
+                            (dxD / dD) * vhD,
+                            vFinal * Math.sin(elevD) + DF.desvioSubida * 0.25,
+                            (dzD / dD) * vhD);
+                    }
+
+                    if (typeof EfeitosSonoros !== 'undefined' && EfeitosSonoros.chute) {
+                        EfeitosSonoros.chute(this.ball.position, 0.5);
+                    }
+                }
+            }
+
+            /*
+            A DEFESA, resolvida a mao. Ver distanciaDaDefesa no
+            DirectFreeKickModel: o mergulho e a animacao, isto e o desfecho.
+            */
+            const defende = (plano.desfecho === 'defesa' || plano.desfecho === 'defesa_fora');
+            if (defende && !plano.defesaFeita) {
+                const faltaZ = Math.abs(plano.golZ - this.ball.position.z);
+                const vaiParaLa = ((plano.golZ - this.ball.position.z) * this.ballVel.z) > 0;
+                const dentroDosPostes = Math.abs(this.ball.position.x) < (LARGURA_BALIZA / 2 + 0.6);
+                if (vaiParaLa && dentroDosPostes && faltaZ <= DirectFreeKickModel.distanciaDaDefesa) {
+                    plano.defesaFeita = true;
+                    const gkD = (plano.equipa === 'TeamA')
+                        ? this.opponents.find(p => p.role === 'gk')
+                        : this.players.find(p => p.role === 'gk');
+                    const paraForaZ = Math.sign(plano.golZ) || 1;
+                    const ladoX = Math.sign(this.ball.position.x) || 1;
+                    const vEsp = DirectFreeKickModel.espalmarVelocidade;
+
+                    if (plano.desfecho === 'defesa_fora') {
+                        /*
+                        Espalmada PARA FORA: tem de sair POR FORA DO POSTE,
+                        senao cruza a linha entre os ferros e o que se marca e
+                        um golo. Mede-se o tempo que falta ate a linha e da-se
+                        a bola a velocidade lateral que a poe para la do poste
+                        nesse tempo.
+                        */
+                        const vz = vEsp * 0.6;
+                        const tLinha = Math.max(0.05, faltaZ / vz);
+                        const alvoLateral = LARGURA_BALIZA / 2 + 0.9;
+                        const vx = Math.max(vEsp * 0.4,
+                            (alvoLateral - Math.abs(this.ball.position.x)) / tLinha);
+                        this.ballVel.set(ladoX * vx, 3.0, paraForaZ * vz);
+                    } else {
+                        // Espalmada para o campo: a bola volta a jogo.
+                        this.ballVel.set(ladoX * vEsp * 0.8, 2.5, -paraForaZ * vEsp * 0.6);
+                    }
+
+                    if (gkD) {
+                        this.lastTouchedPlayer = gkD;
+                        this.lastTouchedTeam = gkD.team;
+                        gkD.touchLock = BallControl.touchLock;
+                    }
+                    if (typeof MatchStats !== 'undefined' && MatchStats.registarDefesa) {
+                        MatchStats.registarDefesa(gkD ? gkD.team : null);
+                    }
+                }
+            }
+
+            /*
+            O LANCE ACABA: golo, bola fora, outro lance parado, ou o prazo. E
+            aqui que a flag `faltaDirecta` se apaga — enquanto ela estiver de
+            pe o guarda-redes fica preso a linha (ver updateGK).
+            */
+            if (plano.tempo > 6.0 ||
+                (this.state !== 'PLAY' && this.state !== 'FREE_KICK')) {
+                this.faltaDirecta = false;
+                this.faltaDirectaPlano = null;
+                (this.faltaDirectaBarreira || []).forEach(p => { p.naBarreiraFalta = false; });
+                this.faltaDirectaBarreira = null;
+            }
         }
 
         if (this.state === 'THROW_IN') {

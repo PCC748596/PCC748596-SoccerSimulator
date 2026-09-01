@@ -5,6 +5,160 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 1 de Setembro de 2026 — a falta directa
+
+Botão novo no painel esquerdo, **Falta Direta**
+(`Match.triggerDirectFreeKick`), e com ele um lance parado montado de
+propósito: a cobrança de estudo, com barreira, guarda-redes na linha e desfecho
+resolvido à mão como no penálti.
+
+O tipo de montagem chama-se `DIRECT_FREE_KICK` mas **corre no estado
+`FREE_KICK`** — a FSM, o `resolveBallContact`, os prazos e o árbitro já sabem o
+que é uma falta e não tinham de aprender mais um nome. O que distingue os dois
+daqui para a frente é a flag `Match.faltaDirecta`. A espera, a caminhada do
+batedor e o prazo são os mesmos da falta normal; só a cobrança muda
+(`baterFaltaDirecta` em vez de `baterFalta`).
+
+**A bola é sorteada na faixa clássica** (`pontoDaFaltaDirecta`, utils.js): até
+10 m do centro da baliza para os lados, até 23 m do POSTE MAIS PERTO, e fora da
+grande área. É o corte do poste que desenha a faixa — de frente vai-se aos
+~23 m, muito aberto fica-se pelos 17.
+
+**A barreira de cinco não é centrada.** Está encostada ao canto do remate: a
+ponta de fora dela fica na linha bola→poste do lado de onde se bate, com
+`sobraPoste` de margem. Centrada — como no ramo `FREE_KICK` genérico — deixa os
+dois cantos meio abertos e nenhum fechado; assim fecha um, e o guarda-redes
+cobre o outro, que é o que ele alcança a mergulhar. Os defensores que sobram
+marcam homem a homem; os 9.15 m são impostos no fim, sobre toda a gente.
+
+**Os companheiros de quem bate ficam atrás da linha da bola** (com a bola à
+frente deles não há fora-de-jogo possível, seja qual for a última linha) e fora
+do corredor bola→baliza, para não taparem a cobrança.
+
+**O guarda-redes espera como num penálti** — ao centro, em cima da linha, com a
+pose do penálti — e é a flag `faltaDirecta` que o prende ali (`updateGK` e
+`resetBonesToDefault` liam só `Match.state === 'PENALTY'`).
+
+**O atraso da reacção sai da habilidade dele:** `atrasoBase -
+((GK - 50)/50) * atrasoAmplitude`, entre 0.12 s e 0.72 s. É a diferença para o
+penálti, onde ele parte com a bola: numa falta ela aparece por cima da barreira
+e ele perde-a de vista. Nos dois desfechos de defesa há um tecto —
+`fraccaoAtrasoDefesa` — para o atraso não comer o tempo de voo todo: um GK que
+parte 0.5 s depois de uma bola de 0.9 s já não defende nada, e o desfecho
+sorteado dizia "defesa".
+
+**DOZE DESFECHOS**, sorteados por banda do duelo `diff = (TEC + d10) -
+(GK + d10)`, como no penálti: `gol`, `defesa`, `defesa_fora`, `trave_gol`,
+`trave_fora`, `travessao_gol`, `travessao_fora`, `fora`, `na_barreira`,
+`barreira_gol`, `barreira_fora`, `por_baixo`. Medidos a forçar cada um
+(20 cobranças por desfecho, `tools/headless/falta_directa.js`):
+
+    gol            20/20 golo          defesa       20/20 defendida (em jogo)
+    defesa_fora    19/20 canto         trave_gol    20/20 golo
+    travessao_gol  20/20 golo          fora         20/20 tiro de meta
+    barreira_fora  24/24 fora          barreira_gol 19/24 golo
+    por_baixo      17/20 golo          na_barreira  ressalto em jogo
+
+Quatro coisas tiveram de ser corrigidas para os desfechos valerem alguma coisa,
+e todas se mediram antes e depois:
+
+- **O remate a golo não pode ir para cima do guarda-redes.** Dos nove `gol` de
+  um lote, só quatro acabavam em golo — não era balística, era o alvo: o
+  `GoalkeeperPose.mergulhoLateralMin` (2.0 m) diz que uma bola a menos disso do
+  corpo dele nem sequer é mergulho, fica de pé e agarra. Daí o `xGoloMin`.
+- **O `isPenaltyDive` era apagado no primeiro frame de PLAY**, e numa falta o
+  guarda-redes ainda nem tinha reagido (o atraso é dele). Sem a flag ele passava
+  a ler a trajectória REAL da bola e defendia tudo: 20 em 20 remates rasteiros
+  ao canto acabavam nas mãos dele. Agora o mergulho guiado sobrevive enquanto
+  houver lance a decorrer.
+- **A defesa é resolvida à mão**, no frame em que a bola chega a
+  `distanciaDaDefesa` da linha: `defesa` é espalmada para o campo, `defesa_fora`
+  sai POR FORA DO POSTE (senão cruzava a linha entre os ferros e marcava-se
+  golo). O mergulho continua a correr por cima — é ele que se vê.
+- **O desvio na barreira procura a elevação**, não a calcula em linha recta: a
+  recta bola→alvo não tem solução quando o alvo está acima da bola, o solver
+  devolvia `null` e a bola saía à velocidade de recurso (5.9 m/s), morrendo a
+  meio caminho.
+
+**O remate por baixo da barreira é RASTEIRO**, não uma parábola baixa: pedir uma
+parábola que aterre a 20 m dá-lhe um arco de 0.42 m ao passar pela barreira, ou
+seja pelos pés de quem saltou. É a conta do passe rasteiro
+(`velocidadeRasteiraPara`) com velocidade de remate, e vai ao canto — ao meio,
+uma bola no chão é uma bola que o guarda-redes recolhe de pé.
+
+A barreira salta toda, com `atrasoSaltoBarreira` a contar do contacto, e leva
+`touchLock` na batida: sem isso o `resolveBallContact` dava-lhes o toque por
+acidente e o desfecho sorteado nunca acontecia.
+
+#### Correcções depois de ver o lance em campo
+
+**A bola batia na barreira e voltava para o batedor**, que a cabeceava para
+dentro sozinho. O ressalto era a velocidade invertida na linha do remate — um
+espelho. Agora sai de LADO: `ricocheteAnguloMin/Max` (65°–115° da direcção do
+remate, para qualquer um dos lados), ou fica para o guarda-redes
+(`ricocheteParaGK`, 30%). Medido em 30 ressaltos: **0 voltaram para o batedor**
+(nenhum passou a menos de 2 m dele), ângulo médio de 124° em relação à direcção
+dele, mínimo 70°. Quem fica com a bola são os defesas, o GK, ou ninguém.
+
+**A montagem arrastava as duas equipas para fora do sítio.** Três defeitos:
+
+- os NOVE companheiros do batedor iam para o leque atrás da bola — 40 m de
+  fila. Agora vão os `apoiosNoLeque` (4) mais perto; os outros ficam onde
+  estão, só recuando para trás da linha da bola (que é o que garante que
+  ninguém está em fora-de-jogo).
+- a marcação emparelhava um defensor com CADA um desses nove, onde quer que
+  estivessem: era isso que punha os laterais na bandeirola de canto, com a
+  área vazia. Agora só se marca quem está a menos de `raioDaMarcacao` (25 m)
+  da bola.
+- os defensores que sobravam ficavam onde a jogada os tinha deixado. Medido na
+  montagem: **o defensor mais longe da bola estava a 64 m dela**, do outro lado
+  do campo, com a falta a 20 m da baliza dele — o "não voltou para marcar" do
+  relato. Agora formam uma linha na orla da própria área
+  (`recuoLinhaDefensiva`, `larguraLinhaDefensiva`). Depois da correcção: **10.7
+  m no pior caso**.
+
+**E toda a gente volta a jogar quando a bola sai.** O `setPieceTarget` prende o
+jogador ao lugar do lance parado (`EsperarNaArea`, player_bt.js) e só se solta
+quando a bola desce abaixo de z=25 ou alguém a domina — numa falta a 20 m da
+baliza isso pode não acontecer durante segundos, e a equipa que cobrou ficava
+especada. O `baterFaltaDirecta` limpa-o a toda a gente no contacto, como o
+canto já fazia (ver o `case 'SET_PIECE_TAKER'` em fsm.js).
+
+#### O rectângulo do bloco — o que se mediu (NÃO é da falta directa)
+
+O relato dizia "o rectângulo não pode deformar-se". Medido em 2 minutos de jogo
+corrido, a 6 Hz, sem lances parados forçados:
+
+    largura         47.6 m sempre, nas duas equipas — nunca deforma
+    profundidade    30 m a defender (MID_BLOCK, LOW_BLOCK, FLANK_SHIFT)
+                    50 m a atacar   (BUILD_UP, COUNTER)
+                    20.5 m ... 50 m em FINAL_THIRD
+
+O rectângulo é sempre um rectângulo alinhado com os eixos (sai de `x0/x1` e
+`blockBottom/blockTop`, ver `computeBlock` em `bt/team_bt.js`). O que muda é a
+PROFUNDIDADE, e há dois efeitos a não confundir:
+
+1. **A atacar o bloco tem 50 m** (`BlockShape.profundidade.median`), portanto
+   puxa mesmo a equipa toda para a frente. É a configuração, não um defeito: o
+   botão é `Tatics.lengthCompactness` / `MentalidadeModel[estilo].profundidade`.
+2. **No último terço ele ENCOLHE até 20.5 m**: a frente bate no tecto
+   (`maxZ = LINHA_FUNDO - 1.5`) e o código corta a frente mantendo a traseira,
+   de propósito (ver o comentário em `computeBlock`). É a deformação que se vê
+   junto à baliza, e é onde a marcação mais precisa do rectângulo.
+
+Nada disto vem da falta directa — reproduz-se com o jogo a correr sozinho. Fica
+medido aqui para a decisão ser tomada com números; mexer nisto muda o jogo todo,
+não só o lance parado.
+
+Ficheiros: `DirectFreeKickModel` (js/config/shooting.js); `pontoDaFaltaDirecta`,
+`lugaresDaBarreira`, `alturaDaBolaEm`, `desfechoDaFaltaDirecta`,
+`alvoDaFaltaDirecta`, `tiroDaFaltaDirecta`, `lugaresDoApoioNaFaltaDirecta`
+(js/utils.js); ramo `DIRECT_FREE_KICK` e `triggerDirectFreeKick`
+(js/match/match_setpieces.js); salto e desvio (js/match/match_loop.js);
+`baterFaltaDirecta` (js/player.js). Testes: `tests/falta_directa.test.js`
+(10 casos). Medição: `node tools/headless/falta_directa.js [quantas]`.
+
+
 ### Sessão de 28 de Agosto de 2026 — bolas paradas, jogo aéreo, e um jogador a voar para fora do estádio
 
 Testes novos: `penalti_corrida`, `canto_forca`, `corrida_abortada`,
@@ -4110,6 +4264,13 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Quando um Playing Style está em vigor | `playing_styles.js` → `PlayingStyleTriggers` |
 | Quão recuado o bloco fica com cada Mentalidade | `config.js` → `MentalidadeModel.blocoZ` e `.pesoNaLinha` |
 | A cobrança da falta (espera, corrida, contacto) | `config.js` → `FreeKickModel`; `player.js` → `baterFalta`/`executarFalta` |
+| Forçar uma falta directa (botão do painel) | `index.html` → botão *Falta Direta*; `match/match_setpieces.js` → `triggerDirectFreeKick` |
+| Onde a bola cai numa falta directa | `config.js` → `DirectFreeKickModel.xMaxDoCentro`/`distPosteMax`; `utils.js` → `pontoDaFaltaDirecta` |
+| Barreira que não fecha o canto do remate | `utils.js` → `lugaresDaBarreira`; `config.js` → `DirectFreeKickModel.sobraPoste` |
+| Quantos desfechos tem uma falta directa, e com que peso | `config.js` → `DirectFreeKickModel.desfechos` |
+| Remate da falta a bater na barreira / a passar por baixo | `utils.js` → `tiroDaFaltaDirecta`; `match/match_loop.js` → o ramo da falta directa |
+| Guarda-redes a reagir cedo/tarde na falta directa | `config.js` → `DirectFreeKickModel.atrasoBase`/`atrasoAmplitude`/`fraccaoAtrasoDefesa` |
+| Medir um lote de faltas directas | `node tools/headless/falta_directa.js` |
 | Bola parada em jogo que ninguém vai buscar | `config.js` → `PerceptionModel.prazoBolaParada`; `utils.js` → `passeMorreuParaODestinatario` |
 | Física da bola, golo, linha lateral | `match.js` → `updateBall()` |
 | Guarda-redes | `player.js` → `updateGK()` |

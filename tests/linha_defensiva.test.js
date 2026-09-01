@@ -18,6 +18,13 @@ const srcConfig = semCR(fs.readFileSync(path.join(raiz, 'js', 'utils.js'), 'utf8
 
 const CAMPO_LARG = 68, CAMPO_COMP = 106, AREA_GRANDE_PROF = 16.5;
 
+// Le um numero simples do BlockShape do config real, pelo nome.
+function valorDoConfig(nome) {
+    const m = new RegExp(nome + ':\s*(-?[0-9.]+)').exec(srcConfig);
+    if (!m) throw new Error(nome + ' nao encontrado no config');
+    return Number(m[1]);
+}
+
 const BlockShape = {
     amplitude: { short: 0.60, median: 0.70, large: 0.80 },
     profundidade: {
@@ -25,7 +32,14 @@ const BlockShape = {
         mediumLarge: 60 / 106, large: 70 / 106
     },
     seguimentoBola: 3.0,
-    profundidadeMinima: 20.0
+    profundidadeMinima: 20.0,
+    /*
+    O avanco/recuo do CENTRO do bloco em relacao a bola. Le-se do config a
+    serio (nao se copia): se alguem mexer nos 8 m com bola, este teste passa a
+    correr com o valor novo em vez de falhar em NaN.
+    */
+    avancoDoCentroComBola: valorDoConfig('avancoDoCentroComBola'),
+    recuoDoCentroSemBola: valorDoConfig('recuoDoCentroSemBola')
 };
 const TeamShape = { linhaDefensiva: { low: -32.5, medium: -18.25, high: -2.0 } };
 const MarkingModel = { distanciaPorPressao: { low: 4.5, balanced: 3.0, high: 1.5 } };

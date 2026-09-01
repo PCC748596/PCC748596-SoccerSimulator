@@ -777,9 +777,10 @@ CÁLCULO DO BLOCO / RETÂNGULO TÁTICO
 1. Os retângulos acompanham as coordenadas da bola (X e Z).
 2. Os retângulos ficam limitados nos limites do campo.
 3. Os retângulos ficam limitados à linha da pequena área.
-4. O centro fica 5 metros À FRENTE da linha da bola, e "à frente" depende da
-   fase: com bola (T.Ataque/Ataque) é entre a bola e a baliza ATACADA (+5);
-   sem bola (T.Defesa/Defesa) é entre a bola e a baliza DEFENDIDA (-5).
+4. O centro fica À FRENTE da linha da bola, e "à frente" depende da fase: com
+   bola (T.Ataque/Ataque) é entre a bola e a baliza ATACADA
+   (+BlockShape.avancoDoCentroComBola, 8 m); sem bola (T.Defesa/Defesa) e entre
+   a bola e a baliza DEFENDIDA (-BlockShape.recuoDoCentroSemBola, 5 m).
 */
 /*
 O COMPRIMENTO DO BLOCO — quem manda, e por que ordem.
@@ -829,18 +830,26 @@ function computeBlock(bb) {
     const reposta = (typeof Match !== 'undefined' && Match.state !== 'PLAY');
 
     /*
-    O centro do bloco fica 5 m À FRENTE da linha da bola — e "à frente" muda de
+    O centro do bloco fica À FRENTE da linha da bola — e "à frente" muda de
     sentido com a fase:
 
-        T.Offensive / Offensive   entre a bola e a baliza ATACADA   -> +5
+        T.Offensive / Offensive   entre a bola e a baliza ATACADA   -> +8
         T.Defensive / Defensive   entre a bola e a baliza DEFENDIDA -> -5
 
     Estava fixo em +5.0 para as quatro fases, ou seja a defender o bloco era
     empurrado 5 m na direcção da baliza adversária — para trás da bola em vez
     de entre ela e a nossa baliza. Tudo isto no referencial de ataque (bb.dir),
     onde + é o sentido do ataque da equipa.
+
+    Os dois numeros vivem no BlockShape.avancoDoCentroComBola / .recuoDoCentroSemBola:
+    estavam escritos à mão aqui, e são a manípula mais directa que o bloco tem.
+
+    ATENÇÃO: quem decide é o `isAttacking`, que é POSSE — T.Offensive e
+    Offensive dão o mesmo avanço, e o mesmo para os dois estados sem bola.
     */
-    const targetOffsetZ = bb.isAttacking ? 5.0 : -5.0;
+    const targetOffsetZ = bb.isAttacking
+        ? BlockShape.avancoDoCentroComBola
+        : -BlockShape.recuoDoCentroSemBola;
 
     if (bb.blocoZSuave === undefined) {
         bb.blocoZSuave = targetOffsetZ;
