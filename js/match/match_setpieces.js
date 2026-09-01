@@ -35,14 +35,6 @@ Object.assign(Match, {
             this.possessionTimer = 0;
             this.counterAttackTeam = null;
             this.counterAttackTimer = 0;
-
-            // Força a atualização da IA tática (blocos e baseTargets) imediatamente
-            // com a nova posse de bola. Assim, quem vai defender a bola parada não
-            // usa os alvos velhos da jogada de ataque anterior.
-            if (typeof TeamAI !== 'undefined') {
-                TeamAI.tick('TeamA', this);
-                TeamAI.tick('TeamB', this);
-            }
         }
 
         this.setPieceTimer = 0;
@@ -116,19 +108,6 @@ Object.assign(Match, {
                     if (d < minDist) { minDist = d; taker = p; }
                 }
             });
-
-            /*
-            SEM BATEDOR DE CAMPO não se rebenta: acontece com a equipa
-            reduzida a onze menos expulsos, ou num estado em que a lista de
-            atacantes só tem o guarda-redes. A linha seguinte fazia
-            `null.hasBall` e derrubava o jogo inteiro — apanhado a correr o
-            lote de laterais.
-
-            O guarda-redes bate o canto, que é feio mas é jogo; sem ninguém
-            de todo, sai-se e o lance fica onde está.
-            */
-            if (!taker) taker = attackingPlayers.find(p => p.model) || null;
-            if (!taker) return;
 
             this.setPieceTaker = taker;
             this.setPieceTaker.hasBall = false;
@@ -438,18 +417,11 @@ Object.assign(Match, {
             }
 
             /*
-            Barreira: mais gente quanto mais perto da baliza.
-            Quando a falta é direta/no terço ofensivo, a barreira cobre o lado do poste
-            mais próximo da bola, e o goleiro desloca-se ligeiramente para o lado oposto da barreira.
+            Barreira: mais gente quanto mais perto da baliza. Perpendicular à
+            linha bola->baliza, ombro com ombro, centrada nessa linha.
             */
             const avancoFK = bolaFK.z * attDir;
             const nBarreira = (avancoFK > F.barreiraZonaZ) ? F.barreiraMax : F.barreiraMin;
-
-            // Determina de que lado a barreira protege (lado do poste correspondente ao lado da bola)
-            // Se bolaFK.x > 0 (lado direito do ataque), barreira alinha cobrindo o poste direito (x > 0).
-            // Se bolaFK.x < 0, cobre o poste esquerdo (x < 0). Se central, cobre o centro/lado mais próximo.
-            const ladoBarreira = Math.sign(bolaFK.x) || 1;
-            const offsetCentroBarreira = (Math.abs(bolaFK.x) > 3.0) ? ladoBarreira * 0.45 : 0;
 
             const defesaOrdenada = defendingPlayers
                 .filter(p => p.role !== 'gk')
@@ -457,7 +429,7 @@ Object.assign(Match, {
 
             defesaOrdenada.forEach((p, i) => {
                 if (i < nBarreira) {
-                    const off = (i - (nBarreira - 1) / 2) * F.espacamentoBarreira + offsetCentroBarreira;
+                    const off = (i - (nBarreira - 1) / 2) * F.espacamentoBarreira;
                     p.model.position.set(
                         bolaFK.x + dirFK.x * F.distanciaBarreira + perpFK.x * off, ALTURA_BASE_Y,
                         bolaFK.z + dirFK.z * F.distanciaBarreira + perpFK.z * off);
@@ -475,33 +447,6 @@ Object.assign(Match, {
                 lookAtBola(p.model, bolaFK);
                 p.fsm.changeState('SET_PIECE_WAIT');
             });
-
-            /*
-            POSICIONAMENTO DO GOLEIRO NA FALTA:
-            Quando há barreira protegendo um lado do gol, o goleiro fica ligeiramente
-            deslocado do centro do gol para o lado oposto da barreira (visão desobstruída do batedor).
-            */
-            const defendingTeam = (team === 'TeamA') ? 'TeamB' : 'TeamA';
-            const gkDefensor = defendingPlayers.find(p => p.role === 'gk');
-            if (gkDefensor) {
-                let gkOffX = 0;
-                if (avancoFK > F.setores.tercoDefensivo) {
-                    // Desloca para o lado oposto da barreira: se barreira está no lado X > 0, GK vai para X < 0
-                    gkOffX = -ladoBarreira * F.deslocamentoGK;
-                    // Limita dentro da largura da baliza
-                    gkOffX = THREE.MathUtils.clamp(gkOffX, -LARGURA_BALIZA / 2 + 0.6, LARGURA_BALIZA / 2 - 0.6);
-                }
-                const linhaBalizaZ = attDir * (CAMPO_COMP / 2) - attDir * 0.4;
-                gkDefensor.model.position.set(gkOffX, ALTURA_BASE_Y, linhaBalizaZ);
-                gkDefensor.dynamicTarget.set(gkOffX, ALTURA_BASE_Y, linhaBalizaZ);
-                gkDefensor.velocity.set(0, 0, 0);
-                gkDefensor.gkEstado = 'idle';
-                gkDefensor.gkReagiu = false;
-                gkDefensor.dive = null;
-                lookAtBola(gkDefensor.model, bolaFK);
-                gkDefensor.resetBonesToDefault();
-                gkDefensor.fsm.changeState('SET_PIECE_WAIT');
-            }
 
             /*
             ==========================================================
@@ -616,34 +561,6 @@ Object.assign(Match, {
                 p.model.position.z = THREE.MathUtils.clamp(
                     bolaFK.z + uz * F.afastaAdversarios, -(CAMPO_COMP / 2 - 1), CAMPO_COMP / 2 - 1);
                 lookAtBola(p.model, bolaFK);
-            });
-
-            /*
-            LIMITAR ATACANTES À LINHA DE FORA-DE-JOGO
-            Numa falta, a barreira e o limite de 9.15m podem empurrar a linha
-            defensiva. Os atacantes (colocados por geometria absoluta) não podem
-            ficar posicionados em fora-de-jogo.
-            */
-            let maxOppZ = (attDir === 1) ? -999 : 999;
-            defendingPlayers.forEach(o => {
-                if (o.role !== 'gk') {
-                    if (attDir === 1 && o.model.position.z > maxOppZ) maxOppZ = o.model.position.z;
-                    if (attDir === -1 && o.model.position.z < maxOppZ) maxOppZ = o.model.position.z;
-                }
-            });
-            let limiteZ = (attDir === 1) 
-                ? Math.max(0, maxOppZ, bolaFK.z) - 0.2
-                : Math.min(0, maxOppZ, bolaFK.z) + 0.2;
-
-            restantes.forEach(p => {
-                const zAtk = p.model.position.z * attDir;
-                const zLim = limiteZ * attDir;
-                if (zAtk > zLim) {
-                    p.model.position.z = limiteZ;
-                    p.dynamicTarget.z = limiteZ;
-                    p.setPieceTarget.z = limiteZ;
-                    if (p.jostleAncora) p.jostleAncora.z = limiteZ;
-                }
             });
 
             this.faltaPendente = true;
@@ -1010,28 +927,6 @@ Object.assign(Match, {
         this.setupSetPiece('FREE_KICK', team);
     },
 
-    triggerDirectFreeKick: function (forceTeam = null) {
-        const team = forceTeam ||
-            (this.ballCarrier ? this.ballCarrier.team : null) ||
-            this.possessionTeam || this.lastTouchedTeam || 'TeamA';
-        const attDir = (team === 'TeamA') ? 1 : -1;
-        const golZ = attDir * (CAMPO_COMP / 2);
-
-        // Distância de 17 a 23 metros da baliza
-        const distBaliza = 17 + Math.random() * (23 - 17);
-        // Posição Z correspondente
-        const bolaZ = golZ - attDir * distBaliza;
-        // Posição X de -10m a +10m do centro do gol
-        const bolaX = (Math.random() * 20) - 10;
-
-        if (this.ball) {
-            this.ball.position.set(bolaX, BallPhysics.raio, bolaZ);
-            this.ballVel.set(0, 0, 0);
-        }
-
-        this.setupSetPiece('FREE_KICK', team);
-    },
-
     triggerPenalty: function (forceTeam = null) {
         const team = forceTeam ||
             (this.ballCarrier ? this.ballCarrier.team : null) ||
@@ -1060,28 +955,11 @@ Object.assign(Match, {
         const team = this.setPieceTaker ? this.setPieceTaker.team : null;
         const atacantes = (team === 'TeamA') ? this.players : this.opponents;
 
-        // Recuperar a linha defensiva caso a equipe batedora mude de tática
-        const capGK = (typeof TeamShape !== 'undefined' && typeof Tatics !== 'undefined' && TeamShape.linhaDefensiva) 
-            ? (TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium)
-            : -18.25;
-
-        this.players.concat(this.opponents).forEach(p => {
+        atacantes.forEach(p => {
             if (p.role === 'gk') return;
-            if (p.fsm.currentState === 'MOVE_TO_POS') {
-                const isAtacante = (p.team === team);
-                
-                if (isAtacante) {
-                    const atkZ = p.baseTarget.z * p.dirZ;
-                    const tecto = Math.max(atkZ, capGK);
-                    const novoAtkZ = Math.min(atkZ + 6.0, tecto);
-                    p.dynamicTarget.set(p.baseTarget.x, ALTURA_BASE_Y, novoAtkZ * p.dirZ);
-                } else {
-                    p.dynamicTarget.set(p.baseTarget.x, ALTURA_BASE_Y, p.baseTarget.z);
-                }
-
-                if (p.model.position.distanceTo(p.dynamicTarget) < 1.5) {
-                    p.fsm.changeState('SET_PIECE_WAIT');
-                }
+            if (p.fsm.currentState === 'MOVE_TO_POS' &&
+                p.model.position.distanceTo(p.dynamicTarget) < 1.5) {
+                p.fsm.changeState('SET_PIECE_WAIT');
             }
         });
 

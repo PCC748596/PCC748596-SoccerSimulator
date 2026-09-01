@@ -79,7 +79,7 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
         return m; 
     }
 
-    const pelvis = criarPeca(new THREE.BoxGeometry(u * 1.3, u * 0.65, u * 0.8), blockMat, true); pelvis.position.y = 3.02; pelvis.add(criarPeca(new THREE.BoxGeometry(u * 1.35, u * 0.7, u * 0.85), shortMat)); corpo.add(pelvis); rig.pelvis = pelvis;
+    const pelvis = criarPeca(new THREE.BoxGeometry(u * 1.3, u * 0.6, u * 0.8), blockMat, true); pelvis.position.y = 2.6; pelvis.add(criarPeca(new THREE.BoxGeometry(u * 1.35, u * 0.65, u * 0.85), shortMat)); corpo.add(pelvis); rig.pelvis = pelvis;
     /*
     TRONCO — uma peça só (pedido).
 
@@ -94,11 +94,11 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     braços) levam +0.225 para compensar a origem ter descido de 1.25
     para 1.025 — a pose fica idêntica à de antes.
     */
-    const chest = criarPeca(new THREE.BoxGeometry(u * 1.4, u * 1.6, u * 0.75), blockMat);
-    chest.position.y = 1.15;
-    chest.add(criarPeca(new THREE.BoxGeometry(u * 1.45, u * 1.65, u * 0.8), chestMats));
+    const chest = criarPeca(new THREE.BoxGeometry(u * 1.4, u * 1.45, u * 0.75), blockMat);
+    chest.position.y = 1.025;
+    chest.add(criarPeca(new THREE.BoxGeometry(u * 1.45, u * 1.5, u * 0.8), chestMats));
     pelvis.add(chest); rig.chest = chest;
-    const neck = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.15, u * 0.35), blockMat); neck.position.y = 0.9; chest.add(neck); rig.neck = neck;
+    const neck = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.15, u * 0.35), blockMat); neck.position.y = 0.8; chest.add(neck); rig.neck = neck;
     const head = criarPeca(new THREE.BoxGeometry(u * 0.8, u * 1.0, u * 0.85), blockMat, true); head.position.y = 0.575;
 
     const faceGrp = new THREE.Group(); const faceZ = u * 0.426;
@@ -120,24 +120,25 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     const jointGeo = new THREE.SphereGeometry(u * 0.2, 16, 16); const smallJointGeo = new THREE.SphereGeometry(u * 0.15, 16, 16);
 
     function criarBraco(x) {
-        const grp = new THREE.Group(); grp.position.set(x, 0.6, 0);
-        const up = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 1.1, u * 0.35), blockMat, true); up.position.y = -0.55;
+        // 0.525 = 0.30 de antes + 0.225 da nova origem do tronco.
+        const grp = new THREE.Group(); grp.position.set(x, 0.525, 0);
+        const up = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 1.0, u * 0.35), blockMat, true); up.position.y = -0.5;
         const manga = criarPeca(new THREE.BoxGeometry(u * 0.4, u * 0.5, u * 0.4), shirtMat); manga.position.y = 0.25; up.add(manga); grp.add(up);
-        const elb = new THREE.Group(); elb.position.y = -1.1; grp.add(elb); elb.add(criarPeca(smallJointGeo, jointMat));
-        const low = criarPeca(new THREE.BoxGeometry(u * 0.3, u * 0.95, u * 0.3), blockMat, true); low.position.y = -0.475; elb.add(low);
-        const handG = new THREE.Group(); handG.position.y = -0.95; elb.add(handG);
+        const elb = new THREE.Group(); elb.position.y = -1.0; grp.add(elb); elb.add(criarPeca(smallJointGeo, jointMat));
+        const low = criarPeca(new THREE.BoxGeometry(u * 0.3, u * 0.8, u * 0.3), blockMat, true); low.position.y = -0.4; elb.add(low);
+        const handG = new THREE.Group(); handG.position.y = -0.8; elb.add(handG);
         const mao = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.4, u * 0.2), blockMat); mao.position.y = -0.2; mao.rotation.y = Math.PI / 2; handG.add(mao);
         grp.rotation.z = x < 0 ? -Math.PI / 16 : Math.PI / 16; chest.add(grp); return { raiz: grp, cotovelo: elb, mao: handG };
     }
 
     function criarPerna(x) {
         const grp = new THREE.Group(); grp.position.set(x, -0.3, 0); grp.add(criarPeca(jointGeo, jointMat));
-        const coxa = criarPeca(new THREE.BoxGeometry(u * 0.45, u * 1.15, u * 0.45), blockMat, true); coxa.position.y = -0.575;
+        const coxa = criarPeca(new THREE.BoxGeometry(u * 0.45, u * 1.0, u * 0.45), blockMat, true); coxa.position.y = -0.5;
         const shortL = criarPeca(new THREE.BoxGeometry(u * 0.5, u * 0.5, u * 0.5), shortMat); shortL.position.y = 0.25; coxa.add(shortL); grp.add(coxa);
-        const joelho = new THREE.Group(); joelho.position.y = -1.15; grp.add(joelho); joelho.add(criarPeca(smallJointGeo, jointMat));
-        const canela = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 1.05, u * 0.35), blockMat, true); canela.position.y = -0.525;
-        const meiao = criarPeca(new THREE.BoxGeometry(u * 0.4, u * 0.95, u * 0.4), sockMats); meiao.position.y = 0.0; canela.add(meiao); joelho.add(canela);
-        const peG = new THREE.Group(); peG.position.y = -1.05; joelho.add(peG);
+        const joelho = new THREE.Group(); joelho.position.y = -1.0; grp.add(joelho); joelho.add(criarPeca(smallJointGeo, jointMat));
+        const canela = criarPeca(new THREE.BoxGeometry(u * 0.35, u * 0.9, u * 0.35), blockMat, true); canela.position.y = -0.45;
+        const meiao = criarPeca(new THREE.BoxGeometry(u * 0.4, u * 0.85, u * 0.4), sockMats); meiao.position.y = 0.0; canela.add(meiao); joelho.add(canela);
+        const peG = new THREE.Group(); peG.position.y = -0.9; joelho.add(peG);
 
         const footGeo = new THREE.BoxGeometry(u * 0.45, u * 0.4, u * 1.0); const p = footGeo.attributes.position; for (let i = 0; i < p.count; i++) { if (p.getZ(i) > 0 && p.getY(i) > 0) p.setY(i, p.getY(i) - u * 0.25); } footGeo.computeVertexNormals();
         const chuteira = criarPeca(footGeo, bootMat, true); chuteira.position.set(0, -0.2, u * 0.25); peG.add(chuteira);
@@ -156,7 +157,7 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     const pernaEsq = criarPerna(0.4); rig.lLeg = pernaEsq.raiz; rig.lKnee = pernaEsq.joelho; rig.lFoot = pernaEsq.pe;
     const pernaDir = criarPerna(-0.4); rig.rLeg = pernaDir.raiz; rig.rKnee = pernaDir.joelho; rig.rFoot = pernaDir.pe;
 
-    corpo.scale.set((1.8 / 6.0) * 0.9, (1.8 / 6.0) * 0.9, (1.8 / 6.0) * 0.9); return { corpo, rig, backMat };
+    corpo.scale.set((1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9); return { corpo, rig, backMat };
 }
 
 
@@ -204,7 +205,7 @@ function aplicarPoseLateral(rig, K, giroAlvo) {
     if (!rig) return;
     const L = LateralPose;
 
-    rig.pelvis.position.set(0, 3.02, 0);
+    rig.pelvis.position.set(0, 2.6, 0);
     rig.pelvis.rotation.set(K.pelvisX, 0, 0);
 
     /*
@@ -263,7 +264,7 @@ function aplicarPoseRemate(rig, K) {
 
     // A bacia inclina e RODA: no remate em corrida a força vem da rotação,
     // não da inclinação (essa é do tiro de meta, com o corpo parado).
-    rig.pelvis.position.set(0, 3.02, 0);
+    rig.pelvis.position.set(0, 2.6, 0);
     rig.pelvis.rotation.set(0, chuteR ? K.pelvisY : -K.pelvisY, K.leanZ);
 
     rig.chest.rotation.set(K.chest, chuteR ? K.chestY : -K.chestY, 0);
@@ -412,8 +413,8 @@ function aplicarPoseChuteChaoGR(rig, K, corpo, opts) {
     const cosL = Math.cos(leanZ);
     const sinL = Math.sin(leanZ);
 
-    rig.pelvis.position.x = bl(P0 ? P0.pelvisPx : 0, pivotX * (1 - cosL) - 3.02 * sinL);
-    rig.pelvis.position.y = bl(P0 ? P0.pelvisPy : 3.02, 3.02 * cosL - pivotX * sinL);
+    rig.pelvis.position.x = bl(P0 ? P0.pelvisPx : 0, pivotX * (1 - cosL) - 2.6 * sinL);
+    rig.pelvis.position.y = bl(P0 ? P0.pelvisPy : 2.6, 2.6 * cosL - pivotX * sinL);
     rig.pelvis.position.z = 0;
 
     rig.pelvis.rotation.z = bl(P0 ? P0.pelvisRz : 0, leanZ);

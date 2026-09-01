@@ -317,26 +317,12 @@ const PassTypes = {
     /*
     Interpola entre os dois conjuntos de pesos conforme a pressão.
     */
-    pesosPorPressao: function (pressao, carrier) {
+    pesosPorPressao: function (pressao) {
         const E = PassTypeModel.escolha;
         const t = Math.max(0, Math.min(1, pressao));
         const a = E.pesosSemPressao, b = E.pesosSobPressao;
-
-        let progresso = a.progresso + (b.progresso - a.progresso) * t;
-
-        /*
-        O defesa pressionado desvaloriza ainda mais o progresso — ver
-        escolha.progressoDefesaSobPressao. Interpolado pela própria pressão:
-        sem ninguém por perto o defesa escolhe como toda a gente.
-        */
-        if (carrier && carrier.role === 'def' &&
-            typeof E.progressoDefesaSobPressao === 'number') {
-            const f = 1 + (E.progressoDefesaSobPressao - 1) * t;
-            progresso *= f;
-        }
-
         return {
-            progresso: progresso,
+            progresso: a.progresso + (b.progresso - a.progresso) * t,
             espaco: a.espaco + (b.espaco - a.espaco) * t,
             distancia: a.distancia + (b.distancia - a.distancia) * t,
             linha: a.linha + (b.linha - a.linha) * t
@@ -479,7 +465,7 @@ const PassTypes = {
         // calculam-se uma vez, fora do laço dos candidatos.
         const pressao = this.pressaoSobrePortador(
             this.distAdversarioMaisPerto(carrier), E.raioPressao);
-        const pesos = this.pesosPorPressao(pressao, carrier);
+        const pesos = this.pesosPorPressao(pressao);
 
         let melhor = null, melhorNota = -Infinity;
 
@@ -539,17 +525,6 @@ const PassTypes = {
             if (typeof PassLineModel !== 'undefined' && folga < PassLineModel.bloqueioDuro) continue;
 
             const linhaNorm = this.qualidadeDaLinha(folga, dist, alvoZ * dirZ);
-
-            /*
-            DEFESA PRESSIONADO NÃO JOGA PARA A FRENTE POR LINHA APERTADA.
-            Ver escolha.linhaMinDefesaFrente — o peso sozinho não mexeu no
-            resultado, isto é um corte.
-            */
-            if (carrier.role === 'def' && pressao >= (E.pressaoMinDefesa ?? 0.45) &&
-                typeof E.linhaMinDefesaFrente === 'number') {
-                const paraAFrente = (alvoZ - cz) * dirZ > 0;
-                if (paraAFrente && linhaNorm < E.linhaMinDefesaFrente) continue;
-            }
 
             let nota = this.notaCandidato(progressoNorm, espacoNorm, distNorm,
                 linhaNorm, pesos);

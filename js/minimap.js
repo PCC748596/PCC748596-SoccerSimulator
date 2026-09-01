@@ -23,14 +23,8 @@ const Minimap = {
     get altura() { return Math.round(this.largura * (CAMPO_LARG / CAMPO_COMP)); },
 
     margem: 6,        // relva à volta das linhas, para a bola na linha se ver
-    /*
-    Os pontos eram 2.6 px com o número do jogador escrito por dentro, a 3.5 px
-    de fonte — ilegível a esta escala e a encolher o próprio ponto. Pedido:
-    círculos maiores e sem números; quem se quer distinguir de relance é o
-    portador, e esse tem o anel branco.
-    */
-    raioJogador: 4.2,
-    raioBola: 2.4,
+    raioJogador: 2.6,
+    raioBola: 1.8,
 
     visivel: true,
     _canvas: null,
@@ -125,7 +119,7 @@ const Minimap = {
         }
     },
 
-    _ponto: function (ctx, x, z, raio, cor, contorno, texto) {
+    _ponto: function (ctx, x, z, raio, cor, contorno) {
         const p = this.paraTela(x, z);
         ctx.beginPath();
         ctx.arc(p.sx, p.sy, raio, 0, Math.PI * 2);
@@ -135,13 +129,6 @@ const Minimap = {
             ctx.strokeStyle = contorno;
             ctx.lineWidth = 1.2;
             ctx.stroke();
-        }
-        if (texto) {
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 3.5px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(texto, p.sx, p.sy);
         }
     },
 

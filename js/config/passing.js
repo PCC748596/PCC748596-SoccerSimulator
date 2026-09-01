@@ -140,26 +140,10 @@ const PassModel = {
     passeArco: {
         rasteiroMax: 15.0,
         chanceArco: 0.5,
-
-        /*
-        ABAIXO DOS 30 m A BOLA NÃO PASSA DA ALTURA DO PEITO.
-
-        Pedido explícito: passe PELO ALTO só acima dos 30 m. Até lá a bola pode
-        levantar-se — é preciso, para passar por cima de quem está na linha —
-        mas o tecto é o mesmo ponto onde o companheiro a mata no peito
-        (o `BallControl.peitoAltura`, 1.20 m — o número está aqui à mão porque o
-        player_behavior.js carrega depois deste ficheiro). A banda dos 20-30 m
-        estava em 4.2 m,
-        que é a parábola de um lançamento e não de um passe: chegava por cima
-        da cabeça de quem a esperava.
-
-        Continua a ser um TECTO e não um alvo: um passe de 16 m com o caminho
-        limpo sai rasteiro na mesma (o sorteio do `chanceArco` não mudou).
-        */
         bandas: [
             { max: 10.0, alturaMax: 1.0 },
-            { max: 20.0, alturaMax: 1.20 },
-            { max: 30.0, alturaMax: 1.20 }
+            { max: 20.0, alturaMax: 1.5 },
+            { max: 30.0, alturaMax: 4.2 }
         ],
 
         /*
@@ -185,17 +169,6 @@ const PassModel = {
         */
         elevMin: 25 * Math.PI / 180,
         elevMax: 35 * Math.PI / 180,
-
-        /*
-        PISO PRÓPRIO PARA QUEM ESTÁ DEBAIXO DO TECTO DO PEITO.
-
-        O `elevMin` de 25° é a faixa de um passe pelo alto de verdade, e a
-        clamp para cima ANULAVA o tecto da banda: um passe de 20 m com tecto de
-        1.20 m pede 13.5°, era subido para 25°, e o apex saía a 2.33 m — o dobro
-        do que o tecto dizia. Abaixo dos 30 m o que manda é a altura, portanto o
-        piso tem de ser baixo o suficiente para a bola poder sair rasante.
-        */
-        elevMinBaixa: 5 * Math.PI / 180,
 
         /*
         TECTO DE ALTURA, em metros. A faixa de ângulos descreve o gesto e é a
@@ -252,19 +225,6 @@ const PassModel = {
     alvo dele e um PONTO a frente de quem corre, nao o pe de ninguem.
     */
     vChegadaLancamento: 2.75,
-
-    /*
-    FRACÇÃO DO ALCANCE RASTEIRO ACIMA DA QUAL O LANÇAMENTO VAI PELO AR.
-
-    O rasteiro tem um tecto físico de ~28.8 m (ver alcanceRasteiroMaximo,
-    utils.js): pedir mais do que isso não dá erro nenhum, dá uma bola que morre
-    a meio caminho. Medido em 1200 s de jogo, 13 dos 167 lançamentos rasteiros
-    pediam mais de 28 m e ficaram em média 21.7 m aquém do ponto.
-
-    0.92 e não 1.0 porque na fronteira a bola chega ao ponto praticamente
-    parada — tecnicamente lá, inútil na prática.
-    */
-    fraccaoAlcanceRasteiro: 0.92,
 
     /*
     PASSE DE ENCONTRO — ver `passeDeEncontro` em utils.js.
@@ -547,51 +507,6 @@ const PassTypeModel = {
         raioPressao: 8.0,
         pesosSemPressao: { progresso: 1.0, espaco: 0.30, distancia: 0.35, linha: 1.10 },
         pesosSobPressao: { progresso: 0.45, espaco: 1.00, distancia: 0.20, linha: 1.10 },
-
-        /*
-        O DEFESA PRESSIONADO NÃO JOGA PARA A FRENTE — joga ao lado e para trás.
-
-        Medido em 40 minutos, passes de defesa que chegam a um colega:
-
-            sob pressão (<6 m), para a FRENTE      66%   (74 passes, 15.5 m)
-            sob pressão (<6 m), para trás/lado     85%   (85 passes, 12.6 m)
-            6-10 m, para a frente                  82%
-            livre (>10 m), para a frente           93%
-
-        Com alguém a menos de seis metros, quase metade dos passes do defesa
-        ainda ia para a frente — e é aí que se perde a bola no sítio onde ela
-        custa mais cara. O peso do progresso já cai de 1.0 para 0.45 com a
-        pressão, mas isso vale para toda a gente: um médio pressionado que
-        arrisca à frente perde uma jogada, um central perde um golo.
-
-        Este factor multiplica o peso do progresso SÓ para quem é `def`, e só
-        na medida da pressão (a 0 de pressão não muda nada, à pressão máxima
-        multiplica por isto). Não proíbe o passe em frente: se o companheiro da
-        frente for a melhor nota por espaço e linha, continua a ganhar.
-        */
-        progressoDefesaSobPressao: 0.25,
-
-        /*
-        E UM CORTE DURO, porque o peso sozinho não chegou.
-
-        Medido: baixar o peso do progresso do defesa pressionado mudou a ESCOLHA
-        (a fatia de passes para a frente caiu de 61% para 57-62%) e NÃO mudou o
-        resultado — 74% de sucesso nos passes em frente sob pressão, com e sem
-        ele, em 285 e 187 passes. A razão é que o que falha não é escolher o
-        companheiro errado: é atirar 15 m para a frente por uma linha meia
-        tapada, com alguém em cima.
-
-        Por isso: com o defesa pressionado, um passe PARA A FRENTE só é
-        candidato se a linha estiver mesmo limpa (`linhaMinDefesaFrente`, a
-        mesma escala 0..1 do `qualidadeDaLinha`). Os passes ao lado e para trás
-        não levam este corte — são os que têm 85-92% de sucesso.
-
-        Se nenhum candidato sobreviver, o `escolher` devolve null e o `actPass`
-        desce a cascata (atrasar a alguém perto, conduzir para trás), que é o
-        que um central faz com um avançado em cima.
-        */
-        linhaMinDefesaFrente: 0.55,
-        pressaoMinDefesa: 0.45,
 
         /*
         `linha` é a FOLGA da linha de passe até ao ponto de mira, normalizada

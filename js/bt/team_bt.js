@@ -802,6 +802,8 @@ de quem joga.
 */
 function escolherProfundidade(bb) {
     const B = BlockShape;
+    if (bb && !bb.isAttacking) return 'short';
+
     const mental = (typeof MentalidadeModel !== 'undefined') ? MentalidadeModel[Tatics.estilo] : null;
     const pedido = (mental && mental.profundidade) ? mental.profundidade : Tatics.lengthCompactness;
     return B.profundidade[pedido] !== undefined ? pedido : 'median';
@@ -809,16 +811,7 @@ function escolherProfundidade(bb) {
 
 function computeBlock(bb) {
     const B = BlockShape;
-    const isStateOffensive = bb.state === TeamState.TRANSITION_OFFENSIVE || 
-                             bb.state === TeamState.OFFENSIVE || 
-                             bb.state === 'T.Offensive' || 
-                             bb.state === 'Offensive';
-    const isStateDefensive = bb.state === TeamState.TRANSITION_DEFENSIVE || 
-                             bb.state === TeamState.DEFENSIVE || 
-                             bb.state === 'T.Defensive' || 
-                             bb.state === 'Defensive';
-
-    const modo = isStateOffensive ? 'comBola' : 'semBola';
+    const modo = bb.isAttacking ? 'comBola' : 'semBola';
     const compac = B.amplitude[Tatics.compactness] !== undefined
         ? Tatics.compactness : 'median';
     const compacLength = escolherProfundidade(bb);
@@ -826,84 +819,185 @@ function computeBlock(bb) {
     /* --- profundidade --------------------------------------------------- */
     const profundidade = CAMPO_COMP * B.profundidade[compacLength];
 
-    /* --- centro em Z ----------------------------------------------------
-       CENTRO DO RETÂNGULO:
-       - Time no estado T.Offensive / Offensive: 15 metros à frente da linha da bola (+15 em direção ao gol adversário)
-       - Time no estado T.Defensive / Defensive: 20 metros atrás da linha da bola (-20 em direção ao gol defendido)
+    /* --- centro em Z (Regra 1 e Regra 4) -------------------------------
+       CENTRO 5 METROS À FRENTE DA LINHA DA BOLA, com o sinal a depender da fase
+       No referencial de ataque da equipa (bb.dir):
+       - + é em direção ao ataque (à frente)
+       - - é em direção à defesa (atrás)
     */
     const dtMatch = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
     const reposta = (typeof Match !== 'undefined' && Match.state !== 'PLAY');
 
-    let targetOffsetZ = isStateOffensive ? 15.0 : -20.0;
+    /*
+    O centro do bloco fica 5 m À FRENTE da linha da bola — e "à frente" muda de
+    sentido com a fase:
+
+        T.Offensive / Offensive   entre a bola e a baliza ATACADA   -> +5
+        T.Defensive / Defensive   entre a bola e a baliza DEFENDIDA -> -5
+
+    Estava fixo em +5.0 para as quatro fases, ou seja a defender o bloco era
+    empurrado 5 m na direcção da baliza adversária — para trás da bola em vez
+    de entre ela e a nossa baliza. Tudo isto no referencial de ataque (bb.dir),
+    onde + é o sentido do ataque da equipa.
+    */
+    const targetOffsetZ = bb.isAttacking ? 5.0 : -5.0;
 
     if (bb.blocoZSuave === undefined) {
         bb.blocoZSuave = targetOffsetZ;
     } else {
+        // Nota: na troca de posse o alvo salta de +5 para -5 (ou o inverso). O
+        // seguirBola faz a travessia desses 10 m em rampa, que é o que se quer:
+        // o bloco reorganiza-se, não teleporta.
         bb.blocoZSuave = seguirBola(bb.blocoZSuave, targetOffsetZ, BlockShape.seguimentoBola, dtMatch, reposta);
     }
 
+    /*
+    A MENTALIDADE, que não estava aqui.
+
+    O `MentalidadeModel[estilo].blocoZ` existe desde sempre no config, com o
+    comentário "A Mentalidade fala uma vez, pelo blocoZ" — e NUNCA era lido. A
+    única coisa que a Mentalidade mexia era a `profundidade` (ver
+    escolherProfundidade), e essa, a defender, é forçada a 'short' para toda a
+    gente: ou seja, com a equipa sem bola, escolher Muito Defensiva ou Muito
+    Ofensiva dava exactamente o mesmo bloco.
+
+    Medido, com a equipa a defender (mediana da profundidade do alvo, no
+    referencial de ataque):
+
+                        Muito Defensiva   Muito Ofensiva
+        defesas              -16.1             -16.6
+        médios                -6.1              -7.0
+
+    Um metro de diferença, e no sentido errado. Agora o `blocoZ` desloca o
+    centro do bloco: negativo recua-o para o próprio meio-campo, positivo
+    empurra-o para o do adversário.
+    */
     const mentalBloco = (typeof MentalidadeModel !== 'undefined' &&
         MentalidadeModel[Tatics.estilo] &&
         typeof MentalidadeModel[Tatics.estilo].blocoZ === 'number')
         ? MentalidadeModel[Tatics.estilo].blocoZ : 0;
 
-    /*
-    O GUARDA-REDES COM A BOLA AFASTA OS DOIS BLOCOS DA BALIZA ONDE ELA ESTÁ.
-    */
-    let offsetGk = 0;
-    if (typeof Match !== 'undefined' && typeof BlockShape !== 'undefined') {
-        const gkTem = (eq) => (Match.gkHoldingBall && Match.gkHoldingBall[eq]) ||
-            !!(Match.ballCarrier && Match.ballCarrier.role === 'gk' && Match.ballCarrier.team === eq);
-        const outra = (bb.team === 'TeamA') ? 'TeamB' : 'TeamA';
-        const meu = gkTem(bb.team), dele = gkTem(outra);
-
-        if (meu !== dele) {
-            const sinal = meu ? 1 : -1;
-            offsetGk = sinal * (BlockShape.recuoGkComBola || 0);
-            if (Match.state === 'GOAL_KICK') {
-                offsetGk += sinal * (BlockShape.avancoTiroMeta || 0);
-            }
-        }
-    }
-
     const bolaZDir = bb.bolaZSuave * bb.dir;
-    let centroZ = bolaZDir + bb.blocoZSuave + offsetGk;
+    let centroZ = bolaZDir + bb.blocoZSuave + mentalBloco;
 
     let z0 = centroZ - (profundidade / 2);
     let z1 = centroZ + (profundidade / 2);
 
-    /* --- limites em Z ---------------------------------------------------
-       - Primeiro limite (traseira do retângulo / z0): Linha Defensiva ajustada no painel
-       - Segundo limite (frente do retângulo / z1): Linha da grande área adversária
-       - O retângulo permanece rígido (sem se deformar)
+    /* --- limites em Z (Regra 2 e Regra 3) -------------------------------
+       O rectângulo do bloco vai até perto da linha de fundo adversária.
+       A traseira do bloco (minZ) está agora restrita à linha da própria
+       grande área (16.5m), impedindo que os times recuem em demasia para
+       dentro da área em fase defensiva regular.
     */
     const fundo = typeof LINHA_FUNDO !== 'undefined' ? LINHA_FUNDO : CAMPO_COMP / 2;
     const profArea = typeof Area !== 'undefined' ? Area.profundidade : 16.5;
+    const minZ = -(fundo - profArea);
+    const maxZ = (fundo - 1.5);
 
-    let capLinha = -(fundo - profArea);
-    if (typeof TeamShape !== 'undefined' && typeof Tatics !== 'undefined' && TeamShape.linhaDefensiva) {
-        capLinha = TeamShape.linhaDefensiva[Tatics.linhaDefensiva] ?? TeamShape.linhaDefensiva.medium;
-    }
-
-    const minZ = capLinha;
-    const maxZ = (fundo - profArea);
-
-    // Mantém o bloco rígido com tamanho `profundidade`
     if (z0 < minZ) {
-        const shift = minZ - z0;
         z0 = minZ;
-        z1 += shift;
+        z1 = z0 + profundidade;
         if (z1 > maxZ) z1 = maxZ;
     } else if (z1 > maxZ) {
-        const shift = maxZ - z1;
+        /*
+        A frente bate na marca de penálti adversária: o bloco ENCOLHE contra
+        ela. Fazia `z0 = z1 - profundidade`, ou seja arrastava o rectângulo
+        inteiro para trás — tocar numa borda recalculava a outra, o defeito que
+        já tinha sido corrigido nos outros caminhos. Era ele que punha a
+        traseira 26 m atrás do tecto da Linha Defensiva com bloco longo.
+        */
         z1 = maxZ;
-        z0 += shift;
-        if (z0 < minZ) z0 = minZ;
+        if (z0 > z1) z0 = z1;
     }
 
-    centroZ = (z0 + z1) / 2;
+    /* --- Linha Defensiva do painel (ÂNCORA da traseira) ------------------
+       A TRASEIRA do bloco é a linha defensiva da equipa, e o painel diz ONDE
+       ela se põe (TeamShape.linhaDefensiva, no referencial de ataque).
 
-    /* --- largura e centro em X ------------------------------------------
+       Era só um TECTO — cortava a linha quando ela subia demais, mas nunca a
+       fazia subir. Com bloco longo e a bola longe, a traseira saía do centro do
+       bloco e o tecto nunca mordia: medido sem posse com a bola em +20 e Length
+       `large`, `medium` (-18.25) e `high` (-2.0) davam os DOIS -20.0, ou seja o
+       botão não separava nada. Passa a âncora: a traseira assume o valor
+       pedido, e só recua de lá por uma razão de jogo.
+
+       Quem manda recuar é `recuoDaUltimaLinha` (config.js), que estava escrita
+       e nunca era chamada — os dois recuos legítimos são:
+
+         - o adversário mais recuado: a linha põe-se `distancia` metros atrás
+           dele (MarkingModel.distanciaPorPressao, do Defensive Pressure), senão
+           deixava-se um atacante nas costas;
+         - o piso do guarda-redes, que é um limite físico e ganha a tudo.
+
+       Só SEM bola: com posse o bloco sobe com a jogada e quem trava a frente é
+       o fora-de-jogo, não isto.
+
+       CORRE DEPOIS DOS LIMITES DO CAMPO, e fica com a última palavra. Corria
+       antes, e o `else if (z1 > maxZ)` recalculava `z0 = z1 - profundidade`,
+       arrastando o rectângulo inteiro para trás e desfazendo o que acabara de
+       ser aplicado.
+
+       Quando a linha pedida e a profundidade pedida não cabem entre ela e a
+       marca de penálti adversária, quem cede é a FRENTE: a traseira é escolha
+       explícita do painel, a frente é derivada. O bloco encolhe, com um mínimo
+       de `profundidadeMinima` para não colapsar numa linha só.
+    */
+    if (!bb.isAttacking && typeof TeamShape !== 'undefined' &&
+        typeof Tatics !== 'undefined' && TeamShape.linhaDefensiva) {
+        /*
+        A LINHA DEFENSIVA É DO PAINEL, MAS A MENTALIDADE TAMBÉM FALA.
+
+        A âncora da traseira vinha só do botão Low/Medium/High, e é ela que tem
+        a última palavra sobre onde a última linha se põe. Resultado: o
+        `blocoZ` da Mentalidade movia o centro do bloco mas os DEFESAS ficavam
+        onde estavam — medido, um metro de diferença entre Muito Defensiva e
+        Muito Ofensiva, que é o mesmo que dizer que a Mentalidade não existia
+        para eles.
+
+        `pesoNaLinha` é a fracção do `blocoZ` que passa para a âncora. Não é 1:
+        o botão da Linha Defensiva continua a ser o controlo grosso, a
+        Mentalidade inclina-o. Com 0.5, Muito Defensiva recua a linha 5 m e
+        Muito Ofensiva sobe-a 6 m sobre o que o painel pediu.
+        */
+        const capBase = TeamShape.linhaDefensiva[Tatics.linhaDefensiva]
+            ?? TeamShape.linhaDefensiva.medium;
+        const pesoMental = (typeof MentalidadeModel !== 'undefined' &&
+            typeof MentalidadeModel.pesoNaLinha === 'number')
+            ? MentalidadeModel.pesoNaLinha : 0;
+        const capLinha = capBase + mentalBloco * pesoMental;
+
+        /*
+        Adversário de campo mais recuado e piso do guarda-redes, ambos no
+        referencial de ataque desta equipa. `null` quando não há lista de
+        adversários (harness de teste, arranque): aí a âncora manda sozinha.
+        */
+        let maisRecuadoDir = null, pisoDir = null;
+        if (bb.opp && bb.opp.length) {
+            for (const o of bb.opp) {
+                if (!o || o.role === 'gk' || !o.model) continue;
+                const zDir = o.model.position.z * bb.dir;
+                if (maisRecuadoDir === null || zDir < maisRecuadoDir) maisRecuadoDir = zDir;
+            }
+        }
+        if (bb.own && bb.own.length) {
+            const gk = bb.own.find(pl => pl && pl.role === 'gk' && pl.model);
+            if (gk) pisoDir = gk.model.position.z * bb.dir + 1.0;
+        }
+
+        const M = (typeof MarkingModel !== 'undefined') ? MarkingModel : null;
+        const distancia = (M && M.distanciaPorPressao)
+            ? (M.distanciaPorPressao[Tatics.pressaoDefensiva] ?? M.distanciaPorPressao.balanced)
+            : 3.0;
+
+        z0 = recuoDaUltimaLinha(z0, maisRecuadoDir, distancia, pisoDir, capLinha);
+
+        if (z0 < minZ) z0 = minZ;
+        z1 = Math.min(z0 + profundidade, maxZ);
+        const profMin = B.profundidadeMinima ?? 20.0;
+        if (z1 - z0 < profMin) z1 = Math.min(z0 + profMin, maxZ);
+    }
+
+    /* --- largura e centro em X (Regra 1 e Regra 2) ----------------------
        ACOMPANHA AS COORDENADAS DA BOLA EM X E LIMITA NOS LIMITES DO CAMPO (-34 a +34)
     */
     const largura = CAMPO_LARG * B.amplitude[compac];
@@ -924,19 +1018,11 @@ function computeBlock(bb) {
         if (x0 < -maxX) x0 = -maxX;
     }
 
-    const L = (typeof BlockShape !== 'undefined' && BlockShape.linhas)
-        ? BlockShape.linhas : { defesa: 0.0, meio: 0.5, ataque: 1.0 };
-
     bb.bloco = {
         x0: x0,
         x1: x1,
         z0: z0,
         z1: z1,
-        centroZ: centroZ,
-        centroX: centroX,
-        zDef: z0 + (z1 - z0) * L.defesa,
-        zMid: z0 + (z1 - z0) * L.meio,
-        zAtk: z0 + (z1 - z0) * L.ataque,
         modo: modo
     };
 
@@ -1030,93 +1116,7 @@ function deslocamentoDeCorredor(o) {
 /*
 Calcula a posição no mundo de um slot específico dentro do bloco tático.
 */
-/*
-OS LIMITES DO BLOCO NO MUNDO, com o empurrão que o mete dentro das linhas.
-
-Existe porque o corte final do nível 1 (tickBase) e o corte de dentro do
-`calcularPontoDoSlot` têm de usar EXACTAMENTE a mesma moldura — dois cálculos
-do mesmo rectângulo é como se acaba com o anel do debug meio metro fora da
-linha desenhada.
-
-Devolve x/z já no referencial do mundo (o `bloco.z*` é do referencial de
-ataque da equipa, ver computeBlock).
-*/
-function limitesDoBloco(bb) {
-    const bloco = bb && bb.bloco;
-    if (!bloco) return null;
-
-    const MARGEM_LINHA_SLOT = 1.5;
-    const profArea = typeof Area !== 'undefined' ? Area.profundidade : 16.5;
-    const limX = CAMPO_LARG / 2 - MARGEM_LINHA_SLOT;
-    const limZ = CAMPO_COMP / 2 - profArea;
-
-    const dentro = (v0, v1, lim) => {
-        if (v1 > lim) return -(v1 - lim);      // empurra para dentro pela direita
-        if (v0 < -lim) return (-lim - v0);     // e pela esquerda
-        return 0;
-    };
-    const empurraX = dentro(bloco.x0, bloco.x1, limX);
-    const empurraZ = dentro(bloco.z0, bloco.z1, limZ);
-
-    const zA = (bloco.z0 + empurraZ) * bb.dir;
-    const zB = (bloco.z1 + empurraZ) * bb.dir;
-
-    return {
-        empurraX: empurraX,
-        empurraZ: empurraZ,
-        xMin: Math.min(bloco.x0, bloco.x1) + empurraX,
-        xMax: Math.max(bloco.x0, bloco.x1) + empurraX,
-        zMin: Math.min(zA, zB),
-        zMax: Math.max(zA, zB)
-    };
-}
-
-/*
-=============================================================================
-NIVEL 1 — O SLOT PURO DA FORMACAO NO RECTANGULO
-=============================================================================
-E so isto: o `u` e o `v` que vem do FormationsData (config/tactics.js) mapeados
-no bloco. Nao le a bola, nao le a fase, nao le quem esta em que linha, nao le
-adversarios. Dois frames com o mesmo rectangulo dao exactamente o mesmo ponto.
-
-Tudo o resto — o desvio de linha por fase, o nudge por posicao, os quatro
-fechos, a regua da linha da bola na fase ofensiva e o deslize por corredor —
-era calculado aqui dentro e por isso fazia o anel GRANDE do debug andar a
-passear dentro do rectangulo. Passou para `formaDaEquipa`, que corre no nivel 2
-como DESLOCAMENTO a partir deste ponto.
-
-O `empurraZ`/`empurraX` entram porque nao sao decisao nenhuma: e o rectangulo a
-ser metido dentro das linhas do campo.
-*/
-function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPorPar, ordemNaLinha, totalNaLinha) {
-    const bloco = bb.bloco;
-    if (!bloco || !slot) return null;
-
-    const lim = limitesDoBloco(bb);
-    const u = THREE.MathUtils.clamp(slot.u, 0, 1);
-    const v = THREE.MathUtils.clamp(slot.v, 0, 1);
-
-    const xTarget = bloco.x0 + u * (bloco.x1 - bloco.x0) + lim.empurraX;
-
-    // O `v` interpola entre as tres linhas do bloco, com charneira em 0.5.
-    let zRaw;
-    if (v < 0.5) zRaw = bloco.zDef + (v / 0.5) * (bloco.zMid - bloco.zDef);
-    else zRaw = bloco.zMid + ((v - 0.5) / 0.5) * (bloco.zAtk - bloco.zMid);
-
-    return { x: xTarget, z: (zRaw + lim.empurraZ) * bb.dir };
-}
-
-/*
-A FORMA DA EQUIPA — o que ANTES estava dentro do slot e agora e nivel 2.
-
-Recebe o slot puro e devolve-o deslocado. O corpo e o mesmo de sempre, linha
-por linha; o que mudou foi o sitio onde corre e o facto de o resultado ja nao
-ser escrito no `slotTarget`.
-
-Continua a ser a primeira coisa do nivel 2, antes das regras de lugar: e a
-forma colectiva, e as regras de lugar sao correccoes a ela.
-*/
-function formaDaEquipa(slot, pos, role, fbStyle, bb, linhaActual, fecharPorPar, ordemNaLinha, totalNaLinha) {
+function calcularPontoDoSlot(slot, pos, role, fbStyle, bb) {
     const bloco = bb.bloco;
     if (!bloco || !slot) return null;
 
@@ -1158,89 +1158,22 @@ function formaDaEquipa(slot, pos, role, fbStyle, bb, linhaActual, fecharPorPar, 
         fechoAdicional = 1.0 - (0.40 * fatorCentral); // aperta até mais 40% para fechar o meio
     }
 
-    /*
-    A LINHA FECHA-SE QUANDO PERDE GENTE. Com a linha completa este factor é 1.0
-    e o `u` sai exactamente como saía — foi a condição imposta a esta
-    alteração. A perder um, os que ficam aproximam-se do eixo: é isto que faz
-    o central que sobra e o lateral do lado oposto fecharem para o meio quando
-    o outro central sobe. Ver LineShape.porFalta e classificarLinhas.
-    */
-    const fechoOcup = (typeof fechoPorOcupacao === 'function')
-        ? fechoPorOcupacao(bb, linhaActual || role) : 1.0;
+    const u = THREE.MathUtils.clamp(0.5 + (slot.u - 0.5) * fecho * fechoSec * fechoAdicional, 0.02, 0.98);
 
-    // O de trás do par lateral/meia-lateral fecha para o eixo — ver a regra do
-    // par em classificarLinhas.
-    const fechoPar = (fecharPorPar && LineShape && typeof LineShape.parFecho === 'number')
-        ? LineShape.parFecho : 1.0;
+    const MARGEM_LINHA_SLOT = 1.5;
+    const limX = CAMPO_LARG / 2 - MARGEM_LINHA_SLOT;
+    const limZ = CAMPO_COMP / 2 - MARGEM_LINHA_SLOT;
 
-    /*
-    LINHA INCOMPLETA: REPARTE-SE POR INTERVALOS IGUAIS, CENTRADA.
-
-    Encolher a linha mantendo o `u` da formação preserva o espaçamento original,
-    e com a 442 isso dá dois juntos ao centro e um muito aberto — medido, 3.65 m
-    de diferença entre os dois intervalos de um trio.
-
-    Com `n` na linha, os lugares são 1/(n+1), 2/(n+1)... — três dão 0.25, 0.50 e
-    0.75, iguais e centrados. A ORDEM é a da formação (`ordemNaLinha`), portanto
-    ninguém troca de lado: o da esquerda continua à esquerda.
-
-    Com a linha completa não se toca em nada: o `u` da formação é a intenção do
-    treinador e é ela que manda.
-    */
-    let uBase = slot.u;
-    if (typeof ordemNaLinha === 'number' && typeof totalNaLinha === 'number' &&
-        totalNaLinha > 0 && bb.linhas && bb.linhas.nominal) {
-        const chaveLinha = linhaActual || role;
-        const nom = bb.linhas.nominal[chaveLinha] || 0;
-        const mexida = !!(bb.linhas.mexida && bb.linhas.mexida[chaveLinha]);
-        if (nom > 0 && (totalNaLinha !== nom || mexida)) {
-            uBase = (ordemNaLinha + 1) / (totalNaLinha + 1);
-        }
-    }
-
-    let basculamento = 0;
-    if (typeof bb.bolaXSuave === 'number') {
-        const fatorBola = bb.bolaXSuave / (CAMPO_LARG / 2); // de -1 a 1
-        basculamento = fatorBola * 0.15; // move até 15% da largura pro lado da bola
-    }
-
-    const u = THREE.MathUtils.clamp(
-        0.5 + basculamento + (uBase - 0.5) * fecho * fechoSec * fechoAdicional * fechoOcup * fechoPar, 0.02, 0.98);
-    // Uma fonte só para a moldura — ver limitesDoBloco.
-    const limB = limitesDoBloco(bb);
-    const empurraX = limB.empurraX;
-    const empurraZ = limB.empurraZ;
+    const dentro = (v0, v1, lim) => {
+        if (v1 > lim) return -(v1 - lim);      // empurra para dentro pela direita
+        if (v0 < -lim) return (-lim - v0);     // e pela esquerda
+        return 0;
+    };
+    const empurraX = dentro(bloco.x0, bloco.x1, limX);
+    const empurraZ = dentro(bloco.z0, bloco.z1, limZ);
 
     let xTarget = bloco.x0 + u * (bloco.x1 - bloco.x0) + empurraX;
-    
-    /*
-    O `v` da formação (0 = mais recuado, 1 = mais adiantado) interpola entre as
-    TRÊS linhas do bloco. O ponto de charneira é o `v` = 0.5 da formação e não
-    a fracção da linha do meio: são coisas diferentes — o primeiro é onde o
-    jogador está na formação, o segundo é onde a linha do meio está no bloco.
-    */
-    let targetZRaw;
-    if (v < 0.5) {
-        // Metade de trás da formação: entre a linha de defesa e a do meio.
-        targetZRaw = bloco.zDef + (v / 0.5) * (bloco.zMid - bloco.zDef);
-    } else {
-        // Metade da frente: entre a linha do meio e a do ataque.
-        targetZRaw = bloco.zMid + ((v - 0.5) / 0.5) * (bloco.zAtk - bloco.zMid);
-    }
-    
-    let zAlvoDir = targetZRaw + empurraZ;
-
-    const profAreaLimit = typeof Area !== 'undefined' ? Area.profundidade : 16.5;
-    const minZDef = -(CAMPO_COMP / 2 - profAreaLimit);
-    if (zAlvoDir < minZDef) zAlvoDir = minZDef;
-    const maxZAtk = (CAMPO_COMP / 2 - profAreaLimit);
-    if (zAlvoDir > maxZAtk) zAlvoDir = maxZAtk;
-
-    const zMinBloco = Math.min(bloco.z0, bloco.z1) + empurraZ;
-    const zMaxBloco = Math.max(bloco.z0, bloco.z1) + empurraZ;
-    zAlvoDir = THREE.MathUtils.clamp(zAlvoDir, zMinBloco, zMaxBloco);
-
-    let zTarget = zAlvoDir * bb.dir;
+    const zTarget = ((bloco.z0 + v * (bloco.z1 - bloco.z0)) + empurraZ) * bb.dir;
 
     const ballX = bb.ballX || 0;
     const CORREDOR_LIMITE = 11.33; 
@@ -1284,25 +1217,113 @@ Onde este jogador fica dentro do bloco, em metros no mundo.
 */
 function slotNoBloco(p, bb) {
     if (!bb || !p || !p.slot) return null;
-    return calcularPontoDoSlot(p.slot, p.pos, p.role, p.fbStyle, bb, p.linhaActual, p.fecharPorPar,
-        p.ordemNaLinha, p.totalNaLinha);
+    return calcularPontoDoSlot(p.slot, p.pos, p.role, p.fbStyle, bb);
 }
 
 /*
-O ponto da FORMA da equipa (nivel 2) para este jogador — ver formaDaEquipa.
-*/
-function formaNoBloco(p, bb) {
-    if (!bb || !p || !p.slot) return null;
-    return formaDaEquipa(p.slot, p.pos, p.role, p.fbStyle, bb, p.linhaActual, p.fecharPorPar,
-        p.ordemNaLinha, p.totalNaLinha);
-}
-
-/*
-Garante a estabilidade dos slots táticos por posição (evita cruzamentos erráticos de centrais ou médios).
+SISTEMA DE DETECÇÃO DO ALVO MAIS PRÓXIMO PARA JOGADORES DA MESMA POSIÇÃO
+Evita que dois atacantes (CF), dois médios (CM) ou dois centrais (CB) corram
+para o mesmo lugar. Pareia os slots da formação dinamicamente por proximidade,
+com tratamento dedicado para quando um deles é o portador da bola.
 */
 function otimizarSlotsPorPosicao(lista, bb) {
-    // Foi removido o congelamento (slotInicial) porque quebrava a inversão de 
-    // campo ao intervalo e ignorava mudanças táticas feitas pelo utilizador.
+    if (!lista || !bb || !bb.bloco) return;
+
+    // Agrupa jogadores de campo pela posição (ex: CF, CB, CM, etc)
+    const grupos = {};
+    for (const p of lista) {
+        if (!p || p.role === 'gk' || !p.slot) continue;
+        if (!p.slotInicial) {
+            p.slotInicial = { u: p.slot.u, v: p.slot.v };
+        }
+        if (!grupos[p.pos]) grupos[p.pos] = [];
+        grupos[p.pos].push(p);
+    }
+
+    const carrier = (typeof Match !== 'undefined' && Match.ballCarrier) ? Match.ballCarrier : null;
+
+    for (const pos in grupos) {
+        const grupo = grupos[pos];
+        if (grupo.length < 2) continue;
+
+        // Slots iniciais da formação para este grupo
+        const slots = grupo.map(p => p.slotInicial);
+        
+        // Posição espacial no mundo de cada slot no bloco atual
+        const alvosSlots = slots.map(s => calcularPontoDoSlot(s, pos, grupo[0].role, grupo[0].fbStyle, bb));
+        if (alvosSlots.some(a => !a)) continue;
+
+        const k = grupo.length;
+        if (k === 2) {
+            const p0 = grupo[0];
+            const p1 = grupo[1];
+            const pos0 = p0.model ? p0.model.position : p0.baseTarget;
+            const pos1 = p1.model ? p1.model.position : p1.baseTarget;
+            const s0 = alvosSlots[0];
+            const s1 = alvosSlots[1];
+
+            // Caso 1: Um dos jogadores do grupo é o portador da bola
+            const isP0Carrier = (carrier === p0) || (p0.fsm && (p0.fsm.currentState === 'CARRY' || p0.fsm.currentState === 'DRIBBLE'));
+            const isP1Carrier = (carrier === p1) || (p1.fsm && (p1.fsm.currentState === 'CARRY' || p1.fsm.currentState === 'DRIBBLE'));
+
+            if (isP0Carrier && !isP1Carrier) {
+                // p0 é o portador: atribui a p0 o slot mais próximo dele, e p1 obrigatoriamente fica com o outro slot
+                const d0_s0 = Math.hypot(pos0.x - s0.x, pos0.z - s0.z);
+                const d0_s1 = Math.hypot(pos0.x - s1.x, pos0.z - s1.z);
+                if (d0_s0 <= d0_s1) {
+                    p0.slot = slots[0];
+                    p1.slot = slots[1];
+                } else {
+                    p0.slot = slots[1];
+                    p1.slot = slots[0];
+                }
+                continue;
+            } else if (isP1Carrier && !isP0Carrier) {
+                // p1 é o portador: atribui a p1 o slot mais próximo dele, e p0 obrigatoriamente fica com o outro slot
+                const d1_s0 = Math.hypot(pos1.x - s0.x, pos1.z - s0.z);
+                const d1_s1 = Math.hypot(pos1.x - s1.x, pos1.z - s1.z);
+                if (d1_s1 <= d1_s0) {
+                    p1.slot = slots[1];
+                    p0.slot = slots[0];
+                } else {
+                    p1.slot = slots[0];
+                    p0.slot = slots[1];
+                }
+                continue;
+            }
+
+            // Caso 2: Nenhum é o portador da bola (jogo posicional)
+            // Compara configuração direta (p0->s0, p1->s1) vs invertida (p0->s1, p1->s0)
+            const d00 = (pos0.x - s0.x) ** 2 + (pos0.z - s0.z) ** 2;
+            const d11 = (pos1.x - s1.x) ** 2 + (pos1.z - s1.z) ** 2;
+            const custoDireto = d00 + d11;
+
+            const d01 = (pos0.x - s1.x) ** 2 + (pos0.z - s1.z) ** 2;
+            const d10 = (pos1.x - s0.x) ** 2 + (pos1.z - s0.z) ** 2;
+            const custoInvertido = d01 + d10;
+
+            const HISTERESE = 4.0; // metros quadrados de folga para estabilidade dinâmica
+            const atualmenteDireto = (!p0.slot || (p0.slot.u === slots[0].u && p0.slot.v === slots[0].v));
+
+            if (atualmenteDireto) {
+                if (custoInvertido < custoDireto - HISTERESE) {
+                    p0.slot = slots[1];
+                    p1.slot = slots[0];
+                } else {
+                    p0.slot = slots[0];
+                    p1.slot = slots[1];
+                }
+            } else {
+                if (custoDireto < custoInvertido - HISTERESE) {
+                    p0.slot = slots[0];
+                    p1.slot = slots[1];
+                } else {
+                    p0.slot = slots[1];
+                    p1.slot = slots[0];
+                }
+            }
+        }
+    }
 }
 
 /*
@@ -1505,18 +1526,6 @@ function aplicarMarcacaoPosicional(p, bb, targetX, targetZ) {
     const M = MarkingModel;
     let distancia = M.distanciaPorPressao[Tatics.pressaoDefensiva]
         ?? M.distanciaPorPressao.balanced;
-
-    /*
-    A METADE DEFENSIVA DO ESTILO aperta ou alivia esta distância — ver
-    `distanciaComEstilo` (playing_styles.js). O `pressao` estava na config
-    desde sempre e não era lido por ninguém: um The Destroyer marcava
-    exactamente como um Creative Playmaker.
-
-    Aqui e não mais abaixo: as correcções que se seguem (campo de ataque sem
-    pressão alta, `biasMax`) são regras da EQUIPA e têm de continuar a valer
-    por cima da personalidade de um jogador.
-    */
-    if (typeof distanciaComEstilo === 'function') distancia = distanciaComEstilo(p, distancia);
     let biasMax = M.biasMaxPara(targetZ * p.dirZ);
 
     // No campo de ataque com pressão não-High, a marcação é feita a distância acompanhando a jogada
@@ -1614,49 +1623,6 @@ function atribuirMarcacoesDaEquipa(lista, bb) {
         // So quem foi a leilao reinicia o relogio da histerese.
         if (!marcadores[i].manter) p.marcTimer = 0;
     }
-
-    marcarQuemVaiReceber(lista, bb);
-}
-
-/*
-O DEFESA MAIS PRÓXIMO DE QUEM VAI RECEBER FICA COM ELE.
-
-Enquanto a bola vai no ar para um destinatário, o defesa mais próximo desse
-destinatário — dentro de `MarkingModel.raioReceptor` — passa a tê-lo como
-marcação, por cima do que o leilão tinha decidido.
-
-Medido antes desta regra, defesas a menos de 6 m de quem ia receber: em 55.6%
-dos casos não tinham esse adversário atribuído, e o alvo deles apontava para
-2.30 m MAIS LONGE dele — o slot do bloco, que é atrás. O adversário recebia
-livre e de frente.
-
-SÓ O MAIS PRÓXIMO: dois defesas a largarem o bloco pelo mesmo passe abrem mais
-espaço do que fecham.
-
-Ao HOMEM e não à bola. Quem quer cortar tem o INTERCEPT, com critérios próprios
-— e o portador tem o chaser. Nenhum dos dois é tocado aqui.
-*/
-function marcarQuemVaiReceber(lista, bb) {
-    if (typeof Match === 'undefined' || typeof MarkingModel === 'undefined') return;
-    const raio = MarkingModel.raioReceptor;
-    if (typeof raio !== 'number') return;
-
-    const recv = Match.intendedReceiver;
-    if (!recv || !recv.model || recv.role === 'gk') return;
-    if (recv.team === bb.team) return;               // é nosso: não se marca
-    if (Match.ballCarrier) return;                   // a bola já não vai no ar
-
-    let melhor = null, melhorD = Infinity;
-    for (const p of lista) {
-        if (!p || p.role !== 'def' || !p.model) continue;
-        if (p === bb.chaser || p === bb.intercetor) continue;
-        const d = p.model.position.distanceTo(recv.model.position);
-        if (d < melhorD) { melhorD = d; melhor = p; }
-    }
-    if (!melhor || melhorD > raio) return;
-
-    melhor.marcRef = recv;
-    melhor.marcTimer = 0;
 }
 
 /*
@@ -1816,476 +1782,8 @@ function atribuirApoiosDaEquipa(lista, bb) {
     }
 }
 
-/*
-=============================================================================
-QUEM ESTÁ EM QUE LINHA, AGORA — e não segundo a formação
-=============================================================================
-O `p.role` vem da formação e NUNCA MUDA: um lateral que sobe para o meio-campo
-continua a contar como defesa para o `LineShape`, para o fecho e para tudo o
-resto. Era por isso que a linha de trás não se recompunha quando perdia gente.
-
-A LINHA DE TRÁS é quem está a menos de `faixaDaLinha` do jogador mais RECUADO da
-equipa — relativa aos COMPANHEIROS, que é o que se vê no ecrã. Medir contra os
-terços do bloco não serve: o bloco é empurrado pela bola e pela linha de
-fora-de-jogo, e há frames em que os onze caem todos no mesmo terço (medido, a
-contagem oscilava entre 0 e 10).
-
-`nominal` é quantos a FORMAÇÃO põe naquela linha — é contra ele que se mede a
-falta. Sai do `role`, que para isto serve: é a intenção do treinador.
-
-Escreve em `p.linhaActual` e `bb.linhas`. Corre uma vez por equipa por frame,
-ANTES do posicionamento, porque o `u` de cada um vai depender de quantos são.
-*/
-function classificarLinhas(lista, bb) {
-    const L = (typeof LineShape !== 'undefined') ? LineShape : null;
-    const faixa = (L && typeof L.faixaDaLinha === 'number') ? L.faixaDaLinha : 6.0;
-
-    const campo = lista.filter(p => p && p.role !== 'gk' && p.model);
-    if (!campo.length) { bb.linhas = null; return; }
-
-    const comZ = campo.map(p => ({ p: p, z: p.model.position.z * bb.dir }))
-        .sort((a, b) => a.z - b.z);
-    const traseira = comZ[0].z;
-
-    const linhas = { def: [], mid: [], atk: [] };
-    const nominal = { def: 0, mid: 0, atk: 0 };
-
-    for (const o of comZ) {
-        const p = o.p;
-        // A intenção da formação, para se saber quantos DEVIAM lá estar.
-        const nom = (p.role === 'def') ? 'def' : (p.role === 'atk' ? 'atk' : 'mid');
-        nominal[nom]++;
-
-        /*
-        A linha REAL. Só a de trás é definida pela distância ao mais recuado —
-        é a que a regra do mínimo protege e a que se fecha ao perder gente. As
-        outras duas ficam pela intenção da formação: um médio que sobe não deixa
-        de ser médio para efeitos de largura, e o ataque não tem linha atrás de
-        si para se recompor.
-        */
-        const naTraseira = (o.z <= traseira + faixa);
-        const linha = naTraseira ? 'def' : (nom === 'def' ? 'mid' : nom);
-        p.linhaActual = linha;
-        p.linhaNominal = nom;
-        linhas[linha].push(p);
-    }
-
-    /*
-    O MÍNIMO DA LINHA DE TRÁS. Por muito que a equipa suba, não pode ficar com
-    menos de `minimoAtras` atrás — medido antes desta regra, 11.6% dos frames
-    tinham UM só jogador na linha de trás.
-
-    Quem completa são os mais recuados a seguir, e ficam marcados com
-    `seguraLinha`: o `tickBase` trava-lhes a profundidade à altura da linha em
-    vez de os deixar subir. Marca-se e limpa-se aqui, todos os frames, para
-    ninguém ficar preso a segurar uma linha que já não precisa dele.
-    */
-    const minimo = (L && typeof L.minimoAtras === 'number') ? L.minimoAtras : 2;
-    for (const o of comZ) o.p.seguraLinha = false;
-
-    if (linhas.def.length < minimo) {
-        for (const o of comZ) {
-            if (linhas.def.length >= minimo) break;
-            if (o.p.linhaActual === 'def') continue;
-            o.p.linhaActual = 'def';
-            o.p.seguraLinha = true;
-            const i = linhas.mid.indexOf(o.p);
-            if (i >= 0) linhas.mid.splice(i, 1);
-            else { const j = linhas.atk.indexOf(o.p); if (j >= 0) linhas.atk.splice(j, 1); }
-            linhas.def.push(o.p);
-        }
-    }
-
-    /*
-    UM LATERAL DE CADA VEZ: sobe o do LADO DA JOGADA, o outro segura a zaga.
-
-    Medido antes desta regra, em fase de ataque: os dois laterais fora da linha
-    de trás 76.8% do tempo, e quando subia só um era o do lado ERRADO da bola em
-    69.5% dos casos.
-
-    A escolha tem ZONA MORTA (`zonaMortaLado`): com a bola perto do eixo não há
-    lado, e mantém-se a escolha anterior. Sem isso os dois trocavam de papel a
-    cada passe pelo meio, e um lateral a subir e a descer todos os frames é pior
-    do que dois lá em cima.
-
-    Só em ATAQUE. A defender ninguém apoia coisa nenhuma e os dois pertencem à
-    linha de trás.
-    */
-    const zonaMorta = (L && typeof L.zonaMortaLado === 'number') ? L.zonaMortaLado : 5.0;
-    const latEsq = campo.find(p => p.pos === 'LB');
-    const latDir = campo.find(p => p.pos === 'RB');
-
-    if (latEsq && latDir && bb.isAttacking) {
-        const bolaX = (typeof bb.bolaXSuave === 'number') ? bb.bolaXSuave : (bb.ballX || 0);
-        if (Math.abs(bolaX) > zonaMorta) bb.ladoQueSobe = Math.sign(bolaX);
-        if (!bb.ladoQueSobe) bb.ladoQueSobe = 1;
-
-        const ladoDe = (p) => Math.sign(p.baseTarget ? p.baseTarget.x : p.model.position.x) || 1;
-        for (const lat of [latEsq, latDir]) {
-            if (ladoDe(lat) !== bb.ladoQueSobe) {
-                // O do lado contrário fica: é ele que auxilia a zaga.
-                lat.seguraLinha = true;
-                lat.linhaActual = 'def';
-                const i = linhas.mid.indexOf(lat);
-                if (i >= 0) { linhas.mid.splice(i, 1); linhas.def.push(lat); }
-            }
-        }
-    }
-
-    /*
-    COM UM LATERAL ATRÁS, O OUTRO NÃO VOLTA TANTO.
-
-    Se um dos laterais já está na linha de trás, o outro ganha um PISO na linha
-    média: não cai abaixo dela. Não é um empurrão para a frente — é deixá-lo
-    ficar onde está em vez de o obrigar a correr até à zaga.
-
-    Medido antes desta regra, em fase defensiva: o lateral mais adiantado ficava
-    a 0.431 do bloco, aquém da linha média, com um deles já atrás 81.8% do
-    tempo. Voltavam os dois.
-
-    A CONDIÇÃO É O OUTRO ESTAR LÁ: sem ninguém na linha de trás não há piso, e
-    os dois voltam como devem. Ver LineShape.pisoLinhaMedia.
-    */
-    if (latEsq && latDir) {
-        const naTras = (p) => p.linhaActual === 'def';
-        if (naTras(latEsq) !== naTras(latDir)) {
-            const adiantado = naTras(latEsq) ? latDir : latEsq;
-            adiantado.pisoLinhaMedia = true;
-        } else {
-            latEsq.pisoLinhaMedia = false;
-            latDir.pisoLinhaMedia = false;
-        }
-    }
-
-    /*
-    O PAR DO MESMO LADO. Quando o lateral e o meia-lateral do mesmo flanco
-    ficam na MESMA linha e no mesmo corredor, o de trás fecha para dentro — o
-    corredor é de quem subiu. Ver LineShape.parDistX / parFecho.
-
-    Medido antes desta regra: 3.0 m entre eles em x, e 14.7% dos frames a menos
-    de 4 m em linha recta.
-    */
-    const distX = (L && typeof L.parDistX === 'number') ? L.parDistX : 7.0;
-    for (const o of comZ) o.p.fecharPorPar = false;
-
-    for (const par of [['LB', 'LM'], ['RB', 'RM']]) {
-        const lat = campo.find(p => p.pos === par[0]);
-        const ala = campo.find(p => p.pos === par[1]);
-        if (!lat || !ala) continue;
-        if (lat.linhaActual !== ala.linhaActual) continue;
-        if (Math.abs(lat.model.position.x - ala.model.position.x) > distX) continue;
-
-        // O de trás fecha; o da frente fica com o corredor.
-        const zLat = lat.model.position.z * bb.dir;
-        const zAla = ala.model.position.z * bb.dir;
-        (zLat < zAla ? lat : ala).fecharPorPar = true;
-    }
-
-    /*
-    O CENTRAL MAIS PRÓXIMO NÃO FICA LONGE DA BOLA, com ela no próprio terço.
-    Medido antes desta regra: 11.9 m de média, e 72.4% dos frames acima de 9 m.
-    Ver MarkingModel.distMaxDaBola.
-    */
-    for (const o of comZ) o.p.puxarParaBola = false;
-
-    const MM = (typeof MarkingModel !== 'undefined') ? MarkingModel : null;
-    if (MM && typeof MM.distMaxDaBola === 'number' && !bb.isAttacking &&
-        typeof Match !== 'undefined' && Match.ball) {
-        const avancoBola = Match.ball.position.z * bb.dir;
-        if (avancoBola < (MM.tercoParaTectoDaBola ?? -17.7)) {
-            let maisPerto = null, dMin = Infinity;
-            for (const o of comZ) {
-                if (o.p.pos !== 'CB') continue;
-                const d = o.p.model.position.distanceTo(Match.ball.position);
-                if (d < dMin) { dMin = d; maisPerto = o.p; }
-            }
-            if (maisPerto && dMin > MM.distMaxDaBola) maisPerto.puxarParaBola = true;
-        }
-    }
-
-    /*
-    A ORDEM DE CADA UM DENTRO DA SUA LINHA, da esquerda para a direita, pelo `u`
-    da formação. É o que permite redistribuir uma linha incompleta por
-    intervalos IGUAIS sem ninguém trocar de lado — ver calcularPontoDoSlot.
-
-    Sem isto, encolher a linha mantinha o espaçamento ORIGINAL: com a 442, se o
-    lateral esquerdo subia, ficavam RB(0.150) CB(0.350) CB(0.650) — dois juntos
-    ao centro e um muito aberto à direita. Medido: 3.65 m de diferença entre os
-    dois intervalos do trio.
-    */
-    for (const nome of ['def', 'mid', 'atk']) {
-        const membros = linhas[nome].slice().sort((a, b) => {
-            const ua = (a.slot && typeof a.slot.u === 'number') ? a.slot.u : 0.5;
-            const ub = (b.slot && typeof b.slot.u === 'number') ? b.slot.u : 0.5;
-            return ua - ub;
-        });
-        membros.forEach((p, i) => { p.ordemNaLinha = i; p.totalNaLinha = membros.length; });
-    }
-
-    /*
-    A LINHA ESTÁ "MEXIDA"? — não basta contar cabeças.
-
-    A repartição por intervalos iguais só entrava quando a linha tinha MENOS
-    gente do que a formação prevê. Ora o caso que se vê em campo é outro: um
-    central sobe, um médio desce, e a linha continua com quatro. A contagem
-    diz "completa, não mexer", e o médio entra com o `u` DELE — que na 442 é
-    0.65, exactamente o mesmo do central que ficou.
-
-    Medido: 8737 pares colados a menos de 4 m na linha defensiva, e a
-    esmagadora maioria são CB-CM com `gap 0.0 m` e `u` 0.65 nos dois. É o
-    lateral encostado ao central da imagem (e o mesmo do outro lado).
-
-    Portanto marca-se a linha como mexida quando algum dos membros não é de lá
-    — e aí reparte-se. Com os quatro defesas de origem lá dentro, `mexida` é
-    falso e cada um volta ao lugar que o treinador lhe deu.
-    */
-    const mexida = { def: false, mid: false, atk: false };
-    for (const chave of ['def', 'mid', 'atk']) {
-        for (const p of linhas[chave]) {
-            if (p.linhaNominal !== chave) { mexida[chave] = true; break; }
-        }
-    }
-
-    bb.linhas = {
-        def: linhas.def, mid: linhas.mid, atk: linhas.atk,
-        nominal: nominal,
-        mexida: mexida
-    };
-}
-
-/*
-O FACTOR DE FECHO de uma linha: 1.0 com a linha completa (e aí NADA muda), e
-menos por cada jogador em falta face ao que a formação lá põe. Ver
-LineShape.porFalta.
-*/
-function fechoPorOcupacao(bb, linha) {
-    const L = (typeof LineShape !== 'undefined') ? LineShape : null;
-    if (!L || !bb || !bb.linhas || typeof L.porFalta !== 'number') return 1.0;
-
-    const actual = bb.linhas[linha] ? bb.linhas[linha].length : 0;
-    const nom = bb.linhas.nominal ? bb.linhas.nominal[linha] : 0;
-    if (!nom || actual >= nom) return 1.0;
-
-    const falta = nom - actual;
-    const chao = (typeof L.fechoMinimo === 'number') ? L.fechoMinimo : 0.45;
-    return Math.max(chao, 1.0 - falta * L.porFalta);
-}
-
-/*
-O APOIO DO LATERAL QUE NÃO RECEBEU — ver ThrowInModel.recuoAposApoio.
-
-Quem subiu a dar apoio num lançamento fica marcado (`apoioLateralLado` /
-`apoioLateralTimer`, escritos no aproximarNoLateral, player_bt.js). Se a bola
-sair dali e passar o eixo do campo para a OUTRA banda, ele ficou à frente da
-jogada do lado errado: recua `recuoAposApoio` metros e fica pronto para a perda.
-
-A marca apaga-se assim que ele tem alguma coisa a ver com a bola (recebeu,
-persegue, é o portador) — nesse caso não está a recompor-se, está a jogar.
-
-Devolve o z já corrigido, no mundo.
-*/
-function aplicarRecuoAposApoio(p, bb, targetZ) {
-    const T = (typeof ThrowInModel !== 'undefined') ? ThrowInModel : null;
-    if (!T || !p || !(p.apoioLateralTimer > 0)) return targetZ;
-
-    const dt = (typeof Match !== 'undefined' && Match.delta) ? Match.delta : 0.016;
-    p.apoioLateralTimer -= dt;
-
-    const temABola = p.hasBall ||
-        (bb && (bb.chaser === p || bb.intercetor === p)) ||
-        (typeof Match !== 'undefined' && Match.intendedReceiver === p);
-    if (temABola) { p.apoioLateralTimer = 0; return targetZ; }
-
-    if (typeof Match === 'undefined' || !Match.ball) return targetZ;
-
-    // A bola passou o eixo para a banda contrária à do lance?
-    const bolaX = Match.ball.position.x;
-    const virou = (p.apoioLateralLado || 1) > 0
-        ? (bolaX < T.recuoGatilhoX)
-        : (bolaX > T.recuoGatilhoX);
-    if (!virou) return targetZ;
-
-    return targetZ - T.recuoAposApoio * p.dirZ;
-}
-
-/*
-QUEM OCUPA A LINHA, DE CADA LADO — ver WingPairModel (config/tactics.js).
-
-Corre uma vez por equipa por frame, ANTES do tickBase, porque é uma decisão de
-par e não de indivíduo: cada um a decidir sozinho "eu vou à linha" dá os dois
-na linha, que é exactamente o que se via.
-
-Escreve `p.corredorAberto` (vai à linha) e `p.corredorFechado` (fecha para o
-meio-espaço). Quem não está num par fica com os dois a falso e não é tocado.
-
-Só com posse: a defender o bloco já fecha os corredores por si (LineShape.fecho)
-e mandar o lateral para dentro em cima disso abria a ala ao adversário.
-*/
-function atribuirParesDeCorredor(lista, bb) {
-    const W = (typeof WingPairModel !== 'undefined') ? WingPairModel : null;
-    for (const p of lista) { p.corredorAberto = false; p.corredorFechado = false; }
-    if (!W || !bb || !bb.isAttacking) return;
-
-    const pares = [['LB', 'LM'], ['RB', 'RM']];
-    for (const [posLat, posMid] of pares) {
-        const lat = lista.find(p => p.pos === posLat && p.model);
-        const mid = lista.find(p => p.pos === posMid && p.model);
-        if (!lat || !mid) continue;
-
-        const avLat = lat.model.position.z * lat.dirZ;
-        const avMid = mid.model.position.z * mid.dirZ;
-
-        /*
-        O MEDIO E O DONO DA LINHA POR OMISSAO. O lateral so lha tira quando o
-        medio CAI PELO MEIO — ou quando vai mesmo lancado a frente dele, que e
-        a tabela do overlap. Ver WingPairModel.
-
-        O criterio antigo era a profundidade, e realimentava-se: o lateral
-        adianta-se um metro, ganha a linha, o medio fecha, e ja nada segura o
-        lateral.
-        */
-        /*
-        O "medio caiu pelo meio" le-se na INTENCAO dele (o ponto da forma da
-        equipa, antes desta regra), nao na posicao onde ele esta.
-
-        Com a posicao era um circulo: o medio fecha porque esta regra o mandou
-        fechar, e isso mantinha a condicao verdadeira para sempre — o lateral
-        ficava dono da linha uma vez e nunca mais a largava (medido: 45% do
-        tempo). A intencao nao depende de nos, portanto nao realimenta.
-        */
-        const formaMid = (typeof formaNoBloco === 'function') ? formaNoBloco(mid, bb) : null;
-        const midX = formaMid ? formaMid.x : mid.model.position.x;
-        const midFechou = Math.abs(midX) < W.midDentroX;
-        const latLancado = avLat > avMid + W.avancoParaOverlap;
-
-        let naLinha = lat.corredorDono || mid.corredorDono || mid;
-        if (naLinha === mid && (midFechou || latLancado)) naLinha = lat;
-        else if (naLinha === lat && !midFechou && avMid > avLat - W.margemTroca) naLinha = mid;
-
-        lat.corredorDono = naLinha; mid.corredorDono = naLinha;
-
-        const dentro = (naLinha === lat) ? mid : lat;
-        naLinha.corredorAberto = true;
-        dentro.corredorFechado = true;
-    }
-}
-
-/*
-AS REGRAS DE LUGAR — o primeiro grupo de deslocamentos do nivel 2.
-
-Vieram todas do `tickBase`, onde corrigiam o slot ANTES de ele ser escrito e
-por isso faziam o nivel 1 mexer-se. Aqui fazem o mesmo trabalho sem tocar no
-`slotTarget`: recebem o slot e devolvem um ponto deslocado.
-
-Sao as que respondem a "o meu lugar no bloco nao serve AGORA":
-
-    par do corredor      o lateral e o medio de ala nao correm no mesmo espaco
-    segurar a linha      quem completa o minimo atras nao sobe
-    tecto da bola        o central mais perto aproxima-se ate distMaxDaBola
-    piso da linha media  com o outro lateral atras, este nao cai
-    inercia pos-passe    a atacar, nao recua para tras de onde passou
-    afastar do portador  ninguem fica a menos de 7.5 m de quem tem a bola
-*/
-function aplicarRegrasDeLugar(p, bb, targetX, targetZ) {
-    /*
-    A FORMA DA EQUIPA — o primeiro deslocamento do nivel 2, e o maior.
-
-    E tudo o que vivia dentro do slot e o fazia mexer-se: desvio de linha por
-    fase, nudge por posicao, os quatro fechos laterais, a regua da linha da
-    bola na fase ofensiva e o deslize por corredor. O slot puro fica intacto no
-    `slotTarget`; o que sai daqui e a forma que a equipa toma a partir dele.
-    */
-    const forma = (typeof formaNoBloco === 'function') ? formaNoBloco(p, bb) : null;
-    if (forma) { targetX = forma.x; targetZ = forma.z; }
-
-    /*
-    Par do corredor (WingPairModel): quem fecha vai para o meio-espaco e um
-    pouco atras. Ver atribuirParesDeCorredor.
-    */
-    if (p.corredorFechado && typeof WingPairModel !== 'undefined') {
-        /*
-        O lado sai da FORMACAO (`baseTarget`), nao de onde o jogador esta: a
-        forma da equipa ja o pode ter levado para perto do eixo ou para o outro
-        lado, e nesse frame o fecho empurrava-o para a banda errada.
-        */
-        const lado = (Math.sign(p.baseTarget.x) || Math.sign(targetX) || 1);
-        
-        if (p.role !== 'def') {
-            targetX -= lado * WingPairModel.fechoDentro;
-            targetZ -= WingPairModel.recuoDeDentro * p.dirZ;
-        }
-    }
-
-    /*
-    O TECTO DO LATERAL — ver WingPairModel.limiteAvanco. Um lateral nao acaba
-    a jogada dentro da area; quem o faz e o `fullback_finisher`, isento.
-    */
-    if ((p.pos === 'LB' || p.pos === 'RB' || p.pos === 'LWB' || p.pos === 'RWB') &&
-        typeof WingPairModel !== 'undefined' && p.playingStyle !== 'fullback_finisher') {
-        const tecto = WingPairModel.limiteAvanco;
-        if (targetZ * p.dirZ > tecto) targetZ = tecto * p.dirZ;
-    }
-
-    // Segurar a linha de tras.
-    if (p.seguraLinha && bb.bloco) {
-        const LS = (typeof LineShape !== 'undefined') ? LineShape : null;
-        const faixa = (LS && typeof LS.faixaDaLinha === 'number') ? LS.faixaDaLinha : 6.0;
-        const tecto = bb.bloco.z0 + faixa;
-        if (targetZ * p.dirZ > tecto) targetZ = tecto * p.dirZ;
-    }
-
-    // O central mais proximo aproxima-se da bola ate distMaxDaBola. Nao vai a
-    // bola: fica a essa distancia, na direccao dela.
-    if (p.puxarParaBola && typeof Match !== 'undefined' && Match.ball &&
-        typeof MarkingModel !== 'undefined') {
-        const bx = Match.ball.position.x, bz = Match.ball.position.z;
-        const dx = targetX - bx, dz = targetZ - bz;
-        const d = Math.hypot(dx, dz);
-        const tecto = MarkingModel.distMaxDaBola;
-        if (d > tecto && d > 0.001) {
-            targetX = bx + (dx / d) * tecto;
-            targetZ = bz + (dz / d) * tecto;
-        }
-    }
-
-    // Piso da linha media.
-    if (p.pisoLinhaMedia && bb.bloco) {
-        const LS = (typeof LineShape !== 'undefined') ? LineShape : null;
-        const fr = (LS && typeof LS.pisoLinhaMedia === 'number') ? LS.pisoLinhaMedia : 0.5;
-        const piso = bb.bloco.z0 + (bb.bloco.z1 - bb.bloco.z0) * fr;
-        if (targetZ * p.dirZ < piso) targetZ = piso * p.dirZ;
-    }
-
-    // Inercia pos-passe.
-    if (bb && bb.isAttacking && p.passInertiaTimer > 0 && typeof p.passInertiaZDir === 'number') {
-        if (targetZ * p.dirZ < p.passInertiaZDir) targetZ = p.passInertiaZDir * p.dirZ;
-    }
-
-    // Abrir linha de passe: ninguem em cima de quem tem a bola.
-    if (bb && bb.isAttacking && typeof Match !== 'undefined' && Match.ballCarrier &&
-        Match.ballCarrier.team === p.team && Match.ballCarrier !== p) {
-        const carrierPos = Match.ballCarrier.model ? Match.ballCarrier.model.position : null;
-        if (carrierPos) {
-            const dx = targetX - carrierPos.x, dz = targetZ - carrierPos.z;
-            const distCarrier = Math.hypot(dx, dz);
-            const RAIO_MIN_PORTADOR = 7.5;
-            if (distCarrier < RAIO_MIN_PORTADOR) {
-                const falta = RAIO_MIN_PORTADOR - distCarrier;
-                const ux = distCarrier > 0.001 ? dx / distCarrier : ((p.slot && p.slot.u >= 0.5) ? 1 : -1);
-                const uz = distCarrier > 0.001 ? dz / distCarrier : 0;
-                targetX += ux * falta;
-                targetZ += uz * falta;
-            }
-        }
-    }
-
-    return { x: targetX, z: targetZ };
-}
-
 const PosicionamentoAI = {
-    atribuirParesDeCorredor: atribuirParesDeCorredor,
     otimizarSlotsPorPosicao: otimizarSlotsPorPosicao,
-    classificarLinhas: classificarLinhas,
 
     /*
     FASE 1 - o posto de cada um antes da marcacao: slot no bloco + estilo.
@@ -2298,95 +1796,105 @@ const PosicionamentoAI = {
     tickBase: function (p, bb) {
         if (p.role === 'gk') return;   // o GK posiciona-se em updateGK()
 
-        /*
-        =================================================================
-        NIVEL 1 — E SO ISTO, E NUNCA MAIS NADA.
-        =================================================================
-        O slot puro no bloco: o `u`/`v` da formacao interpolado nas tres linhas
-        do rectangulo, e ponto final. Este ponto NAO PODE ser corrigido por
-        ninguem — nem aqui, nem mais abaixo.
-
-        Estavam a mexer-lhe SEIS regras antes de ele ser escrito (segurar a
-        linha, o tecto da distancia a bola, o piso da linha media, a inercia
-        pos-passe, o afastamento do portador e o par do corredor), e o efeito
-        via-se no ecra: o anel grande do debug — que devia ser a intencao do
-        treinador — andava a passear dentro do rectangulo.
-
-        Essas seis passaram todas para `aplicarRegrasDeLugar`, no nivel 2, onde
-        entram como DESLOCAMENTO a partir daqui. A cadeia e:
-
-            slotTarget      nivel 1   slot puro no bloco        (anel GRANDE)
-            tacticalTarget  nivel 2   slot + deslocamentos      (anel MEDIO)
-            styleTarget     nivel 3   nivel 2 + playing style   (anel PEQUENO)
-        */
         const slot = slotNoBloco(p, bb);
-        const targetX = slot ? slot.x : p.baseTarget.x;
-        const targetZ = slot ? slot.z : p.baseTarget.z;
+        let targetX = slot ? slot.x : p.baseTarget.x;
+        let targetZ = slot ? slot.z : p.baseTarget.z;
 
+        // Inércia pós-passe de 4 segundos: se a equipa estiver no ataque, não recua para trás da cota onde passou
+        if (bb && bb.isAttacking && p.passInertiaTimer > 0 && typeof p.passInertiaZDir === 'number') {
+            const zDirAtual = targetZ * p.dirZ;
+            if (zDirAtual < p.passInertiaZDir) {
+                targetZ = p.passInertiaZDir * p.dirZ;
+            }
+        }
+
+        // Abertura de Linha de Passe & Espaçamento com o Portador da Bola:
+        // Se a equipa está no ataque e um colega tem/conduz a bola, afasta-se para não esbarrar e abrir linha de passe
+        if (bb && bb.isAttacking && typeof Match !== 'undefined' && Match.ballCarrier && Match.ballCarrier.team === p.team && Match.ballCarrier !== p) {
+            const carrier = Match.ballCarrier;
+            const carrierPos = carrier.model ? carrier.model.position : null;
+            if (carrierPos) {
+                const dx = targetX - carrierPos.x;
+                const dz = targetZ - carrierPos.z;
+                const distCarrier = Math.hypot(dx, dz);
+                const RAIO_MIN_PORTADOR = 7.5;
+                if (distCarrier < RAIO_MIN_PORTADOR) {
+                    const falta = RAIO_MIN_PORTADOR - distCarrier;
+                    const ux = distCarrier > 0.001 ? dx / distCarrier : ((p.slot && p.slot.u >= 0.5) ? 1 : -1);
+                    const uz = distCarrier > 0.001 ? dz / distCarrier : 0;
+                    targetX += ux * falta;
+                    targetZ += uz * falta;
+                }
+            }
+        }
+
+        // Anel grande do debug: o slot puro, antes de qualquer desvio.
         if (!p.slotTarget) p.slotTarget = new THREE.Vector3();
         p.slotTarget.set(targetX, ALTURA_BASE_Y, targetZ);
 
-        /*
-        O `postoBase` e o que a atribuicao de marcacoes le para saber onde cada
-        um vai estar (corre entre o tickBase e o tickFinal). Passa a ser o slot
-        puro — que e a intencao, e nao um alvo ja deformado por meia duzia de
-        correccoes.
-        */
+        const comEstilo = (typeof aplicarEstiloPosicional === 'function')
+            ? aplicarEstiloPosicional(p, bb, targetX, targetZ)
+            : { x: targetX, z: targetZ };
+
         if (!p.postoBase) p.postoBase = { x: 0, z: 0 };
-        p.postoBase.x = targetX;
-        p.postoBase.z = targetZ;
+        p.postoBase.x = comEstilo.x;
+        p.postoBase.z = comEstilo.z;
     },
 
+    /*
+    FASE 2 - marcacao, inquietacao, tecto e alisamento. Corre DEPOIS de
+    atribuirMarcacoesDaEquipa, que ja poe o `p.marcRef` de cada um.
+    */
     tickFinal: function (p, bb) {
         if (p.role === 'gk') return;
-        if (!p.slotTarget) return;
+        if (!p.postoBase) return;
+        const comEstilo = p.postoBase;
+
+        // Quinto passo: acompanhar quem entra no setor. Depois do estilo, para
+        // a marcação partir do slot que o estilo já inclinou.
+        const comMarcacao = (typeof aplicarMarcacaoPosicional === 'function')
+            ? aplicarMarcacaoPosicional(p, bb, comEstilo.x, comEstilo.z)
+            : comEstilo;
+
+        // Sexto passo: quem já chegou não fica estátua. Antes do tecto, para
+        // dois metros de irrequietude não voltarem a furá-lo.
+        const comInquietacao = (typeof aplicarInquietacao === 'function')
+            ? aplicarInquietacao(p, bb, comMarcacao.x, comMarcacao.z)
+            : comMarcacao;
 
         /*
-        NIVEL 2 = NIVEL 1 + DESLOCAMENTOS. Parte-se do slot puro e nunca se
-        volta a tocar nele. Ver docs/level_2_rules.md.
+        O tecto do estilo é o ÚLTIMO a falar: o Box-to-Box não passa da entrada
+        da área, e a marcação (acima) chega a desviar 10 m no terço de ataque.
+        Enquanto o tecto vivia dentro do aplicarEstiloPosicional, a marcação
+        voltava a furá-lo.
         */
-        const lugar = aplicarRegrasDeLugar(p, bb, p.slotTarget.x, p.slotTarget.z);
-        const comEstilo = { x: lugar.x, z: lugar.z };
+        const comTecto = (typeof aplicarTectoDoEstilo === 'function')
+            ? aplicarTectoDoEstilo(p, comInquietacao.z)
+            : comInquietacao.z;
+
+        let finalZ = comTecto;
+        // Inércia pós-passe de 4 segundos: mantém a presença ofensiva sem recuar contra o fluxo do jogo
+        if (bb && bb.isAttacking && p.passInertiaTimer > 0 && typeof p.passInertiaZDir === 'number') {
+            const zDirFinal = finalZ * p.dirZ;
+            if (zDirFinal < p.passInertiaZDir) {
+                finalZ = p.passInertiaZDir * p.dirZ;
+            }
+        }
 
         /*
-        =================================================================
-        A ORDEM DESTA FUNCAO E A ARVORE DE PRIORIDADES DO NIVEL 2.
-        Ver docs/level_2_rules.md. Regra geral: quem corre DEPOIS tem a
-        ultima palavra, portanto os DESEJOS (mola, inquietacao, espacamento)
-        vem primeiro e as REGRAS DURAS (tectos, fora-de-jogo, limites) no fim.
-        =================================================================
+        MOLA DE COESAO A BOLA — ver molaParaABola (utils.js) e MolaDeCoesao
+        (config.js).
+
+        AQUI e nao noutro sitio: depois do tecto do estilo e da inercia (que
+        dizem onde o jogador QUER estar) e ANTES do corte de fora-de-jogo e do
+        clamp do campo. Se corresse depois, a mola podia empurrar alguem para
+        posicao irregular ou para fora das linhas, e nenhum dos dois cortes
+        voltava a falar.
+
+        O guarda-redes fica de fora: a posicao dele vem do gkAnchor.
         */
-
-        /*
-        1. MOLA DE COESAO — o primeiro desvio, e nao o ultimo.
-
-        Estava depois da marcacao e do tecto do estilo e, com 9 m de puxao
-        (MolaDeCoesao.puxaoMax), desfazia os dois: o Box-to-Box saia da entrada
-        da area que o tecto lhe dava e a distancia de marcacao deixava de ser a
-        do painel. Agora ela diz "quero a equipa junta da bola" primeiro, e
-        tudo o que vem a seguir pode corrigi-la.
-
-        A DISTANCIA MINIMA A BOLA passou a ser dela: no lateral, a mola nao
-        pode trazer ninguem para dentro do ThrowInModel.distanciaMinimaPorPos.
-        Era uma regra a parte, logo a seguir, cujo unico proposito era desfaze-la
-        no mesmo frame.
-
-        Fora da mola: o guarda-redes (a posicao dele vem do gkAnchor) e a bola
-        que ja e nossa e esta nas maos do nosso GR — nao ha nada a disputar na
-        propria linha de golo, e a mola comia 12.8 m do avancado (medido).
-        */
-        let molaX = comEstilo.x;
-        let finalZ = comEstilo.z;
-
-        const gkNossoComBola = (typeof Match !== 'undefined') &&
-            ((Match.gkHoldingBall && Match.gkHoldingBall[p.team]) ||
-                !!(Match.ballCarrier && Match.ballCarrier.role === 'gk' &&
-                    Match.ballCarrier.team === p.team));
-
-        // O `role !== 'gk'` e redundante (o tickFinal ja saiu la em cima) mas
-        // fica escrito: a exclusao do guarda-redes e uma invariante da mola, e
-        // le-se aqui, no sitio onde ela corre. Ver tests/mola_coesao.test.js.
-        if (p.role !== 'gk' && !gkNossoComBola && typeof MolaDeCoesao !== 'undefined' &&
+        let molaX = comInquietacao.x;
+        if (p.role !== 'gk' && typeof MolaDeCoesao !== 'undefined' &&
             typeof molaParaABola === 'function' &&
             typeof Match !== 'undefined' && Match.ball) {
             const M = MolaDeCoesao;
@@ -2397,144 +1905,47 @@ const PosicionamentoAI = {
                 forca, M.distMin, M.puxaoMax);
             molaX = puxado.x;
             finalZ = puxado.z;
-
-            // O piso da mola no lance de lateral (ver acima).
-            if (Match.state === 'THROW_IN' && typeof distanciaMinimaNoLateral === 'function' &&
-                Match.setPieceTaker !== p) {
-                const minDist = distanciaMinimaNoLateral(p.pos);
-                if (minDist > 0) {
-                    const bx = Match.ball.position.x, bz = Match.ball.position.z;
-                    const dx = molaX - bx, dz = finalZ - bz;
-                    const d = Math.hypot(dx, dz);
-                    if (d < minDist) {
-                        const ux = (d > 0.001) ? dx / d : -Math.sign(bx || 1);
-                        const uz = (d > 0.001) ? dz / d : 0;
-                        molaX = bx + ux * minDist;
-                        finalZ = bz + uz * minDist;
-                    }
-                }
-            }
         }
 
-        // 2. Marcacao: acompanhar quem entra no sector. So a defender.
-        const comMarcacao = (typeof aplicarMarcacaoPosicional === 'function')
-            ? aplicarMarcacaoPosicional(p, bb, molaX, finalZ)
-            : { x: molaX, z: finalZ };
-
-        // 3. Inquietacao: quem ja chegou nao fica estatua.
-        const comInquietacao = (typeof aplicarInquietacao === 'function')
-            ? aplicarInquietacao(p, bb, comMarcacao.x, comMarcacao.z)
-            : comMarcacao;
-
-        molaX = comInquietacao.x;
-        finalZ = comInquietacao.z;
-
-        /*
-        4. ESPACAMENTO — repulsao entre companheiros e fuga aos adversarios,
-        agora COM TECTO DE SOMA.
-
-        Cada colega dentro de 3.5 m contribuia ate 3 m e cada adversario dentro
-        de 6 m ate 4 m, sem limite nenhum na soma: com quatro pessoas a volta, o
-        alvo saltava dez e tal metros para fora do bloco. O tecto
-        (EspacamentoModel.deslocacaoMax) faz disto o que devia ter sido sempre —
-        um empurrao, nao um teletransporte.
-        */
-        {
-            const E = (typeof EspacamentoModel !== 'undefined') ? EspacamentoModel : null;
-            if (E && typeof Match !== 'undefined') {
-                let repelX = 0, repelZ = 0;
-
-                /*
-                Compara-se com o alvo FINAL do colega (o do nivel 3, do frame
-                anterior) e nao com o slot puro dele: desde que o estilo passou
-                a ser a ultima camada, dois slots afastados podem dar dois
-                alvos em cima um do outro, e o `postoBase` deixou de descrever
-                onde o colega vai estar. Medido com o postoBase: 26.8% dos
-                frames com dois colegas a menos de 1.5 m.
-                */
-                const companheiros = (p.team === 'TeamA' ? Match.players : Match.opponents);
-                for (const c of companheiros) {
-                    if (c === p || c.role === 'gk') continue;
-                    const ref = c.styleTarget || c.tacticalTarget || c.postoBase;
-                    if (!ref) continue;
-                    const dx = molaX - ref.x, dz = finalZ - ref.z;
-                    const distSq = dx * dx + dz * dz;
-                    if (distSq > 0.001 && distSq < E.raioColega * E.raioColega) {
-                        const dist = Math.sqrt(distSq);
-                        const forca = (E.raioColega - dist) / E.raioColega;
-                        repelX += (dx / dist) * forca * E.forcaColega;
-                        repelZ += (dz / dist) * forca * E.forcaColega;
-                    }
-                }
-
-                /*
-                A fuga aos adversarios so a atacar, e so do meio-campo para a
-                frente: um medio a fugir de um avancado corria para a propria
-                baliza na saida de bola.
-                */
-                if (bb && bb.isAttacking && finalZ * p.dirZ > E.zonaMinimaFuga) {
-                    const adversarios = (p.team === 'TeamA' ? Match.opponents : Match.players);
-                    for (const o of adversarios) {
-                        if (o.role === 'gk' || !o.model) continue;
-                        const dx = molaX - o.model.position.x, dz = finalZ - o.model.position.z;
-                        const distSq = dx * dx + dz * dz;
-                        if (distSq > 0.001 && distSq < E.raioAdversario * E.raioAdversario) {
-                            const dist = Math.sqrt(distSq);
-                            const forca = (E.raioAdversario - dist) / E.raioAdversario;
-                            repelX += (dx / dist) * forca * E.forcaAdversario;
-                            repelZ += (dz / dist) * forca * E.forcaAdversario;
-                        }
-                    }
-                }
-
-                // O tecto da SOMA — e isto que faltava.
-                const mag = Math.hypot(repelX, repelZ);
-                if (mag > E.deslocacaoMax) {
-                    const k = E.deslocacaoMax / mag;
-                    repelX *= k; repelZ *= k;
-                }
-                molaX += repelX;
-                finalZ += repelZ;
-            }
-        }
-
-        // (o tecto do estilo corre no nivel 3, com o proprio estilo)
-
-        // 7. Inercia pos-passe: a atacar, nao recua para tras da cota onde passou.
-        if (bb && bb.isAttacking && p.passInertiaTimer > 0 && typeof p.passInertiaZDir === 'number') {
-            if (finalZ * p.dirZ < p.passInertiaZDir) finalZ = p.passInertiaZDir * p.dirZ;
-        }
-
-        // 8. O apoio do lateral que nao recebeu e viu o jogo virar de banda.
-        finalZ = aplicarRecuoAposApoio(p, bb, finalZ);
-
-        // 9. Fora-de-jogo: regra do jogo, nao ha desejo que a fure.
+        // Respeito ao limite legal de fora-de-jogo (offside) mesmo com inércia
         if (bb && bb.isAttacking && bb.offsideLimitDir !== undefined && bb.offsideLimitDir !== null) {
             const maxLegalZDir = bb.offsideLimitDir - 0.5;
-            if (finalZ * p.dirZ > maxLegalZDir) finalZ = maxLegalZDir * p.dirZ;
+            if (finalZ * p.dirZ > maxLegalZDir) {
+                finalZ = maxLegalZDir * p.dirZ;
+            }
         }
 
         /*
-        10. REGRESSO AO BLOCO. O alvo PODE sair do rectangulo — e a diferenca
-        entre o anel medio e o anel grande do debug — mas so ate
-        TeamShape.folgaForaDoBloco. Alem disso nao e tactica, e a soma dos
-        desvios a fugir.
+        LANCE DE LATERAL: quem se aproxima, e quanto.
 
-        Quem tem tarefa com a bola fica de fora: o chaser vai a bola, e o bloco
-        nao tem voto nisso.
+        O nivel 2 fica ligado no THROW_IN e a mola de coesao (aqui em cima)
+        puxa o bloco inteiro para a bola: o central sai da posicao, o CM
+        cola-se a linha, e um lance que precisa de duas ou tres opcoes curtas
+        acaba com seis pessoas em cima umas das outras — todas cobertas pelo
+        mesmo adversario.
+
+        A distancia minima por posicao (ThrowInModel.distanciaMinimaPorPos)
+        empurra de volta para fora quem nao tem nada a fazer ali. O batedor
+        fica de fora: o lugar dele e escrito a mao no setupSetPiece.
+
+        Corre DEPOIS da mola — e ela que causa a aproximacao, e desfaze-la
+        antes era so ve-la voltar no mesmo frame.
         */
-        {
-            const folga = (typeof BlockShape !== 'undefined' &&
-                typeof BlockShape.folgaForaDoBloco === 'number') ? BlockShape.folgaForaDoBloco : null;
-            const comTarefa = p.hasBall ||
-                (bb && (bb.chaser === p || bb.intercetor === p)) ||
-                (typeof Match !== 'undefined' && Match.intendedReceiver === p);
-
-            if (folga !== null && !comTarefa && typeof limitesDoBloco === 'function') {
-                const lim = limitesDoBloco(bb);
-                if (lim) {
-                    molaX = THREE.MathUtils.clamp(molaX, lim.xMin - folga, lim.xMax + folga);
-                    finalZ = THREE.MathUtils.clamp(finalZ, lim.zMin - folga, lim.zMax + folga);
+        if (typeof Match !== 'undefined' && Match.state === 'THROW_IN' &&
+            typeof distanciaMinimaNoLateral === 'function' &&
+            Match.setPieceTaker !== p && Match.ball) {
+            const minDist = distanciaMinimaNoLateral(p.pos);
+            if (minDist > 0) {
+                const bx = Match.ball.position.x, bz = Match.ball.position.z;
+                const dx = molaX - bx, dz = finalZ - bz;
+                const d = Math.hypot(dx, dz);
+                if (d < minDist) {
+                    // Sem direccao nenhuma (em cima da bola) empurra-se para o
+                    // campo, que e o unico lado que existe.
+                    const ux = (d > 0.001) ? dx / d : -Math.sign(bx || 1);
+                    const uz = (d > 0.001) ? dz / d : 0;
+                    molaX = bx + ux * minDist;
+                    finalZ = bz + uz * minDist;
                 }
             }
         }
@@ -2552,101 +1963,15 @@ const PosicionamentoAI = {
         p.tacticalTarget.y = ALTURA_BASE_Y;
 
         /*
-        =================================================================
-        NIVEL 3 — O PLAYING STYLE, COMO OFFSET DO NIVEL 2
-        =================================================================
-        Corria dentro do `tickBase`, ANTES da marcacao e da mola: o estilo
-        deslocava o slot e tudo o resto era calculado ja por cima do desvio
-        dele. Agora e o contrario, e e a ordem pedida — o nivel 2 decide onde o
-        jogador se coloca, e o estilo desloca-o a partir DAI.
-
-        O tecto do estilo (entrada da area do Box-to-Box, entrelinha do
-        Orquestrador, ancora na linha da bola) vem com ele: e do estilo, e nao
-        do posicionamento.
-
-        `styleTarget` e o anel PEQUENO do debug, e a diferenca dele para o anel
-        medio e exactamente o que o estilo faz — nem mais nem menos.
+        Anel do PlayingStyleBT: o posto DEPOIS do estilo e ANTES da marcação —
+        p.postoBase, escrito no tickBase. Era uma cópia do alvo final, e por
+        isso coincidia com o anel do PositionBT: desligar os estilos não mudava
+        nada nos anéis, porque o que ali se via era marcação + inquietação +
+        alisamento. Assim a linha entre o anel do TeamBT e este É o desvio do
+        estilo, e mais nada.
         */
-        let estiloX = p.tacticalTarget.x;
-        let estiloZ = p.tacticalTarget.z;
-
-        if (typeof aplicarEstiloPosicional === 'function') {
-            const comEst = aplicarEstiloPosicional(p, bb, estiloX, estiloZ);
-            estiloX = comEst.x; estiloZ = comEst.z;
-        }
-        if (typeof aplicarTectoDoEstilo === 'function') {
-            estiloZ = aplicarTectoDoEstilo(p, estiloZ, bb);
-        }
-
-        estiloX = THREE.MathUtils.clamp(estiloX, -34, 34);
-        estiloZ = THREE.MathUtils.clamp(estiloZ, -50, 50);
-
-        /*
-        DISTANCIA ENTRE PARES DA MESMA POSICAO — os dois centrais nao ocupam o
-        mesmo ponto, e isto e uma REGRA DURA: corre depois de tudo, estilo
-        incluido, porque de nada serve separa-los antes se o estilo os volta a
-        juntar.
-
-        Separam-se os dois, metade da falta cada um, para nenhum deles ganhar a
-        discussao. Medido antes de existir: 1.1% dos frames com os dois
-        centrais a menos de 4 m.
-        */
-        {
-            const D = (typeof EspacamentoModel !== 'undefined') ? EspacamentoModel.paresIguais : null;
-            if (D && D[p.pos]) {
-                const minDist = D[p.pos];
-                const meus = (p.team === 'TeamA' ? Match.players : Match.opponents);
-                for (const c of meus) {
-                    if (c === p || c.pos !== p.pos || !c.styleTarget) continue;
-                    const dx = estiloX - c.styleTarget.x, dz = estiloZ - c.styleTarget.z;
-                    const d = Math.hypot(dx, dz);
-                    if (d < minDist) {
-                        const falta = (minDist - d) * 0.5;
-                        const ux = (d > 0.001) ? dx / d : ((p.slot && p.slot.u >= 0.5) ? 1 : -1);
-                        const uz = (d > 0.001) ? dz / d : 0;
-                        estiloX += ux * falta;
-                        estiloZ += uz * falta;
-                    }
-                }
-            }
-        }
-
-        /*
-        A LINHA TEM ESPACAMENTO REGULAR — ver EspacamentoModel.linhaMinX.
-
-        Vizinhos da mesma linha nao ficam a menos de `linhaMinX` um do outro em
-        X. Corre depois de tudo porque e o unico sitio onde o resultado e o que
-        se ve: as camadas de cima comprimem a linha em 36% entre o nivel 1 e o
-        nivel 3 (11.6 m de intervalo medio no slot contra 7.4 m no alvo final),
-        e o que faltava era um piso.
-
-        So conta quem esta na mesma linha E a profundidade parecida: um
-        avancado recuado nao empurra um medio de lado.
-        */
-        {
-            const E = (typeof EspacamentoModel !== 'undefined') ? EspacamentoModel : null;
-            if (E && typeof E.linhaMinX === 'number' && p.linhaActual) {
-                const meus = (p.team === 'TeamA' ? Match.players : Match.opponents);
-                for (const c of meus) {
-                    if (c === p || c.role === 'gk' || !c.styleTarget) continue;
-                    if (c.linhaActual !== p.linhaActual) continue;
-                    if (Math.abs(estiloZ - c.styleTarget.z) > E.linhaFaixaZ) continue;
-                    const dx = estiloX - c.styleTarget.x;
-                    const d = Math.abs(dx);
-                    if (d < E.linhaMinX) {
-                        const falta = (E.linhaMinX - d) * 0.5;
-                        const ux = (d > 0.001) ? Math.sign(dx) : ((p.slot && p.slot.u >= 0.5) ? 1 : -1);
-                        estiloX += ux * falta;
-                    }
-                }
-            }
-        }
-
-        estiloX = THREE.MathUtils.clamp(estiloX, -34, 34);
-        estiloZ = THREE.MathUtils.clamp(estiloZ, -50, 50);
-
         if (!p.styleTarget) p.styleTarget = new THREE.Vector3(0, ALTURA_BASE_Y, 0);
-        p.styleTarget.set(estiloX, ALTURA_BASE_Y, estiloZ);
+        p.styleTarget.set(comEstilo.x, ALTURA_BASE_Y, comEstilo.z);
 
         /*
         ESPERAR PELO POSTO — ver esperarPeloSlot/EsperaPeloSlotModel (config.js).
@@ -2696,23 +2021,8 @@ const PosicionamentoAI = {
             return;
         }
 
-        /*
-        O alvo que o jogador persegue e o do NIVEL 3 (o estilo ja aplicado),
-        nao o do nivel 2: o `tacticalTarget` e a leitura intermedia, o
-        `styleTarget` e onde ele deve mesmo ir. Sem estilo os dois sao o mesmo
-        ponto e nada muda.
-        */
-        p.dynamicTarget.x = lerp(p.dynamicTarget.x, p.styleTarget.x, k);
-        p.dynamicTarget.z = lerp(p.dynamicTarget.z, p.styleTarget.z, k);
+        p.dynamicTarget.x = lerp(p.dynamicTarget.x, tx, k);
+        p.dynamicTarget.z = lerp(p.dynamicTarget.z, tz, k);
         p.dynamicTarget.y = ALTURA_BASE_Y;
-
-        /*
-        FICA GUARDADO O QUE O NIVEL 2 ESCREVEU. Quem o le e o funil do nivel 3
-        (validarAlvoDoNivel3, player_bt.js): e comparando com isto que ele sabe
-        se a arvore reescreveu o alvo neste frame ou se o deixou como estava.
-        */
-        if (!p.alvoNivel2) p.alvoNivel2 = { x: 0, z: 0 };
-        p.alvoNivel2.x = p.dynamicTarget.x;
-        p.alvoNivel2.z = p.dynamicTarget.z;
     }
 };

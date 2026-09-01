@@ -201,41 +201,6 @@ Visão de jogo: distância de leitura = técnica * 0.5, ângulo de visão = téc
 */
 /*
 =============================================================================
-SAIR DA ÁREA PARA ALIVIAR
-=============================================================================
-Uma bola solta que fica FORA da área e o guarda-redes já saiu a defender: ele
-pode sair da área e afastá-la com o PÉ. Não tem de travar em cima da linha.
-
-Duas condições, e a segunda é a que impede o disparate:
-
-  1. A BOLA ESTÁ FORA DA ÁREA. Lá dentro joga-se com as mãos, como sempre.
-  2. ELE JÁ ESTÁ COMPROMETIDO — a menos de `margemSaida` da linha da área. Um
-     guarda-redes em cima da linha de golo não arranca campo fora atrás de uma
-     bola solta; sai quem JÁ saiu.
-
-`alcanceFora` limita o resto: mesmo comprometido, não persegue a bola até ao
-meio-campo.
-
-O ALÍVIO TEM DIRECÇÃO, e é isso que separa isto de um pontapé às cegas. Se ele
-está no corredor central manda a bola em FRENTE; se está encostado a um lado
-manda-a para a LINHA LATERAL mais próxima, que é a saída segura. Nunca para o
-meio da própria área, e nunca 'para onde o nariz estiver virado'.
-
-    corredorCentral   |x| abaixo disto conta como centro (manda em frente)
-    forca             velocidade de saída do alívio, m/s
-    elevacao          graus: é um alívio, não um passe rasteiro
-=============================================================================
-*/
-const GkSaidaDaArea = {
-    margemSaida: 2.0,        // já comprometido: a menos disto da linha da área
-    alcanceFora: 8.0,        // e não persegue mais do que isto para lá dela
-    corredorCentral: 12.0,
-    forca: 22.0,
-    elevacao: 28.0
-};
-
-/*
-=============================================================================
 APARÊNCIA DOS JOGADORES
 =============================================================================
 Antes toda a gente saía do mesmo molde: pele 0xdcdde1, cabelo 0x2c1e16 e
@@ -335,28 +300,26 @@ Valores no referencial de ataque.
 
 const GoalkeeperDive = {
     tempoLer: 0.05,        // reacção: transferência de peso antes de sair
-    tempoPassos: 0.35,     // duração máxima dos passos laterais de ajuste
     tempoImpulso: 0.12,    // agachar e estender as pernas
     tempoChao: 0.35,       // deslizar no relvado depois de aterrar
     tempoLevantar: 0.75,   // pôr-se de pé
 
     vooMin: 0.28,          // duração mínima/máxima do voo (s)
-    vooMax: 0.85,          // aumentado para permitir saltos no ângulo
+    vooMax: 0.62,
     velLateral: 6.0,       // velocidade lateral base do salto (m/s)
     velLateralSkill: 4.0,  // ± conforme a skill de GK
-    velPassos: 5.0,        // velocidade da passada lateral antes do voo
-    vySubidaMax: 7.5,      // velocidade vertical máxima aumentada para parábola alta
+    vySubidaMax: 4.5,      // velocidade vertical máxima do impulso (m/s)
 
-    alcanceBraco: 0.85,    // quanto a mão chega além do corpo — o corpo não
+    alcanceBraco: 0.75,    // quanto a mão chega além do corpo — o corpo não
     // precisa de percorrer a distância toda
     alturaDeitado: 0.42,   // y da origem do modelo com ele deitado de lado
     atritoChao: 3.5,       // desaceleração do deslize no relvado (m/s²)
 
     // Ângulo do tombo, por tipo de defesa. Uma bola rasteira não precisa de
     // deitar tanto como uma no ângulo.
-    anguloMax: { baixo: 1.22, meio: 1.48, alto: 1.65 },   // 70° / 85° / 95°
+    anguloMax: { baixo: 1.22, meio: 1.48, alto: 1.75 },   // 70° / 85° / 100°
 
-    fracContacto: 0.65,    // fracção do voo em que a mão deve chegar ao alvo
+    fracContacto: 0.55,    // fracção do voo em que a mão deve chegar ao alvo
     raioMao: 0.42,         // raio de contacto da mão com a bola
     // `apanhaBase` saiu daqui: quem decide agarrar/espalmar/roçar é o
     // GkCatchModel (mais abaixo), para os quatro tipos de defesa.
@@ -386,38 +349,7 @@ const GoalkeeperDive = {
     // Pose das pernas em voo: estendidas e ligeiramente abertas.
     coxaVoo: -0.25, joelhoVoo: 0.55, aberturaVoo: 0.18,
 
-    pesoIK: 0.45,          // suavização do IK dos braços por frame
-
-    /*
-    QUANDO É QUE OS BRAÇOS SE RECOLHEM PARA A QUEDA — e não é a meio do voo.
-
-    A guarda era `y < 0.8`, e o corpo deitado fica a `alturaDeitado` = 0.42:
-    ou seja, quase todo o mergulho conta como "perto do chão". Medido em 40
-    minutos de jogo, **41% dos frames de voo tinham os braços colados ao
-    corpo** — o guarda-redes voava de braços fechados, que é exactamente o que
-    se via.
-
-    Agora é a folga acima da altura de deitado, e só na descida. O `bolaPassou`
-    também subiu de 1.0 para `passouFolga`: a bola a passar-lhe a um metro
-    ainda é uma bola que se tenta.
-    */
-    quedaFolga: 0.18,      // metros acima de alturaDeitado
-    passouFolga: 2.0,      // metros para lá dele antes de desistir
-
-    /*
-    MÃO TROCADA — a bola alta e no ângulo defende-se com a mão de FORA.
-
-    Num mergulho para a direita, a bola no ângulo direito fica alta de mais
-    para a mão direita: quem lá chega é a esquerda, que cruza por cima da
-    cabeça e ganha os 30-40 cm que faltam. É a defesa da imagem de referência.
-
-    Acima de `maoTrocadaY` a mão de fora é a que persegue a bola; a de dentro
-    fica `atrasoMaoSecundaria` metros atrás dela, no mesmo alinhamento — as
-    duas esticadas, sem se sobreporem. Abaixo dessa altura vão as duas à bola,
-    que é a defesa normal.
-    */
-    maoTrocadaY: 1.55,
-    atrasoMaoSecundaria: 0.45
+    pesoIK: 0.45           // suavização do IK dos braços por frame
 };
 
 /*

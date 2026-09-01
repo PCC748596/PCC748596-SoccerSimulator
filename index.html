@@ -15,7 +15,7 @@
             <div style="flex: 1;">
                 <h2 id="app-title" style="font-size: 0.85em; font-weight: bold; margin: 0; padding: 0;">SOCCER SIM | FPS: --
                 </h2>
-                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0620</div>
+                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0621</div>
             </div>
             <button type="button" id="btn-painel" title="Minimizar / maximizar (X) — Shift: todos"
                 onclick="togglePainel(undefined, event)">&minus;</button>
@@ -32,10 +32,9 @@
             </div>
             <div style="display: flex; gap: 4px; margin-bottom: 8px;">
                 <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerFreeKick()">Falta</button>
-                <button class="btn-action" style="flex: 1; margin-top: 0;" id="btn-falta-direta" onclick="Match.triggerDirectFreeKick()">Falta Direta</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerPenalty()">Pênalti</button>
             </div>
             <div style="display: flex; gap: 4px; margin-bottom: 8px;">
-                <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerPenalty()">Pênalti</button>
                 <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.triggerThrowIn()">Lateral</button>
             </div>
 

@@ -393,32 +393,8 @@ function arcoDeCanto(sx, sz) {
     return (sz > 0) ? 0 : -Math.PI / 2;
 }
 
-/*
-`dirX`/`dirZ` (opcionais): a direcção em que este apoio DEVE ficar em relação
-ao batedor. Sem eles usa-se a direcção em que ele já está, que é o que estava
-aqui e é o que juntava toda a gente: dois jogadores que chegam ao lance pela
-mesma banda são projectados no mesmo raio e ficam em cima um do outro — o RM e
-o CM da imagem. Com a direcção do SLOT de cada um, o médio da ala vai para a
-frente pela linha, o lateral fica atrás e o CM abre para dentro, que é onde
-cada um deles devia estar.
-*/
-function alvoDeApoioNoLateral(px, pz, bx, bz, distMin, distMax, dirX, dirZ) {
-    let dx = px - bx, dz = pz - bz;
-
-    if (typeof dirX === 'number' && typeof dirZ === 'number') {
-        const n = Math.hypot(dirX, dirZ);
-        if (n > 0.001) {
-            /*
-            A distância mantém-se a que ele já tem (para não o teleportar), mas
-            a DIRECÇÃO passa a ser a do slot dele. O clamp abaixo trata do
-            resto.
-            */
-            const dAtual = Math.hypot(dx, dz) || distMin;
-            dx = (dirX / n) * dAtual;
-            dz = (dirZ / n) * dAtual;
-        }
-    }
-
+function alvoDeApoioNoLateral(px, pz, bx, bz, distMin, distMax) {
+    const dx = px - bx, dz = pz - bz;
     const d = Math.hypot(dx, dz);
 
     // Em cima do batedor, sem direccao definida: manda-se para dentro do campo
@@ -945,40 +921,6 @@ function velocidadeRasteiraPara(dist, vChegada, opcoes) {
 }
 
 /*
-ATÉ ONDE CHEGA UM PASSE RASTEIRO — a inversa do que está acima.
-
-    d_max = ln( (k·vSaidaMax² + μg) / (k·v_alvo² + μg) ) / (2k)
-
-Existe porque o tecto de 18.5 m/s do `velocidadeRasteiraPara` é SILENCIOSO:
-pede-se 40 m, sai 18.5 m/s, e a bola morre aos ~30 m sem ninguém saber que o
-passe já nascera curto. Medido em 1200 s: 13 dos 167 lançamentos rasteiros
-pediam mais de 28 m, e ficaram em média 21.7 m aquém do ponto.
-
-Quem chama compara a distância pedida com isto e manda a bola pelo AR quando
-não cabe — ver o ramo do lançamento em executePassGameplay (fsm.js).
-
-O `vChegada` tem de ser o mesmo com que o passe vai ser resolvido, senão as
-duas contas discordam na fronteira.
-*/
-function alcanceRasteiroMaximo(vChegada, vSaidaMax) {
-    const k = BallPhysics.kArrasto;
-    const atrito = BallPhysics.atritoRolamento * BallPhysics.gravidade;
-    const vMax = (typeof vSaidaMax === 'number') ? vSaidaMax : 18.5;
-
-    /*
-    O `vAlvo` decai com a distância no `velocidadeRasteiraPara` (piso 1.5), e
-    é esse piso que dá o alcance máximo: qualquer distância grande o bastante
-    para interessar aqui já está na zona do piso.
-    */
-    const vAlvo = Math.max(1.5, vChegada);
-
-    const num = k * vMax * vMax + atrito;
-    const den = k * vAlvo * vAlvo + atrito;
-    if (!(num > den)) return 0;
-    return Math.log(num / den) / (2 * k);
-}
-
-/*
 =============================================================================
 VELOCIDADE PARA PASSAR NO ALVO *A UMA ALTURA PEDIDA*
 =============================================================================
@@ -1336,15 +1278,8 @@ function resolverElevacaoPasse(dist, forcarArco) {
         O tecto anterior eram 60°: um passe de 21 m pela banda dos 4.2 m saía
         a 38.7°, com a parábola de um chutão.
         */
-        /*
-        O piso é o `elevMinBaixa` e não o `elevMin`: com o tecto do peito
-        (1.20 m) um passe de 20 m pede 13.5°, e subi-lo aos 25° punha a bola a
-        2.33 m de apex — ou seja, o tecto da banda deixava de valer. Ver
-        passeArco.elevMinBaixa.
-        */
-        const piso = (typeof B.elevMinBaixa === 'number') ? B.elevMinBaixa : B.elevMin;
         return THREE.MathUtils.clamp(
-            Math.atan(4 * alturaMax / dist), piso, B.elevMax);
+            Math.atan(4 * alturaMax / dist), B.elevMin, B.elevMax);
     }
 
     const t = THREE.MathUtils.clamp((dist - 30.0) / 30.0, 0, 1);
@@ -1699,12 +1634,10 @@ cima do guardião.
 
 Pura de propósito: sem Match, sem THREE — recebe listas de {x, z}.
 */
-function maiorToqueSeguro(px, pz, dirX, dirZ, velPortador, leadInicial, adversarios, margemPedida) {
+function maiorToqueSeguro(px, pz, dirX, dirZ, velPortador, leadInicial, adversarios) {
     const C = CarryModel;
     const vAdv = C.velAdversarioDisputa || 7.0;
-    // `margemPedida` deixa quem chama exigir mais folga — é o que o defesa faz
-    // (ver CarryModel.margemDisputaDefesa).
-    const margem = (typeof margemPedida === 'number') ? margemPedida : (C.margemDisputa || 0.15);
+    const margem = C.margemDisputa || 0.15;
     const a = BallPhysics.atritoRolamento * BallPhysics.gravidade;
 
     const candidatos = [leadInicial, C.touchMedium, C.touchShort, C.touchShort * 0.5]
@@ -2782,62 +2715,6 @@ function gkPodeLancar(tempoSegurando, temAlvo) {
     const minimo = (typeof GoalkeeperPose !== 'undefined' && typeof GoalkeeperPose.segurarMinimo === 'number')
         ? GoalkeeperPose.segurarMinimo : 3.0;
     return tempoSegurando >= minimo && !!temAlvo;
-}
-
-/*
-=============================================================================
-O GUARDA-REDES PODE SAIR DA ÁREA PARA ALIVIAR?
-=============================================================================
-Só quando a bola está FORA da área (lá dentro joga com as mãos) e ele JÁ ESTÁ
-COMPROMETIDO — a menos de `margemSaida` da linha da área. É esta segunda
-condição que impede o guarda-redes de arrancar campo fora atrás de qualquer
-bola solta: sai quem já saiu.
-
-`dzGk` e `dzBola` são profundidades a contar da linha de golo dele, no sentido
-do campo. Geometria pura, sem Match.
-*/
-function gkPodeSairParaAliviar(dzGk, dzBola, bolaX, G, area) {
-    if (!G || !area) return false;
-    const bolaForaDaArea = dzBola > area.profundidade || Math.abs(bolaX) > area.meiaLargura;
-    if (!bolaForaDaArea) return false;
-
-    // Já comprometido: a menos de `margemSaida` da linha da área.
-    const comprometido = dzGk >= area.profundidade - G.margemSaida;
-    if (!comprometido) return false;
-
-    // E não persegue para lá do alcance.
-    return dzBola <= area.profundidade + G.alcanceFora;
-}
-
-/*
-PARA ONDE VAI O ALÍVIO. No corredor central, em FRENTE; encostado a um lado,
-para a LINHA LATERAL mais próxima. Nunca para o meio da própria área, e nunca
-para onde o corpo calhar estar virado.
-
-Devolve a velocidade a dar à bola. `dirZ` é a direcção de ataque da equipa dele
-— o alívio vai nesse sentido.
-*/
-function alivioDoGuardaRedes(bolaX, dirZ, G, larguraCampo) {
-    const g = BallPhysics.gravidade;
-    const elev = (G.elevacao || 28) * Math.PI / 180;
-    const v = G.forca || 22.0;
-
-    let dx, dz;
-    if (Math.abs(bolaX) < G.corredorCentral) {
-        // Centro: em frente, e ligeiramente para o lado em que já está, para a
-        // bola não voltar a cair no eixo à frente da própria baliza.
-        dx = (Math.sign(bolaX) || 1) * 0.35;
-        dz = dirZ;
-    } else {
-        // Encostado: para a linha lateral mais próxima, ainda com algum avanço.
-        dx = Math.sign(bolaX) || 1;
-        dz = dirZ * 0.45;
-    }
-    const n = Math.hypot(dx, dz) || 1;
-    dx /= n; dz /= n;
-
-    const horiz = v * Math.cos(elev);
-    return { x: dx * horiz, y: v * Math.sin(elev), z: dz * horiz };
 }
 
 /*

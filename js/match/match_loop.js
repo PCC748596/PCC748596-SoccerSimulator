@@ -420,37 +420,21 @@ Object.assign(Match, {
         this.btPosRectB.visible = false;
         this.btPosDiagA.visible = false;
         this.btPosDiagB.visible = false;
-        if (Array.isArray(this.btPosCentroA)) this.btPosCentroA.forEach(c => c.visible = false);
-        else if (this.btPosCentroA) this.btPosCentroA.visible = false;
-        if (Array.isArray(this.btPosCentroB)) this.btPosCentroB.forEach(c => c.visible = false);
-        else if (this.btPosCentroB) this.btPosCentroB.visible = false;
-        if (this.btPosTercosA) this.btPosTercosA.visible = false;
-        if (this.btPosTercosB) this.btPosTercosB.visible = false;
+        this.btPosCentroA.visible = false;
+        this.btPosCentroB.visible = false;
 
-        const updateRect = (teamName, rectMesh, diagMesh, centroMesh, tercosMesh) => {
+        const updateRect = (teamName, rectMesh, diagMesh, centroMesh) => {
             const bb = (typeof TeamAI !== 'undefined' && TeamAI.blackboards) ? TeamAI.blackboards[teamName] : null;
             if (bb) {
                 rectMesh.visible = true;
-
-                /*
-                UMA FONTE SÓ: o `bb.bloco`. A moldura vinha do
-                `blockBottom`/`blockTop` e as linhas do `bloco.z*` — hoje são o
-                mesmo valor, mas são duas fontes para um dado só, e é assim que
-                as coisas divergem sem ninguém dar por isso.
-                */
-                const b = bb.bloco;
-                let x0 = -17, x1 = 17;
-                let z0 = bb.blockBottom * bb.dir, z1 = bb.blockTop * bb.dir;
-                let zDef = z0, zMid = (z0 + z1) / 2, zAtk = z1;
-                if (b) {
-                    x0 = b.x0; x1 = b.x1;
-                    z0 = b.z0 * bb.dir; z1 = b.z1 * bb.dir;
-                    zDef = b.zDef * bb.dir;
-                    zMid = b.zMid * bb.dir;
-                    zAtk = b.zAtk * bb.dir;
+                const minZ = Math.min(bb.blockBottom * bb.dir, bb.blockTop * bb.dir);
+                const maxZ = Math.max(bb.blockBottom * bb.dir, bb.blockTop * bb.dir);
+                let x0 = -17;
+                let x1 = 17;
+                if (bb.bloco) {
+                    x0 = bb.bloco.x0;
+                    x1 = bb.bloco.x1;
                 }
-                const minZ = Math.min(z0, z1);
-                const maxZ = Math.max(z0, z1);
                 const pts = rectMesh.geometry.attributes.position.array;
                 pts[0] = x0; pts[1] = 0.05; pts[2] = minZ;
                 pts[3] = x1; pts[4] = 0.05; pts[5] = minZ;
@@ -458,57 +442,26 @@ Object.assign(Match, {
                 pts[9] = x0; pts[10] = 0.05; pts[11] = maxZ;
                 rectMesh.geometry.attributes.position.needsUpdate = true;
 
-                /*
-                DIAGONAIS DESLIGADAS. Marcavam o centro do rectângulo canto a
-                canto, e isso hoje é dito pelos marcadores de faixa — o campo já
-                tem linhas de movimento que cheguem. A malha fica criada (o
-                `criarDiagonais` continua lá) para se poder voltar a ligar numa
-                linha.
-                */
-                diagMesh.visible = false;
+                // Diagonais canto a canto, e a marca no cruzamento delas.
+                diagMesh.visible = true;
+                const d = diagMesh.geometry.attributes.position.array;
+                d[0] = x0; d[1] = 0.05; d[2] = minZ;
+                d[3] = x1; d[4] = 0.05; d[5] = maxZ;
+                d[6] = x1; d[7] = 0.05; d[8] = minZ;
+                d[9] = x0; d[10] = 0.05; d[11] = maxZ;
+                diagMesh.geometry.attributes.position.needsUpdate = true;
 
-                if (tercosMesh) {
-                    tercosMesh.visible = true;
-                    const tm = tercosMesh.geometry.attributes.position.array;
-                    /*
-                    AS DUAS DIVISÓRIAS, a 1/3 e 2/3 da profundidade: é o que
-                    parte o rectângulo nas três faixas (defesa, meio, ataque).
-
-                    As âncoras `zDef`/`zMid`/`zAtk` NÃO se desenham — a de trás e
-                    a da frente são a moldura, e a do meio só acrescentava uma
-                    terceira linha interna que fazia quatro faixas. Ver a nota no
-                    criarLinhasTercos.
-                    */
-                    const t1 = z0 + (z1 - z0) / 3;
-                    const t2 = z0 + 2 * (z1 - z0) / 3;
-                    tm[0] = x0; tm[1] = 0.05; tm[2] = t1;
-                    tm[3] = x1; tm[4] = 0.05; tm[5] = t1;
-                    tm[6] = x0; tm[7] = 0.05; tm[8] = t2;
-                    tm[9] = x1; tm[10] = 0.05; tm[11] = t2;
-                                        tercosMesh.geometry.attributes.position.needsUpdate = true;
-                }
-
-                if (Array.isArray(centroMesh) && centroMesh.length > 0) {
-                    const cx = (x0 + x1) / 2;
-                    const cz = (minZ + maxZ) / 2;
-                    centroMesh[0].position.set(cx, 0.06, cz);
-                    centroMesh[0].visible = true;
-                    for (let i = 1; i < centroMesh.length; i++) {
-                        centroMesh[i].visible = false;
-                    }
-                } else if (centroMesh && !Array.isArray(centroMesh)) {
-                    centroMesh.visible = true;
-                    centroMesh.position.x = (x0 + x1) / 2;
-                    centroMesh.position.z = (minZ + maxZ) / 2;
-                }
+                centroMesh.visible = true;
+                centroMesh.position.x = (x0 + x1) / 2;
+                centroMesh.position.z = (minZ + maxZ) / 2;
             }
         };
 
         if (window.teamBTPosState === 'TeamA' || window.teamBTPosState === 'Both') {
-            updateRect('TeamA', this.btPosRectA, this.btPosDiagA, this.btPosCentroA, this.btPosTercosA);
+            updateRect('TeamA', this.btPosRectA, this.btPosDiagA, this.btPosCentroA);
         }
         if (window.teamBTPosState === 'TeamB' || window.teamBTPosState === 'Both') {
-            updateRect('TeamB', this.btPosRectB, this.btPosDiagB, this.btPosCentroB, this.btPosTercosB);
+            updateRect('TeamB', this.btPosRectB, this.btPosDiagB, this.btPosCentroB);
         }
 
         if (!this._allPlayersCache || this._allPlayersCache.length !== this.players.length + this.opponents.length) {
@@ -587,18 +540,6 @@ Object.assign(Match, {
         Otimiza os alvos dos jogadores da mesma posição para evitarem esbarrar ou
         correrem para o mesmo alvo.
         */
-        /*
-        QUEM ESTÁ EM QUE LINHA, antes de qualquer posicionamento: o `u` de cada
-        um depende de quantos estão na linha dele. Ver classificarLinhas.
-        */
-        PosicionamentoAI.classificarLinhas(this.players, bbA);
-        PosicionamentoAI.classificarLinhas(this.opponents, bbB);
-
-        // Quem ocupa a linha e quem fecha para dentro, de cada lado. Decisão de
-        // PAR, e por isso antes de qualquer posicionamento individual.
-        PosicionamentoAI.atribuirParesDeCorredor(this.players, bbA);
-        PosicionamentoAI.atribuirParesDeCorredor(this.opponents, bbB);
-
         PosicionamentoAI.otimizarSlotsPorPosicao(this.players, bbA);
         PosicionamentoAI.otimizarSlotsPorPosicao(this.opponents, bbB);
 

@@ -48,51 +48,6 @@ const ShootingModel = {
         táctica — e era mais um sítio onde o remate se perdia em silêncio.
         */
         ignoraGrid: true
-    },
-
-    /*
-    =====================================================================
-    O ÂNGULO DA BALIZA E O HOMEM À FRENTE — a decisão que faltava
-    =====================================================================
-    O `anguloDaBaliza` (utils.js) existe desde sempre e era usado APENAS para
-    a estatística de xG. A decisão de rematar nunca lhe pegou: dentro da área
-    remata-se e "mais nada tem voto", com um defesa colado à frente e a baliza
-    reduzida a uma fresta.
-
-    Medido em 50 minutos, 22 remates: 12 saíram com a baliza a subtender menos
-    de 0.30 rad (17°) e 3 com menos de 0.15 rad; dessas duas faixas, **zero
-    golos**. Seis remates saíram com um adversário a menos de 3 m em cima da
-    linha do remate, e 67% desses foram tapados.
-
-    A regra, e é a que o pedido descreve: um adversário perto derruba a vontade
-    de rematar, A NÃO SER que haja ângulo. As duas coisas juntas, porque
-    separadas nenhuma delas descreve o lance — um defesa colado à entrada da
-    área é remate impossível, o mesmo defesa colado com a baliza escancarada a
-    seis metros é golo.
-
-    `distBloqueio`   até onde conta um adversário NA LINHA do remate (dentro
-                     de `meiaLarguraLinha` de distância lateral à recta que vai
-                     do pé à baliza). Um adversário ao lado não tapa nada.
-    `anguloLivre`    acima deste ângulo o remate vale a pena mesmo com gente à
-                     frente — 0.35 rad (20°) é, à largura da baliza, estar a
-                     ~20 m no eixo ou a ~10 m em diagonal.
-    `chanceSobPressao` com bloqueador perto E sem ângulo, ainda assim remata
-                     nesta fracção das vezes: um remate de recurso continua a
-                     existir, e tirá-lo por completo era a árvore a ficar sem
-                     saída na área. Calibrado a medir: com 0.15 os remates por
-                     jogo caíam de ~17 para ~10, e este simulador já remata
-                     pouco; com 0.30 ficam em ~18, e os que desaparecem são os
-                     tapados (6 -> 4) e os de ângulo mínimo.
-    `anguloMinimo`   abaixo disto não se remata de todo, haja ou não gente à
-                     frente: é a fresta da linha de fundo, onde o passe para
-                     trás é sempre melhor.
-    */
-    angulo: {
-        distBloqueio: 3.0,
-        meiaLarguraLinha: 1.6,
-        anguloLivre: 0.35,
-        chanceSobPressao: 0.30,
-        anguloMinimo: 0.10
     }
 };
 
@@ -371,15 +326,6 @@ const FreeKickModel = {
     barreiraMax: 4,            // e perto dela
     barreiraZonaZ: 30.0,       // no referencial de ataque: daqui p/ a frente é barreira cheia
     espacamentoBarreira: 0.85, // ombro com ombro
-    deslocamentoGK: 1.85,      // metros que o GK se desloca para o lado oposto da barreira
-    potenciaBase: 28.5,        // m/s base no remate direto
-    potenciaPorForca: 6.0,     // variação com atributo FOR
-    chanceDefesa: {
-        perfeito: 0.03,   // diff > 5   — bola teleguiada na gaveta por cima da barreira
-        bom: 0.16,        // diff 3..5
-        medio: 0.38,      // diff 1..2
-        fraco: 0.65       // diff <= 0  — remate sem força/efeito suficiente
-    },
     /*
     ATRÁS DA BOLA, na linha bola->baliza. Estava em 1.4 m — praticamente em
     cima dela, sem espaço nenhum para a corrida, e como o gesto era instantâneo
@@ -807,21 +753,6 @@ tratadas em FootballPlayer.updateGK().
 */
 
 const HeaderModel = {
-    /*
-    RAIO EM QUE SE CABECEIA À BALIZA. Fora dele a cabeçada é passe ou alívio,
-    nunca remate.
-
-    Era `distToGoal < 24 && |x| < 16`, e as duas medidas eram em EIXOS
-    separados: 24 m só em Z, 16 m só em X. Um jogador a 23 m da linha e 15 m
-    do eixo está a 27.5 m da baliza e continuava a cabecear ao golo — e daí
-    vinham os golos de cabeça de mais de 20 metros, que no futebol quase não
-    existem.
-
-    Agora é a distância a sério ao CENTRO da baliza (o ponto x=0 na linha), num
-    raio só. A guarda de estar virado para lá mantém-se.
-    */
-    raioRemateCabeca: 11.0,
-
     alcanceMax: 16.0,          // alcance máximo de um alívio de cabeça
     alcancePasse: 8.5,         // alcance de escora para colega
 

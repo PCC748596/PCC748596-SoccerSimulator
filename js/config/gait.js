@@ -11,33 +11,6 @@ const TurnModel = {
     comBola: 9.0
 };
 
-/*
-PARA ONDE O CORPO OLHA QUANDO JÁ CHEGOU AO SÍTIO — com histerese.
-
-O `steerArrive` escolhia entre olhar para a BOLA e olhar para o ALVO por um
-limiar seco de 0.5 m, e desligava o giro por completo abaixo de 0.2 m. O alvo
-táctico desliza com a bola (medido: 0.47 m por frame no slot de um jogador
-parado), portanto um jogador que já lá chegou atravessa esses limiares sem
-parar. Medido, jogadores a menos de 1.5 m/s:
-
-    limiar 0.5 m atravessado   1.51 vezes por segundo
-    limiar 0.2 m atravessado   1.88 vezes por segundo
-    ângulo entre os dois alvos de olhar no instante da troca: 84° em média
-                                                              (44% acima de 90°)
-
-Ou seja: uma vez e meia por segundo mandava-se o corpo virar ~84° e logo a
-seguir voltar. É o tremor que se vê em quem está parado à espera de um passe.
-
-    perto   entra-se em "olhar para a bola" abaixo desta distância
-    longe   e só se sai dela acima desta — a folga entre as duas é a histerese
-            e tem de ser maior do que o passo do alvo por frame, senão volta
-            a oscilar.
-*/
-const OlharModel = {
-    perto: 0.9,
-    longe: 1.8
-};
-
 const LateralGait = {
     anguloMin: 35 * Math.PI / 180,   // desvio entre a frente do corpo e o movimento
     velViragem: 3.6,                 // m/s acima dos quais o corpo roda para o movimento

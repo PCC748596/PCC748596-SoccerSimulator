@@ -128,7 +128,7 @@ Object.assign(Match, {
         // Marca do centro do bloco — o ponto onde as diagonais se cruzam.
         const criarCentro = (cor) => {
             const m = new THREE.Mesh(
-                new THREE.PlaneGeometry(0.85, 0.85),
+                new THREE.RingGeometry(0.55, 0.85, 24),
                 new THREE.MeshBasicMaterial({ color: cor, side: THREE.DoubleSide })
             );
             m.rotation.x = -Math.PI / 2;
@@ -137,46 +137,8 @@ Object.assign(Match, {
             this.scene.add(m);
             return m;
         };
-        this.btPosCentroA = [criarCentro(0x3498db), criarCentro(0x3498db), criarCentro(0x3498db)];
-        this.btPosCentroB = [criarCentro(0xe74c3c), criarCentro(0xe74c3c), criarCentro(0xe74c3c)];
-        
-        /*
-        AS TRÊS LINHAS DO BLOCO — defesa, meio e ataque.
-
-        Eram DUAS (4 vértices): desenhavam-se o `zMid` e o `zAtk`, e nunca o
-        `zDef`. Enquanto o `zAtk` estava a 2/3 da profundidade, as duas caíam
-        dentro da moldura e viam-se três faixas — que era o bug do bloco a ser
-        desenhado (ver a sessão de 30 de Agosto). Com o `zAtk` corrigido para a
-        frente do bloco, uma das linhas passou a coincidir com a moldura e
-        desaparecia.
-
-        DUAS COISAS DIFERENTES, e era por estarem misturadas que o `zAtk` estava
-        errado — servia de âncora do ataque E de divisória dos 2/3 ao mesmo
-        tempo:
-
-          AS ÂNCORAS (`zDef`, `zMid`, `zAtk`) são os pontos entre os quais o `v`
-          da formação interpola. Têm de cobrir o bloco INTEIRO, senão a formação
-          encolhe — foi esse o bug. NÃO são desenhadas: hoje a de trás e a da
-          frente são a própria moldura, e a do meio no meio não acrescenta nada
-          à leitura. Quando cada linha ganhar a sua própria âncora (fase C) passa
-          a valer a pena desenhá-las, e aí levam um estilo próprio.
-
-          AS DIVISÓRIAS (1/3 e 2/3) partem o rectângulo nas três FAIXAS — defesa,
-          meio e ataque. É isto que se desenha: duas divisórias, três faixas, e o
-          marcador aceso diz em que faixa está a bola.
-
-        Três âncoras dão duas faixas; são as divisórias que dão três.
-        */
-        const criarLinhasTercos = (cor) => {
-            const g = new THREE.BufferGeometry();
-            g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(4 * 3), 3));
-            const linha = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: 0.6 }));
-            linha.visible = false;
-            this.scene.add(linha);
-            return linha;
-        };
-        this.btPosTercosA = criarLinhasTercos(0x3498db);
-        this.btPosTercosB = criarLinhasTercos(0xe74c3c);
+        this.btPosCentroA = criarCentro(0x3498db);
+        this.btPosCentroB = criarCentro(0xe74c3c);
 
         this.passTargetVisual = new THREE.Mesh(
             new THREE.CircleGeometry(0.5, 32),

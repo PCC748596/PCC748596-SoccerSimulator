@@ -36,25 +36,6 @@ const GoalNet = {
     atrito: 0.35,
 
     /*
-    A BOLA QUE CAI EM CIMA DO PANO DE CIMA ROLA PARA TRÁS E DESCE PELA
-    DESCAÍDA.
-
-    O pano de cima é horizontal (de 0 a `profTopo` a partir da linha) e a
-    colisão tratava-o como qualquer outra: invertia o `v.y` com restituição e
-    a bola saltitava lá em cima ou caía outra vez para o campo. Uma bola que
-    cai em cima de uma rede não salta — afunda no pano, rola para trás e desce
-    pela inclinação de trás.
-
-    `rolarTopo`   velocidade mínima para TRÁS (para dentro da baliza) que se dá
-                  a uma bola pousada no pano de cima, para ela chegar à
-                  descaída em vez de ficar parada lá em cima.
-    `atritoTopo`  travagem por frame enquanto rola no pano. Alto de propósito:
-                  o pano é macio mas quase não trava o rolamento.
-    */
-    rolarTopo: 1.4,
-    atritoTopo: 0.985,
-
-    /*
     MALHA — quantos quadrados por face. Antes cada face era UM quad de quatro
     vértices, e por isso a rede não podia deformar-se: era uma chapa rígida com
     textura de rede. Os laterais são estreitos e levam menos divisões ao longo
@@ -133,18 +114,17 @@ Por exemplo, um CF com passe 80 prefere chutar do que passar, enquanto um CM com
 */
 window.PositionalTendencies = {
     'CB': { shoot: 0.50, dribble: 0.40, pass: 1.00, forwardPass: 0.80, cross: 0.20, clearance: 1.30 },
-    'LB': { shoot: 0.60, dribble: 0.90, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
-    'RB': { shoot: 0.60, dribble: 0.90, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
+    'LB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
+    'RB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
     'DM': { shoot: 0.70, dribble: 0.70, pass: 1.30, forwardPass: 1.10, cross: 0.50, clearance: 1.10 },
-    'CM': { shoot: 0.80, dribble: 0.95, pass: 1.20, forwardPass: 1.20, cross: 0.80, clearance: 0.90 },
-    'LM': { shoot: 0.80, dribble: 1.25, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
-    'RM': { shoot: 0.80, dribble: 1.25, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
-    'AM': { shoot: 1.00, dribble: 1.30, pass: 1.10, forwardPass: 1.40, cross: 0.90, clearance: 0.50 },
-    'LW': { shoot: 1.10, dribble: 1.55, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
-    'RW': { shoot: 1.10, dribble: 1.55, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
-    'SS': { shoot: 1.25, dribble: 1.40, pass: 1.00, forwardPass: 1.10, cross: 0.80, clearance: 0.30 },
-    'CF': { shoot: 1.40, dribble: 1.25, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
-    'ST': { shoot: 1.40, dribble: 1.25, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
+    'CM': { shoot: 0.80, dribble: 0.90, pass: 1.20, forwardPass: 1.20, cross: 0.80, clearance: 0.90 },
+    'LM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
+    'RM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
+    'AM': { shoot: 1.00, dribble: 1.10, pass: 1.10, forwardPass: 1.40, cross: 0.90, clearance: 0.50 },
+    'LW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
+    'RW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
+    'CF': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
+    'ST': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
     'GK': { shoot: 0.10, dribble: 0.10, pass: 1.00, forwardPass: 1.00, cross: 0.10, clearance: 1.50 }
 };
 
@@ -161,7 +141,7 @@ window.getPositionalTendency = function (pos, action) {
 /*
 Altura da TESTA acima da base do modelo.
 
-`model.position` está nos PÉS (y = ALTURA_BASE_Y). O rig, à escala 1.8/6.0,
+`model.position` está nos PÉS (y = ALTURA_BASE_Y). O rig, à escala 1.8/5.5,
 põe o centro da cabeça a ~1.64 m e a testa a ~1.75 m. Este valor é o ponto de
 contacto de um cabeceio — ver distanciaAoCorpo() em utils.js.
 */

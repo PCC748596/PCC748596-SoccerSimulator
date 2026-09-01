@@ -213,31 +213,16 @@ Object.assign(Match, {
             targetPos.set(58 * zoom, 39 * zoom, 0);
             lookTarget.copy(this.ball.position);
         } else if (window.cameraMode === 'sideline') {
-            // Câmara Lateral bem mais próxima, acompanhando a bola no eixo Z.
-            // Altura subida de 14 para 21 m (pedido): a 14 m os jogadores da
-            // banda oposta tapavam-se uns aos outros.
+            // Câmara Lateral bem mais próxima, acompanhando a bola no eixo Z
             let bz = THREE.MathUtils.clamp(this.ball.position.z, -45, 45);
-            targetPos.set(35 * zoom, 21 * zoom, bz);
+            targetPos.set(35 * zoom, 14 * zoom, bz);
             lookTarget.copy(this.ball.position);
         } else if (window.cameraMode === 'lateraltv') {
             // Mistura de TV Centro e Lateral Móvel
-            // Acompanha até metade do meio-campo (|z| <= 26.5m), depois fixa a posição e gira focando o ataque
+            // Acompanha até metade do meio-campo, depois fica parada e só roda
             let bz = THREE.MathUtils.clamp(this.ball.position.z, -26.5, 26.5);
             targetPos.set(48 * zoom, 23 * zoom, bz);
             lookTarget.copy(this.ball.position);
-
-            // Quando a bola passa do ponto de corrida (|z| > 26.5m) e a câmera gira,
-            // o enquadramento desloca o ponto focal à frente na direção do ataque:
-            // 2/3 da visão voltada para o ataque e 1/3 para a defesa.
-            const zReal = this.ball.position.z;
-            if (Math.abs(zReal) > 26.5) {
-                const dirAtaqueZ = (zReal > 0) ? 1 : -1;
-                // Distância extra que a bola passou além do limite de corrida
-                const excedenteZ = Math.abs(zReal) - 26.5;
-                // Deslocamento de 2/3 para o ataque (avança o foco no eixo Z proporcional ao avanço do ataque)
-                const offsetAtaqueZ = dirAtaqueZ * (excedenteZ * 0.65 + 4.5);
-                lookTarget.z += offsetAtaqueZ;
-            }
 
             if (typeof TeamAI !== 'undefined') {
                 const teamA = TeamAI.get('TeamA');

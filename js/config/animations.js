@@ -11,21 +11,9 @@ const ActionAnimClips = {
     // Chutão do guarda-redes (ver GoalkeeperKickClip). O contactTime cai
     // exactamente no keyframe 9 (t = 8/11), o frame do contacto pé-bola.
     gkPunt: { duration: 0.85, contactTime: 8 / 11 },
-    /*
-    Tiro de meta do chão, com corrida de aproximação (ver
-    GoalkeeperGroundKickClip). Contacto no frame 8 (t = 7/11 ≈ 0.636) do clip
-    de 12 frames.
-
-    ERA 0.82 s, com a MESMA estrutura de 12 frames do remate do jogador, que
-    dura 0.50: cada frame do tiro de meta ficava 0.075 s no ecrã contra 0.045 s
-    do remate, ou seja o gesto inteiro corria a 60% da velocidade. É isso que
-    se vê como "o chute está mais lento".
-
-    0.55 e não 0.50: o guarda-redes tem uma armação maior e um follow-through
-    mais alto do que um remate em corrida. O contacto passa a cair 0.35 s depois
-    da plantada do pé de apoio, contra os 0.32 s do remate.
-    */
-    gkPuntChao: { duration: 0.55, contactTime: 7 / 11 },
+    // Tiro de meta do chão com corrida de aproximação (ver GoalkeeperGroundKickClip / SetPieceGroundKickClip)
+    // Contacto no frame 8 (t = 7/11 ≈ 0.636) do clip de 12 frames
+    gkPuntChao: { duration: 0.82, contactTime: 7 / 11 },
     // Lançamento com as mãos do guarda-redes
     gkThrow: { duration: 0.70, contactTime: 8 / 11 },
     // Arremesso lateral (ver ThrowInClip): a bola sai no frame 6 de 10.
@@ -123,12 +111,8 @@ o primeiro keyframe do clip de chute do chão. Sem ela, a pose das pernas, a
 rotação/translação da bacia (o pivô no pé de apoio vale ~0.26 m de deslocação
 lateral logo no frame 1), a posição do corpo no ponto de apoio e a orientação
 mudavam todas no mesmo frame — lia-se como um corte entre duas animações.
-
-Encurtada de 0.14 s com o clip: 0.14 s eram 17% de um clip de 0.82 s e passavam
-a ser 25% de um de 0.55 s, ou seja a mistura comia um quarto do gesto e a
-armação saía amolecida. 0.09 mantém a mesma fracção.
 */
-const GK_GROUND_KICK_BLEND = 0.09;
+const GK_GROUND_KICK_BLEND = 0.14;
 
 /*
 =============================================================================
@@ -213,29 +197,13 @@ const GoalkeeperGroundKickClip = {
         // 3 (t = 2/11): FIGURA 2 - Fase de Suporte e Armação Máxima: pivô total no pé esquerdo, corpo inclinado em bloco, joelho direito a ~110°
         { leanZ: -0.36, pitchX: -0.28, chest: -0.04, coxaChute: 0.95, joelhoChute: 1.92, coxaChuteZ: -0.15, coxaApoio: 0.02, joelhoApoio: 0.35, bracoLx: -0.55, bracoLz: 0.85, bracoRx: 0.45, bracoRz: -0.38, cotoveloL: -0.3, cotoveloR: -0.9, altura: -0.02 },
         // 4 (t = 3/11): Início da impulsão pélvica para a frente, perna ainda fletida acumulando energia
-        { leanZ: -0.32, pitchX: -0.22, chest: -0.02, coxaChute: 0.75, joelhoChute: 1.70, coxaChuteZ: -0.12, coxaApoio: 0.03, joelhoApoio: 0.32, bracoLx: -0.48, bracoLz: 0.78, bracoRx: 0.35, bracoRz: -0.40, cotoveloL: -0.35, cotoveloR: -0.8, altura: -0.01 },
-        /*
-        FRAMES 5 A 7 — A PERNA ACELERA ATÉ À BOLA, e não o contrário.
-
-        Os keyframes estão igualmente espaçados no tempo, portanto a diferença
-        entre frames consecutivos É a velocidade angular. Estava assim, em
-        rad/s na coxa: -6.0, -4.7, **-2.7 no contacto**, -6.0 logo a seguir. A
-        perna travava a chegar à bola e voltava a acelerar depois de lhe bater
-        — é a "paragem" que se vê, e nenhum chute do mundo faz isso.
-
-        Agora a coxa sai mais tarde (fica armada mais tempo) e chega lançada:
-        as velocidades passam a subir até ao impacto. O ângulo do frame 8, o do
-        contacto, NÃO se toca: esse é a geometria do pé na bola.
-
-        O joelho leva o mesmo tratamento — a extensão da tíbia tem de ser
-        máxima no impacto, que é de onde vem o chicote.
-        */
-        // 5 (t = 4/11): Transição: a coxa começa a vir, o joelho ainda carregado
-        { leanZ: -0.26, pitchX: -0.14, chest: 0.00, coxaChute: 0.45, joelhoChute: 1.38, coxaChuteZ: -0.08, coxaApoio: 0.04, joelhoApoio: 0.28, bracoLx: -0.35, bracoLz: 0.70, bracoRx: 0.20, bracoRz: -0.44, cotoveloL: -0.35, cotoveloR: -0.7, altura: 0.00 },
-        // 6 (t = 5/11): Efeito chicote: a coxa lança e a tíbia começa a abrir
-        { leanZ: -0.20, pitchX: -0.06, chest: 0.02, coxaChute: 0.10, joelhoChute: 1.05, coxaChuteZ: -0.05, coxaApoio: 0.04, joelhoApoio: 0.25, bracoLx: -0.15, bracoLz: 0.62, bracoRx: 0.00, bracoRz: -0.48, cotoveloL: -0.3, cotoveloR: -0.6, altura: 0.01 },
-        // 7 (t = 6/11): Aproximação final, já na velocidade máxima
-        { leanZ: -0.16, pitchX: 0.00, chest: 0.04, coxaChute: -0.28, joelhoChute: 0.62, coxaChuteZ: -0.03, coxaApoio: 0.05, joelhoApoio: 0.22, bracoLx: 0.00, bracoLz: 0.58, bracoRx: -0.20, bracoRz: -0.50, cotoveloL: -0.3, cotoveloR: -0.5, altura: 0.02 },
+        { leanZ: -0.32, pitchX: -0.22, chest: -0.02, coxaChute: 0.60, joelhoChute: 1.70, coxaChuteZ: -0.12, coxaApoio: 0.03, joelhoApoio: 0.32, bracoLx: -0.48, bracoLz: 0.78, bracoRx: 0.35, bracoRz: -0.40, cotoveloL: -0.35, cotoveloR: -0.8, altura: -0.01 },
+        // 5 (t = 4/11): Transição: avanço dinâmico da coxa de remate em direção à bola
+        { leanZ: -0.26, pitchX: -0.14, chest: 0.00, coxaChute: 0.20, joelhoChute: 1.30, coxaChuteZ: -0.08, coxaApoio: 0.04, joelhoApoio: 0.28, bracoLx: -0.35, bracoLz: 0.70, bracoRx: 0.20, bracoRz: -0.44, cotoveloL: -0.35, cotoveloR: -0.7, altura: 0.00 },
+        // 6 (t = 5/11): Efeito chicote: desaceleração da coxa e início da extensão rápida da tíbia
+        { leanZ: -0.20, pitchX: -0.06, chest: 0.02, coxaChute: -0.25, joelhoChute: 0.75, coxaChuteZ: -0.05, coxaApoio: 0.04, joelhoApoio: 0.25, bracoLx: -0.15, bracoLz: 0.62, bracoRx: 0.00, bracoRz: -0.48, cotoveloL: -0.3, cotoveloR: -0.6, altura: 0.01 },
+        // 7 (t = 6/11): Aproximação final milimétrica do pé à bola
+        { leanZ: -0.16, pitchX: 0.00, chest: 0.04, coxaChute: -0.60, joelhoChute: 0.30, coxaChuteZ: -0.03, coxaApoio: 0.05, joelhoApoio: 0.22, bracoLx: 0.00, bracoLz: 0.58, bracoRx: -0.20, bracoRz: -0.50, cotoveloL: -0.3, cotoveloR: -0.5, altura: 0.02 },
         // 8 (t = 7/11): FIGURA 3 - Fase de Contato (IMPACTO): pé no centro da bola, perna esticada, corpo apoiado no pé de suporte
         { leanZ: -0.14, pitchX: 0.06, chest: 0.06, coxaChute: -0.80, joelhoChute: 0.12, coxaChuteZ: 0.00, coxaApoio: 0.05, joelhoApoio: 0.20, bracoLx: 0.12, bracoLz: 0.55, bracoRx: -0.35, bracoRz: -0.52, cotoveloL: -0.3, cotoveloR: -0.45, altura: 0.03 },
         // 9 (t = 8/11): Pós-impacto imediato: perna segue subindo pela inércia balística

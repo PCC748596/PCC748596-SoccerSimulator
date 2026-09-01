@@ -29,19 +29,7 @@ Object.assign(Match, {
             }
         }
 
-        if (this.ball.position.y > r + 0.001) {
-            let grav = B.gravidade;
-            // Efeito folha seca / topspin na falta direta: após superar a barreira ou no topo da parábola, cai mais acentuadamente
-            if (this.freeKickDip && this.freeKickDip.active) {
-                this.freeKickDip.timer += dt;
-                // Aumenta a aceleração descendente proporcionalmente ao efeito/técnica
-                grav += this.freeKickDip.extraGrav;
-                if (this.ball.position.y <= r + 0.05 || this.freeKickDip.timer > 2.5) {
-                    this.freeKickDip.active = false;
-                }
-            }
-            this.ballVel.y -= grav * dt;
-        }
+        if (this.ball.position.y > r + 0.001) this.ballVel.y -= B.gravidade * dt;
 
         if (!this.prevBallPos) this.prevBallPos = new THREE.Vector3();
         this.prevBallPos.copy(this.ball.position);
@@ -192,9 +180,7 @@ Object.assign(Match, {
                             gk.gkTipoMergulho = 'baixo';
                             gk.gkReagiu = false;
                             gk.gkDelayReacao = 0;
-                            // NUNCA zerar o mergulho abruptamente — se o goleiro está voando,
-                            // deixe-o terminar a parábola e cair no chão para levantar-se
-                            // gk.dive = null; 
+                            gk.dive = null;
                         }
                     });
 
@@ -483,33 +469,7 @@ Object.assign(Match, {
         const atingiuLimiteCabeca = this.aerialHeaderCount >= maxHeaders;
 
         const maxPeitos = BallControl.maxPeitosSeguidos;
-
-        /*
-        SEM NINGUÉM POR PERTO, O PEITO GANHA À CABEÇA.
-
-        A decisão era só de altura. Sem pressão, matar no peito e ficar com a
-        bola é melhor do que a cabecear para longe — a cabeça serve para
-        aliviar, ou para chegar à bola antes de quem vem a chegar. Com espaço,
-        ninguém cabeceia o que pode dominar.
-
-        A faixa do peito sobe até `peitoAlturaLivre` quando não há adversário a
-        menos de `peitoSemPressao`. Fora disso fica tudo como estava.
-        */
-        let tectoPeito = BallControl.peitoYMax;
-        if (typeof BallControl.peitoSemPressao === 'number' && best.jumpTimer <= 0) {
-            const rivais = (best.team === 'TeamA') ? this.opponents : this.players;
-            let maisPerto = Infinity;
-            for (const r of rivais) {
-                if (!r || r.role === 'gk' || !r.model) continue;
-                const d = r.model.position.distanceTo(best.model.position);
-                if (d < maisPerto) maisPerto = d;
-            }
-            if (maisPerto >= BallControl.peitoSemPressao) {
-                tectoPeito = Math.max(tectoPeito, BallControl.peitoAlturaLivre || tectoPeito);
-            }
-        }
-
-        if ((bestAltura >= BallControl.peitoYMin && bestAltura <= tectoPeito && best.jumpTimer <= 0) ||
+        if ((bestAltura >= BallControl.peitoYMin && bestAltura <= BallControl.peitoYMax && best.jumpTimer <= 0) ||
             (atingiuLimiteCabeca && bestAltura <= (ALTURA_TESTA + HeaderModel.janelaContacto) && best.jumpTimer <= 0)) {
             /*
             LIMITE DE PEITOS SEGUIDOS. Sem ele, dois jogadores lado a lado
@@ -813,32 +773,9 @@ Object.assign(Match, {
                 const dCross = prevD + t * (d - prevD);
                 if (dCross >= 0 && dCross <= N.profTopo) {
                     if (typeof NetWave !== 'undefined') NetWave.bater(zSinal, v.y);
-
-                    const deCima = (v.y <= 0);
-                    if (deCima) {
-                        /*
-                        POUSA E ROLA. Uma bola que cai em cima da rede não
-                        salta: afunda no pano e rola para trás até à descaída.
-                        Ver GoalNet.rolarTopo/atritoTopo.
-
-                        `vd` é a velocidade no eixo do fundo, positiva PARA
-                        DENTRO da baliza — dar-lhe um piso é o que a leva à
-                        inclinação de trás em vez de a deixar parada em cima do
-                        travessão.
-                        */
-                        b.y = ALTURA_BALIZA + rB;
-                        v.y = 0;
-                        vd = Math.max(vd, N.rolarTopo);
-                        vd *= N.atritoTopo;
-                        v.x *= N.atritoTopo;
-                    } else {
-                        // De baixo para cima: bateu no pano por dentro da baliza.
-                        b.y = ALTURA_BALIZA - rB;
-                        v.y = -v.y * N.restituicao;
-                        v.x *= N.atrito; vd *= N.atrito;
-                    }
-                    b.z = (d + CAMPO_COMP / 2) * zSinal;
-                    v.z = vd * zSinal;
+                    if (v.y > 0) { b.y = ALTURA_BALIZA - rB; } else { b.y = ALTURA_BALIZA + rB; }
+                    v.y = -v.y * N.restituicao;
+                    v.x *= N.atrito; v.z *= N.atrito;
                     d = (b.z * zSinal) - CAMPO_COMP / 2;
                 }
             }

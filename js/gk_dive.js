@@ -49,15 +49,6 @@ const GkDive = {
         const D = GoalkeeperDive;
         const corpo = p.model;
 
-        // Erro de Leitura: Goleiros piores erram a predição do ponto de interceptação
-        const skill = p.skillFor ? p.skillFor('GK') : 50;
-        const erroMulti = Math.max(0, (100 - skill) / 50); // 0 se 100, 1 se 50
-        const erroX = (Math.random() - 0.5) * 1.5 * erroMulti;
-        const erroY = (Math.random() - 0.5) * 1.2 * erroMulti;
-
-        const alvoFinalX = alvoX + erroX;
-        const alvoFinalY = Math.max(0, alvoY + erroY);
-
         /*
         A direcção que ele encara fica CONGELADA no início. Sem isto, o
         lookAt continuava a correr durante o mergulho e reescrevia o
@@ -71,8 +62,8 @@ const GkDive = {
             t: 0,
             dirX: dirX || 1,
             tipo: tipo || 'meio',
-            alvoX: alvoFinalX,
-            alvoY: alvoFinalY,
+            alvoX: alvoX,
+            alvoY: alvoY,
             x0: corpo.position.x,
             y0: corpo.position.y,
             v0x: 0, v0y: 0,
@@ -149,28 +140,8 @@ const GkDive = {
             case 'ler':
                 // Agacha e carrega o peso na perna do lado do mergulho.
                 this.poseCarregar(rig, Math.min(1, d.t / D.tempoLer) * 0.4);
-                if (d.t >= D.tempoLer) { d.fase = 'passos'; d.t = 0; }
+                if (d.t >= D.tempoLer) { d.fase = 'impulso'; d.t = 0; }
                 break;
-                
-            case 'passos': {
-                // Passada lateral curta para transferir momento
-                const k = Math.min(1, d.t / D.tempoPassos);
-                this.poseCarregar(rig, 0.4 + Math.sin(k * Math.PI) * 0.2); // Shuffle
-                
-                const dx = d.alvoX - corpo.position.x;
-                const passoDir = Math.sign(dx);
-                // Se ainda está longe, dá passada
-                if (Math.abs(dx) > D.alcanceBraco * 1.5) {
-                    corpo.position.x += passoDir * D.velPassos * dt;
-                }
-                
-                // Transita para impulso
-                if (d.t >= D.tempoPassos || Math.abs(dx) <= D.alcanceBraco) {
-                    d.fase = 'impulso';
-                    d.t = 0;
-                }
-                break;
-            }
 
             case 'impulso': {
                 const k = Math.min(1, d.t / D.tempoImpulso);
@@ -195,9 +166,9 @@ const GkDive = {
                 d.ang = d.angMax * (0.18 + 0.82 * s);
 
                 this.poseVoo(rig);
-                this.mirarBola(p, rig, true);
+                this.mirarBola(p, rig);
 
-                if (corpo.position.y <= D.alturaDeitado && d.v0y - g * t <= 0) { // Só aterra se estiver a cair
+                if (corpo.position.y <= D.alturaDeitado) {
                     corpo.position.y = D.alturaDeitado;
                     d.fase = 'chao';
                     d.t = 0;
@@ -271,79 +242,17 @@ const GkDive = {
     baixo da linha ombro-mão, mesmo com o corpo deitado. Ver a nota sobre pole
     vectors em js/ik.js.
     */
-    mirarBola(p, rig, isVoo = false) {
+    mirarBola(p, rig) {
         const D = GoalkeeperDive;
         const C = IKChains.braco;
-        const d = p.dive;
-
-        /*
-        DESISTIR É A ÚLTIMA COISA, não a primeira. Ver GoalkeeperDive.quedaFolga
-        e passouFolga: com o limiar antigo (`y < 0.8`, corpo deitado a 0.42)
-        41% dos frames de voo tinham os braços recolhidos.
-        */
-        const bolaPassou = (Math.sign(p.dirZ) * (Match.ball.position.z - p.model.position.z) < -D.passouFolga);
-        const caindo = (isVoo && d.v0y - BallPhysics.gravidade * d.t < 0);
-        const pertoDoChao = (p.model.position.y < D.alturaDeitado + D.quedaFolga);
-        /*
-        E a queda perto do chão só conta DEPOIS de a bola ter sido tocada: num
-        mergulho rasteiro o `v0y` é quase zero, portanto `caindo` é verdade
-        desde o primeiro frame e o corpo nunca sobe dos 0.60 m — com a regra
-        anterior ele ia buscar a bola no chão de braços fechados. Medido: dos
-        25% de frames que ainda recolhiam os braços, a esmagadora maioria eram
-        estes.
-        */
-        const aPrepararQueda = !d.agarrou &&
-            (bolaPassou || (d.tocou && caindo && pertoDoChao));
-
-        if (aPrepararQueda) {
-            // "Braços para baixo, paralelos ao corpo" - prepara a queda no chão
-            rig.lArm.rotation.x = lerpTo(rig.lArm.rotation.x, 0.2, 0.3);
-            rig.rArm.rotation.x = lerpTo(rig.rArm.rotation.x, 0.2, 0.3);
-            rig.lArm.rotation.z = lerpTo(rig.lArm.rotation.z, 0.1, 0.3);
-            rig.rArm.rotation.z = lerpTo(rig.rArm.rotation.z, -0.1, 0.3);
-            rig.lElbow.rotation.x = lerpTo(rig.lElbow.rotation.x, 0.1, 0.3);
-            rig.rElbow.rotation.x = lerpTo(rig.rElbow.rotation.x, 0.1, 0.3);
-            return;
-        }
 
         // Ligeira antecipação: mira onde a bola vai estar, não onde está.
         const prev = (typeof preverBolaEm === 'function') ? preverBolaEm(0.06) : null;
         if (prev) this._alvoMao.set(prev.x, prev.y, prev.z);
         else this._alvoMao.copy(Match.ball.position);
 
-        /*
-        BOLA ALTA: MÃO TROCADA. A mão de FORA (a do lado contrário ao mergulho)
-        é a que vai à bola — é ela que cruza por cima da cabeça e chega ao
-        ângulo. A de dentro estica no mesmo alinhamento, um pouco atrás, para
-        as duas lerem como braços abertos e não como um braço a tapar o outro.
-
-        `ladoLocal` diz se o +X do modelo aponta para o lado do mergulho (ver
-        iniciar). O braço esquerdo está em +X local, portanto com ladoLocal=+1
-        o esquerdo é o de DENTRO e o direito o de fora.
-        */
-        const alta = this._alvoMao.y >= D.maoTrocadaY;
-        const dentroEsquerda = (d.ladoLocal || 1) > 0;
-        const bracoDentro = dentroEsquerda
-            ? { raiz: rig.lArm, meio: rig.lElbow } : { raiz: rig.rArm, meio: rig.rElbow };
-        const bracoFora = dentroEsquerda
-            ? { raiz: rig.rArm, meio: rig.rElbow } : { raiz: rig.lArm, meio: rig.lElbow };
-
-        if (alta) {
-            // O secundário mira um ponto atrás da bola, na linha ombro->bola.
-            bracoDentro.raiz.getWorldPosition(this._v2);
-            this._v.subVectors(this._alvoMao, this._v2);
-            const n = this._v.length() || 1;
-            this._v2.copy(this._alvoMao).addScaledVector(this._v, -D.atrasoMaoSecundaria / n);
-
-            IK.resolverSuave(bracoFora.raiz, bracoFora.meio, C.L1, C.L2,
-                this._alvoMao, this._cima, D.pesoIK);
-            IK.resolverSuave(bracoDentro.raiz, bracoDentro.meio, C.L1, C.L2,
-                this._v2, this._cima, D.pesoIK);
-        } else {
-            // Defesa normal: os dois braços à bola, esticados.
-            IK.resolverSuave(rig.lArm, rig.lElbow, C.L1, C.L2, this._alvoMao, this._cima, D.pesoIK);
-            IK.resolverSuave(rig.rArm, rig.rElbow, C.L1, C.L2, this._alvoMao, this._cima, D.pesoIK);
-        }
+        IK.resolverSuave(rig.lArm, rig.lElbow, C.L1, C.L2, this._alvoMao, this._cima, D.pesoIK);
+        IK.resolverSuave(rig.rArm, rig.rElbow, C.L1, C.L2, this._alvoMao, this._cima, D.pesoIK);
 
         this.defender(p, rig);
     },

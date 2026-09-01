@@ -62,36 +62,10 @@ function estiloAtivoDe(p) {
 }
 
 /*
-=============================================================================
-A METADE DEFENSIVA — e porque não pode passar pelo `estiloAtivoDe`
-=============================================================================
-O `estiloAtivoDe` devolve `EstiloBase` quando `p.styleAtivo` é falso. E o
-`avaliarEstilo` DESLIGA o `styleAtivo` assim que a equipa entra em fase
-defensiva — de propósito, para não arrastar laterais e meias para o ataque sem
-a bola.
-
-Ou seja: a metade defensiva lida por ali nunca correria. Medido antes desta
-função existir, o recuo do estilo aplicava-se em 0.17 m dos 1.0 m pedidos —
-cerca de um sexto dos frames, os da transição antes de o estilo desligar.
-
-`styleAtivo` continua a querer dizer "a metade OFENSIVA está a ser exercida".
-A metade defensiva depende só de duas coisas: o estilo existir e ter `defensivo`,
-e o interruptor do painel (`playingStyleDesligado`) não estar em off. Qual das
-duas corre é a FASE que decide, no aplicarEstiloPosicional.
-
-Devolve null quando não há metade defensiva — e é isso que faz o jogador cair
-na segunda camada (slot no bloco, marcação, mola), como foi pedido.
+Estilo válido para uma posição? Usado na atribuição e na UI: escolher
+"Anchor Man" para um avançado não faz sentido nenhum e seria um erro
+silencioso (os modificadores aplicavam-se na mesma).
 */
-function estiloDefensivoDe(p) {
-    if (!p || p.playingStyleDesligado || !p.playingStyle) return null;
-    if (typeof Config !== 'undefined' && !Config.usePlayingStyles) return null;
-    const def = PlayingStyles[p.playingStyle];
-    if (!def || !def.defensivo) return null;
-
-    const base = (typeof EstiloDefensivoBase !== 'undefined') ? EstiloDefensivoBase : {};
-    return Object.assign({}, base, def.defensivo);
-}
-
 function estiloValidoPara(chave, pos) {
     const def = PlayingStyles[chave];
     if (!def || !def.posicoes) return false;
@@ -245,14 +219,14 @@ const PlayingStyleTriggers = {
     the_destroyer: (p, bb, s) => !s.atacando && bb.oppCarrier &&
         p.model.position.distanceTo(bb.oppCarrier.model.position) < 18,
 
-    // Inicia de trás: fase de construção. Permanece ativo na transição defensiva para não saltar à frente
-    orchestrator: (p, bb, s) => s.bolaAvanco < 10,
+    // Inicia de trás: fase de construção.
+    orchestrator: (p, bb, s) => s.atacando && s.bolaAvanco < 10,
 
     // Trinco: senta-se sempre que a equipa sobe, e a defender também.
     anchor_man: () => true,
 
-    // Sai a jogar: bola no nosso terço. Permanece ativo na defesa.
-    build_up: (p, bb, s) => s.bolaAvanco < -10,
+    // Sai a jogar: bola no nosso terço.
+    build_up: (p, bb, s) => s.atacando && s.bolaAvanco < -10,
 
     // Central que sobe: último terço, e não quando já se ganha por 2+ (não
     // vale a pena expor a defesa nesse caso).
@@ -322,9 +296,7 @@ function avaliarEstilo(p, bb, dt) {
     if (typeof TeamState !== 'undefined' && bb.state !== TeamState.OFFENSIVE) {
         if (p.playingStyle !== 'anchor_man' && 
             p.playingStyle !== 'defensive_fullback' && 
-            p.playingStyle !== 'the_destroyer' &&
-            p.playingStyle !== 'orchestrator' &&
-            p.playingStyle !== 'build_up') {
+            p.playingStyle !== 'the_destroyer') {
             quer = false;
         }
     }
@@ -494,33 +466,6 @@ function melhorVaoX(p, bb, zAlvo, candidatosX) {
     return melhorX;
 }
 
-/*
-=============================================================================
-A PRESSÃO DO ESTILO — quanto ele aperta o homem, comparado com o botão
-=============================================================================
-`PlayingStyles.*.defensivo.pressao` multiplica a distância a que o jogador
-acompanha o seu homem: >1 marca mais apertado, <1 dá espaço. Compõe-se com o
-`Tatics.pressaoDefensiva` do painel em vez de o substituir — o botão continua a
-ser o controlo da equipa, e o estilo é a personalidade de um jogador dentro
-dele.
-
-Fica limitado por `MarkingModel.distanciaMinimaEstilo`: por muito agressivo que
-o estilo seja, encostar-se ao homem a meio metro não é marcar, é falta.
-
-Devolve a distância já corrigida. Sem estilo, sem metade defensiva, ou em fase
-ofensiva, devolve a distância tal como veio.
-*/
-function distanciaComEstilo(p, distancia) {
-    if (typeof estiloDefensivoDe !== 'function') return distancia;
-    const D = estiloDefensivoDe(p);
-    if (!D || !D.pressao || D.pressao === 1.0) return distancia;
-
-    const M = (typeof MarkingModel !== 'undefined') ? MarkingModel : null;
-    const minimo = (M && typeof M.distanciaMinimaEstilo === 'number')
-        ? M.distanciaMinimaEstilo : 1.0;
-    return Math.max(minimo, distancia / D.pressao);
-}
-
 /* =========================================================================
    CAMADA POSICIONAL DO PLAYING STYLE
    =========================================================================
@@ -538,46 +483,6 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
 
     const est = estiloAtivoDe(p);
 
-    /*
-    =====================================================================
-    QUAL DAS METADES DO ESTILO CORRE: decide a FASE, não o estilo
-    =====================================================================
-    Os campos soltos do estilo (`avanco`, `largura`, `ombroDefesa`...) são a
-    metade OFENSIVA. A metade defensiva vive no bloco `defensivo` e só existe
-    nos estilos que têm mesmo comportamento sem posse (ver PlayingStyles).
-
-    Quem não tiver metade defensiva não desloca NADA a defender: fica com o
-    posicionamento normal — slot no bloco, marcação, mola de coesão —, que é a
-    segunda camada. É deliberado: um Goal Poacher sem a bola não tem
-    identidade defensiva nenhuma, e inventar-lhe uma era pior do que não ter.
-
-    A fase é a mesma que o `avaliarEstilo` usa para ligar e desligar o estilo,
-    e conta as DUAS transições: sem posse, ou em T.Defensive/Defensive. Um
-    jogador em transição defensiva já não está a atacar, mesmo que a posse
-    ainda não tenha mudado de mãos no Match.
-
-    Antes: a metade ofensiva corria SEMPRE, e o único cuidado era anular o
-    `avanco` positivo a defender. Um Anchor Man (avanco -7) levava o recuo
-    ofensivo dele para a fase defensiva, e o `pressao` que a config lhe dava
-    não era lido por ninguém.
-    */
-    const faseDefensivaEst = !bb || !bb.isAttacking ||
-        (typeof TeamState !== 'undefined' &&
-            (bb.state === TeamState.TRANSITION_DEFENSIVE || bb.state === TeamState.DEFENSIVE));
-
-    if (faseDefensivaEst) {
-        // NÃO pelo `est`: o estiloAtivoDe devolve EstiloBase quando o estilo
-        // está desligado, e é precisamente isso que a fase defensiva faz. Ver
-        // a nota do estiloDefensivoDe.
-        const D = (typeof estiloDefensivoDe === 'function') ? estiloDefensivoDe(p) : null;
-        if (!D) return { x: targetX, z: targetZ };   // -> segunda camada
-
-        // O `recuo` é o espelho do `avanco`: metros ATRÁS do slot, no
-        // referencial de ataque.
-        if (D.recuo) targetZ -= D.recuo * p.dirZ;
-        return { x: targetX, z: targetZ };
-    }
-
 
         // Avanço/recuo, no referencial de ataque.
         let avanco = est.avanco;
@@ -593,29 +498,7 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
                 avanco = 0;
             }
         }
-        if (avanco !== 0) {
-            targetZ += avanco * p.dirZ;
-
-            // Evitar que médios e atacantes recuem para trás da linha de centrais (CB)
-            if (avanco < 0 && (p.role === 'mid' || p.role === 'atk')) {
-                if (bb && bb.own) {
-                    let maxCBZ = null;
-                    for (const c of bb.own) {
-                        if (c.role === 'def' && c.pos === 'CB' && c !== p && c.slotTarget) {
-                            const cz = c.slotTarget.z * p.dirZ;
-                            if (maxCBZ === null || cz > maxCBZ) maxCBZ = cz;
-                        }
-                    }
-                    if (maxCBZ !== null) {
-                        // O médio tem que estar pelo menos 2 metros à frente do CB mais avançado
-                        const zAtk = targetZ * p.dirZ;
-                        if (zAtk < maxCBZ + 2.0) {
-                            targetZ = (maxCBZ + 2.0) * p.dirZ;
-                        }
-                    }
-                }
-            }
-        }
+        if (avanco !== 0) targetZ += avanco * p.dirZ;
 
         // Largura: + abre para a linha do LADO DELE, − fecha para o eixo.
         if (est.largura !== 0) {
@@ -632,22 +515,7 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
         */
         if (est.ombroDefesa && bb && bb.isAttacking &&
             bb.offsideLimitDir !== null && bb.offsideLimitDir !== undefined) {
-            
-            let zAtk = bb.offsideLimitDir - 0.5;
-            
-            // O Goal Poacher procura a linha de impedimento, mas não deve se desligar
-            // completamente do bloco da equipa (o que causaria a "movimentação maluca" 
-            // de ir muito além do TeamBT e depois recuar tudo quando perde a posse).
-            if (bb.bloco && bb.bloco.z1 !== undefined) {
-                const limiteFrente = bb.bloco.z1 + 12.0; // Máximo 12m à frente do bloco
-                if (zAtk > limiteFrente) zAtk = limiteFrente;
-            }
-
-            // Não deve recuar para trás da sua posição original projetada
-            const zAtkBase = targetZ * p.dirZ;
-            if (zAtk < zAtkBase) zAtk = zAtkBase;
-            
-            targetZ = zAtk * p.dirZ;
+            targetZ = (bb.offsideLimitDir - 0.5) * p.dirZ;
             targetX = melhorVaoX(p, bb, targetZ,
                 [-16, -12, -8, -4, 0, 4, 8, 12, 16]);
         }
@@ -701,10 +569,6 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
                 const fd = Math.abs(fx) || 1;
                 targetX += (fx / fd) * 7.0;
             }
-
-            // Evita colapso de múltiplos Dummy Runners no mesmo alvo usando a base natural do slot
-            const espalhamentoExtra = p.slot ? (p.slot.u - 0.5) * 6.0 : ((p.id % 3) - 1) * 3.0;
-            targetX += espalhamentoExtra;
 
             // Desloca-se em Z à frente da jogada/portador (profundidade de ataque)
             const zAtkMin = (carrierZ * p.dirZ) + 6.0;
@@ -790,68 +654,18 @@ marcação chega a 10 m, muito mais do que os 2.5 m de folga que este tecto dá.
 
 Corta só o excesso: nunca empurra para trás quem já estava aquém do tecto.
 */
-function aplicarTectoDoEstilo(p, targetZ, bb) {
+function aplicarTectoDoEstilo(p, targetZ) {
     if (typeof estiloAtivoDe !== 'function') return targetZ;
     const est = estiloAtivoDe(p);
+    if (!est || !est.travaNaEntradaArea) return targetZ;
 
-    /*
-    ÂNCORA NA LINHA DA BOLA (Box-to-Box) — ver PlayingStyles.box_to_box.
-
-    Corre ANTES dos tectos, e a partir do estilo CONFIGURADO e não do
-    `estiloAtivoDe`: este devolve `EstiloBase` sempre que o `styleAtivo` está
-    desligado, e o gatilho do Box-to-Box (`isCounter || distBola > 18`) desliga-o
-    metade do tempo. O pedido é "SEMPRE uns 4 m à frente / 3 m atrás", portanto
-    não pode depender do gatilho — só do estilo estar escolhido no painel e da
-    mentalidade do painel táctico.
-
-    O tecto da entrada da área, logo a seguir, continua a poder cortá-la: a
-    âncora diz onde ele quer estar, o tecto diz até onde pode ir.
-    */
-    if (bb && typeof Tatics !== 'undefined' && p && p.playingStyle === 'box_to_box' &&
-        !p.playingStyleDesligado &&
-        !(typeof Config !== 'undefined' && Config.usePlayingStyles === false)) {
-        const cfg = PlayingStyles.box_to_box && PlayingStyles.box_to_box.ancoraNaBola;
-        const offset = cfg ? cfg[Tatics.estilo] : undefined;
-        if (typeof offset === 'number') {
-            const bolaDir = (typeof bb.bolaZSuave === 'number' ? bb.bolaZSuave : (bb.ballZ || 0)) * bb.dir;
-            targetZ = (bolaDir + offset) * p.dirZ;
-        }
-    }
-
+    // Linha da grande área: CAMPO_COMP / 2 (53) - 16.5 = 36.5.
+    // 10 metros antes disso: 26.5.
+    const lim = 26.5; 
     const zAtaque = targetZ * p.dirZ;
-
-    if (est && est.travaNaEntradaArea) {
-        // Linha da grande área: CAMPO_COMP / 2 (53) - 16.5 = 36.5.
-        // 10 metros antes disso: 26.5.
-        const lim = 26.5; 
-        if (zAtaque > lim) return lim * p.dirZ;
-        if (zAtaque < -lim) return -lim * p.dirZ;
-    }
-
-    if (est && est.travaNaIntermediaria) {
-        /*
-        A ENTRELINHA, e não uma distância absoluta.
-
-        Era 15 m à frente do meio-campo — um número fixo que não sabe nada de
-        onde a equipa está. Com o bloco subido, 15 m à frente do meio-campo é
-        à frente dos médios, e o Orquestrador aparecia no ataque. Medido: 0.392
-        do bloco, e acima da linha média 23.8% do tempo.
-
-        O Orquestrador organiza de TRÁS: o tecto dele é a LINHA MÉDIA do bloco
-        (`zMid`), ou seja o espaço entre os defesas e os médios. Sobe com a
-        equipa e desce com ela, que é o que a entrelinha quer dizer.
-
-        Sem bloco (bola parada, arranque) fica o limite antigo, que ao menos não
-        o deixa ir à área.
-        */
-        if (bb && bb.bloco) {
-            const tectoDir = bb.bloco.zMid * bb.dir * p.dirZ;
-            if (zAtaque > tectoDir) return tectoDir * p.dirZ;
-        } else {
-            const limIntermediaria = 15.0;
-            if (zAtaque > limIntermediaria) return limIntermediaria * p.dirZ;
-        }
-    }
+    
+    if (zAtaque > lim) return lim * p.dirZ;
+    if (zAtaque < -lim) return -lim * p.dirZ;
 
     return targetZ;
 }

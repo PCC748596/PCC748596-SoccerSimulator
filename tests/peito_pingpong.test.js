@@ -94,14 +94,8 @@ console.log(LF + '2 — porque é que o ciclo se fecha sozinho');
 */
 console.log(LF + '3 — o limite corta a sequência');
 {
-    /*
-    Até ao fim do ramo do peito, e não uma janela de N caracteres: uma janela
-    fixa cortava as linhas do contador assim que a decisão do peito ganhou a
-    verificação de pressão (ver BallControl.peitoSemPressao).
-    */
     const i = srcMatch.indexOf('const maxPeitos');
-    const fim = i < 0 ? -1 : srcMatch.indexOf('let dominou;', i);
-    const bloco = (i < 0 || fim < 0) ? '' : srcMatch.slice(i, fim);
+    const bloco = i < 0 ? '' : srcMatch.slice(i, i + 1600);
 
     if (!bloco) {
         erro('o limite não está no resolveBallContact');

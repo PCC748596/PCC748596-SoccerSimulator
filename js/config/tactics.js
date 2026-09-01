@@ -165,15 +165,7 @@ const TeamShape = {
     // Construção: com a bola aquém deste Z, um médio desce a dar linha de passe.
     supportBallZ: -6.0,
     supportAhead: 9.0,    // quantos metros à frente da bola se oferece
-    supportWide: 8.0,     // e quanto abre para o lado, para abrir o corredor
-
-    /*
-    Na saída de jogo e na progressão com posse até ao círculo central,
-    a linha de defesa acompanha a linha da bola cerca de 3 m atrás,
-    evitando que os defesas fiquem demasiado para trás.
-    */
-    distanciaDefesaSaida: 3.0,
-    limiteSaidaCirculoCentral: 0.0
+    supportWide: 8.0      // e quanto abre para o lado, para abrir o corredor
 };
 
 /*
@@ -204,121 +196,6 @@ Tudo aqui em fracções, no REFERENCIAL DE ATAQUE:
 // 3.0 => ~0.33 s de constante de tempo.
 const PositionSmoothing = 3.0;
 
-/*
-=============================================================================
-O PAR DO CORREDOR — o lateral e o médio de ala não correm no mesmo espaço
-=============================================================================
-Um de cada vez ocupa a linha. O outro fecha para dentro e dá a opção de passe
-pelo meio-espaço. Qual deles vai à linha decide-se por quem está mais
-ADIANTADO: é isso que faz o lateral só ultrapassar o médio quando o médio já
-caiu para dentro, ou durante o overlap de uma tabela — e não por ter um estilo
-ligado no painel.
-
-Sem isto os dois recebiam o mesmo corredor do bloco (o `u` do slot) mais o
-mesmo empurrão para a frente, e corriam colados o jogo inteiro.
-
-    fechoDentro   metros que o de dentro fecha em direcção ao eixo. Não é ir
-                  para o meio: é o meio-espaço, entre o corredor e o eixo.
-    margemTroca   histerese. O de trás só toma a linha quando passa o outro
-                  por esta margem — sem ela trocavam de papel a cada frame em
-                  que se cruzassem.
-    recuoDeDentro metros que o de dentro fica atrás do de fora, para os dois
-                  não ficarem na mesma linha horizontal também.
-*/
-/*
-=============================================================================
-ESPACAMENTO — os empurroes que separam quem esta demasiado junto
-=============================================================================
-Duas forcas somadas no fim do nivel 2 (ver docs/level_2_rules.md, passo 4):
-
-    colega       ninguem ocupa o posto de outro
-    adversario   com a bola, procura-se espaco livre
-
-O que faltava era o TECTO DA SOMA. Cada colega dentro do raio contribuia ate
-`forcaColega` metros e cada adversario ate `forcaAdversario`, sem limite: com
-quatro pessoas a volta o alvo saltava dez e tal metros e saia do bloco. Agora a
-soma e cortada em `deslocacaoMax` — e um empurrao, nao um teletransporte.
-
-`zonaMinimaFuga` no referencial de ataque: abaixo disto nao se foge de ninguem,
-senao um medio a fugir de um avancado corre para a propria baliza na saida de
-bola.
-
-`paresIguais` e outra coisa e vive aqui por ser da mesma familia: a distancia
-que dois jogadores da MESMA posicao tem de manter entre si. A repulsao acima e
-generica e reactiva (so age quando ja estao perto); esta e por posicao e e uma
-regra dura. Medido antes de existir: 1.1% dos frames com os dois centrais a
-menos de 4 m um do outro.
-*/
-const EspacamentoModel = {
-    raioColega: 3.5,
-    forcaColega: 3.0,
-    raioAdversario: 6.0,
-    forcaAdversario: 4.0,
-    zonaMinimaFuga: -5.0,
-    deslocacaoMax: 4.0,
-
-    paresIguais: {
-        CB: 9.0,
-        CM: 8.0,
-        CF: 8.0
-    },
-
-    /*
-    ESPACAMENTO LATERAL MINIMO ENTRE VIZINHOS DA MESMA LINHA.
-
-    O `paresIguais` acima so olha para jogadores da MESMA posicao (dois
-    centrais, dois medios-centro). Nao apanha o caso mais comum: um medio que
-    desce para a linha defensiva e fica encostado ao central ou ao lateral —
-    posicoes diferentes, mesma linha.
-
-    Medido no alvo final: intervalo medio de 7.4 m entre vizinhos da linha
-    defensiva, mas MENOR intervalo de 5.0 m e 46% dos frames com dois vizinhos
-    a menos de 4 m. A linha existe, mas tem sempre dois colados algures.
-
-    Isto e uma regra dura e corre no fim, depois do estilo: separa em X (uma
-    linha e espacamento lateral) e so entre quem esta MESMO na mesma linha, com
-    a profundidade parecida (`faixaZ`) — senao um avancado recuado empurrava um
-    medio de lado.
-    */
-    linhaMinX: 8.5,
-    linhaFaixaZ: 8.0
-};
-
-const WingPairModel = {
-    fechoDentro: 7.0,
-    margemTroca: 2.5,
-    recuoDeDentro: 2.0,
-
-    /*
-    QUANDO E QUE O LATERAL TOMA A LINHA.
-
-    Era "quem esta mais adiantado" — e isso e um ciclo: o lateral adianta-se um
-    metro, ganha a linha, o medio fecha, e ja nada segura o lateral. Medido, o
-    lateral acabava dentro da grande area adversaria em 16% dos frames com
-    posse.
-
-    O pedido era outro: o lateral so ultrapassa o medio SE O MEDIO CAIR PELO
-    MEIO. Portanto o criterio e a posicao LATERAL do medio, nao a profundidade
-    do lateral: enquanto o medio estiver no corredor, a linha e dele.
-
-    `midDentroX` e a distancia ao eixo abaixo da qual se considera que o medio
-    fechou. `avancoParaOverlap` e a excepcao da tabela: o lateral tambem toma a
-    linha se estiver mesmo lancado a frente dele.
-    */
-    midDentroX: 6.5,
-    avancoParaOverlap: 6.0,
-
-    /*
-    ATE ONDE O LATERAL SOBE, no referencial de ataque. E uma regra de lugar
-    (nivel 2), nao um estilo: um lateral nao acaba a jogada dentro da area,
-    quem faz isso e o `fullback_finisher`, que esta explicitamente isento.
-
-    36.0 seria a linha da grande area; 30 deixa-o chegar a zona do cruzamento e
-    nao a do remate.
-    */
-    limiteAvanco: 30.0
-};
-
 const BlockShape = {
     /*
     Guarda-redes com a bola nas mãos: quanto se AFASTAM da baliza dele os dois
@@ -342,100 +219,12 @@ const BlockShape = {
     definição de compacidade do painel. A traseira deste rectângulo é a linha
     do fora-de-jogo da equipa — ver computeBlock em team_bt.js.
     */
-    /*
-    QUANTO O ALVO DO NIVEL 2 PODE SAIR DO RECTANGULO DO BLOCO.
-
-    O anel medio do debug tem de poder discordar do anel grande — e nisso que
-    se ve a marcacao, a mola e o espacamento a trabalhar. O que nao pode e o
-    alvo andar a dez metros do bloco por soma de desvios: isso ja nao e
-    tactica, e a camada a fugir.
-
-    Medido antes de existir: 6.2% dos alvos tacticos fora do rectangulo, alguns
-    a dezenas de metros. Ver docs/level_2_rules.md, passo 10.
-    */
-    folgaForaDoBloco: 5.0,
-
     profundidade: {
         short: 30 / 106,          // 30 m — bloco curto
         mediumSmall: 40 / 106,    // 40 m — médio-curto
         median: 50 / 106,         // 50 m — bloco médio (padrão)
         mediumLarge: 60 / 106,    // 60 m — médio-longo
         large: 70 / 106           // 70 m — bloco longo
-    },
-
-    /*
-    =====================================================================
-    AS TRÊS LINHAS DO BLOCO — defesa, meio e ataque
-    =====================================================================
-    Fracções da profundidade: 0 é a traseira (a linha do fora-de-jogo da
-    equipa) e 1 é a frente. O `v` de cada jogador, que vem da formação,
-    interpola entre estas três âncoras — ver calcularPontoDoSlot em
-    team_bt.js.
-
-    O ATAQUE TEM DE SER 1.0. Estava escrito em código como `z0 + 2/3 da
-    profundidade`, e isso deixava o TERÇO DA FRENTE DO BLOCO VAZIO por
-    construção: o avançado (v = 1.0) parava a dois terços. Toda a formação
-    encolhia com ele —
-
-        pos     v       devia ficar   ficava em
-        CB     0.000        0%           0%
-        LB/RB  0.091        9.1%         6.1%
-        CM     0.455       45.5%        30.3%
-        LM/RM  0.545       54.5%        36.3%
-        CF     1.000      100%          66.7%
-
-    — e o número da `profundidade` aqui em cima passava a mentir por um
-    terço: 40 m configurados davam 27 m ocupados, com 13 m vazios à frente.
-
-    Ficam aqui e não em código porque é isto que faz as três linhas serem
-    ajustáveis em vez de decorativas: aproximar `meio` da `defesa` dá um
-    bloco com o miolo recuado (defesa e meio juntos, ataque isolado à
-    frente); afastá-lo dá o contrário.
-
-    O `ataque` NÃO é 1.0, e é de propósito. Com 1.0 o avançado (v = 1.000 na
-    442) ia parar à borda da frente do rectângulo e ficava sozinho lá à frente:
-    medido, num bloco de 40 m, o CF caía a +18.3 m do meio-campo com o CM a
-    -3.6 — **21.8 m entre o meio-campo e o ataque**, que é uma equipa partida
-    em duas.
-
-    O `v` da formação salta de 0.545 (médios de ala) para 1.000 (avançados) sem
-    nada pelo meio, portanto essa distância é 45% da profundidade do bloco. É
-    a linha do ataque que tem de vir para trás, e não a formação que tem de
-    mudar — a formação é do treinador.
-
-        ataque   CF (m do meio-campo)   distância CM -> CF
-        1.00           +18.3                 21.8 m
-        0.85           +12.4                 15.8 m
-        0.82           +10.5                 14.2 m   <- é este
-        0.78            +9.0                 13.0 m
-        0.70            +6.1                  9.8 m
-
-    Consequência assumida: ninguém ocupa os últimos 18% do rectângulo. A borda
-    da frente do bloco continua a servir para o que sempre serviu (o desenho, o
-    fora-de-jogo), mas deixa de ser um sítio onde há gente.
-    */
-    linhas: {
-        /*
-        CALIBRADO PARA 15 m ENTRE LINHAS (pedido).
-
-        As fracções não são a posição das linhas: são onde o `v` da formação
-        aterra. O `v` da 442 é CB 0.000, CM 0.455, CF 1.000, portanto o CM cai
-        em `0.91 * meio` e o CF em `ataque`. Com o bloco de 40 m que a
-        compacidade dá por omissão:
-
-            defesa -> meio    36.4 * meio    = 15 m  ->  meio   = 0.41
-            meio -> ataque    40 * ataque - 15 = 15  ->  ataque = 0.75
-
-        Medido depois:  CB -21.6 | CM -6.6 | CF +8.4,  ou seja 15.0 e 15.0.
-
-        Isto ESCALA com a profundidade do bloco: o painel de compacidade mexe
-        na profundidade, e 15 m é o espaçamento no valor por omissão. Com o
-        bloco mais curto as linhas juntam-se na mesma proporção, que é o que a
-        compacidade quer dizer.
-        */
-        defesa: 0.0,
-        meio: 0.41,
-        ataque: 0.75
     },
 
     /*
@@ -543,99 +332,7 @@ const LineShape = {
         def: { comBola: 0.92, semBola: 0.78 },
         mid: { comBola: 1.00, semBola: 0.88 },
         atk: { comBola: 1.00, semBola: 0.80 }
-    },
-
-    /*
-    =====================================================================
-    A LINHA FECHA-SE QUANDO PERDE GENTE
-    =====================================================================
-    O `u` de cada jogador vinha só do slot da formação e não sabia quantos
-    estavam de facto na linha. Se um central subia, os que ficavam mantinham
-    exactamente o mesmo `u` — três homens espalhados pelos mesmos metros, com
-    um buraco onde ele estava.
-
-    Medido a 30 de Agosto, linha de trás definida como quem está a menos de
-    6 m do jogador mais recuado:
-
-        na linha de trás: 2.71 jogadores (1.83 centrais, 0.71 laterais)
-        distribuição: 1 -> 11.6%   2 -> 46.7%   3 -> 8.7%   4 -> 26.2%
-        largura ocupada: 18.7 m
-
-    `porFalta` é quanto a linha encolhe por cada jogador em falta face ao que
-    a formação lá põe. Com a linha completa o factor é 1.0 e NADA MUDA — foi a
-    condição imposta a esta alteração. A perder um, os que ficam aproximam-se
-    do eixo; a perder dois, mais ainda.
-
-        4 de 4 -> 1.00      3 de 4 -> 0.82      2 de 4 -> 0.64
-
-    `minimoAtras` é a regra do mínimo: por muito que a equipa suba, a linha de
-    trás não pode ficar com menos do que isto. Quem estiver mais perto de lá é
-    travado à altura da linha em vez de subir.
-    */
-    porFalta: 0.18,
-    fechoMinimo: 0.45,      // chão: nem com a linha quase vazia se fecha mais
-    minimoAtras: 2,         // jogadores que a linha de trás nunca perde
-    faixaDaLinha: 6.0,      // metros do mais recuado que ainda contam como linha
-
-    /*
-    O PAR DO MESMO LADO: lateral e meia-lateral.
-
-    Medido a 30 de Agosto: ficam a **3.0 m um do outro em x** — o mesmo
-    corredor — e a menos de 4 m em linha recta em 14.7% dos frames. É o par que
-    se vê amontoado junto à linha lateral.
-
-    Quando os dois caem na MESMA linha, o de trás fecha para dentro: o corredor
-    é do que subiu. `parFecho` é quanto o `u` dele se aproxima do eixo, e
-    `parDistX` é a partir de que proximidade em x a regra entra — acima disso
-    não estão amontoados e não há nada a corrigir.
-    */
-    parDistX: 7.0,
-    parFecho: 0.55,
-
-    /*
-    UM LATERAL DE CADA VEZ.
-
-    Sobe o do LADO DA JOGADA; o outro fica a auxiliar a zaga. Medido a 30 de
-    Agosto, em fase de ataque:
-
-        os DOIS laterais fora da linha de trás: 76.8%
-        só um: 12.3%          nenhum: 10.9%
-        e quando subia só um, era o do lado ERRADO da bola em 69.5% dos casos
-
-    Ou seja: quase sempre subiam os dois, e quando não subiam, subia o errado.
-    A zaga ficava com os dois centrais sozinhos e o contra-ataque tinha o campo
-    todo pelas costas.
-
-    `zonaMortaLado` é a largura, a contar do eixo, em que a bola não tem lado
-    definido: dentro dela mantém-se a escolha anterior. Sem isto os dois
-    laterais trocavam de papel a cada passe pelo meio — e um lateral a subir e a
-    descer todos os frames é pior do que dois lá em cima.
-    */
-    zonaMortaLado: 5.0,
-
-    /*
-    O OUTRO LATERAL NÃO PRECISA DE VOLTAR TANTO.
-
-    Com um lateral já na linha de trás, o outro não tem de correr até lá: pode
-    ficar com a LINHA MÉDIA, no meio-campo. É um PISO, não um empurrão — ele
-    fica onde estiver, desde que não caia abaixo da linha média do bloco.
-
-    Medido a 30 de Agosto, em fase DEFENSIVA e antes desta regra:
-
-        lateral mais recuado:   0.227 do bloco
-        lateral mais adiantado: 0.431 do bloco   <- abaixo da linha média (0.500)
-        com pelo menos um na linha de trás: 81.8% do tempo
-
-    Ou seja: os dois voltavam, e o adiantado ainda ficava aquém do meio-campo.
-
-    A CONDIÇÃO É O OUTRO ESTAR LÁ. Sem um lateral na linha de trás não há piso
-    nenhum — os dois voltam, como devem.
-
-    `pisoLinhaMedia` é a fracção do bloco abaixo da qual o adiantado não cai.
-    0.50 é a linha média; subir isto empurra-o mais para a frente e deixa a
-    equipa mais aberta ao contra-ataque pelo lado dele.
-    */
-    pisoLinhaMedia: 0.50
+    }
 };
 
 /*
@@ -832,54 +529,23 @@ const PlayingStyles = {
     /* --- Meio-campo ------------------------------------------------------ */
     box_to_box: {
         nome: 'Box-to-Box', posicoes: ['AM', 'LM', 'RM', 'CM', 'DM'],
-        amplitudeZ: 1.5, avancoComBola: 5,
-
-        /*
-        A LINHA DA BOLA É A ÂNCORA DELE, e é a MENTALIDADE do painel que diz de
-        que lado dela fica — pedido explícito. Metros no referencial de ataque:
-        positivo à frente da bola, negativo atrás.
-
-        As mentalidades que não estão aqui (equilibrada) não ancoram nada: fica
-        o posicionamento normal mais o `amplitudeZ`.
-
-        Isto não é um tecto, é um SÍTIO: ele é levado para lá, à frente ou
-        atrás, e não só impedido de o passar. Por isso corre no
-        aplicarTectoDoEstilo, que é o último a falar sobre o Z — a marcação
-        posicional, que corre depois do estilo, chega a desviar 10 m no terço
-        de ataque e desfazia qualquer âncora posta mais cedo.
-        */
-        ancoraNaBola: {
-            muito_ofensiva: 4.0,    // T.Offensive
-            ataque: 4.0,            // Offensive
-            defesa: -3.0,           // Defensive
-            muito_defensiva: -3.0   // T.Defensive
-        },
-
-        // O que sobe é o mesmo que desce: recuo curto e marcação um pouco
-        // mais apertada do que a do painel.
-        defensivo: { pressao: 1.2, recuo: 2.0 },
+        amplitudeZ: 1.5, avancoComBola: 5, pressao: 1.2,
         travaNaEntradaArea: true // "da entrada de uma área até a entrada da outra" — não passa da entrada
     },
     the_destroyer: {
         nome: 'The Destroyer', posicoes: ['CM', 'DM', 'CB'],
         driblar: 0.4,
-        avanco: -2, conduzir: 0.6, lancar: 0.7, amplitudeZ: 0.85,
-        // O que sai mais à bola de todos: 1.6 encurta a distância de
-        // marcação a dois terços da do painel.
-        defensivo: { pressao: 1.6, recuo: 1.0 }
+        avanco: -2, pressao: 1.6, conduzir: 0.6, lancar: 0.7, amplitudeZ: 0.85
     },
     orchestrator: {
         nome: 'Orchestrator', posicoes: ['CM', 'DM'],
         driblar: 0.5,
-        avanco: -5, passe: 1.35, lancar: 1.4, conduzir: 0.7, cadencia: 1.2,
-        travaNaIntermediaria: true
+        avanco: -5, passe: 1.35, lancar: 1.4, conduzir: 0.7, cadencia: 1.2
     },
     anchor_man: {
         nome: 'Anchor Man', posicoes: ['DM'],
         driblar: 0.3,
-        avanco: -7, lancar: 0.5, conduzir: 0.5, amplitudeZ: 0.6,
-        // O trinco não sai: recua para tapar o espaço à frente dos centrais.
-        defensivo: { pressao: 1.25, recuo: 3.0 }
+        avanco: -7, pressao: 1.25, lancar: 0.5, conduzir: 0.5, amplitudeZ: 0.6
     },
 
     /* --- Defesas --------------------------------------------------------- */
@@ -921,9 +587,7 @@ const PlayingStyles = {
     },
     defensive_fullback: {
         nome: 'Defensive Full-back', posicoes: ['LB', 'RB'],
-        avanco: -2, cruzar: 0.7,
-        // Segura a linha em vez de sair à bola.
-        defensivo: { pressao: 1.2, recuo: 2.5 }
+        avanco: -2, pressao: 1.2, cruzar: 0.7
     },
 
     /* --- Guarda-redes ---------------------------------------------------- */

@@ -24,62 +24,25 @@ const SlideTackleModel = {
 
     // A pose, em radianos. `lado` = +1 estica a perna direita, -1 a esquerda.
     pose: {
-        ancaRolar: 1.10,    // deita-se mais sobre a anca do lado oposto ao pé que estica
-        ancaTras: 0.10,     // pelvis inclinada para trás
-        peito: -0.25,       // tronco inclinado para trás
+        ancaRolar: 0.85,    // deita-se sobre a anca do lado oposto ao pé que estica
+        ancaTras: -0.25,
+        peito: -0.15,
         peitoRolar: 0.15,
 
-        coxaEstendida: -1.10, // perna que estica mais alta/frente
+        coxaEstendida: -0.95,
         joelhoEstendido: 0.10,
         peEstendido: -0.20,
 
-        coxaDobrada: 0.70,    // perna de baixo fica para trás
-        joelhoDobrado: 1.80,  // joelho bem dobrado (encolhida)
+        coxaDobrada: -0.10,
+        joelhoDobrado: 1.55,
 
-        bracoApoioZ: 0.60,  // braço de trás, no chão a apoiar
-        bracoApoioX: 0.50,
+        bracoApoioZ: 1.35,  // braço de trás, aberto e no chão a apoiar
+        bracoApoioX: 0.70,
         cotoveloApoio: -0.30,
 
-        bracoLivreZ: 0.40,  // braço da frente, levantado
-        bracoLivreX: -2.50, // atirado para cima/trás para equilíbrio
+        bracoLivreZ: 0.50,  // braço da frente, para equilíbrio
+        bracoLivreX: -0.50,
         cotoveloLivre: -0.60
-    },
-
-    /*
-    A MÃO DE APOIO NO RELVADO, POR IK.
-
-    Os ângulos `bracoApoio*` acima são uma pose fixa: com o corpo já rolado
-    sobre a anca a mão saía onde calhava — medido, 0.18 m ABAIXO do relvado a
-    meio do carrinho, e no ar noutros ângulos. Aqui é o contrário: o ponto no
-    chão é que manda, e o ombro/cotovelo saem da cadeia de dois ossos
-    (ver IK.resolverSuave, js/ik.js). Os ângulos fixos continuam a valer como
-    pose de partida — o `peso` mistura os dois, e a entrada/saída do carrinho
-    já é suave porque o peso é o próprio `intens` da pose.
-
-    alturaMao   altura do PIVÔ da mão, não da palma: o bloco da mão pendura
-                ~0.11 m abaixo do pivô, portanto isto é o que põe a palma a
-                roçar a relva sem a atravessar.
-    recuo       metros atrás do ombro (o braço escora, não fica debaixo do
-                corpo).
-    afastamento metros para fora, do lado em que está deitado.
-    peso        tecto da mistura IK vs pose fixa, multiplicado pelo `intens`.
-    */
-    apoioIK: {
-        /*
-        Comprimentos do braço EM UNIDADES DO MODELO, lidos do criarBraco
-        (pose.js): ombro->cotovelo 1.1, cotovelo->mão 0.95. Não se usa o
-        `IKChains.braco` (1.0/0.8) porque esse é aproximado — serve o mergulho
-        do GK, onde a mão só tem de ir na direcção da bola. Aqui a mão tem de
-        parar EXACTAMENTE à altura da relva, e 0.2 unidades de erro na cadeia
-        são ~5 cm de mão enterrada.
-        */
-        L1: 1.1,
-        L2: 0.95,
-        alturaMao: 0.11,
-        recuo: 0.30,
-        afastamento: 0.18,
-        poloCima: 0.5,
-        peso: 1.0
     }
 };
 
@@ -282,60 +245,6 @@ const MarkingModel = {
     Mentalidade.
     */
     distanciaPorPressao: { low: 4.5, balanced: 3.0, high: 1.5 },
-
-    /*
-    Chão para o aperto que o ESTILO acrescenta (ver distanciaComEstilo em
-    playing_styles.js). O botão do painel manda na equipa; o estilo do jogador
-    aperta ou alivia por cima disso — mas por muito agressivo que seja, marcar
-    a meio metro não é marcar, é falta.
-    */
-    distanciaMinimaEstilo: 1.2,
-
-    /*
-    =====================================================================
-    VEM AÍ UMA BOLA PARA O HOMEM À MINHA FRENTE
-    =====================================================================
-    Com um adversário a receber a cinco metros, o defesa recuava para o slot do
-    bloco e deixava-o receber livre e de frente. Medido a 30 de Agosto, defesas
-    a menos de 6 m de quem ia receber:
-
-        o alvo dele estava mais LONGE do receptor do que ele: 57.2% dos casos
-        afastamento médio do alvo: +2.30 m
-        NÃO tinha esse adversário atribuído como marcação: 55.6%
-
-    A terceira linha é a causa. Não era um defesa a fugir — era um defesa a quem
-    ninguém tinha dito que aquele homem era dele, e por isso obedecia ao bloco.
-
-    Enquanto a bola vai no ar para um destinatário, o defesa MAIS PRÓXIMO desse
-    destinatário, dentro de `raioReceptor`, passa a tê-lo como marcação. Só o
-    mais próximo: dois defesas a largarem o bloco pelo mesmo passe abre mais
-    espaço do que fecha.
-
-    Vai ao HOMEM e não à bola — marcar a recepção, não tentar o corte. O corte
-    tem estado próprio (INTERCEPT) e critérios próprios.
-    */
-    raioReceptor: 8.0,
-
-    /*
-    =====================================================================
-    O CENTRAL NÃO FICA A VER A BOLA DE LONGE
-    =====================================================================
-    Com a bola no PRÓPRIO TERÇO, o central mais próximo dela não pode estar
-    mais longe do que `distMaxDaBola`. Medido a 30 de Agosto, a defender:
-
-        bola no próprio terço     média 11.9 m   acima de 9 m: 72.4%
-        bola no meio-campo        média 20.8 m   acima de 9 m: 97.5%
-        bola no terço adversário  média 44.7 m   acima de 9 m: 100%
-
-    SÓ NO PRÓPRIO TERÇO, e é uma decisão e não um esquecimento: aplicar o tecto
-    com a bola no meio-campo obrigava a linha de trás a subir atrás dela e
-    desfazia o bloco — os 20.8 m de lá são o bloco a fazer o que deve.
-
-    Vale para UM central, o mais próximo. Puxar os dois deixa o corredor
-    central aberto atrás deles, que é o oposto do que se quer.
-    */
-    distMaxDaBola: 9.0,
-    tercoParaTectoDaBola: -17.7,   // avanço abaixo disto é o próprio terço
 
     /*
     QUANDO VALE A PENA SAIR À BOLA — o raio de accionamento do chaser.
