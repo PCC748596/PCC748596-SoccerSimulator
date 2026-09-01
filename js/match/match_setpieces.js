@@ -564,9 +564,21 @@ Object.assign(Match, {
             parado a espera. A ancora do `updateGK` le a flag `faltaDirecta`
             para nao o mandar sair da baliza antes da batida.
             */
+            /*
+            E ELE FICA DO LADO QUE A BARREIRA NAO FECHA (pedido).
+
+            A barreira esta encostada ao poste do lado de onde se bate — esse
+            canto e dela. Ao meio da linha, como num penalti, o guarda-redes
+            duplicava metade do que a barreira ja tapava e deixava o outro
+            canto a mesma distancia de sempre. Desloca-se `deslocamentoGk`
+            para o lado ABERTO.
+            */
+            const ladoBarreira = Math.sign(bolaDF.x) || 1;
+            this.faltaDirectaGkX = -ladoBarreira * (DF.deslocamentoGk || 0);
+
             const gkDF = defendingPlayers.find(p => p.role === 'gk');
             if (gkDF) {
-                gkDF.model.position.set(0, ALTURA_BASE_Y, attDir * (CAMPO_COMP / 2));
+                gkDF.model.position.set(this.faltaDirectaGkX, ALTURA_BASE_Y, attDir * (CAMPO_COMP / 2));
                 gkDF.velocity.set(0, 0, 0);
                 gkDF.gkEstado = 'idle';
                 gkDF.gkReagiu = false;

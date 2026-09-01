@@ -3934,7 +3934,15 @@ class FootballPlayer {
             */
             const paradoNaLinha = (typeof Match !== 'undefined' &&
                 (Match.state === 'PENALTY' || Match.faltaDirecta));
-            let alvoGkX = (typeof Match !== 'undefined' && (Match.state === 'GOAL' || Match.state === 'OUT' || paradoNaLinha)) ? 0 : gkCorpo.position.x;
+            /*
+            Na falta directa nao e ao meio: a barreira fecha um canto e ele
+            cobre o outro (ver DirectFreeKickModel.deslocamentoGk e o ramo
+            DIRECT_FREE_KICK do setupSetPiece, que escreve o
+            `Match.faltaDirectaGkX`).
+            */
+            const xParado = (typeof Match !== 'undefined' && Match.faltaDirecta &&
+                typeof Match.faltaDirectaGkX === 'number') ? Match.faltaDirectaGkX : 0;
+            let alvoGkX = (typeof Match !== 'undefined' && (Match.state === 'GOAL' || Match.state === 'OUT' || paradoNaLinha)) ? xParado : gkCorpo.position.x;
 
             /*
             Posição de repouso: sai toda de gkAnchor() (config.js), a mesma
@@ -3945,7 +3953,7 @@ class FootballPlayer {
             */
             const gkStyleAtual = GoalkeeperStyle[this.gkStyle] || GoalkeeperStyle.defensive;
             const ancora = paradoNaLinha
-                ? { x: 0, z: this.ownGoalZ }
+                ? { x: xParado, z: this.ownGoalZ }
                 : gkAnchor(Match.ball.position.x, Match.ball.position.z,
                     this.ownGoalZ, this.dirZ, gkStyleAtual);
 

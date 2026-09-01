@@ -5,6 +5,42 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 1 de Setembro de 2026 — a falta directa: mais tensa, e o GR do lado aberto
+
+Dois pedidos.
+
+**"O chute tem que ser um pouco mais forte."** Media-se 18,4 m/s a 25,1° — uma
+bola lobada. A causa não era a balística: para o mesmo ponto da baliza, cada
+grau a menos de elevação é mais velocidade, e o que impunha o ângulo era a
+altura a limpar. A 20 m, com o alvo a 1,5 m:
+
+    limpar 2,63 m (barreira a saltar + folga)   ~24°   19,6 m/s
+    limpar 2,43 m                               ~21°   21,5 m/s
+    limpar 2,11 m (barreira parada)             ~18°   22,8 m/s
+
+Agora o solver procura a elevação mais baixa que chega a `forcaMinima` (23 m/s)
+e, para lá chegar, pode descer o que exige limpar até
+`alturaMinimaSobreBarreira` (2,10 m — a barreira parada mais o raio da bola).
+É a troca que um batedor faz mesmo: mais tenso é mais rente, e mais rente é
+arriscar a barreira — risco que o desfecho `na_barreira` já cobra.
+
+    velocidade de saída   18,4 -> 20,5 m/s        elevação   25,1° -> 21,8°
+
+**"O guarda-redes tem que pôr a barreira num lado e ficar do outro."** A
+barreira já se encostava ao poste do lado de onde se bate; o que faltava era
+ele sair do meio. `DirectFreeKickModel.deslocamentoGk` (1,8 m) põe-no no lado
+ABERTO, e o `updateGK` lê o `Match.faltaDirectaGkX` para não o trazer de volta
+ao eixo no frame seguinte. Medido: **30 em 30 cobranças com ele do lado certo**,
+a 1,80 m do eixo.
+
+Desfechos forçados, depois das duas mudanças (16 cobranças cada): `gol` 14/16
+golo, `defesa` 15/16 defendida em jogo, `defesa_fora` 8/16 canto, `na_barreira`
+16/16 em jogo, `por_baixo` 13/16 golo.
+
+Testes: `tests/falta_directa.test.js` passa a 16 casos — o do remate mudou de
+contrato (limpa sempre o mínimo, e só passa rente quando a força o pediu) e há
+um caso novo para o lado do guarda-redes.
+
 ### Sessão de 1 de Setembro de 2026 — a formação é do treinador
 
 Relato: *"a posição do CB está desalinhando com o TeamBT, saindo do Formation
@@ -4699,6 +4735,8 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Cabeçada com salto (fase subida/contacto/descida) | `player.js` → `animateBones()`, bloco do `jumpTimer` |
 | Passe chegando atrás/à frente de quem corre (lead) | `player.js` → `initiatePass()` — `pesoVel`/`travelTime`/`maxLeadTotal` |
 | A corrida do batedor do penálti (espera, caminhada, contacto) | `config.js` → `PenaltyModel.arranqueDoGesto`/`velocidadeAproximacao`; `player.js` → `baterPenalti` |
+| Falta directa mais tensa ou mais lobada | `config.js` → `DirectFreeKickModel.forcaMinima` / `.alturaMinimaSobreBarreira` |
+| Onde o guarda-redes espera numa falta directa | `config.js` → `DirectFreeKickModel.deslocamentoGk` |
 | Força e forma do canto | `config.js` → `CrossModel.canto` (`elevacao`, `forca`); `fsm.js` → `case 'SET_PIECE_TAKER'` |
 | Marcação individual no canto e disputa aérea | `config.js` → `CornerDefenseModel`; `bt/player_bt.js` → `tratarMarcacaoNoCanto` |
 | Quando um jogador salta para cabecear | `player.js` → `avaliarSaltoDeCabeceio` (corre no `update`, NÃO no `animateBones`) |

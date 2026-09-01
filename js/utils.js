@@ -3469,15 +3469,38 @@ function tiroDaFaltaDirecta(distGol, distBarreira, alvoY, porBaixo, cfg) {
         return { v: vRas, elev: 0, alturaNaBarreira: y0 };
     }
 
+    /*
+    A FORCA PEDIDA MANDA NA ALTURA A LIMPAR.
+
+    Para o mesmo ponto da baliza, menos elevacao e mais velocidade — e o que
+    impoe a elevacao e a altura a limpar. Se limpar a barreira A SALTAR deixa a
+    bola abaixo de `forcaMinima`, baixa-se o que se exige limpar ate
+    `alturaMinimaSobreBarreira` (a barreira parada, mais o raio da bola). Ver a
+    nota no DirectFreeKickModel.
+    */
+    const topoMinimo = (!porBaixo && typeof D.alturaMinimaSobreBarreira === 'number')
+        ? D.alturaMinimaSobreBarreira : topo;
+    const forcaMinima = (!porBaixo && typeof D.forcaMinima === 'number') ? D.forcaMinima : 0;
+
     const PASSOS = 26;
     let melhor = null;
+    let comFolga = null;   // a que limpa a barreira a saltar, se a forca nao chegar
     for (let i = 0; i <= PASSOS; i++) {
         const elev = D.elevMin + (D.elevMax - D.elevMin) * (i / PASSOS);
         const v = velocidadeParaAlturaNoAlvo(distGol, elev, alvoY, y0);
         if (v === null) continue;
         const hBarreira = alturaDaBolaEm(distBarreira, v, elev, y0);
+
+        // Tenso que chegue e a passar acima do minimo: e esta.
+        if (!porBaixo && v >= forcaMinima && hBarreira >= topoMinimo) {
+            return { v: v, elev: elev, alturaNaBarreira: hBarreira };
+        }
+
         const passa = porBaixo ? (hBarreira <= topo) : (hBarreira >= topo);
-        if (passa) return { v: v, elev: elev, alturaNaBarreira: hBarreira };
+        if (passa && !comFolga) comFolga = { v: v, elev: elev, alturaNaBarreira: hBarreira };
+        if (passa && (porBaixo || forcaMinima <= 0)) {
+            return { v: v, elev: elev, alturaNaBarreira: hBarreira };
+        }
         /*
         Guarda a tentativa que menos falha o criterio: um remate que so falha a
         folga por centimetros e melhor do que devolver null e nao haver
@@ -3488,6 +3511,8 @@ function tiroDaFaltaDirecta(distGol, distBarreira, alvoY, porBaixo, cfg) {
             melhor = { v: v, elev: elev, alturaNaBarreira: hBarreira, erro: erro };
         }
     }
+    // Sem nenhuma tensa que sirva, vale a que limpa a barreira com folga.
+    if (comFolga) return comFolga;
     return melhor ? { v: melhor.v, elev: melhor.elev, alturaNaBarreira: melhor.alturaNaBarreira } : null;
 }
 

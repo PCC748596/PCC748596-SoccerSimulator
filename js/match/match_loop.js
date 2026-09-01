@@ -465,6 +465,7 @@ Object.assign(Match, {
                 (this.state !== 'PLAY' && this.state !== 'FREE_KICK')) {
                 this.faltaDirecta = false;
                 this.faltaDirectaPlano = null;
+                this.faltaDirectaGkX = null;
                 (this.faltaDirectaBarreira || []).forEach(p => { p.naBarreiraFalta = false; });
                 this.faltaDirectaBarreira = null;
             }

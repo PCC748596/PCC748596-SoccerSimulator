@@ -923,6 +923,16 @@ const DirectFreeKickModel = {
     */
     barreiraN: 5,
     distanciaBarreira: 9.15,
+
+    /*
+    ONDE O GUARDA-REDES FICA (pedido): a barreira fecha UM lado, e ele cobre o
+    OUTRO. Ficava ao meio, como num penálti, e ao meio ele não cobre nem um
+    nem outro — a barreira já tapa metade do que ele taparia dali.
+
+    `deslocamentoGk` é quanto ele se afasta do eixo para o lado ABERTO (o
+    contrário do lado de onde se bate, que é o que a barreira fecha).
+    */
+    deslocamentoGk: 1.8,
     espacamentoBarreira: 0.55,
     sobraPoste: 0.45,
     alturaParado: 1.95,
@@ -934,6 +944,30 @@ const DirectFreeKickModel = {
     uma falta batida rente as cabecas, que e o que se ve na televisao.
     */
     folgaSobreBarreira: 0.08,   // por cima do topo, quando a bola tem de passar
+
+    /*
+    A COBRANÇA TEM DE SAIR MAIS FORTE (pedido).
+
+    Medido: 18,4 m/s de média, a 25,1° — uma bola lobada. A causa não é a
+    balística, é a BARREIRA: para o mesmo ponto da baliza, cada grau a menos de
+    elevação é mais velocidade, e é a altura a limpar que impõe o ângulo. A
+    20 m, com o alvo a 1,5 m:
+
+        limpar 2,63 m (barreira a saltar + folga)   ~24°   19,6 m/s
+        limpar 2,43 m                               ~21°   21,5 m/s
+        limpar 2,11 m (barreira sem saltar)         ~18°   22,8 m/s
+
+    Por isso o pedido resolve-se assim: procura-se na mesma a elevação mais
+    baixa que limpa a barreira A SALTAR, e SE a velocidade que sai daí ficar
+    abaixo de `forcaMinima`, baixa-se o que se exige limpar — até
+    `alturaMinimaSobreBarreira`, que é a barreira PARADA mais o raio da bola.
+
+    É a troca que um batedor faz mesmo: bater mais tenso é passar mais rente,
+    e passar mais rente é arriscar a barreira. O desfecho `na_barreira` já
+    existe, e é ele que paga esse risco.
+    */
+    forcaMinima: 23.0,
+    alturaMinimaSobreBarreira: 2.10,
 
     /*
     O SALTO DA BARREIRA. Todos saltam, com um atraso a contar do contacto —
