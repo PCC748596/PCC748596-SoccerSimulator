@@ -545,6 +545,26 @@ class FootballPlayer {
         this.lateralAlvo = null;
         const paraDentro = -Math.sign(this.model.position.x) || 1;
 
+        /*
+        A BOLA SAI DE DENTRO DA LINHA — e isto tem de acontecer ANTES da
+        pontaria, não depois.
+
+        O batedor está fora do campo (ThrowInModel.recuoDaLinha) e a bola está
+        nas mãos dele, logo também está fora. Largá-la ali punha-a com
+        |x| > CAMPO_LARG/2 no frame em que o estado volta a PLAY — e o
+        updateBall assinalava logo OUTRO lateral, agora para a equipa
+        contrária.
+
+        Estava a repor-se DEPOIS de medir a distância ao receptor, portanto a
+        bola percorria menos ~1 m do que aquilo para que foi apontada e chegava
+        um pouco alta (ainda a subir para o peito) ou passava por cima do pé.
+        */
+        const dentroX = -Math.sign(this.model.position.x) || 1;
+        Match.ball.position.set(
+            (CAMPO_LARG / 2 - 0.5) * -dentroX,
+            Match.ball.position.y,
+            Match.ball.position.z);
+
         let dx, dz;
         if (alvo && alvo.model) {
             dx = alvo.model.position.x - Match.ball.position.x;
@@ -575,7 +595,18 @@ class FootballPlayer {
 
         const alcanceMax = alcanceMaximoDoLateral(
             this.skillFor('STRENGTH'), T.alcanceMaxFraco, T.alcanceMaxForte);
-        const alcance = THREE.MathUtils.clamp(dist * errePeso, T.alcanceMin, alcanceMax);
+
+        /*
+        DISTÂNCIA APONTADA. O piso do `alcanceMin` só vale quando NÃO há
+        receptor: com um companheiro a 6 m, forçar 9 m era atirar três metros
+        para lá dele de propósito — o lance saía sempre por cima da cabeça de
+        quem o devia receber. Com receptor aponta-se para ele, com o erro de
+        peso por cima, e o tecto é só o braço de quem repõe.
+        */
+        const temReceptor = !!(alvo && alvo.model);
+        const alcance = temReceptor
+            ? Math.min(dist * errePeso, alcanceMax)
+            : THREE.MathUtils.clamp(dist * errePeso, T.alcanceMin, alcanceMax);
         const elev = T.elevMin + Math.random() * (T.elevMax - T.elevMin);
 
         /*
@@ -585,40 +616,39 @@ class FootballPlayer {
         A bola sai das mãos, a uns 2 m do chão, e a fórmula de alcance
         (`v = sqrt(alcance * g / sin(2 * elev))`) só vale com a altura de
         chegada igual à de saída — tratava o ponto de saída como se fosse o
-        chão, e por isso o lateral nunca mirou altura nenhuma: chegava ao
-        receptor à altura que calhasse.
+        chão, e por isso o lateral nunca mirou altura nenhuma.
 
-        `alturaSaida` é a da bola AGORA, que está nas mãos. Sem solução para o
-        ângulo sorteado, cai-se na fórmula de sempre.
+        A altura pedida é a do CONTACTO, não a do ponto de queda: aos pés é o
+        raio da bola (rasteira, jogável de primeira), ao peito é a
+        `BallControl.peitoAltura`, a MESMA que a recepção usa para disparar o
+        `controlarNoPeito` — se fossem duas constantes, mirava-se o peito e ele
+        dominava com o pé.
+
+        Quem resolve é o `velocidadeParaAlturaNoAlvo`: bissecta na simulação
+        COM ARRASTO e devolve a força que põe a bola a `alturaAlvo` quando
+        passa por `alcance`. O `velocidadeDeLancamento` (parábola sem arrasto)
+        fica como recurso, e a fórmula de alcance como último recurso — os dois
+        deixam a bola curta, que é como se via o lateral a morrer antes do
+        companheiro.
         */
         const alvoNoPeito = alcance > T.distanciaAosPes;
         const alturaAlvo = alvoNoPeito ? BallControl.peitoAltura : BallPhysics.raio;
         const alturaSaida = Match.ball.position.y;
 
-        const bal = velocidadeDeLancamento(
-            alcance, alturaSaida, alturaAlvo, elev, gGrav, T.elevMax * 2);
-
-        const v = bal ? bal.v : Math.sqrt((alcance * gGrav) / Math.sin(2 * elev));
-        const angulo = bal ? bal.elev : elev;
+        let v, angulo;
+        const vArrasto = (typeof velocidadeParaAlturaNoAlvo === 'function')
+            ? velocidadeParaAlturaNoAlvo(alcance, elev, alturaAlvo, alturaSaida)
+            : null;
+        if (vArrasto !== null && vArrasto !== undefined) {
+            v = vArrasto;
+            angulo = elev;
+        } else {
+            const bal = velocidadeDeLancamento(
+                alcance, alturaSaida, alturaAlvo, elev, gGrav, T.elevMax * 2);
+            v = bal ? bal.v : Math.sqrt((alcance * gGrav) / Math.sin(2 * elev));
+            angulo = bal ? bal.elev : elev;
+        }
         const horiz = v * Math.cos(angulo);
-
-        /*
-        A bola SAI DE DENTRO da linha, não das mãos.
-
-        O batedor está fora do campo (ThrowInModel.recuoDaLinha) e a bola está
-        nas mãos dele, logo também está fora. Largá-la ali punha-a com
-        |x| > CAMPO_LARG/2 no frame em que o estado volta a PLAY — e o
-        updateBall assinalava logo OUTRO lateral, agora para a equipa
-        contrária. Era isso que se via: o gesto completo, a bola a não sair, e
-        o batedor a mudar de equipa.
-
-        Repõe-se sobre a linha, meio metro para dentro, à altura das mãos.
-        */
-        const dentroX = -Math.sign(this.model.position.x) || 1;
-        Match.ball.position.set(
-            (CAMPO_LARG / 2 - 0.5) * -dentroX,
-            Match.ball.position.y,
-            Match.ball.position.z);
 
         dist = Math.hypot(dx, dz) || 1;
         Match.ballVel.set((dx / dist) * horiz, v * Math.sin(angulo), (dz / dist) * horiz);

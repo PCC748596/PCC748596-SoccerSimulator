@@ -221,7 +221,7 @@ Object.assign(Match, {
             // Mistura de TV Centro e Lateral Móvel
             // Acompanha até metade do meio-campo, depois fica parada e só roda
             let bz = THREE.MathUtils.clamp(this.ball.position.z, -26.5, 26.5);
-            targetPos.set(48 * zoom, 23 * zoom, bz);
+            targetPos.set(48 * zoom, 30 * zoom, bz);
             lookTarget.copy(this.ball.position);
 
             if (typeof TeamAI !== 'undefined') {
