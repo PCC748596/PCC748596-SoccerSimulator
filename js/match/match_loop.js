@@ -488,38 +488,13 @@ Object.assign(Match, {
                                         tercosMesh.geometry.attributes.position.needsUpdate = true;
                 }
 
-                if (Array.isArray(centroMesh) && centroMesh.length >= 3) {
-                    /*
-                    O CENTRO DE CADA LINHA, sobre a própria linha — não no meio
-                    da faixa entre duas. É o modelo: na defesa manda o centro da
-                    linha de defesa, no meio o do meio, no ataque o do ataque.
-
-                    Estava no meio das faixas, e o terceiro fazia
-                    `tam3 = z1 - zAtk`: com o zAtk corrigido para a frente do
-                    bloco isso passou a ZERO e o marcador do sector ofensivo
-                    caía em cima da borda.
-                    */
+                if (Array.isArray(centroMesh) && centroMesh.length > 0) {
                     const cx = (x0 + x1) / 2;
-                    // O centro de cada FAIXA (1/6, 1/2 e 5/6 da profundidade),
-                    // que é o ponto de controlo daquele sector do campo.
-                    const P = z1 - z0;
-                    centroMesh[0].position.set(cx, 0.06, z0 + P / 6);
-                    centroMesh[1].position.set(cx, 0.06, z0 + P / 2);
-                    centroMesh[2].position.set(cx, 0.06, z0 + 5 * P / 6);
-                    
-                    centroMesh[0].visible = false;
-                    centroMesh[1].visible = false;
-                    centroMesh[2].visible = false;
-                    
-                    let bZ = (bb.ballZ || 0) * bb.dir;
-                    // Para alinhar com a perceção do utilizador: ativar o centro com base no setor do campo
-                    // onde a bola está, em vez de onde a bola "cai" dentro do bloco tático empurrado.
-                    if (bZ < -17.5) {
-                        centroMesh[0].visible = true; // Setor defensivo
-                    } else if (bZ < 17.5) {
-                        centroMesh[1].visible = true; // Setor de meio-campo
-                    } else {
-                        centroMesh[2].visible = true; // Setor ofensivo
+                    const cz = (minZ + maxZ) / 2;
+                    centroMesh[0].position.set(cx, 0.06, cz);
+                    centroMesh[0].visible = true;
+                    for (let i = 1; i < centroMesh.length; i++) {
+                        centroMesh[i].visible = false;
                     }
                 } else if (centroMesh && !Array.isArray(centroMesh)) {
                     centroMesh.visible = true;

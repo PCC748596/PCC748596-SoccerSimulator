@@ -1,0 +1,6 @@
+{
+  "name": "SoccerSimulator",
+  "description": "3D Soccer Simulator powered by Three.js with tactical AI, multiple camera views, and comprehensive touch controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

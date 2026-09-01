@@ -1,0 +1,860 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #87CEEB;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    touch-action: none;
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+canvas {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+    background-color: #87CEEB;
+}
+
+#painel-comandos, #painel-direito, #painel-jogadores {
+    background: rgba(255, 255, 255, 0.96);
+    padding: 10px;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    border: 1px solid #e2e8f0;
+    box-sizing: border-box;
+    width: 192px;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+#painel-comandos {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    max-height: 92vh;
+}
+
+/* #painel-direito e #painel-jogadores empilham dentro de #coluna-direita
+   (flex column) — não são mais posicionados individualmente, senão o
+   segundo painel tinha de adivinhar a altura do primeiro. */
+#coluna-direita {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-end;
+    max-height: 96vh;
+}
+
+#painel-direito {
+    max-height: 55vh;
+}
+
+#painel-jogadores {
+    max-height: 38vh;
+}
+
+#painel-comandos::-webkit-scrollbar, #painel-direito::-webkit-scrollbar, #painel-jogadores::-webkit-scrollbar {
+    display: none;
+}
+
+/* --- Cabeçalho do painel + minimizar/maximizar --- */
+
+#painel-cabecalho, #painel-direito-cabecalho, #painel-jogadores-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+#painel-cabecalho h2, #painel-direito-cabecalho h2, #painel-jogadores-cabecalho h2 {
+    margin: 0;
+    flex: 1;
+    border-bottom: 2px solid #ef4444;
+}
+
+#btn-painel, #btn-painel-direito, #btn-painel-jogadores {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    line-height: 1;
+    padding: 0;
+    font-size: 14px;
+    font-weight: 900;
+    color: #475569;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+#btn-painel:hover, #btn-painel-direito:hover, #btn-painel-jogadores:hover {
+    background: #cbd5e1;
+    color: #1e293b;
+}
+
+/* Estado minimizado: só sobra a barra de título. */
+#painel-comandos.minimizado, #painel-direito.minimizado, #painel-jogadores.minimizado {
+    width: auto;
+    padding: 10px 12px;
+    max-height: none;
+    overflow: visible;
+}
+
+#painel-comandos.minimizado #painel-conteudo,
+#painel-direito.minimizado #painel-direito-conteudo,
+#painel-jogadores.minimizado #painel-jogadores-conteudo {
+    display: none;
+}
+
+#painel-comandos.minimizado #painel-cabecalho h2,
+#painel-direito.minimizado #painel-direito-cabecalho h2,
+#painel-jogadores.minimizado #painel-jogadores-cabecalho h2 {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+/* --- Painel Player Skills (lista + linhas clicáveis) --- */
+
+#painel-jogadores-conteudo {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.jogadores-col {
+    flex: 1;
+    min-width: 0;
+}
+
+.jogadores-col h3 {
+    margin: 0 0 4px 0;
+    font-size: 11px;
+}
+
+.linha-jogador {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+    font-size: 10.5px;
+    padding: 3px 5px;
+    border-radius: 5px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.linha-jogador:hover {
+    background: #e2e8f0;
+}
+
+.linha-jogador .lj-fit {
+    color: #64748b;
+    flex: 0 0 auto;
+}
+
+.linha-jogador .lj-estilo {
+    flex: 0 0 auto;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.linha-jogador .lj-estilo-on {
+    color: #16a34a;
+    background: #dcfce7;
+}
+
+.linha-jogador .lj-estilo-off {
+    color: #94a3b8;
+    background: #f1f5f9;
+}
+
+/* --- Modal de skills de um jogador --- */
+
+#modal-skills {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#modal-skills.oculto {
+    display: none;
+}
+
+#modal-skills-caixa {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 16px 18px;
+    width: 300px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+}
+
+#modal-skills-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+#modal-skills-titulo {
+    margin: 0;
+    border-bottom: none;
+    font-size: 16px;
+}
+
+#btn-modal-skills {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    font-size: 16px;
+    line-height: 1;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#btn-modal-skills:hover {
+    background: #cbd5e1;
+}
+
+.skill-linha {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    border-bottom: 1px dashed #e2e8f0;
+    font-size: 13px;
+}
+
+.skill-linha b {
+    color: #1e293b;
+}
+
+.oculto {
+    display: none;
+}
+
+/* --- HUD do portador da bola / marcador mais próximo --- */
+
+.hud-jogador {
+    position: absolute;
+    bottom: 20px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    padding: 8px 12px;
+}
+
+#hud-jogador-esq {
+    left: 20px;
+}
+
+#hud-jogador-dir {
+    right: 20px;
+}
+
+.hud-jog-logo {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid rgba(0, 0, 0, 0.15);
+    flex: 0 0 auto;
+}
+
+.hud-jog-nome {
+    font-weight: 700;
+    font-size: 13px;
+    color: #1e293b;
+}
+
+.hud-jog-stamina-bar {
+    display: flex;
+    gap: 2px;
+    margin-top: 3px;
+}
+
+.hud-jog-stamina-bar .seg {
+    width: 14px;
+    height: 8px;
+    border-radius: 2px;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+}
+
+.hud-jog-stamina-bar .seg.on-red { background: #ef4444; border-color: #dc2626; }
+.hud-jog-stamina-bar .seg.on-orange { background: #f97316; border-color: #ea580c; }
+.hud-jog-stamina-bar .seg.on-yellow { background: #eab308; border-color: #ca8a04; }
+.hud-jog-stamina-bar .seg.on-green { background: #22c55e; border-color: #16a34a; }
+
+/* --- Minimizar/maximizar dos blocos Azul/Vermelha (skills táticas) --- */
+
+.subpainel-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.subpainel-cabecalho h2 {
+    margin: 8px 0 3px 0;
+    flex: 1;
+}
+
+.btn-subpainel {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    line-height: 1;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 900;
+    color: #475569;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+.btn-subpainel:hover {
+    background: #cbd5e1;
+    color: #1e293b;
+}
+
+
+h2 {
+    margin: 8px 0 3px 0;
+    font-size: 11px;
+    color: #1e293b;
+    font-weight: 800;
+    text-transform: uppercase;
+    border-bottom: 2px solid #3b82f6;
+    padding-bottom: 2px;
+    letter-spacing: 0;
+    word-break: break-word;
+}
+
+.linha-sep {
+    border: 0;
+    border-top: 1px solid #e2e8f0;
+    margin: 8px 0;
+}
+
+label {
+    font-size: 9px;
+    font-weight: bold;
+    color: #475569;
+    display: block;
+    margin-top: 4px;
+    margin-bottom: 1px;
+    line-height: 1.25;
+}
+
+select,
+input[type=range] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 2px 3px;
+    margin-bottom: 2px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-size: 10px;
+}
+
+.val-skill {
+    color: #3b82f6;
+    font-size: 9px;
+    float: right;
+    font-weight: bold;
+}
+
+.btn-sector {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 2px;
+    font-size: 9px;
+    background: #94a3b8;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+    font-weight: bold;
+    transition: 0.2s;
+    border-radius: 4px;
+}
+
+.btn-sector.active {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-sector:hover {
+    opacity: 0.9;
+}
+
+button.btn-action {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 7px 3px;
+    font-size: 10px;
+    line-height: 1.2;
+    background: #10b981;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+button.btn-action:hover {
+    background: #059669;
+}
+
+button.btn-action:active {
+    transform: scale(0.95);
+}
+
+#alerta-golo {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    font-size: 80px;
+    font-weight: 900;
+    color: #f59e0b;
+    text-shadow: 4px 4px 0px #ef4444, 0 0 30px rgba(245, 158, 11, 0.8);
+    font-style: italic;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 100;
+}
+
+#hud-info {
+    /* Retirados absolute, top e right. O container fica normal dentro do novo painel */
+    background: transparent;
+    color: #475569;
+    padding: 0;
+    border-radius: 0;
+    font-family: monospace;
+    font-size: 11px;
+    pointer-events: none;
+    border: none;
+}
+
+
+/*
+Minimapa: canto inferior esquerdo, por cima da cena e fora do caminho do rato
+(o orbit control da câmara apanha o canvas todo — `pointer-events: none` deixa
+arrastar a câmara mesmo por cima dele).
+*/
+#minimapa {
+    position: absolute;
+    /* A regra genérica `canvas` (a do renderer) põe top/left a 0 e 100vw/100vh.
+       Sem anular o `top` aqui, ele ganha ao `bottom` e o minimapa colava-se ao
+       topo do ecrã. As medidas em si vêm inline, do Minimap.init. */
+    top: auto;
+    right: auto;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    /* A mesma regra genérica pinta o canvas de azul-céu (fundo do renderer).
+       Aqui tem de ser transparente, senão a relva a 30% fica por cima de um
+       fundo opaco e o minimapa sai azulado em vez de deixar ver o jogo. */
+    background-color: transparent;
+    pointer-events: none;
+    border-radius: 6px;
+    border: 1px solid rgba(236, 240, 241, 0.35);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.45);
+}
+
+#placar {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.95);
+    color: #ecf0f1;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-weight: 900;
+    font-size: 16px;
+    z-index: 100;
+    pointer-events: none;
+    border: 1px solid #ecf0f1;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   TOUCH CONTROLS STYLES (Controles Touch)
+   ========================================================================== */
+
+#touch-controls-root {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 40;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.touch-toolbar {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: rgba(15, 23, 42, 0.88);
+    
+    -webkit-
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 24px;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
+    pointer-events: auto;
+    max-width: 95vw;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.touch-toolbar::-webkit-scrollbar {
+    display: none;
+}
+
+.touch-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    height: 48px;
+    padding: 4px 8px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 14px;
+    cursor: pointer;
+    font-weight: 700;
+    transition: all 0.15s ease;
+    touch-action: manipulation;
+    white-space: nowrap;
+}
+
+.touch-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.touch-btn:active {
+    transform: scale(0.92);
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.touch-btn.active {
+    background: #3b82f6;
+    border-color: #60a5fa;
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+}
+
+.touch-btn-primary {
+    background: #10b981;
+    border-color: #34d399;
+    color: #ffffff;
+    min-width: 54px;
+}
+
+.touch-btn-primary:hover {
+    background: #059669;
+}
+
+.touch-btn-paused {
+    background: #f59e0b;
+    border-color: #fbbf24;
+}
+
+.touch-btn-group {
+    display: flex;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 2px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.touch-btn-small {
+    min-width: 38px;
+    height: 44px;
+    border: none;
+    border-radius: 10px;
+}
+
+.touch-icon {
+    font-size: 15px;
+    line-height: 1;
+    margin-bottom: 2px;
+}
+
+.touch-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    line-height: 1;
+    color: #cbd5e1;
+}
+
+/* Seletor Rápido de Câmeras Popup */
+.touch-camera-popup {
+    position: absolute;
+    bottom: 74px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.94);
+    
+    -webkit-
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    padding: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+    width: 280px;
+    animation: touchPopupFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes touchPopupFadeIn {
+    from { opacity: 0; transform: translate(-50%, 10px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.touch-popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.touch-popup-close {
+    background: transparent;
+    border: none;
+    color: #cbd5e1;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.touch-camera-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.touch-cam-opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: #f1f5f9;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: 0.15s;
+    text-align: left;
+}
+
+.touch-cam-opt:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.touch-cam-opt.active {
+    background: #3b82f6;
+    border-color: #60a5fa;
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+.touch-cam-icon {
+    font-size: 15px;
+}
+
+   RESPONSIVIDADE MOBILE & TOUCH (< 768px)
+   ========================================================================== */
+
+@media (max-width: 768px) {
+    #placar {
+        top: 10px;
+        padding: 6px 14px;
+        font-size: 13px;
+    }
+
+    /* No telemóvel o minimapa sobe acima do HUD do jogador, e encolhe —
+       a translação de -50% tem de vir ANTES da escala para o centro se
+       manter depois de encolher. */
+    #minimapa {
+        bottom: 140px;
+        transform: translateX(-50%) scale(0.8);
+    }
+
+    #hud-jogador-esq, #hud-jogador-dir {
+        bottom: 72px;
+        padding: 5px 8px;
+        gap: 6px;
+    }
+
+    #hud-jogador-esq {
+        left: 10px;
+    }
+
+    #hud-jogador-dir {
+        right: 10px;
+    }
+
+    .hud-jog-logo {
+        width: 22px;
+        height: 22px;
+    }
+
+    .hud-jog-nome {
+        font-size: 11px;
+    }
+
+    .hud-jog-stamina-bar .seg {
+        width: 10px;
+        height: 6px;
+    }
+
+    #painel-comandos {
+        top: 10px;
+        left: 10px;
+        max-height: 80vh;
+        width: 175px;
+    }
+
+    #coluna-direita {
+        top: 10px;
+        right: 10px;
+        max-height: 80vh;
+    }
+
+    #painel-direito, #painel-jogadores {
+        width: 175px;
+    }
+
+    .touch-toolbar {
+        bottom: 10px;
+        gap: 4px;
+        padding: 4px 6px;
+        border-radius: 20px;
+    }
+
+    .touch-btn {
+        min-width: 44px;
+        height: 44px;
+        padding: 3px 5px;
+    }
+
+    .touch-icon {
+        font-size: 14px;
+    }
+
+    .touch-label {
+        font-size: 8px;
+    }
+
+}
+
+
+/*
+PAINEL DE ESTATÍSTICA POR JOGO (esquerda, abaixo do RED AVERAGE).
+
+Tabela apertada de propósito: são doze linhas num painel lateral estreito, e
+o que se lê é a coluna do meio contra a da direita. A cor da linha diz o
+desvio ao alvo — verde dentro de 15%, amarelo até 40%, vermelho acima disso
+(ver classificarDesvio em main.js).
+*/
+#estat-relogio {
+    font-size: 10px;
+    color: #7f8c8d;
+    margin: 4px 0 6px 0;
+}
+
+#estat-tabela {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+#estat-tabela th {
+    text-align: left;
+    font-weight: 600;
+    color: #7f8c8d;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 3px;
+    border-bottom: 1px solid #34495e;
+}
+
+#estat-tabela th:nth-child(2),
+#estat-tabela th:nth-child(3),
+#estat-tabela td:nth-child(2),
+#estat-tabela td:nth-child(3) {
+    text-align: right;
+    /* Alinha as casas decimais: sem isto, 176,63 e 2,52 dançam na coluna. */
+    font-variant-numeric: tabular-nums;
+}
+
+#estat-tabela td {
+    padding: 2px 3px;
+    border-bottom: 1px solid rgba(52, 73, 94, 0.4);
+    color: #bdc3c7;
+}
+
+#estat-tabela td:nth-child(3) { color: #7f8c8d; }
+
+#estat-tabela tr.estat-ok      td:nth-child(2) { color: #2ecc71; }
+#estat-tabela tr.estat-perto   td:nth-child(2) { color: #f1c40f; }
+#estat-tabela tr.estat-longe   td:nth-child(2) { color: #e74c3c; }
+#estat-tabela tr.estat-semdado td { color: #7f8c8d; font-style: italic; }
