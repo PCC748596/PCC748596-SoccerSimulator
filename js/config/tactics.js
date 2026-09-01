@@ -281,6 +281,50 @@ const BlockShape = {
     folgaTransicao: 1.0,
 
     /*
+    SEM BOLA, NINGUEM PASSA A FRENTE DO BLOCO.
+
+    A regra da transicao (`transicaoDefensivaRecuaSo`) so vale nos 3 s a seguir
+    a perder a bola. Passados esses, na fase DEFENSIVE, media-se que continuava
+    a haver gente a ir para a frente: pior caso **seis jogadores** com o alvo a
+    frente de si a defender, e a fonte era quase toda a MARCACAO (34%) e o
+    proprio bloco (31%).
+
+    A marcacao esta certa em ir ao homem — o que esta errado e ir atras dele
+    para LA DA FRENTE DO BLOCO. Um marcador que persegue o extremo ate ao
+    meio-campo adversario deixou de estar a defender: passou o homem a quem
+    vem atras, e e isso que esta regra impoe.
+
+    E um LIMITE de nivel SEGURO (ver js/bt/alvo.js), portanto vale sobre a
+    marcacao e sobre a estrutura, e cede a quem vai a bola — o chaser, o
+    intercetor e o bloqueador tem de poder sair do bloco.
+
+    `folgaFrenteDoBloco` e o que se tolera para la da frente: um passo.
+    */
+    limiteFrenteDoBlocoSemBola: true,
+    folgaFrenteDoBloco: 2.0,
+
+    /*
+    E, SEM BOLA, DEFESAS E MEDIOS FICAM DO LADO DE CA DA BOLA.
+
+    A frente do bloco (acima) nao chegava: o bloco a defender tem 30 m de
+    fundura e a bola anda muitas vezes atras da frente dele, portanto um medio
+    podia estar 16 m a frente da bola e continuar "dentro do bloco". Medido:
+    **1,69 jogadores por frame com o alvo alem da bola** a defender, pior caso
+    nove — 38% medios e 10% defesas.
+
+    A regra e a mais velha do futebol: a defender, poe-te entre a bola e a tua
+    baliza. Vale para `def` e `mid`; os avancados ficam de fora de proposito —
+    sao a saida da equipa, e mandar toda a gente atras da bola e ficar sem
+    ninguem quando ela e recuperada (51% dos casos medidos eram avancados, e
+    esses estao certos).
+
+    Como sempre, cede a quem vai a bola: chaser, intercetor e bloqueador.
+    */
+    limiteAlemDaBolaSemBola: true,
+    folgaAlemDaBola: 1.5,
+    recuamAlemDaBola: ['def', 'mid'],
+
+    /*
     O PENDULO — ninguem fica na outra ponta do campo.
 
     O rectangulo tem 47.6 m de largura e o centro dele acompanha a bola em X,
@@ -315,6 +359,21 @@ const BlockShape = {
     dentro dele quando sobe, que e a forma como o par funciona no futebol.
     */
     separacaoLateral: 6.0,
+
+    /*
+    E O LATERAL NUNCA ENTRA POR DENTRO DO SEU CENTRAL.
+
+    A separacao acima manda o lateral fechar por dentro do extremo quando os
+    dois estao do lado da bola — e sem mais nada isso metia-o DENTRO da dupla
+    de centrais: medido, **21,6% das leituras de lateral tinham-no por dentro
+    dos centrais**, e 72% desses vinham do proprio slot do bloco. E a figura 2
+    do relato: o lateral direito a esquerda dos centrais.
+
+    `folgaDoCentral` e a faixa que fica entre o lateral e o central do lado
+    dele. Abaixo disto ja nao ha linha de quatro, ha tres homens no mesmo
+    sitio.
+    */
+    folgaDoCentral: 4.0,
 
     /*
     REST DEFENSE — o que fica em casa enquanto a equipa ataca.

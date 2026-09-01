@@ -5,6 +5,41 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 1 de Setembro de 2026 — a defender, ninguém vai para a frente
+
+Relato: cinco jogadores a subirem com a equipa em T.Defensive/Defensive. A
+regra da transição só valia 3 s; depois disso não havia nada.
+
+O resolvedor já guardava a FONTE de cada alvo (`p.alvoFonte`), e por isso desta
+vez a medição diz logo quem foi:
+
+```
+sem posse, alvo ALÉM DA BOLA     1,69 jogadores por frame   (pior caso 9)
+   por função   51% avançados   38% médios   10% defesas
+   por fonte    47% marcação    40% slot do bloco
+```
+
+A marcação está certa em ir ao homem; o que está errado é ir atrás dele para
+lá da bola. Dois limites novos, de nível SEGURO (valem sobre marcação e
+estrutura, cedem a quem vai à bola):
+
+- `BlockShape.limiteFrenteDoBlocoSemBola` — ninguém passa a frente do bloco;
+- `BlockShape.limiteAlemDaBolaSemBola` — defesas e médios ficam do lado de cá
+  da bola (folga 1,5 m). **Os avançados ficam de fora**: são a saída da
+  equipa.
+
+A frente do bloco sozinha não chegava (com 30 m de fundura, um médio podia
+estar 16 m à frente da bola e continuar dentro dele), e a folga importa: a 4 m
+o limite quase não mordia.
+
+```
+alvo além da bola            1,69 -> 1,09   (82% do resto são avançados)
+   médios                     38% ->  13%
+   defesas                    10% ->   5%
+adversários livres nas costas 0,51 -> 0,18  (três ou mais: 6% -> 2%)
+passes                        72% (na faixa habitual)
+```
+
 ### Sessão de 1 de Setembro de 2026 — as prioridades do alvo, implementadas
 
 O `js/bt/alvo.js` é novo e é o coração disto: **ninguém escreve o alvo, cada
@@ -4483,6 +4518,8 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Defesas e médio a subirem de mais no ataque | `config.js` → `BlockShape.restDefense` |
 | Lateral e extremo do mesmo lado embolados | `config.js` → `BlockShape.separacaoLateral` |
 | Jogador em fora-de-jogo apesar do bloco o cortar | `bt/player_bt.js` → `cortarForaDeJogo`; `config.js` → `BlockShape.cortarForaDeJogoNoAlvo` |
+| Equipa a subir quando devia defender | `config.js` → `BlockShape.limiteAlemDaBolaSemBola` / `.limiteFrenteDoBlocoSemBola` |
+| Saber que camada escreveu o alvo de um jogador | `p.alvoFonte` / `p.alvoCortadoPor` (postos por `bt/alvo.js`) |
 | Decidir o que ganha quando duas camadas querem o mesmo jogador | `bt/alvo.js` → `AlvoPrio` e `resolverAlvo` |
 | Desligar as prioridades e voltar ao comportamento antigo | `config.js` → `BlockShape.resolverAlvoActivo` |
 | Perceber quem sobrescreve o alvo de quem | [docs/auditoria_nivel2.md](auditoria_nivel2.md); `node tools/headless/nivel2_auditoria.js` |

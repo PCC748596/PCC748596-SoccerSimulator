@@ -115,3 +115,35 @@ test('a auditoria e a sua ferramenta continuam no repositório', () => {
     assert.ok(fs.existsSync(path.join(raiz, 'tools', 'headless', 'nivel2_auditoria.js')),
         'a ferramenta que produz os números da auditoria desapareceu');
 });
+
+/*
+SEM BOLA: dois limites novos, ambos de nível SEGURO — ver a secção 4 da
+auditoria e o relato "5 jogadores indo pra frente ao invés de retornar".
+
+Medido antes: 1,69 jogadores por frame com o alvo ALÉM DA BOLA a defender
+(38% médios, 10% defesas), pior caso nove. Depois: 1,09, e 82% do que sobra
+são avançados — que estão certos, são a saída da equipa.
+*/
+test('sem bola ninguém passa a frente do bloco', () => {
+    assert.strictEqual(BlockShape.limiteFrenteDoBlocoSemBola, true,
+        'o limite da frente do bloco está desligado');
+    assert.ok(srcTeam.includes("'frente do bloco'"),
+        'a camada posicional já não propõe o limite da frente do bloco');
+});
+
+test('sem bola, defesas e médios ficam do lado de cá da bola', () => {
+    assert.strictEqual(BlockShape.limiteAlemDaBolaSemBola, true,
+        'o limite do lado da bola está desligado');
+    assert.ok(BlockShape.folgaAlemDaBola >= 0 && BlockShape.folgaAlemDaBola <= 3,
+        `folgaAlemDaBola=${BlockShape.folgaAlemDaBola}: com folga a mais o limite deixa de morder ` +
+        '(medido: a 4 m ficava em 1,9 jogadores além da bola, a 1,5 m em 1,1)');
+    // Os avançados NÃO entram: são a saída da equipa.
+    assert.deepStrictEqual(BlockShape.recuamAlemDaBola.slice().sort(), ['def', 'mid'],
+        'se os avançados entrarem nesta regra, a equipa recupera a bola sem ninguém à frente');
+    assert.ok(srcTeam.includes("'do lado de ca da bola'"),
+        'a camada posicional já não propõe este limite');
+    const ini = srcTeam.indexOf("'do lado de ca da bola'");
+    const corpo = srcTeam.slice(ini - 900, ini + 200);
+    assert.ok(corpo.includes('bb.chaser !== p') && corpo.includes('bb.intercetor !== p'),
+        'o limite tem de ceder a quem vai à bola, senão ninguém pressiona');
+});

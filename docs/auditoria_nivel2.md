@@ -169,6 +169,43 @@ avanço médio dos centrais      -9,8 m -> -14,3 m
 avanço médio dos médios         4,9 m ->  -0,7 m
 ```
 
+### 4.7 A defender, meia equipa ia para a frente (CORRIGIDO)
+
+Relato: *"Vermelho em T.Defensive/Defensive, 5 jogadores indo pra frente ao
+invés de retornar para a defesa"*. A regra da transição
+(`transicaoDefensivaRecuaSo`) só vale nos 3 s a seguir a perder a bola; passados
+esses, na fase DEFENSIVE, ninguém segurava ninguém.
+
+Medido sem posse, com o alvo de cada um atribuído à camada que o escreveu (é o
+`alvoFonte` que o resolvedor passou a guardar):
+
+```
+alvo ALÉM DA BOLA        1,69 jogadores por frame   (pior caso 9)
+   por função            51% avançados   38% médios   10% defesas
+   por fonte             47% marcação    40% slot do bloco
+```
+
+Dois limites novos, ambos de nível SEGURO — valem sobre a marcação e sobre a
+estrutura, e cedem a quem vai à bola:
+
+- **ninguém passa a frente do bloco** (`limiteFrenteDoBlocoSemBola`);
+- **defesas e médios ficam do lado de cá da bola**
+  (`limiteAlemDaBolaSemBola`, folga de 1,5 m). Os AVANÇADOS ficam de fora de
+  propósito: são a saída da equipa, e mandar toda a gente atrás da bola é
+  recuperá-la sem ninguém à frente.
+
+A frente do bloco sozinha não chegava — com 30 m de fundura, um médio podia
+estar 16 m à frente da bola e continuar "dentro do bloco". E a folga importa:
+a 4 m o limite quase não mordia (1,9 jogadores além da bola), a 1,5 m mordeu.
+
+```
+alvo além da bola        1,69  ->  1,09   (82% do que sobra são avançados)
+   médios                 38%  ->   13%
+   defesas                10%  ->    5%
+adversários livres nas
+costas da equipa que ataca  0,51 -> 0,18  (três ou mais: 6% -> 2%)
+```
+
 ---
 
 ## 5. Prioridades — IMPLEMENTADAS

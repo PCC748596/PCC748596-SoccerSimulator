@@ -2033,6 +2033,39 @@ const PosicionamentoAI = {
         }
 
         /*
+        SEM BOLA: A FRENTE DO BLOCO E O TECTO DE TODA A GENTE.
+
+        Ver BlockShape.limiteFrenteDoBlocoSemBola. Nivel SEGURO, portanto vale
+        sobre a marcacao (que e ACCAO) e sobre a estrutura, e cede a quem vai a
+        bola. Sem isto, um marcador seguia o homem dele para fora do bloco e a
+        equipa defendia com cinco.
+        */
+        if (bb && !bb.isAttacking && bb.bloco && typeof BlockShape !== 'undefined' &&
+            BlockShape.limiteFrenteDoBlocoSemBola && p.role !== 'gk' && !p.hasBall &&
+            bb.chaser !== p && bb.intercetor !== p && bb.blocker !== p &&
+            typeof proporLimiteAvanco === 'function') {
+            proporLimiteAvanco(p, AlvoPrio.SEGURO,
+                bb.bloco.z1 + (BlockShape.folgaFrenteDoBloco || 0), 'frente do bloco');
+        }
+
+        /*
+        SEM BOLA, DEFESAS E MEDIOS DO LADO DE CA DA BOLA — ver
+        BlockShape.limiteAlemDaBolaSemBola. A frente do bloco (acima) nao
+        chegava: com 30 m de fundura, um medio podia estar 16 m a frente da
+        bola e continuar dentro do bloco.
+        */
+        if (bb && !bb.isAttacking && typeof BlockShape !== 'undefined' &&
+            BlockShape.limiteAlemDaBolaSemBola && p.role !== 'gk' && !p.hasBall &&
+            bb.chaser !== p && bb.intercetor !== p && bb.blocker !== p &&
+            typeof Match !== 'undefined' && Match.ball &&
+            typeof proporLimiteAvanco === 'function' &&
+            (BlockShape.recuamAlemDaBola || []).indexOf(p.role) >= 0) {
+            const bolaAvanco = Match.ball.position.z * p.dirZ;
+            proporLimiteAvanco(p, AlvoPrio.SEGURO,
+                bolaAvanco + (BlockShape.folgaAlemDaBola || 0), 'do lado de ca da bola');
+        }
+
+        /*
         REST DEFENSE — ver BlockShape.restDefense.
 
         Com posse, os `defesasAtrasDaBola` defesas mais recuados e o
@@ -2131,6 +2164,30 @@ const PosicionamentoAI = {
                     molaX = ladoDele * Math.max(Math.abs(molaX), Math.abs(alvoPar) + sep);
                 } else {
                     molaX = ladoDele * Math.min(Math.abs(molaX), Math.max(0, Math.abs(alvoPar) - sep));
+                }
+            }
+
+            /*
+            E O LATERAL NAO ENTRA POR DENTRO DO SEU CENTRAL.
+
+            Fechar por dentro do extremo, sozinho, metia-o dentro da dupla de
+            centrais — medido, 21,6% das leituras de lateral, e 72% delas
+            vindas do proprio slot. Ver BlockShape.folgaDoCentral.
+            */
+            if (ehLateral && BlockShape.folgaDoCentral) {
+                let central = null;
+                for (const o of (bb.own || [])) {
+                    if (!o || !o.model || o === p) continue;
+                    if (o.pos !== 'CB' && o.pos !== 'DC') continue;
+                    const ox = (o.tacticalTarget) ? o.tacticalTarget.x : o.model.position.x;
+                    // O central DO LADO DELE: o que esta mais para este lado.
+                    if (!central || ox * ladoDele > central.x * ladoDele) {
+                        central = { x: ox };
+                    }
+                }
+                if (central) {
+                    const minimo = central.x * ladoDele + BlockShape.folgaDoCentral;
+                    if (molaX * ladoDele < minimo) molaX = minimo * ladoDele;
                 }
             }
         }
