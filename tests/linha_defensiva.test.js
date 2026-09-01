@@ -20,9 +20,12 @@ const CAMPO_LARG = 68, CAMPO_COMP = 106, AREA_GRANDE_PROF = 16.5;
 
 // Le um numero simples do BlockShape do config real, pelo nome.
 function valorDoConfig(nome) {
-    const m = new RegExp(nome + ':\s*(-?[0-9.]+)').exec(srcConfig);
-    if (!m) throw new Error(nome + ' nao encontrado no config');
-    return Number(m[1]);
+    const i = srcConfig.indexOf(nome + ':');
+    if (i < 0) throw new Error(nome + ' nao encontrado no config');
+    const resto = srcConfig.slice(i + nome.length + 1);
+    const v = parseFloat(resto);
+    if (!isFinite(v)) throw new Error(nome + ' nao e um numero no config');
+    return v;
 }
 
 const BlockShape = {

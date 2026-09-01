@@ -5,6 +5,31 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 1 de Setembro de 2026 — o centro do bloco passa a 8 m
+
+O centro do rectângulo táctico fica agora **8 m à frente da linha da bola** com
+posse (era 5), e continua 5 m atrás sem posse. Quem decide é o `isAttacking`,
+ou seja a POSSE: T.Offensive e Offensive dão o mesmo avanço, e o mesmo para os
+dois estados sem bola — separar transição de fase instalada obriga a ler o Team
+State, não a posse.
+
+Os dois números estavam escritos à mão no `computeBlock`
+(`bb.isAttacking ? 5.0 : -5.0`) e passam a viver no config, em
+`BlockShape.avancoDoCentroComBola` e `.recuoDoCentroSemBola`. Cuidado com o
+nome: já existe um `avancoComBola` no `PlayingStyleTuning`, que é outra coisa
+(avanço do JOGADOR, por estilo) — daí o nome comprido.
+
+Medido com o `computeBlock` a sério, sem adversários (centro − bola, no
+referencial de ataque):
+
+    bola em -10 / -5 / 0 / +5     com bola  +8.00     sem bola  -5.00
+    bola em +20 (perto da baliza) com bola  +7.25     (o campo morde)
+
+Teste novo: `tests/centro_do_bloco.test.js` (4 casos), que trava os 8 m e
+verifica que o `computeBlock` os lê do config. O
+`tests/linha_defensiva.test.js` tinha uma cópia do `BlockShape` no stub e
+passou a ler estes dois valores do config real, senão dava `NaN`.
+
 ### Sessão de 1 de Setembro de 2026 — a falta directa
 
 Botão novo no painel esquerdo, **Falta Direta**
@@ -4227,6 +4252,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Mudar uma formação ou dimensão do campo | `config.js` |
 | Mudar quando a equipa pressiona / recua / bascula | `bt/team_bt.js` → a árvore |
 | Equipa compacta demais / esticada demais | `config.js` → `TeamShape.blockDepth*` |
+| Centro do bloco mais à frente/atrás da bola | `config.js` → `BlockShape.avancoDoCentroComBola` / `.recuoDoCentroSemBola` |
 | Alturas do ajuste Low/Medium/High da linha | `config.js` → `TeamShape.linhaDefensiva` |
 | Dar personalidade a uma postura sem mexer nas posições | `bt/team_bt.js` → `TeamPostureTuning` |
 | Afinar onde um lateral/central/extremo se coloca | `bt/position_bt.js` → a folha dessa posição |
