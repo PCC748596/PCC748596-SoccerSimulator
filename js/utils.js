@@ -3543,6 +3543,56 @@ function lugaresDoApoioNaFaltaDirecta(bolaX, bolaZ, attDir, quantos, cfg) {
     return lugares;
 }
 
+/*
+O PASSE PASSA ENTRE DOIS ADVERSARIOS?
+
+E isto que separa um LANCAMENTO (through ball) de um passe no espaco:
+
+    lancamento        bola longa que RASGA a linha — sai por entre dois
+                      adversarios e cai nas costas deles
+    passe no espaco   bola para a frente, para o espaco livre, que NAO passa
+                      por entre ninguem
+
+O codigo tratava os dois como a mesma coisa (ver aplicarMiraDoPasse em
+player_bt.js): qualquer passe do tipo SPACE/LEADING acendia a etiqueta THROUGH
+e usava a balistica de lancamento — dai as "bolas de 10 m" marcadas como
+lancamento.
+
+Teste: ha um adversario de CADA LADO da linha origem->alvo, os dois dentro do
+segmento e a menos de `larguraCorredor` dela, e a distancia entre eles (medida
+na perpendicular) nao passa de `vaoMax`. Um vao maior do que isso nao e um
+corredor entre dois homens, e campo aberto.
+
+Puro: sem Match, sem THREE. `adversarios` e uma lista de {x, z}.
+*/
+function passaEntreAdversarios(ox, oz, ax, az, adversarios, larguraCorredor, vaoMax) {
+    const dx = ax - ox, dz = az - oz;
+    const comp = Math.hypot(dx, dz);
+    if (comp < 0.001 || !adversarios || !adversarios.length) return false;
+
+    const ux = dx / comp, uz = dz / comp;   // ao longo da linha
+    const px = -uz, pz = ux;                // perpendicular
+
+    let esquerda = null, direita = null;    // o mais perto de cada lado
+    for (const o of adversarios) {
+        if (!o) continue;
+        const rx = o.x - ox, rz = o.z - oz;
+        const aoLongo = rx * ux + rz * uz;
+        if (aoLongo < 1.0 || aoLongo > comp) continue;      // fora do segmento
+        const lateral = rx * px + rz * pz;
+        if (Math.abs(lateral) > larguraCorredor) continue;  // longe da linha
+
+        if (lateral >= 0) {
+            if (esquerda === null || lateral < esquerda) esquerda = lateral;
+        } else {
+            if (direita === null || -lateral < direita) direita = -lateral;
+        }
+    }
+
+    if (esquerda === null || direita === null) return false;
+    return (esquerda + direita) <= vaoMax;
+}
+
 if (typeof window !== 'undefined') {
     Object.assign(window, {
         gkAnchor, gkAlvoSegurando, gkPodeLancar, gkSweepTarget,
@@ -3553,6 +3603,7 @@ if (typeof window !== 'undefined') {
         esperarPeloSlot, eixoDeConducao, distanciaMinimaNoLateral,
         pontoDaFaltaDirecta, lugaresDaBarreira, alturaDaBolaEm,
         bandaDaFaltaDirecta, desfechoDaFaltaDirecta, alvoDaFaltaDirecta,
-        tiroDaFaltaDirecta, lugaresDoApoioNaFaltaDirecta
+        tiroDaFaltaDirecta, lugaresDoApoioNaFaltaDirecta,
+        passaEntreAdversarios
     });
 }

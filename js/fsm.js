@@ -14,10 +14,18 @@ function executePassGameplay(p) {
     // calibrada para lá chegar mesmo (ver PassModel).
     let ehLancamento = false;
     let lancamentoAlto = false;
-    if (p.isThroughBall && p.throughBallTarget) {
+    /*
+    A bola vai para um PONTO e nao para os pes de ninguem — e o caso do
+    LANCAMENTO (rasga a linha por entre dois adversarios) e o do PASSE NO
+    ESPACO (bola a frente, para espaco livre). A balistica e a mesma; o que os
+    separa e o nome, a etiqueta no ecra e as estatisticas. Ver
+    aplicarMiraDoPasse e findThroughBall (player_bt.js).
+    */
+    if ((p.isThroughBall || p.isPasseEspaco) && p.throughBallTarget) {
+        ehLancamento = !!p.isThroughBall;
         p.isThroughBall = false;
+        p.isPasseEspaco = false;
         p.throughBallTarget = null;
-        ehLancamento = true;
         lancamentoAlto = !!p.throughBallAlto;
         p.throughBallAlto = false;
     }

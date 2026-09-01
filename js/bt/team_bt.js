@@ -387,6 +387,22 @@ function alguemAConduzir() {
 }
 
 function pickChaser(bb) {
+    /*
+    COM O JOGO PARADO NAO HA CHASER.
+
+    A bola saiu: quem ia atras dela tem de se colocar para o lance — o
+    lateral, o tiro de meta, o canto. Sem esta guarda ele continuava a correr
+    atras da bola que ja nao esta em jogo (e, com a multibola, atras do ponto
+    onde ela esta invisivel, a caminho do cone com o batedor).
+
+    O intercetor ja tinha a mesma guarda (`Match.state !== 'PLAY'`); o chaser
+    nao.
+    */
+    if (typeof Match !== 'undefined' && Match.state !== 'PLAY') {
+        bb.chaser = null;
+        return;
+    }
+
     const ballPos = Match.ball.position;
     /*
     A BOLA SO ESTA SOLTA SE NINGUEM A ESTIVER A CONDUZIR.
@@ -1737,11 +1753,55 @@ function atribuirApoiosDaEquipa(lista, bb) {
     */
     if (!bb.isAttacking) { semApoio(); return; }
     if (typeof Match === 'undefined' || !Match.ball) { semApoio(); return; }
-    if (Match.gkHoldingBall && Match.gkHoldingBall[bb.team]) { semApoio(); return; }
+    /*
+    GUARDA-REDES A SEGURAR: A EQUIPA ABRE, NÃO DESAPARECE.
+
+    Isto era um `return`: com a bola nas mãos dele, ninguém se oferecia —
+    medido, zero apoios em 100% dos frames, e a equipa a encolher para 36,3 m
+    de largura. Ele repunha para ninguém.
+
+    Agora os apoios continuam, com o filtro da saída a jogar aplicado mais
+    abaixo: fora da própria área e longe dele (ver SupportModel).
+    */
+    /*
+    NO TIRO DE META, QUEM MANDA E O DESENHO DO LANCE.
+
+    A equipa que bate tem uma forma propria (GoalkeeperPose.tiroMetaForma):
+    centrais abertos nos cantos da area, laterais subidos na linha, medios
+    escalonados. Deixar os apoios por cima disso desfazia-a — os pontos de
+    apoio nascem a volta da bola/marca, que aqui e a quina da pequena area, e
+    puxavam os centrais para tras da linha da area: medido, -44,3 m de avanco
+    contra os -34 do desenho.
+    */
+    if (typeof Match !== 'undefined' && Match.state === 'GOAL_KICK' &&
+        Match.setPieceTaker && Match.setPieceTaker.team === bb.team) {
+        semApoio();
+        return;
+    }
+
+    const gkComBola = !!(Match.gkHoldingBall && Match.gkHoldingBall[bb.team]);
+    if (gkComBola && !(typeof SupportModel !== 'undefined' && SupportModel.saidaComGuardaRedes)) {
+        semApoio();
+        return;
+    }
 
     const portador = bb.carrier;
-    const refX = Match.ball.position.x;
-    const refZ = Match.ball.position.z;
+
+    /*
+    DURANTE UMA REPOSICAO, A REFERENCIA E A MARCA — NAO A BOLA.
+
+    Com a multibola, a bola do jogo acompanha quem a foi buscar: no tiro de
+    meta ela esta ATRAS DA BALIZA durante segundos. Os pontos de apoio saem da
+    posicao da bola, e por isso dois jogadores iam oferecer-se atras da propria
+    baliza — um deles dentro dela, que e o que se via na imagem.
+
+    O sitio onde a bola VAI ESTAR e que interessa: a marca do lance.
+    */
+    const reposicaoActiva = (typeof Match !== 'undefined' && Match.reposicao &&
+        Match.reposicao.taker && Match.reposicao.taker.team === bb.team)
+        ? Match.reposicao : null;
+    const refX = reposicaoActiva ? reposicaoActiva.marca.x : Match.ball.position.x;
+    const refZ = reposicaoActiva ? reposicaoActiva.marca.z : Match.ball.position.z;
     const dirZref = lista[0] ? lista[0].dirZ : 1;
 
     const C = SupportModel.circulacao;
@@ -1815,10 +1875,31 @@ function atribuirApoiosDaEquipa(lista, bb) {
         }
     });
 
-    const comApoio = new Set(escolhidos.map(e => e.id));
+    /*
+    NA SAÍDA COM O GR, os pontos que caem dentro da própria área ou em cima
+    dele não servem — é o que o `return` de antes evitava, e é só isso que ele
+    tinha de evitar. Ver SupportModel.distMinAoGuardaRedes.
+    */
+    let validos = escolhidos;
+    if (gkComBola) {
+        const gk = (bb.own || []).find(o => o && o.role === 'gk' && o.model);
+        const linhaPropria = -dirZref * (typeof LINHA_FUNDO !== 'undefined' ? LINHA_FUNDO : 53);
+        const distMin = (typeof SupportModel !== 'undefined' && SupportModel.distMinAoGuardaRedes) || 0;
+        validos = escolhidos.filter(e => {
+            if (SupportModel.foraDaAreaNaSaida && typeof Area !== 'undefined' &&
+                Area.contem(e.x, e.z, linhaPropria)) return false;
+            if (gk && distMin > 0) {
+                const d = Math.hypot(e.x - gk.model.position.x, e.z - gk.model.position.z);
+                if (d < distMin) return false;
+            }
+            return true;
+        });
+    }
+
+    const comApoio = new Set(validos.map(e => e.id));
     for (const p of lista) if (!comApoio.has(p.id)) p.apoioPonto = null;
 
-    for (const e of escolhidos) {
+    for (const e of validos) {
         const p = lista.find(j => j.id === e.id);
         if (p) p.apoioPonto = { x: e.x, z: e.z };
     }
@@ -2088,15 +2169,29 @@ const PosicionamentoAI = {
 
         if (bb && bb.isAttacking && typeof BlockShape !== 'undefined' &&
             BlockShape.penduloParaABola && p.role !== 'gk' && !p.hasBall &&
-            bb.chaser !== p && !lateralOposto &&
-            typeof Match !== 'undefined' && Match.ball) {
-            const tecto = BlockShape.distanciaMaxX;
+            bb.chaser !== p && typeof Match !== 'undefined' && Match.ball) {
+            /*
+            O LATERAL DO LADO CONTRARIO TEM TECTO PROPRIO, MAIS LARGO.
+
+            Estava FORA do pendulo, para nao ser puxado para a bola: ele esta
+            a cobrir o extremo adversario. So que "fora" e demais — o bloco
+            acompanha a bola em x e ele ficava sozinho no outro lado do campo:
+            medido, 15,6 m ate ao colega mais perto e 55% das leituras fora do
+            rectangulo.
+
+            Agora o tecto dele e o `distanciaMaxXLateralOposto`, mais largo do
+            que o dos outros: continua a segurar a ala, mas ligado a equipa.
+            */
+            const tecto = lateralOposto
+                ? (BlockShape.distanciaMaxXLateralOposto || BlockShape.distanciaMaxX)
+                : BlockShape.distanciaMaxX;
             const bolaX = Match.ball.position.x;
             const dxPendulo = molaX - bolaX;
             if (Math.abs(dxPendulo) > tecto) {
                 molaX = bolaX + Math.sign(dxPendulo) * tecto;
             }
         }
+
 
         /*
         SEM BOLA: A FRENTE DO BLOCO E O TECTO DE TODA A GENTE.
@@ -2226,8 +2321,32 @@ const PosicionamentoAI = {
                 const souODeFora = ladoDaBola ? ehExtremo : ehLateral;
                 const sep = BlockShape.separacaoLateral;
 
+                /*
+                O LATERAL DO LADO CONTRARIO NAO E EMPURRADO PARA FORA.
+
+                A regra manda o "de fora" ficar por fora do outro — e do lado
+                contrario ao da bola o de fora e ele. Isso empurrava-o para
+                alem da borda do bloco e desfazia o tecto do pendulo: medido,
+                51% dos ALVOS dele fora do rectangulo, a 15,6 m do colega mais
+                perto. Ali quem tem de ceder e o extremo, que ja e o que a
+                regra faz do outro lado.
+                */
                 if (souODeFora) {
                     molaX = ladoDele * Math.max(Math.abs(molaX), Math.abs(alvoPar) + sep);
+                    /*
+                    E O LATERAL DO LADO CONTRARIO NAO SAI DO BLOCO POR CAUSA
+                    DISTO. Sem tecto, esta regra empurrava-o para fora do
+                    rectangulo (51% dos alvos dele, 15,6 m ate ao colega mais
+                    perto); sem a regra, ficava no eixo do campo (31% das
+                    leituras com |x| < 5). Com tecto, fica por fora do extremo
+                    mas ligado a equipa. Ver BlockShape.folgaLateralOposto.
+                    */
+                    if (ehLateral && lateralOposto && bb.bloco && BlockShape.folgaLateralOposto) {
+                        const borda = (ladoDele > 0)
+                            ? bb.bloco.x1 + BlockShape.folgaLateralOposto
+                            : -(bb.bloco.x0 - BlockShape.folgaLateralOposto);
+                        molaX = ladoDele * Math.min(Math.abs(molaX), Math.max(0, borda));
+                    }
                 } else {
                     molaX = ladoDele * Math.min(Math.abs(molaX), Math.max(0, Math.abs(alvoPar) - sep));
                 }
@@ -2281,6 +2400,44 @@ const PosicionamentoAI = {
             if (central !== null) {
                 const minimo = central * ladoLat + BlockShape.folgaDoCentral;
                 if (molaX * ladoLat < minimo) molaX = minimo * ladoLat;
+            }
+        }
+
+
+        /*
+        TIRO DE META: O SLOT VALE, COM DUAS GUARDAS.
+
+        A equipa que bate vai para as posicoes do TeamBT (pedido) — mas a area
+        e do guarda-redes e ninguem se poe na frente do chuto. As duas guardas
+        que estavam escritas na montagem passam para aqui, onde ha um slot a
+        que as aplicar. Ver GoalkeeperPose.tiroMetaMargemForaDaArea /
+        .tiroMetaCorredorDoChuto.
+        */
+        if (typeof Match !== 'undefined' && Match.state === 'GOAL_KICK' &&
+            Match.setPieceTaker && Match.setPieceTaker.team === p.team &&
+            p.role !== 'gk' && typeof GoalkeeperPose !== 'undefined' && Match.ball) {
+            const Gk = GoalkeeperPose;
+            const linhaPropria = -p.dirZ * (typeof LINHA_FUNDO !== 'undefined' ? LINHA_FUNDO : 53);
+            const margemTM = Gk.tiroMetaMargemForaDaArea || 0;
+
+            /*
+            E O LIMITE E POR PROFUNDIDADE, NAO SO PELO RECTANGULO DA AREA.
+
+            A traseira do bloco encosta a linha da area (`minZ` no
+            computeBlock), portanto o slot quase nunca cai DENTRO dela — mas
+            cai em cima da linha, e o corpo entra: medido, 22,8% das leituras
+            com o jogador dentro da propria area. O limite passa a ser a
+            profundidade da area mais a margem, sempre.
+            */
+            const limiteAvanco = -( (typeof LINHA_FUNDO !== 'undefined' ? LINHA_FUNDO : 53)
+                - Area.profundidade - margemTM );
+            if (finalZ * p.dirZ < limiteAvanco) finalZ = limiteAvanco * p.dirZ;
+            const corredorTM = Gk.tiroMetaCorredorDoChuto || 0;
+            const bolaTM = Match.ball.position;
+            if (corredorTM > 0 && Math.abs(molaX - bolaTM.x) < corredorTM &&
+                (finalZ - linhaPropria) * p.dirZ < Area.profundidade + margemTM + 6.0) {
+                const paraFora = Math.sign(molaX - bolaTM.x) || -Math.sign(bolaTM.x) || 1;
+                molaX = bolaTM.x + paraFora * corredorTM;
             }
         }
 

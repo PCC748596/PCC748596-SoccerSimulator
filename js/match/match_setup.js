@@ -825,6 +825,15 @@ Object.assign(Match, {
         }
 
         this.assignFormations();
+
+        /*
+        As bolas de reserva nos cones a volta do campo — ver js/multiball.js.
+        Aqui e nao no createField porque precisam da cena ja montada e de
+        nada mais; e a reposicao (Match.reposicao) e que as usa.
+        */
+        if (typeof MultiBall !== 'undefined' && MultiBall.init) {
+            MultiBall.init(this.scene);
+        }
     },
 
     assignFormations: function () {

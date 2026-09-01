@@ -37,6 +37,21 @@ não for executado dentro deste tempo (devido a interrupção, perda de batedor
 ou bloqueio físico), o simulador força a retoma do jogo para evitar travamentos.
 =============================================================================
 */
+/*
+A REPOSICAO COM BOLA DE RESERVA — ver js/multiball.js e Match.iniciarReposicao.
+
+`prazo` e a rede de seguranca: se o batedor nao chegar a marca (foi derrubado,
+ficou preso), a bola e pousada na mesma e o jogo segue.
+*/
+const SetPieceReposicao = {
+    distanciaApanhar: 1.2,   // a que distancia do cone a bola vem com ele
+    distanciaPousar: 0.8,    // e a que distancia da marca ele a pousa
+    alturaNaMao: 1.1,        // altura a que a leva enquanto anda
+    prazo: 12.0              // segundos ate pousar a bola de qualquer maneira
+};
+
+if (typeof window !== 'undefined') window.SetPieceReposicao = SetPieceReposicao;
+
 const SetPiecePrazos = {
     canto: 20.0,
     falta: 15.0,
@@ -346,6 +361,42 @@ const BlockShape = {
     */
     penduloParaABola: true,
     distanciaMaxX: 22.0,
+
+    /*
+    O LATERAL DO LADO CONTRARIO NAO E PUXADO PARA A BOLA — MAS TAMBEM NAO FICA
+    SOZINHO NO OUTRO CAMPO.
+
+    Ele esta la a cobrir o extremo adversario, e por isso fica fora do pendulo.
+    So que o bloco acompanha a bola em x: deixa-lo com o x que tinha punha-o
+    FORA do rectangulo. Medido: **55% das leituras com ele fora do bloco**, a
+    13,2 m do proprio slot e a 15,6 m do colega mais perto — sozinho no outro
+    lado do campo, que e o relato.
+
+    `folgaLateralOposto` e o que ele pode ficar para la da borda do bloco: o
+    suficiente para segurar a ala, nao o suficiente para se desligar da equipa.
+    */
+    /*
+    O tecto do pendulo para o LATERAL DO LADO CONTRARIO. Mais largo do que o
+    dos outros (22 m): ele esta a cobrir o extremo adversario e nao vai atras
+    da bola — mas tambem nao pode ficar sozinho no outro lado do campo, que era
+    o que acontecia quando estava simplesmente FORA do pendulo (medido: 15,6 m
+    ate ao colega mais perto, 55% das leituras fora do rectangulo do bloco).
+    */
+    distanciaMaxXLateralOposto: 30.0,
+
+    /*
+    E QUANTO ELE PODE FICAR PARA LA DA BORDA DO BLOCO.
+
+    A regra da faixa manda o "de fora" ficar por fora do parceiro, e do lado
+    contrario ao da bola o de fora e o lateral — sem tecto, isso empurrava-o
+    para fora do rectangulo (medido: 51% dos alvos dele fora, 15,6 m ate ao
+    colega mais perto). Tirar-lhe a regra resolvia isso mas metia-o no eixo do
+    campo (31% das leituras com |x| < 5 m).
+
+    Com tecto, fica as duas coisas: por fora do extremo, mas nunca mais de
+    `folgaLateralOposto` para la da borda do bloco.
+    */
+    folgaLateralOposto: 1.5,
 
     /*
     O PENDULO NAO PODE EMBOLAR O LATERAL COM O EXTREMO.

@@ -74,6 +74,7 @@ class FootballPlayer {
         this.dribbleCooldownTimer = 0;
         this.isCross = false;
         this.isThroughBall = false;
+        this.isPasseEspaco = false;
         this.throughBallTarget = null;
         // Ponto do leque que este passe mira (ver PassTypes). null = aos pés.
         this.passAimPoint = null;
@@ -2121,7 +2122,11 @@ class FootballPlayer {
         if (this.isCross) {
             this.showActionBanner('CROSS');
         } else if (this.isThroughBall) {
+            // Lancamento a serio: bola longa por entre dois adversarios.
             this.showActionBanner('THROUGH');
+        } else if (this.isPasseEspaco) {
+            // Passe a frente para espaco LIVRE — nao passa entre ninguem.
+            this.showActionBanner('SPACE');
         } else if (targetPlayer && this.model.position.distanceTo(targetPlayer.model.position) > 30) {
             this.showActionBanner('L.PASS');
         } else {
@@ -2130,7 +2135,7 @@ class FootballPlayer {
         this.passTarget = targetPlayer;
         
         let _v1 = _p_v3;
-        if (this.isThroughBall && this.throughBallTarget) {
+        if ((this.isThroughBall || this.isPasseEspaco) && this.throughBallTarget) {
             _v1.set(this.throughBallTarget.x, 0, this.throughBallTarget.z);
         } else if (this.passAimPoint) {
             /*
@@ -2275,6 +2280,7 @@ class FootballPlayer {
         this.passTarget = targetPlayer;
         this.passTargetPos = alvo.clone();
         this.isThroughBall = false;
+        this.isPasseEspaco = false;
         this.isCross = false;
         this.cosCorpoNoPasse = 1.0;
         // A bola sai da MÃO: o executePassGameplay é partilhado, o som do

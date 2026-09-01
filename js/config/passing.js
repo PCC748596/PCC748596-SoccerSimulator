@@ -69,6 +69,26 @@ const PassModel = {
     throughBallChance: 0.675, // 0.30 -> 0.45 -> 0.675 (+50% duas vezes)
 
     /*
+    O QUE FAZ DE UM PASSE UM LANÇAMENTO — e não um passe no espaço.
+
+    Pedido explícito: *"o through não é um lançamento longo que passa entre
+    adversários; diferente do pass into space, que é um passe à frente que não
+    passa entre adversários"*. Faltava justamente a parte do MEIO: a bola tem
+    de sair POR ENTRE dois adversários.
+
+    `corredorLargura`  a que distância da linha do passe um adversário conta
+                       como estando a ladeá-la
+    `vaoMax`           a soma das duas distâncias (o vão por onde a bola sai).
+                       Mais do que isto não é um corredor entre dois homens, é
+                       campo aberto — e aí é passe no espaço, não lançamento.
+
+    Ver passaEntreAdversarios (utils.js) e findThroughBall (player_bt.js). O
+    comprimento mínimo continua a ser o `distMinLonga` (30 m).
+    */
+    throughBallCorredorLargura: 7.0,
+    throughBallVaoMax: 13.0,
+
+    /*
     Conversão de distância em força — OBSOLETA. Vinha do modelo de arrasto
     antigo ("a bola perde 0.22 × 0.85 da velocidade por segundo"), que já não
     existe. A força é agora resolvida a partir do alcance pretendido, em
@@ -375,6 +395,25 @@ Fases, em segundos desde o início:
 */
 
 const SupportModel = {
+    /*
+    SAÍDA DE BOLA COM O GUARDA-REDES A SEGURAR.
+
+    Enquanto ele tem a bola nas mãos, a equipa não se oferecia de todo: o
+    `atribuirApoiosDaEquipa` saía logo à entrada. Medido: **zero jogadores a
+    oferecer-se** em 100% dos frames com o GR a segurar, a equipa com 36,3 m de
+    largura (contra os 47,6 do bloco) e 6,3 jogadores a menos de 25 m dele.
+
+    O motivo original era bom — não se quer o médio dentro da área, colado ao
+    guarda-redes — mas a resposta era grande de mais: sem apoios, ele repõe
+    para ninguém.
+
+    Agora os apoios existem, com duas regras: nada dentro da PRÓPRIA área
+    (`foraDaAreaNaSaida`) e nada a menos de `distMinAoGuardaRedes` dele. É a
+    saída a jogar: abrir, não encolher.
+    */
+    saidaComGuardaRedes: true,
+    distMinAoGuardaRedes: 14.0,
+    foraDaAreaNaSaida: true,
     /*
     Apoio de CIRCULACAO — camada a distancia de passe (ver atribuirApoios).
     */

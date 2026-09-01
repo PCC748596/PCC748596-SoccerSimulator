@@ -150,7 +150,11 @@ Object.assign(Match, {
                     this.goalSequenceStage = 0;
                     this.tempoParada = 0;
                     // Golo validado: o árbitro apita e aponta ao meio-campo.
-                    if (typeof EfeitosSonoros !== 'undefined') EfeitosSonoros.apito(1.0);
+                    if (typeof EfeitosSonoros !== 'undefined') {
+                        EfeitosSonoros.apito(1.0);
+                        // E o estádio (assets/Soccer_Crowd_Cheerin.mp3).
+                        if (EfeitosSonoros.golo) EfeitosSonoros.golo();
+                    }
                     
                     // zSinal < 0 é a baliza do TeamA, então quem levou o golo (e sai com a bola) é o TeamA
                     this.nextKickoffTeam = (zSinal < 0) ? 'TeamA' : 'TeamB';

@@ -317,6 +317,25 @@ function findThroughBall(ctx) {
             }
         }
 
+        /*
+        E TEM DE PASSAR ENTRE DOIS ADVERSARIOS.
+
+        Era isto que faltava para um lancamento ser um lancamento: a bola sai
+        POR ENTRE a linha, nao ao lado dela. Sem este teste, qualquer bola para
+        o espaco a frente contava — e o proprio `aplicarMiraDoPasse` marcava
+        passes de 10 m como THROUGH. Ver passaEntreAdversarios (utils.js) e
+        PassModel.throughBallCorredorLargura / .throughBallVaoMax.
+        */
+        if (typeof passaEntreAdversarios === 'function') {
+            const advs = ctx.opponents
+                .filter(o => o && o.role !== 'gk' && o.model)
+                .map(o => ({ x: o.model.position.x, z: o.model.position.z }));
+            const entra = passaEntreAdversarios(
+                p.model.position.x, p.model.position.z, alvoX, alvoZ, advs,
+                PassModel.throughBallCorredorLargura, PassModel.throughBallVaoMax);
+            if (!entra) continue;
+        }
+
         if (window.showPlayerPoints) { mate.debugPoints = mate.debugPoints || {}; mate.debugPoints['Lanç'] = Math.round(nota); }
         if (nota > melhorNota) { melhorNota = nota; melhor = { mate: mate, alvoX: alvoX, alvoZ: alvoZ }; }
     }
@@ -620,7 +639,21 @@ function aplicarMiraDoPasse(p, tipo, ponto) {
         (tipo === PassTypes.SPACE || tipo === PassTypes.LEADING);
 
     if (paraOEspaco) {
-        p.isThroughBall = true;
+        /*
+        PASSE NO ESPACO — e NAO um lancamento.
+
+        Marcava-se `isThroughBall`, e com isso um passe de 10 m para a frente
+        aparecia como THROUGH e ia buscar a balistica do lancamento. Sao coisas
+        diferentes: o lancamento rasga a linha por entre dois adversarios (ver
+        findThroughBall e passaEntreAdversarios), este e um passe a frente para
+        espaco LIVRE — o filtro do leque ja garantiu que nao ha ninguem no
+        caminho.
+
+        A balistica e a mesma (a bola vai para um PONTO, nao para os pes), e
+        por isso o `executePassGameplay` aceita as duas marcas; o que muda e o
+        nome, o que se mede e o que se pode afinar em cada uma.
+        */
+        p.isPasseEspaco = true;
         p.throughBallTarget = { x: ponto.x, z: ponto.z };
         // Rasteiro: o corredor já foi validado pelo filtro do leque (nenhum
         // adversário a menos de 2 m, linha de passe livre).
@@ -2271,6 +2304,27 @@ function tratarBolaParada(p) {
             fsm.changeState('SET_PIECE_WAIT');
         }
     } else if (Match.state === 'GOAL_KICK') {
+        /*
+        A EQUIPA QUE BATE VAI, NO MINIMO, PARA AS POSICOES DO TeamBT (pedido).
+
+        Estava a cair em SET_PIECE_WAIT — que congela o jogador onde esta e
+        escreve o alvo dele — e por isso ficavam onde a jogada os tinha
+        deixado: medido, **18,6 m de media ate ao slot do bloco** (p95 36,3), e
+        79% dos alvos vinham dessa folha.
+
+        Agora quem bate fica em MOVE_TO_POS e NAO escreve alvo nenhum: sem
+        proposta da arvore, quem manda e a camada posicional (ESTRUTURA, ver
+        js/bt/alvo.js) — ou seja, o slot no bloco. O batedor (o guarda-redes)
+        tem o seu proprio ciclo e nao passa por aqui.
+
+        Quem defende continua a esperar: nao ha lance para eles montar.
+        */
+        const equipaQueBate = (typeof Match !== 'undefined' && Match.setPieceTaker)
+            ? Match.setPieceTaker.team : null;
+        if (equipaQueBate && p.team === equipaQueBate) {
+            if (s !== 'MOVE_TO_POS') fsm.changeState('MOVE_TO_POS');
+            return;
+        }
         if (s !== 'SET_PIECE_TAKER' && s !== 'SET_PIECE_WAIT' && s !== 'MOVE_TO_POS') {
             fsm.changeState('SET_PIECE_WAIT');
         }

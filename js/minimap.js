@@ -23,8 +23,12 @@ const Minimap = {
     get altura() { return Math.round(this.largura * (CAMPO_LARG / CAMPO_COMP)); },
 
     margem: 6,        // relva à volta das linhas, para a bola na linha se ver
-    raioJogador: 2.6,
-    raioBola: 1.8,
+    /*
+    Raios dos pontos no minimapa, em pixeis do canvas. Pedido: 70% maiores —
+    2.6 -> 4.4 e 1.8 -> 3.1. So o desenho muda; a escala do campo e a mesma.
+    */
+    raioJogador: 4.4,
+    raioBola: 3.1,
 
     visivel: true,
     _canvas: null,

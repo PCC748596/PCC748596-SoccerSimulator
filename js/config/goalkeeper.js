@@ -83,6 +83,64 @@ const GoalkeeperPose = {
     tiroMetaAndar: 2.2,      // m/s a caminhar até à linha de fundo
     tiroMetaCorrer: 5.5,     // m/s na corrida para a bola
     tiroMetaRecuo: 3.8,      // metros atrás da bola onde fica antes de arrancar a corrida (+30cm)
+
+    /*
+    NO TIRO DE META, A ÁREA É DO GUARDA-REDES.
+
+    Medido: **1,87 companheiros dentro da própria grande área** por frame
+    durante o lance (pior caso 4), um deles a 4,6 m do guarda-redes e um
+    central em cima da linha de fundo. Nas imagens vê-se gente ao lado e à
+    frente de quem vai bater.
+
+    Os companheiros saem da área (`margemForaDaArea` para lá da linha dela) e
+    ainda do corredor por onde a bola vai sair (`corredorDoChuto`, de
+    meia-largura, medido da bola na direcção do campo). O guarda-redes fica,
+    obviamente; e os adversários já eram empurrados para fora.
+    */
+    tiroMetaMargemForaDaArea: 2.0,
+    tiroMetaCorredorDoChuto: 7.0,
+
+    /*
+    A FORMA DA EQUIPA QUE BATE O TIRO DE META.
+
+    Era a posição da formação avançada 6 m, e isso não é uma saída a jogar:
+    medido, os centrais ficavam a **-44,9 m de avanço** (oito metros da própria
+    linha de fundo, atrás da linha da área) e dois jogadores iam parar atrás da
+    baliza atrás da bola de reserva — é o que se vê na imagem, um deles dentro
+    da própria baliza.
+
+    Agora é o desenho de sempre de uma saída de bola, escrito por posição:
+
+        centrais    abertos nos cantos da área, para receber curto
+        laterais    subidos e encostados à linha, que é a saída larga
+        médios      um a dar apoio curto, os outros escalonados
+        extremos    largura no meio-campo
+        avançados   à frente, a fixar a última linha adversária
+
+    `x` é a meia-largura (0..1 do meio-campo para cada lado, com o sinal do
+    lado do jogador) e `avanco` são metros no referencial de ataque, medidos
+    do meio-campo — negativo é o próprio meio-campo.
+    */
+    tiroMetaForma: {
+        CB: { x: 0.50, avanco: -34.0 },
+        DC: { x: 0.50, avanco: -34.0 },
+        LB: { x: 0.88, avanco: -20.0 },
+        RB: { x: 0.88, avanco: -20.0 },
+        LWB: { x: 0.88, avanco: -18.0 },
+        RWB: { x: 0.88, avanco: -18.0 },
+        DM: { x: 0.15, avanco: -26.0 },
+        CM: { x: 0.30, avanco: -18.0 },
+        LM: { x: 0.80, avanco: -6.0 },
+        RM: { x: 0.80, avanco: -6.0 },
+        LW: { x: 0.85, avanco: 2.0 },
+        RW: { x: 0.85, avanco: 2.0 },
+        AM: { x: 0.20, avanco: -6.0 },
+        SS: { x: 0.20, avanco: 4.0 },
+        CF: { x: 0.15, avanco: 6.0 }
+    },
+    // Para uma posição que não esteja na tabela: mantém o x da formação e
+    // avança-a um pouco, que é o que se fazia a todos.
+    tiroMetaAvancoOmissao: 6.0,
     tiroMetaDistChuto: 0.85, // distância à bola em que dispara o gesto do chute
     // Segurança absoluta: se algo correr mal (posicionamento nunca completa,
     // etc.) chuta na mesma. Tem de caber posicionamento + espera de 3-6s +
