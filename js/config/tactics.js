@@ -196,6 +196,14 @@ const TeamShape = {
     */
     // Construção: com a bola aquém deste Z, um médio desce a dar linha de passe.
     supportBallZ: -6.0,
+
+    /*
+    Margem (metros) da histerese do médio que apoia a construção. Ele só troca
+    quando o outro estiver mais de isto mais perto da bola — ver pickSupportMid
+    em team_bt.js, onde a histerese era "estar no top-3" e com dois candidatos
+    nunca libertava.
+    */
+    supportMidHisterese: 6.0,
     supportAhead: 9.0,    // quantos metros à frente da bola se oferece
     supportWide: 8.0      // e quanto abre para o lado, para abrir o corredor
 };

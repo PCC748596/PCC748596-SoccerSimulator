@@ -750,7 +750,71 @@ const CrossModel = {
     fundoZ: 50.0,         // linha de fundo
     distMin: 10.0,         // abaixo disto é passe curto, não cruzamento pelo ar
     distBaseIdeal: 18.0,   // distância de referência ideal para cruzamento
-    penalDistancia: 0.035, // penalidade progressiva por metro de distância além do ideal
+    penalDistancia: 0.090, // penalidade progressiva por metro de distância além do ideal
+
+    /*
+    DISTÂNCIA: penalização a sério, corte só para o disparate.
+
+    Medidos oito cruzamentos seguidos em jogo: TODOS entre 22 e 32 m, nenhum
+    da linha de fundo — a `penalDistancia` de 0.035/m tira 0.42 a 30 m, e a
+    chance nessa altura já vai acima de 1, portanto não travava nada.
+
+    Um tecto duro a 28 m foi tentado e cortou metade das tentativas sem as
+    substituir por cruzamentos melhores: o ala raramente chega à linha de
+    fundo, portanto o que se ganhava em qualidade perdia-se em jogadas que
+    simplesmente deixavam de existir. O tecto fica só onde não há discussão
+    (uma bola atirada do meio-campo), e a distância passa a pesar na CHANCE,
+    que é onde compete com o resto.
+    */
+    distMax: 34.0,
+
+    /*
+    TERRITÓRIO DO GUARDA-REDES. Um cruzamento que cai dentro da pequena área,
+    ou a menos de `fundoMinAlvo` da linha, é dele — sai da baliza e agarra-a
+    no ar. Nos mesmos oito, um cruzamento raso de 27.8 m acabou nas mãos do
+    GK adversário sem ninguém lhe tocar.
+
+    `pequenaMeiaLargura` vem da Area (config), aqui é só a profundidade.
+    */
+    fundoMinAlvo: 5.5,
+
+    /*
+    RASTEIRO SÓ DE PERTO. Um cruzamento rasteiro de 27.8 m foi medido a acabar
+    nas mãos do guarda-redes sem ninguém lhe tocar: junto ao chão e vindo de
+    longe, ele tem tempo de sobra para sair e agarrar. De longe, a bola tem de
+    ir por cima.
+    */
+    distRasoMax: 18.0,
+
+    /*
+    LEAD PRÓPRIO DO CRUZAMENTO.
+
+    O alvo do passe passava pelo `alvoDePasse` (utils.js), que projecta o
+    receptor à velocidade máxima dele durante o voo INTEIRO. Num passe em
+    campo aberto isso está certo; num cruzamento não: quem ataca a área faz
+    dois ou três metros e trava, muda de direcção, disputa. Medidos dois
+    cruzamentos a passar a 15 e a 24 m do homem — a bola foi mirada para onde
+    ele estaria se continuasse a correr em linha recta durante 1.5 s.
+
+    Aqui o lead é o mesmo cálculo, com TECTO: `leadMax` metros, no máximo.
+    */
+    leadMax: 4.0,
+    // Velocidade média da bola no cruzamento, para estimar o tempo de voo.
+    velVooEstimada: 18.0,
+
+    /*
+    ESCOLHA DO ALVO. Era `o companheiro mais CENTRAL`, e mais nada: um ponta
+    de lança com um central colado ao primeiro poste ganhava sempre a um
+    extremo sozinho ao segundo. Agora é uma nota:
+
+      `pesoLivre`     metros de folga ao marcador mais próximo (o que mais
+                      pesa: cruza-se para quem está livre)
+      `pesoCentral`   estar pelo eixo continua a valer — é de onde se remata
+      `pesoAlturaAlvo` quem ganha de cabeça é quem se procura num cruzamento
+    */
+    pesoLivre: 1.0,
+    pesoCentral: 0.55,
+    pesoAlturaAlvo: 0.35,
 
     // +20% pedido explicitamente: cruzamentos pouco frequentes.
     chanceBase: 0.54,     // com um alvo na área

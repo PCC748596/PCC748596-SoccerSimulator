@@ -448,9 +448,21 @@ function findCross(ctx) {
     const meuX = Math.abs(p.model.position.x);
     if (meuX < C.alaX || ctx.zoneAhead < C.zonaZ) { ctx._cross = null; return null; }
 
+    /*
+    ESCOLHA DO ALVO — por nota, não pelo mais central.
+
+    Era `if (mx < melhorX)`: ganhava sempre quem estivesse mais pelo eixo,
+    ainda que com um central colado. Medidos oito cruzamentos seguidos, metade
+    acabou nos pés do adversário e um deles nas mãos do guarda-redes. Agora
+    conta a folga ao marcador, a centralidade e o jogo aéreo do alvo — e o
+    território do guarda-redes fica de fora (ver CrossModel.fundoMinAlvo).
+    */
     let alvo = null;
     let alvos = 0;
-    let melhorX = Infinity;
+    let melhorNota = -Infinity;
+
+    const distMax = (C.distMax !== undefined) ? C.distMax : Infinity;
+    const fundoMinAlvo = (C.fundoMinAlvo !== undefined) ? C.fundoMinAlvo : 0;
 
     for (const m of ctx.teammates) {
         if (m === p || m.role === 'gk') continue;
@@ -459,9 +471,31 @@ function findCross(ctx) {
         if (mx > C.areaX) continue;
         // Perto de mais para cruzamento pelo ar — é um passe curto, não uma
         // bola lançada por cima de todos (ver CrossModel.distMin).
-        if (m.model.position.distanceTo(p.model.position) < C.distMin) continue;
+        const dAoAlvo = m.model.position.distanceTo(p.model.position);
+        if (dAoAlvo < C.distMin || dAoAlvo > distMax) continue;
+        /*
+        Colado à linha de fundo é a zona do guarda-redes: ele sai da baliza e
+        agarra a bola no ar antes de o atacante lá chegar.
+        */
+        if ((CAMPO_COMP / 2) - Math.abs(m.model.position.z) < fundoMinAlvo) continue;
+
         alvos++;
-        if (mx < melhorX) { melhorX = mx; alvo = m; }
+
+        // Folga ao marcador mais próximo: é o que mais pesa — cruza-se para
+        // quem está livre, não para quem está no sítio bonito.
+        let folga = 99;
+        for (const opp of ctx.opponents) {
+            if (opp.role === 'gk') continue;
+            const d = opp.model.position.distanceTo(m.model.position);
+            if (d < folga) folga = d;
+        }
+
+        const central = 1 - Math.min(1, mx / C.areaX);
+        const nota = Math.min(folga, 8.0) * (C.pesoLivre ?? 1.0)
+            + central * 8.0 * (C.pesoCentral ?? 0.55)
+            + ((m.skillFor('STRENGTH') - 50) / 50) * 4.0 * (C.pesoAlturaAlvo ?? 0.35);
+
+        if (nota > melhorNota) { melhorNota = nota; alvo = m; }
     }
     if (!alvo) { ctx._cross = null; return null; }
 
@@ -524,10 +558,13 @@ function findCross(ctx) {
         + THREE.MathUtils.clamp((distAlvo - 14) / 20, 0, 1) * 0.35
         + ((alvo.skillFor('STRENGTH') - 50) / 100) * 0.30;
 
+    // De longe é sempre pelo alto: ver CrossModel.distRasoMax.
+    const forcaAlto = (C.distRasoMax !== undefined) && (distAlvo > C.distRasoMax);
+
     ctx._cross = {
         alvo: alvo,
         chance: THREE.MathUtils.clamp(chance, 0, C.chanceMax),
-        alto: notaAlto >= 0.5,
+        alto: forcaAlto || notaAlto >= 0.5,
         bloqueadores: bloqueadores
     };
     return ctx._cross;
@@ -539,7 +576,32 @@ function actCross(ctx) {
     p.isCross = true;
     // Consumido em executePassGameplay (fsm.js) para escolher a altura.
     p.crossAlto = ctx.cross.alto;
-    p.initiatePass(ctx.cross.alvo);
+
+    /*
+    O PONTO DE MIRA É DESTE RAMO, não do `alvoDePasse`.
+
+    Sem isto o `initiatePass` projectava o receptor à velocidade máxima dele
+    durante o tempo de voo todo, e a bola era mirada 15 a 24 m à frente de
+    quem ataca a área — que faz dois ou três metros e trava. Ver
+    CrossModel.leadMax.
+    */
+    const C = CrossModel;
+    const alvo = ctx.cross.alvo;
+    const alvoPos = alvo.model.position;
+    const dist = p.model.position.distanceTo(alvoPos);
+    const tVoo = dist / (C.velVooEstimada || 18.0);
+    let lx = 0, lz = 0;
+    if (alvo.velocity) {
+        const v = Math.hypot(alvo.velocity.x, alvo.velocity.z);
+        if (v > 0.1) {
+            const avanco = Math.min(v * tVoo, C.leadMax ?? 4.0);
+            lx = (alvo.velocity.x / v) * avanco;
+            lz = (alvo.velocity.z / v) * avanco;
+        }
+    }
+    p.passAimPoint = { x: alvoPos.x + lx, z: alvoPos.z + lz };
+
+    p.initiatePass(alvo);
 }
 
 function actThroughBall(ctx) {

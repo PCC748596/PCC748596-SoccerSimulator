@@ -714,8 +714,25 @@ function pickSupportMid(bb) {
         .map(p => ({ p, dist: p.model.position.distanceTo(Match.ball.position) }));
     candidatos.sort((a, b) => a.dist - b.dist);
 
+    /*
+    HISTERESE POR DISTÂNCIA, não por posição na lista.
+
+    Era "mantém o anterior se ainda estiver entre os 3 mais perto" — e os
+    candidatos são os médios CENTRAIS, que numa formação normal são dois. Com
+    dois candidatos o anterior está sempre no top-3, portanto a escolha
+    congelava no primeiro médio e nunca mais mudava: medido em 300 s de jogo,
+    um único médio escolhido e zero trocas.
+
+    Agora mantém-se o anterior enquanto ele não estiver mais de
+    `TeamShape.supportMidHisterese` metros atrás do melhor — a mesma ideia do
+    chaser: troca-se quando vale mesmo a pena, não por um palmo.
+    */
     const prevIdx = prev ? candidatos.findIndex(c => c.p === prev) : -1;
-    if (prevIdx >= 0 && prevIdx < 3) {
+    const margem = (typeof TeamShape !== 'undefined' &&
+        typeof TeamShape.supportMidHisterese === 'number')
+        ? TeamShape.supportMidHisterese : 6.0;
+    if (prevIdx >= 0 && candidatos.length &&
+        candidatos[prevIdx].dist <= candidatos[0].dist + margem) {
         bb.supportMid = prev;
     } else {
         bb.supportMid = candidatos.length ? candidatos[0].p : null;

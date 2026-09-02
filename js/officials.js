@@ -280,6 +280,11 @@ const RefereeModel = {
     elevacaoSinal: -Math.PI / 2,   // 90 graus: horizontal
     elevacaoPenalti: -1.0,         // ~57 graus: diagonal para o chao
     duracaoSinal: 2.5,
+    /*
+    A que distancia do ponto designado o arbitro conta como "no lugar" — usado
+    pelo gesto que espera por ele (ver `ateChegar` em sinalizar).
+    */
+    raioNoLugar: 1.5,
     marcaPenaltiZ: 11.0,           // distancia da marca a linha de fundo
     suavizacaoBraco: 0.25
 };
@@ -728,12 +733,20 @@ const Officials = {
     enquanto sinaliza (o `mover` corre na mesma), e um angulo fixo deixava o
     braco a apontar para o sitio errado assim que ele desse dois passos.
     */
-    sinalizar: function (x, z, elevacao) {
+    sinalizar: function (x, z, elevacao, ateChegar) {
         if (!this.arbitro) return;
         this.arbitro.sinal = {
             x: x, z: z,
             elev: elevacao,
-            timer: RefereeModel.duracaoSinal
+            timer: RefereeModel.duracaoSinal,
+            /*
+            `ateChegar`: o gesto nao morre ao fim dos 2.5 s — fica de pe
+            enquanto o arbitro caminha para o lugar dele. E o caso do penalti:
+            ele marca a 30 m da marca e leva ~7 s a la chegar, portanto com a
+            duracao normal o braco caia a meio do caminho e a marcacao ficava
+            sem gesto nenhum durante a montagem do lance.
+            */
+            ateChegar: !!ateChegar
         };
     },
 
@@ -763,8 +776,10 @@ const Officials = {
 
         const fundo = CAMPO_COMP / 2;
         if (tipo === 'PENALTY') {
+            // Aponta a MARCA e mantem o braco ate estar no lugar de onde vai
+            // ver a cobranca (ver pontoDoArbitro, ramo PENALTY).
             this.sinalizar(0, (fundo - RefereeModel.marcaPenaltiZ) * dir,
-                RefereeModel.elevacaoPenalti);
+                RefereeModel.elevacaoPenalti, true);
         } else {
             this.sinalizar(0, fundo * dir, RefereeModel.elevacaoSinal);
         }
@@ -779,6 +794,21 @@ const Officials = {
     tickSinal: function (dt) {
         const arb = this.arbitro;
         if (!arb || !arb.sinal) return;
+
+        /*
+        No penalti o cronometro so comeca a correr quando ele chega ao lugar:
+        ate la o gesto renova-se. Se o lance sair do estado PENALTY (batido,
+        anulado), a espera acaba e o braco desce como em qualquer outro gesto.
+        */
+        if (arb.sinal.ateChegar) {
+            const aindaNoLance = (typeof Match !== 'undefined' && Match.state === 'PENALTY');
+            const alvo = this.pontoDoArbitro(Match && Match.ball);
+            const chegou = !alvo || Math.hypot(
+                alvo.x - arb.model.position.x, alvo.z - arb.model.position.z)
+                <= RefereeModel.raioNoLugar;
+            if (aindaNoLance && !chegou) arb.sinal.timer = RefereeModel.duracaoSinal;
+            else arb.sinal.ateChegar = false;
+        }
 
         arb.sinal.timer -= dt;
         if (arb.sinal.timer <= 0) {
