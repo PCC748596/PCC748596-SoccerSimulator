@@ -583,6 +583,141 @@ aceitar as duas pernas (`aguardarPassada` -> `emJanelaDeToque`), e o `ShotClip`
 continua a bater sempre com a direita. Passá-los ao pé bom é o mesmo `p.pe` e
 uma linha em cada sítio, mas é outro pedido.
 
+#### +20% na nota do passe para quem está num sector activo
+
+Pedido: *"aumenta as notas de passe para os jogadores que estão nos sectores
+Left, Center e Right activados; aumenta em 20%"*.
+
+Já havia um termo de sector no `findPassTarget`:
+
+    score += (secPriority * 100) * corredores;
+
+mas é uma parcela FIXA — o `Tatics.prioridadeSector` dá 0.40 num sector activo
+contra 0.20 num inactivo, ou seja ~40 pontos contra 20. Ao lado dos bónus de
+300 (linha limpa) e 500 (receptor livre) isso não decide nada, e era por isso
+que ligar e desligar sectores quase não se via nos passes.
+
+O novo é MULTIPLICATIVO sobre a nota inteira do candidato
+(`PassModel.bonusSectorActivo`, 0.20), aplicado no fim da conta, quando a nota
+já está formada. O sector do destinatário sai do `Tatics.sectorDeX(x, dirZ)` —
+a mesma função que o painel e o TeamBT usam, para não haver duas convenções.
+
+**Só sobe notas positivas.** Multiplicar uma nota negativa por 1.2 afundava-a
+ainda mais, e um bónus não pode castigar quem o recebe.
+
+Medido em 600 s, com os sectores `esq` e `dir` ligados (o estado por omissão do
+painel), pelo sector onde o passe ATERRA:
+
+    antes    esq 26%   cen 39%   dir 35%     para sectores activos: 61%
+    depois   esq 28%   cen 30%   dir 41%     para sectores activos: 70%
+
+O centro — o único desligado — perdeu nove pontos percentuais para os dois
+lados, que é exactamente o que os botões pedem.
+
+#### Os três tipos de passe, e o "THROUGH" num passe de 2 metros
+
+Relato: *"o through pass está a aparecer para passes de 2 metros; para mim
+existe o passe directo, o lead pass (no vazio) e o through pass (lançamento
+longo) >= 30 m e entre adversários"*.
+
+A definição estava certa e o código também — em metade. O `findThroughBall` já
+exigia `dist >= PassModel.distMinLonga` (30 m). O que estragava tudo era o
+`aplicarMiraDoPasse`: **qualquer passe do tipo SPACE ou LEADING acendia
+`isThroughBall`**, independentemente da distância e de passar entre alguém. Daí
+a etiqueta THROUGH num passe de 2 m.
+
+Os três voltaram a ser três:
+
+    directo      aos pes do companheiro
+    no espaco    a frente dele, para espaco LIVRE — a bola vai a um PONTO (e por
+                 isso partilha a balistica de encontro) mas NAO e um lancamento
+    lancamento   >= 30 m E a passar entre dois adversarios
+
+O teste que separa os dois últimos é o `passaEntreAdversarios` (utils.js), que
+existia e foi apagado no commit `0232214` — foi reposto, e o `findThroughBall`
+passou a exigi-lo: longo não chega, tem de RASGAR a linha. Os limiares do
+corredor estão no config (`throughBallCorredorLargura` 7 m,
+`throughBallVaoMax` 13 m).
+
+Medido em 900 s:
+
+    directo      200 (64%)   comprimento medio 14.4 m   min 1.1
+    no espaco     92 (30%)   comprimento medio 12.8 m   min 1.9
+    lancamento    19 (6%)    comprimento medio 42.4 m   min 38.9
+
+**Zero lançamentos abaixo de 30 m.** E a etiqueta por cima do jogador voltou a
+distinguir os dois: `THROUGH` para o lançamento, `SPACE` para o passe no espaço.
+
+Isto pôs o `tests/lancamento_vs_espaco.test.js` inteiro a verde — era um dos 34
+que estavam a falhar, e descrevia exactamente este desenho.
+
+#### O tecto de altura do passe, por distância
+
+Pedido: *"passes pelo alto acima de 1,3 m só acima de 35 metros; abaixo disso, a
+altura máxima é a do peito (para matada no peito)"*.
+
+O mecanismo existia inteiro no `executePassGameplay` — lê
+`passeArco.distanciaAlto`, `apexMaxCurto`, `elevMinCurto`, `elevMinLonga` — e os
+QUATRO campos tinham sido apagados do config. Com `distanciaAlto` a vir
+`undefined`, o teste `alcance < undefined` dava sempre false e **todos** os
+passes usavam o tecto dos 7 m. Era esse o "passe pelo alto num passe curto".
+
+Repostos com os números do pedido: `apexMaxCurto: 1.30` (altura do peito) e
+`distanciaAlto: 35.0`. Medido em 900 s, apex do voo por faixa, já sem
+cruzamentos nem lançamentos:
+
+    0-10 m    n=107   apex max 0.11 m   (rasteiro)
+    10-20 m   n=174   apex max 1.35 m   0 acima do tecto
+    20-35 m   n=48    apex max 1.32 m   0 acima do tecto
+    35 m+     livre   ate 5.8 m
+
+> O tecto limita a SUBIDA e a bola parte do chão a `BallPhysics.raio`, por isso
+> o apex absoluto de um passe curto chega a 1.41 m. É o mesmo número.
+
+Mais dois casos verdes no `passe_curto_rasante.test.js` (os valores esperados
+passaram de 1.0/30 m para 1.30/35 m, a pedido).
+
+#### O lateral e o meia da mesma ala
+
+Relato: *"estão a embolar-se; com o CM do mesmo lado com a bola o lateral devia
+ficar mais recuado para dar suporte, e não ir para cima do meia-lateral. E é
+importante que abram as linhas de passe — o lateral está a esconder-se atrás do
+meia adversário"*.
+
+Medido, só nos frames com um companheiro em posse:
+
+    distancia entre os dois        media 9.9 m   p05 1.8 m
+    a menos de 6 m um do outro     26%
+    lateral MAIS ADIANTADO         16%
+    linha de passe TAPADA          21%
+
+Três causas, e duas eram código morto:
+
+- **O lateral estava excluído da camada de apoio.** O `atribuirApoiosDaEquipa`
+  tem `if (p.role === 'def' && !bolaNoNossoTerco) continue` — e um lateral é
+  `role: def`, portanto ficava de fora exactamente na situação do relato. É a
+  mesma confusão entre POSTO e FUNÇÃO que já apareceu no corredor da ala e no
+  `caminhoFechadoAFrente`. Agora o lateral da ala da bola é candidato a apoio.
+- **O `BlockShape.separacaoLateral` (6 m) estava no config e ninguém o lia** —
+  com a medição que o motivou escrita ao lado. Ligado: quem cede é o lateral,
+  que fica por dentro do meia.
+- **E faltava a profundidade**, que é o pedido: `recuoDeApoio` (7 m) põe o
+  lateral atrás do meia-lateral, que é de onde se dá apoio.
+
+Depois:
+
+    a menos de 6 m um do outro     26% -> 4%     (p05 de 1.8 m para 6.5 m)
+    lateral MAIS ADIANTADO         16% -> 1%
+
+**O que NÃO ficou resolvido, e fica dito:** a linha de passe tapada continua nos
+**27%** (era 21%, e subiu com o recuo — mais recuado, mais gente pelo meio). A
+regra de abrir a linha está escrita (`abrirLinhaMax`/`abrirLinhaPasso`: dar
+passos de lado até se ver) mas não se vê na medição. A razão provável é a ordem
+da cadeia: o `tacticalTarget` é suavizado (`PositionSmoothing`) e há camadas a
+seguir — marcação, apoio, estilo — que ainda lhe mexem, portanto testar a sombra
+no alvo intermédio não garante a posição final. Resolver isso é correr o teste
+no FIM da cadeia, e é o passo seguinte.
+
 #### Quem fica acima do relvado depois do apito — é quem CORRE
 
 Relato: *"depois do início do jogo alguns jogadores ficam acima do gramado"*,

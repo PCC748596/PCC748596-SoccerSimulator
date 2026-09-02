@@ -102,6 +102,20 @@ const PassModel = {
     maximo entre os dois — acima disso nao e um corredor, e campo aberto.
     Ver `passaEntreAdversarios` (utils.js).
     */
+    /*
+    BONUS DE PASSE PARA OS SECTORES ACTIVOS (pedido).
+
+    Os botoes Left / Center / Right do painel (`Tatics.setores`) ja pesavam
+    no posicionamento e na nota do passe, mas so por uma parcela fixa de
+    ~40 pontos — que nao se ve ao lado de bonus de 300 e 500. Este e
+    MULTIPLICATIVO sobre a nota inteira do candidato: quem esta num sector
+    ligado vale mais 20%.
+
+    Aplica-se so a notas positivas (ver findPassTarget): um bonus nao pode
+    afundar quem ja estava em negativo.
+    */
+    bonusSectorActivo: 0.20,
+
     distMinLonga: 30.0,
     throughBallCorredorLargura: 7.0,
     throughBallVaoMax: 13.0,

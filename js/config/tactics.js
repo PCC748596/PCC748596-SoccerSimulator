@@ -406,6 +406,21 @@ const BlockShape = {
     dentro dele quando sobe, que e a forma como o par funciona no futebol.
     */
     separacaoLateral: 6.0,
+    /*
+    E EM PROFUNDIDADE: com o meio a ter a bola na ala, o lateral fica ATRAS do
+    meia-lateral para lhe dar apoio (pedido). Ir para o lado dele nao e linha
+    de passe nenhuma — medido, os dois estavam a menos de 6 m um do outro em
+    26% das leituras, e o lateral a frente do meia em 16%.
+    */
+    recuoDeApoio: 7.0,
+    /*
+    ABRIR A LINHA DE PASSE. Nao chega estar recuado: com um adversario entre
+    a bola e ele, o passe nao existe — e o adversario nem precisa de o marcar.
+    O lateral da dois passos de lado ate se ver, ate `abrirLinhaMax`.
+    */
+    abrirLinhaMax: 8.0,
+    abrirLinhaPasso: 2.0,
+    abrirLinhaLargura: 1.5,
 
     /*
     E O LATERAL NUNCA ENTRA POR DENTRO DO SEU CENTRAL.

@@ -1890,7 +1890,26 @@ function atribuirApoiosDaEquipa(lista, bb) {
     for (const p of lista) {
         if (!p || p.role === 'gk' || !p.postoBase) continue;
         if (portador && p === portador) continue;
-        if (p.role === 'def' && !bolaNoNossoTerco) continue;
+        /*
+        O LATERAL DA ALA DA BOLA E APOIO, esteja a bola onde estiver.
+
+        A regra de cima tira os DEFESAS do apoio fora do proprio terco — e um
+        lateral e `role: def`, portanto ficava de fora exactamente na situacao
+        do relato: o medio do lado com a bola, e ele posto so pelo bloco.
+        Sem passar por aqui, ninguem lhe olhava para a LINHA DE PASSE, e ele
+        acabava atras de um adversario (medido: 21% das leituras com a linha
+        tapada) ou em cima do meia-lateral (26% a menos de 6 m dele).
+
+        O `atribuirApoios` ja pesa a folga da linha (`pesoFolgaLinha`) e a
+        distancia ao proprio slot (`pesoCusto`) — e como o slot do lateral e
+        recuado, o ponto que lhe calha fica ATRAS do meia, que e o apoio que
+        o pedido descreve.
+        */
+        const ehLateral = (p.pos === 'LB' || p.pos === 'RB');
+        const naAlaDaBola = ehLateral &&
+            Math.sign(p.model.position.x) === (Math.sign(refX) || 1) &&
+            Math.abs(refX) > 8.0;
+        if (p.role === 'def' && !bolaNoNossoTerco && !naAlaDaBola) continue;
         // Quem esta em cima da bola tambem nao: e ele que a vai jogar.
         if (Math.hypot(p.model.position.x - refX, p.model.position.z - refZ) < 2.0) continue;
         // Quem vai receber a bola tem tarefa; oferecer-se e para os outros.
@@ -2495,6 +2514,99 @@ const PosicionamentoAI = {
             }
         }
 
+        /*
+        O LATERAL NAO SE EMBOLA COM O MEIA DA MESMA ALA (pedido).
+
+        Duas regras, e sao as do relato:
+
+          EM X   o `BlockShape.separacaoLateral` (6 m) ja estava escrito no
+                 config, com a medicao que o motivou — e NINGUEM o lia. Quem
+                 cede e o lateral: o meia da a largura, o lateral fica por
+                 dentro dele.
+          EM Z   e o pedido novo: com o meio a ter a bola na ala, o lateral
+                 fica `recuoDeApoio` metros ATRAS do meia, para dar apoio.
+                 Ir para o lado dele nao serve de linha de passe nenhuma.
+
+        Medido antes: os dois a menos de 6 m um do outro em 26% das leituras
+        (p05 de 1.8 m) e o lateral a FRENTE do meia em 16%.
+        */
+        const B_SEP = (typeof BlockShape !== 'undefined') ? BlockShape : null;
+        let sepX = molaX, sepZ = finalZ;   // a separacao da ala escreve-os de volta
+        if (B_SEP && (p.pos === 'LB' || p.pos === 'RB')) {
+            const parPos = (p.pos === 'LB') ? 'LM' : 'RM';
+            const meus = (typeof Match !== 'undefined')
+                ? ((p.team === 'TeamA') ? Match.players : Match.opponents) : [];
+            const par = meus.find(o => o && o.pos === parPos && o.model);
+            const meuLado = Math.sign(sepX) || 1;
+            if (par && Math.sign(par.model.position.x) === meuLado) {
+                // EM X: por dentro do meia, com a separacao minima.
+                const xPar = par.model.position.x;
+                const sep = B_SEP.separacaoLateral || 6.0;
+                if (Math.abs(sepX) > Math.abs(xPar) - sep) {
+                    sepX = Math.sign(xPar || meuLado) * Math.max(0, Math.abs(xPar) - sep);
+                }
+                // EM Z: atras dele, para dar apoio.
+                const recuo = B_SEP.recuoDeApoio || 0;
+                if (recuo > 0) {
+                    const zParDir = par.model.position.z * p.dirZ;
+                    const zMeuDir = sepZ * p.dirZ;
+                    if (zMeuDir > zParDir - recuo) sepZ = (zParDir - recuo) * p.dirZ;
+                }
+            }
+        }
+
+        /*
+        E ABRE A LINHA DE PASSE (pedido).
+
+        Nao chega ficar recuado: se houver um adversario entre a bola e ele,
+        o passe nao existe — e o adversario nem precisa de o marcar, porque
+        ele proprio se poe na sombra. Medido: a linha do portador para o
+        lateral estava tapada em 21% das leituras, e subiu para 27% depois
+        de o recuar (mais recuado, mais gente pelo meio).
+
+        A correccao e a mais simples que um jogador faz em campo: dar dois
+        passos de lado ate se VER. Tenta-se deslocar em x, primeiro para
+        fora (que e onde um lateral da largura) e depois para dentro, em
+        passos de `abrirLinhaPasso` ate `abrirLinhaMax`. O primeiro ponto
+        com linha limpa ganha; se nenhum limpar, fica onde estava.
+        */
+        if (B_SEP && (p.pos === 'LB' || p.pos === 'RB') && B_SEP.abrirLinhaMax > 0 &&
+            typeof Match !== 'undefined' && Match.ball) {
+            const advs = (p.team === 'TeamA') ? Match.opponents : Match.players;
+            const bx = Match.ball.position.x, bz = Match.ball.position.z;
+
+            const tapada = (px, pz) => {
+                const dx = px - bx, dz = pz - bz;
+                const comp = Math.hypot(dx, dz);
+                if (comp < 2.0) return false;
+                const ux = dx / comp, uz = dz / comp;
+                for (const o of advs) {
+                    if (!o || o.role === 'gk' || !o.model) continue;
+                    const rx = o.model.position.x - bx, rz = o.model.position.z - bz;
+                    const aoLongo = rx * ux + rz * uz;
+                    if (aoLongo < 1.0 || aoLongo > comp) continue;
+                    if (Math.abs(rx * (-uz) + rz * ux) < B_SEP.abrirLinhaLargura) return true;
+                }
+                return false;
+            };
+
+            if (tapada(sepX, sepZ)) {
+                const paraFora = Math.sign(sepX) || 1;
+                const passo = B_SEP.abrirLinhaPasso || 2.0;
+                for (let d = passo; d <= B_SEP.abrirLinhaMax + 1e-6; d += passo) {
+                    const tentativas = [sepX + paraFora * d, sepX - paraFora * d];
+                    let achou = null;
+                    for (const x of tentativas) {
+                        if (Math.abs(x) > 33) continue;
+                        if (!tapada(x, sepZ)) { achou = x; break; }
+                    }
+                    if (achou !== null) { sepX = achou; break; }
+                }
+            }
+        }
+
+        molaX = sepX;
+        finalZ = sepZ;
         const tx = THREE.MathUtils.clamp(molaX, -34, 34);
         const tz = THREE.MathUtils.clamp(finalZ, -50, 50);
 

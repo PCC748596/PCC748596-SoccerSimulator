@@ -2234,6 +2234,28 @@ class FootballPlayer {
                 }
             }
 
+            /*
+            BONUS DO SECTOR ACTIVO (pedido): quem esta num dos sectores
+            ligados no painel (Left / Center / Right) vale mais como
+            destinatario — `PassModel.bonusSectorActivo` da nota dele.
+
+            Ja havia um termo de sector aqui em cima (`prioridadeSector`),
+            mas esse e uma parcela FIXA (~40 pontos num sector activo contra
+            20 num inactivo) e perde-se entre bonus de 300 e 500. Este e
+            multiplicativo: mexe na nota inteira, que e o que o pedido diz.
+
+            So sobe notas POSITIVAS. Multiplicar uma nota negativa por 1.2
+            afundava-a — um bonus nunca pode castigar quem o recebe.
+            */
+            if (score > 0 && typeof Tatics !== 'undefined' && Tatics.setores &&
+                typeof PassModel !== 'undefined' && PassModel.bonusSectorActivo) {
+                const secDoAlvo = (typeof Tatics.sectorDeX === 'function')
+                    ? Tatics.sectorDeX(optPos.x, dirZ) : null;
+                if (secDoAlvo && Tatics.setores.indexOf(secDoAlvo) >= 0) {
+                    score *= 1 + PassModel.bonusSectorActivo;
+                }
+            }
+
             if (window.showPlayerPoints) { opt.debugPoints = opt.debugPoints || {}; opt.debugPoints['Pass'] = Math.round(score); }
             ratedCandidates.push({ player: opt, score: score });
         }
