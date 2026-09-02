@@ -787,6 +787,24 @@ const CrossModel = {
     distRasoMax: 18.0,
 
     /*
+    NÃO SE CRUZA COM UM HOMEM EM CIMA.
+
+    A bola sai a 22° e leva metros a ganhar altura: um adversário nos
+    primeiros passos do cruzamento corta-a junto ao chão, e nem "alto" nem
+    "rasteiro" o evitam. Medidos treze cruzamentos: quatro foram cortados
+    assim, um deles antes de a bola fazer 3 m — todos com a bola a 0.1 m do
+    chão no ponto em que morreram.
+
+    O `bloqueadores` já era contado, mas só decidia alto/raso; nunca fazia o
+    jogador desistir. Agora, com alguém dentro de `saidaLimpaComprimento`
+    metros à frente e `saidaLimpaLargura` para o lado, o cruzamento não sai —
+    a árvore segue para o passe, o drible ou a condução, que é o que um
+    jogador faz nessa situação.
+    */
+    saidaLimpaComprimento: 5.0,
+    saidaLimpaLargura: 1.8,
+
+    /*
     LEAD PRÓPRIO DO CRUZAMENTO.
 
     O alvo do passe passava pelo `alvoDePasse` (utils.js), que projecta o

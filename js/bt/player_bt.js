@@ -546,11 +546,22 @@ function findCross(ctx) {
     */
     _line1.set(p.model.position, alvo.model.position);
     let bloqueadores = 0;
+    let saidaTapada = false;
+    const compSaida = C.saidaLimpaComprimento ?? 0;
+    const largSaida = C.saidaLimpaLargura ?? 0;
     for (const opp of ctx.opponents) {
         if (opp.role === 'gk') continue;
         _line1.closestPointToPoint(opp.model.position, true, _v1);
-        if (_v1.distanceTo(opp.model.position) < 1.6) bloqueadores++;
+        const desvio = _v1.distanceTo(opp.model.position);
+        if (desvio < 1.6) bloqueadores++;
+        /*
+        E os primeiros metros TÊM de estar limpos: a bola sai a 22° e ainda
+        vem junto ao chão (ver CrossModel.saidaLimpaComprimento).
+        */
+        if (compSaida > 0 && desvio < largSaida &&
+            _v1.distanceTo(p.model.position) < compSaida) saidaTapada = true;
     }
+    if (saidaTapada) { ctx._cross = null; return null; }
 
     // Pontuação do ALTO: quem estiver no caminho pesa muito, distância e jogo
     // aéreo do alvo pesam menos.
