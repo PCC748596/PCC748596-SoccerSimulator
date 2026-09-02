@@ -23,13 +23,21 @@ const Minimap = {
     get altura() { return Math.round(this.largura * (CAMPO_LARG / CAMPO_COMP)); },
 
     margem: 6,        // relva à volta das linhas, para a bola na linha se ver
-    raioJogador: 2.6,
+    /* Pontos dos jogadores 70% maiores que os 2.6 originais, e pintados como
+       os discos da câmara 6 (vista táctica): cor da camisola com contorno
+       preto no TeamA e branco no TeamB. Sem o número — a esta escala não se
+       lê. Proporção do contorno igual à do disco (8/58 do raio). */
+    raioJogador: 4.42,
+    contornoJogador: 8 / 58,
     raioBola: 1.8,
 
     visivel: true,
     _canvas: null,
     _ctx: null,
     _dpr: 1,
+
+    // Contorno dos discos, igual ao da textura do discoTatico (player.js).
+    contornoEquipa: { TeamA: '#000000', TeamB: '#ffffff' },
 
     cores: {
         relva: 'rgba(22, 78, 42, 0.30)',
@@ -119,7 +127,7 @@ const Minimap = {
         }
     },
 
-    _ponto: function (ctx, x, z, raio, cor, contorno) {
+    _ponto: function (ctx, x, z, raio, cor, contorno, espessura) {
         const p = this.paraTela(x, z);
         ctx.beginPath();
         ctx.arc(p.sx, p.sy, raio, 0, Math.PI * 2);
@@ -127,7 +135,7 @@ const Minimap = {
         ctx.fill();
         if (contorno) {
             ctx.strokeStyle = contorno;
-            ctx.lineWidth = 1.2;
+            ctx.lineWidth = espessura || 1.2;
             ctx.stroke();
         }
     },
@@ -158,17 +166,22 @@ const Minimap = {
         de relance, e a cor da equipa sozinha não o distingue dos outros dez.
         */
         const portador = Match.ballCarrier;
-        const desenharEquipa = (lista, cor) => {
+        const espessura = this.raioJogador * this.contornoJogador;
+        const desenharEquipa = (lista, corFallback, equipa) => {
+            const contorno = this.contornoEquipa[equipa];
             for (const p of lista) {
                 if (!p || !p.model) continue;
-                const c = (p.role === 'gk') ? this.cores.gk : cor;
+                // A cor sai da camisola, como na câmara 6; o fallback só serve
+                // se o jogador ainda não tiver `corCamisa`.
+                const c = p.corCamisa || ((p.role === 'gk') ? this.cores.gk : corFallback);
                 this._ponto(ctx, p.model.position.x, p.model.position.z,
                     this.raioJogador, c,
-                    (p === portador) ? this.cores.portador : null);
+                    (p === portador) ? this.cores.portador : contorno,
+                    (p === portador) ? espessura * 1.5 : espessura);
             }
         };
-        desenharEquipa(Match.players, this.cores.TeamA);
-        desenharEquipa(Match.opponents, this.cores.TeamB);
+        desenharEquipa(Match.players, this.cores.TeamA, 'TeamA');
+        desenharEquipa(Match.opponents, this.cores.TeamB, 'TeamB');
 
         this._ponto(ctx, Match.ball.position.x, Match.ball.position.z,
             this.raioBola, this.cores.bola, 'rgba(0,0,0,0.65)');
