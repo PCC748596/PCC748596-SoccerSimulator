@@ -11,9 +11,14 @@ const ActionAnimClips = {
     // Chutão do guarda-redes (ver GoalkeeperKickClip). O contactTime cai
     // exactamente no keyframe 9 (t = 8/11), o frame do contacto pé-bola.
     gkPunt: { duration: 0.85, contactTime: 8 / 11 },
-    // Tiro de meta do chão com corrida de aproximação (ver GoalkeeperGroundKickClip / SetPieceGroundKickClip)
-    // Contacto no frame 8 (t = 7/11 ≈ 0.636) do clip de 12 frames
-    gkPuntChao: { duration: 0.82, contactTime: 7 / 11 },
+    /*
+    Tiro de meta do chão, com corrida de aproximação (ver
+    GoalkeeperGroundKickClip). Contacto no frame do impacto (t = 9/15 = 0.60) do clip
+    de 16 frames com maior densidade de amostragem.
+
+    Duração ultra-rápida e direta ajustada para 0.25s.
+    */
+    gkPuntChao: { duration: 0.25, contactTime: 9 / 15 },
     // Lançamento com as mãos do guarda-redes
     gkThrow: { duration: 0.70, contactTime: 8 / 11 },
     // Arremesso lateral (ver ThrowInClip): a bola sai no frame 6 de 10.
@@ -111,8 +116,10 @@ o primeiro keyframe do clip de chute do chão. Sem ela, a pose das pernas, a
 rotação/translação da bacia (o pivô no pé de apoio vale ~0.26 m de deslocação
 lateral logo no frame 1), a posição do corpo no ponto de apoio e a orientação
 mudavam todas no mesmo frame — lia-se como um corte entre duas animações.
+
+Encurtada para manter proporção adequada com o tempo de 0.25s.
 */
-const GK_GROUND_KICK_BLEND = 0.14;
+const GK_GROUND_KICK_BLEND = 0.04;
 
 /*
 =============================================================================
@@ -174,45 +181,53 @@ const GoalkeeperKickClip = {
 
 /*
 =============================================================================
-GROUND_KICK_CLIP / SET_PIECE_KICK_CLIP — 12 Keyframes (Chute de Bola Parada)
+GROUND_KICK_CLIP / SET_PIECE_KICK_CLIP — 16 Keyframes (Chute de Bola Parada de Alta Resolução)
 Servindo para: Tiro de Meta, Faltas, Escanteios e Pênaltis.
 Biomecânica com PIVÔ NO PÉ DE APOIO:
   - O corpo todo inclina em bloco com pivô no pé de apoio cravado na relva,
     sem quebrar a cintura ou dobrar a coluna de lado.
-  - Fig 2 (Frames 2-4): Pé de apoio cravado ao lado da bola, inclinação total
+  - Frames 1-5: Pé de apoio cravado ao lado da bola, inclinação contínua
           sobre o pé esquerdo, armação máxima da perna direita (~110° no joelho).
-  - Fig 3 (Frames 7-8): Aceleração balística e contato pé-bola (impacto no frame 8, t = 7/11).
-  - Fig 4 (Frames 9-11): Follow-through alto da perna de remate e elevação na ponta do pé.
-  - Frame 12: Pouso e amortecimento neutro.
+  - Frames 6-9: Aceleração balística, chicote pélvico e contato pé-bola (impacto no frame 10, t = 9/15 = 0.60).
+  - Frames 10-14: Follow-through alto da perna de remate e elevação na ponta do pé.
+  - Frames 15-16: Pouso e amortecimento neutro.
 =============================================================================
 */
 const GoalkeeperGroundKickClip = {
     pernaChute: 'r',
-    contactFrame: 8, // frame 8 (índice 7, t = 7/11)
+    contactFrame: 10, // frame 10 (índice 9, t = 9/15 = 0.60)
     frames: [
-        // 1 (t = 0/11): Chegada e fixação do pé de apoio ao lado da bola, início da armação
-        { leanZ: -0.10, pitchX: -0.08, chest: 0.00, coxaChute: 0.35, joelhoChute: 0.80, coxaChuteZ: -0.05, coxaApoio: -0.08, joelhoApoio: 0.25, bracoLx: -0.30, bracoLz: 0.45, bracoRx: 0.20, bracoRz: -0.25, cotoveloL: -0.5, cotoveloR: -0.7, altura: 0.00 },
-        // 2 (t = 1/11): Inclinação do corpo aumentando sobre o apoio, perna de remate recua
-        { leanZ: -0.24, pitchX: -0.18, chest: -0.02, coxaChute: 0.65, joelhoChute: 1.40, coxaChuteZ: -0.10, coxaApoio: -0.04, joelhoApoio: 0.30, bracoLx: -0.45, bracoLz: 0.65, bracoRx: 0.35, bracoRz: -0.32, cotoveloL: -0.4, cotoveloR: -0.8, altura: -0.01 },
-        // 3 (t = 2/11): FIGURA 2 - Fase de Suporte e Armação Máxima: pivô total no pé esquerdo, corpo inclinado em bloco, joelho direito a ~110°
-        { leanZ: -0.36, pitchX: -0.28, chest: -0.04, coxaChute: 0.95, joelhoChute: 1.92, coxaChuteZ: -0.15, coxaApoio: 0.02, joelhoApoio: 0.35, bracoLx: -0.55, bracoLz: 0.85, bracoRx: 0.45, bracoRz: -0.38, cotoveloL: -0.3, cotoveloR: -0.9, altura: -0.02 },
-        // 4 (t = 3/11): Início da impulsão pélvica para a frente, perna ainda fletida acumulando energia
-        { leanZ: -0.32, pitchX: -0.22, chest: -0.02, coxaChute: 0.60, joelhoChute: 1.70, coxaChuteZ: -0.12, coxaApoio: 0.03, joelhoApoio: 0.32, bracoLx: -0.48, bracoLz: 0.78, bracoRx: 0.35, bracoRz: -0.40, cotoveloL: -0.35, cotoveloR: -0.8, altura: -0.01 },
-        // 5 (t = 4/11): Transição: avanço dinâmico da coxa de remate em direção à bola
-        { leanZ: -0.26, pitchX: -0.14, chest: 0.00, coxaChute: 0.20, joelhoChute: 1.30, coxaChuteZ: -0.08, coxaApoio: 0.04, joelhoApoio: 0.28, bracoLx: -0.35, bracoLz: 0.70, bracoRx: 0.20, bracoRz: -0.44, cotoveloL: -0.35, cotoveloR: -0.7, altura: 0.00 },
-        // 6 (t = 5/11): Efeito chicote: desaceleração da coxa e início da extensão rápida da tíbia
-        { leanZ: -0.20, pitchX: -0.06, chest: 0.02, coxaChute: -0.25, joelhoChute: 0.75, coxaChuteZ: -0.05, coxaApoio: 0.04, joelhoApoio: 0.25, bracoLx: -0.15, bracoLz: 0.62, bracoRx: 0.00, bracoRz: -0.48, cotoveloL: -0.3, cotoveloR: -0.6, altura: 0.01 },
-        // 7 (t = 6/11): Aproximação final milimétrica do pé à bola
-        { leanZ: -0.16, pitchX: 0.00, chest: 0.04, coxaChute: -0.60, joelhoChute: 0.30, coxaChuteZ: -0.03, coxaApoio: 0.05, joelhoApoio: 0.22, bracoLx: 0.00, bracoLz: 0.58, bracoRx: -0.20, bracoRz: -0.50, cotoveloL: -0.3, cotoveloR: -0.5, altura: 0.02 },
-        // 8 (t = 7/11): FIGURA 3 - Fase de Contato (IMPACTO): pé no centro da bola, perna esticada, corpo apoiado no pé de suporte
+        // 1 (t = 0/15): Chegada e fixação do pé de apoio ao lado da bola, início da armação
+        { leanZ: -0.08, pitchX: -0.06, chest: 0.00, coxaChute: 0.28, joelhoChute: 0.65, coxaChuteZ: -0.04, coxaApoio: -0.08, joelhoApoio: 0.22, bracoLx: -0.25, bracoLz: 0.40, bracoRx: 0.15, bracoRz: -0.22, cotoveloL: -0.5, cotoveloR: -0.7, altura: 0.00 },
+        // 2 (t = 1/15): Inclinação sobre o apoio, perna de remate recua progressivamente
+        { leanZ: -0.18, pitchX: -0.14, chest: -0.01, coxaChute: 0.52, joelhoChute: 1.15, coxaChuteZ: -0.08, coxaApoio: -0.05, joelhoApoio: 0.27, bracoLx: -0.38, bracoLz: 0.58, bracoRx: 0.28, bracoRz: -0.28, cotoveloL: -0.45, cotoveloR: -0.75, altura: -0.01 },
+        // 3 (t = 2/15): Inclinação acentuando, elevação da coxa de remate
+        { leanZ: -0.28, pitchX: -0.22, chest: -0.03, coxaChute: 0.78, joelhoChute: 1.65, coxaChuteZ: -0.12, coxaApoio: -0.01, joelhoApoio: 0.32, bracoLx: -0.48, bracoLz: 0.74, bracoRx: 0.38, bracoRz: -0.34, cotoveloL: -0.38, cotoveloR: -0.85, altura: -0.01 },
+        // 4 (t = 3/15): FIGURA 2 - Fase de Suporte e Armação Máxima: pivô total no pé esquerdo, corpo inclinado em bloco
+        { leanZ: -0.36, pitchX: -0.28, chest: -0.04, coxaChute: 0.96, joelhoChute: 1.95, coxaChuteZ: -0.15, coxaApoio: 0.02, joelhoApoio: 0.35, bracoLx: -0.55, bracoLz: 0.85, bracoRx: 0.45, bracoRz: -0.38, cotoveloL: -0.3, cotoveloR: -0.9, altura: -0.02 },
+        // 5 (t = 4/15): Início do avanço pélvico acumulando energia na perna de trás
+        { leanZ: -0.34, pitchX: -0.24, chest: -0.03, coxaChute: 0.82, joelhoChute: 1.80, coxaChuteZ: -0.13, coxaApoio: 0.03, joelhoApoio: 0.33, bracoLx: -0.50, bracoLz: 0.80, bracoRx: 0.38, bracoRz: -0.40, cotoveloL: -0.34, cotoveloR: -0.82, altura: -0.01 },
+        // 6 (t = 5/15): Transição rápida: a coxa inicia o chicote para a frente
+        { leanZ: -0.30, pitchX: -0.18, chest: -0.01, coxaChute: 0.58, joelhoChute: 1.52, coxaChuteZ: -0.10, coxaApoio: 0.04, joelhoApoio: 0.30, bracoLx: -0.42, bracoLz: 0.74, bracoRx: 0.28, bracoRz: -0.43, cotoveloL: -0.35, cotoveloR: -0.75, altura: 0.00 },
+        // 7 (t = 6/15): Efeito chicote: a coxa avança acelerando e a tíbia começa a abrir
+        { leanZ: -0.24, pitchX: -0.10, chest: 0.01, coxaChute: 0.28, joelhoChute: 1.20, coxaChuteZ: -0.07, coxaApoio: 0.04, joelhoApoio: 0.27, bracoLx: -0.28, bracoLz: 0.67, bracoRx: 0.12, bracoRz: -0.46, cotoveloL: -0.32, cotoveloR: -0.65, altura: 0.01 },
+        // 8 (t = 7/15): Perna de remate ultrapassa a vertical da perna de apoio em alta velocidade
+        { leanZ: -0.19, pitchX: -0.03, chest: 0.03, coxaChute: -0.08, joelhoChute: 0.85, coxaChuteZ: -0.04, coxaApoio: 0.05, joelhoApoio: 0.24, bracoLx: -0.10, bracoLz: 0.61, bracoRx: -0.08, bracoRz: -0.49, cotoveloL: -0.3, cotoveloR: -0.58, altura: 0.01 },
+        // 9 (t = 8/15): Aproximação milimétrica final ao ponto da bola, perna esticando no ápice da velocidade
+        { leanZ: -0.16, pitchX: 0.02, chest: 0.04, coxaChute: -0.48, joelhoChute: 0.42, coxaChuteZ: -0.02, coxaApoio: 0.05, joelhoApoio: 0.22, bracoLx: 0.02, bracoLz: 0.57, bracoRx: -0.22, bracoRz: -0.51, cotoveloL: -0.3, cotoveloR: -0.50, altura: 0.02 },
+        // 10 (t = 9/15): FIGURA 3 - Fase de Contato (IMPACTO): pé no centro da bola, perna esticada, corpo apoiado no pé de suporte
         { leanZ: -0.14, pitchX: 0.06, chest: 0.06, coxaChute: -0.80, joelhoChute: 0.12, coxaChuteZ: 0.00, coxaApoio: 0.05, joelhoApoio: 0.20, bracoLx: 0.12, bracoLz: 0.55, bracoRx: -0.35, bracoRz: -0.52, cotoveloL: -0.3, cotoveloR: -0.45, altura: 0.03 },
-        // 9 (t = 8/11): Pós-impacto imediato: perna segue subindo pela inércia balística
-        { leanZ: -0.10, pitchX: 0.15, chest: 0.08, coxaChute: -1.25, joelhoChute: 0.08, coxaChuteZ: 0.00, coxaApoio: 0.06, joelhoApoio: 0.16, bracoLx: 0.25, bracoLz: 0.60, bracoRx: 0.10, bracoRz: -0.58, cotoveloL: -0.3, cotoveloR: -0.4, altura: 0.08 },
-        // 10 (t = 9/11): FIGURA 4 - Fase de Finalização (Follow-Through Alto): perna no ápice acima da cintura, corpo elevado na ponta do pé de apoio
+        // 11 (t = 10/15): Pós-impacto imediato: perna segue subindo pela inércia balística
+        { leanZ: -0.11, pitchX: 0.13, chest: 0.07, coxaChute: -1.18, joelhoChute: 0.09, coxaChuteZ: 0.00, coxaApoio: 0.06, joelhoApoio: 0.17, bracoLx: 0.22, bracoLz: 0.59, bracoRx: 0.00, bracoRz: -0.56, cotoveloL: -0.3, cotoveloR: -0.42, altura: 0.06 },
+        // 12 (t = 11/15): Subida potente da perna acima da bacia
+        { leanZ: -0.08, pitchX: 0.20, chest: 0.09, coxaChute: -1.48, joelhoChute: 0.06, coxaChuteZ: 0.00, coxaApoio: 0.07, joelhoApoio: 0.14, bracoLx: 0.32, bracoLz: 0.63, bracoRx: 0.25, bracoRz: -0.61, cotoveloL: -0.3, cotoveloR: -0.35, altura: 0.11 },
+        // 13 (t = 12/15): FIGURA 4 - Fase de Finalização (Follow-Through Alto): perna no ápice acima da cintura, corpo elevado na ponta do pé de apoio
         { leanZ: -0.06, pitchX: 0.24, chest: 0.10, coxaChute: -1.60, joelhoChute: 0.05, coxaChuteZ: 0.00, coxaApoio: 0.08, joelhoApoio: 0.12, bracoLx: 0.38, bracoLz: 0.65, bracoRx: 0.42, bracoRz: -0.65, cotoveloL: -0.3, cotoveloR: -0.3, altura: 0.15 },
-        // 11 (t = 10/11): Desaceleração suave da perna alta e descida do corpo
-        { leanZ: -0.02, pitchX: 0.12, chest: 0.05, coxaChute: -0.75, joelhoChute: 0.25, coxaChuteZ: 0.00, coxaApoio: 0.04, joelhoApoio: 0.16, bracoLx: 0.18, bracoLz: 0.40, bracoRx: 0.20, bracoRz: -0.40, cotoveloL: -0.2, cotoveloR: -0.2, altura: 0.05 },
-        // 12 (t = 11/11): Pouso equilibrado com retorno à postura neutra de jogo
+        // 14 (t = 13/15): Desaceleração suave da perna alta e descida do corpo
+        { leanZ: -0.03, pitchX: 0.16, chest: 0.07, coxaChute: -1.05, joelhoChute: 0.18, coxaChuteZ: 0.00, coxaApoio: 0.05, joelhoApoio: 0.15, bracoLx: 0.26, bracoLz: 0.48, bracoRx: 0.28, bracoRz: -0.48, cotoveloL: -0.25, cotoveloR: -0.25, altura: 0.08 },
+        // 15 (t = 14/15): Retorno da perna para o chão
+        { leanZ: -0.01, pitchX: 0.06, chest: 0.02, coxaChute: -0.45, joelhoChute: 0.14, coxaChuteZ: 0.00, coxaApoio: 0.02, joelhoApoio: 0.12, bracoLx: 0.10, bracoLz: 0.28, bracoRx: 0.10, bracoRz: -0.28, cotoveloL: -0.1, cotoveloR: -0.1, altura: 0.02 },
+        // 16 (t = 15/15): Pouso equilibrado com retorno à postura neutra de jogo
         { leanZ: 0.00, pitchX: 0.00, chest: 0.00, coxaChute: 0.00, joelhoChute: 0.10, coxaChuteZ: 0.00, coxaApoio: 0.00, joelhoApoio: 0.10, bracoLx: 0.00, bracoLz: 0.15, bracoRx: 0.00, bracoRz: -0.15, cotoveloL: 0.00, cotoveloR: 0.00, altura: 0.00 }
     ]
 };
