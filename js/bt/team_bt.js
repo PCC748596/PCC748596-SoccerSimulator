@@ -1750,7 +1750,6 @@ function atribuirApoiosDaEquipa(lista, bb) {
     */
     if (!bb.isAttacking) { semApoio(); return; }
     if (typeof Match === 'undefined' || !Match.ball) { semApoio(); return; }
-    if (Match.gkHoldingBall && Match.gkHoldingBall[bb.team]) { semApoio(); return; }
 
     const portador = bb.carrier;
     const refX = Match.ball.position.x;
@@ -2243,6 +2242,13 @@ const PosicionamentoAI = {
         com a POSICAO do outro nao chega: os dois estao em movimento e vao os
         dois atras um do outro.
         */
+        /*
+        FAIXAS LATERAIS — o lateral cede a largura ao extremo do mesmo lado
+        (separacaoLateral).
+        
+        No lado oposto ao da bola, o lateral NÃO deve ser empurrado para a linha lateral:
+        ele deve manter a estrutura do bloco/slot sem forçar abertura externa desnecessária.
+        */
         const ehExtremo = (p.pos === 'LM' || p.pos === 'RM' || p.pos === 'LW' || p.pos === 'RW');
         const ehLateral = (p.role === 'def' &&
             (p.pos === 'LB' || p.pos === 'RB' || p.pos === 'LWB' || p.pos === 'RWB'));
@@ -2250,24 +2256,28 @@ const PosicionamentoAI = {
         if (bb && typeof BlockShape !== 'undefined' && BlockShape.separacaoLateral &&
             (ehExtremo || ehLateral)) {
             const ladoDele = Math.sign(p.baseTarget.x) || 1;
-            const parPos = ehExtremo
-                ? [(ladoDele < 0 ? 'LB' : 'RB'), (ladoDele < 0 ? 'LWB' : 'RWB')]
-                : [(ladoDele < 0 ? 'LM' : 'RM'), (ladoDele < 0 ? 'LW' : 'RW')];
-            const par = (bb.own || []).find(o => o && o.model && o !== p &&
-                parPos.indexOf(o.pos) >= 0);
+            const bolaXsep = (typeof Match !== 'undefined' && Match.ball)
+                ? Match.ball.position.x : 0;
+            const ladoDaBola = (Math.sign(bolaXsep) === ladoDele);
 
-            if (par) {
-                const alvoPar = (par.tacticalTarget) ? par.tacticalTarget.x : par.model.position.x;
-                const bolaXsep = (typeof Match !== 'undefined' && Match.ball)
-                    ? Match.ball.position.x : 0;
-                const ladoDaBola = (Math.sign(bolaXsep) === ladoDele);
-                const souODeFora = ladoDaBola ? ehExtremo : ehLateral;
-                const sep = BlockShape.separacaoLateral;
+            // A separação de faixas só se aplica se o par estiver no corredor/lado ativo da jogada
+            if (ladoDaBola) {
+                const parPos = ehExtremo
+                    ? [(ladoDele < 0 ? 'LB' : 'RB'), (ladoDele < 0 ? 'LWB' : 'RWB')]
+                    : [(ladoDele < 0 ? 'LM' : 'RM'), (ladoDele < 0 ? 'LW' : 'RW')];
+                const par = (bb.own || []).find(o => o && o.model && o !== p &&
+                    parPos.indexOf(o.pos) >= 0);
 
-                if (souODeFora) {
-                    molaX = ladoDele * Math.max(Math.abs(molaX), Math.abs(alvoPar) + sep);
-                } else {
-                    molaX = ladoDele * Math.min(Math.abs(molaX), Math.max(0, Math.abs(alvoPar) - sep));
+                if (par) {
+                    const alvoPar = (par.tacticalTarget) ? par.tacticalTarget.x : par.model.position.x;
+                    const souODeFora = ehExtremo;
+                    const sep = BlockShape.separacaoLateral;
+
+                    if (souODeFora) {
+                        molaX = ladoDele * Math.max(Math.abs(molaX), Math.abs(alvoPar) + sep);
+                    } else {
+                        molaX = ladoDele * Math.min(Math.abs(molaX), Math.max(0, Math.abs(alvoPar) - sep));
+                    }
                 }
             }
         }
