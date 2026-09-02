@@ -62,7 +62,16 @@ for (let n = 0; n < quantas; n++) {
 
     // ---- a barreira
     const barreira = def.filter(p => p.naBarreiraFalta);
-    if (barreira.length !== DF.barreiraN) barreiraErrada++;
+    /*
+    O NÚMERO DA BARREIRA SAI DA DISTÂNCIA, não é sempre cinco: acima de
+    `barreira1MaxDist` fica um homem, acima de `barreira2MaxDist` dois, e
+    de perto a barreira cheia (ver o ramo FREE_KICK do setupSetPiece).
+    */
+    const distCentro = Math.hypot(bola.x, golZ - bola.z);
+    let nEsperado = FreeKickModel.barreiraMax || 4;
+    if (distCentro > FreeKickModel.barreira1MaxDist) nEsperado = 1;
+    else if (distCentro > FreeKickModel.barreira2MaxDist) nEsperado = 2;
+    if (barreira.length !== nEsperado) barreiraErrada++;
 
     // O canto fechado é o do lado de onde se bate: a barreira tem de cortar a
     // recta bola -> poste desse lado.
@@ -84,9 +93,19 @@ for (let n = 0; n < quantas; n++) {
     const dirX = (0 - bola.x), dirZ2 = (golZ - bola.z);
     const dl = Math.hypot(dirX, dirZ2) || 1;
     apoios.forEach(p => {
+        /*
+        FORA-DE-JOGO A SÉRIO: à frente da bola E à frente do último
+        defensor. No desenho por sector os avançados esperam o ressalto à
+        FRENTE da bola, de propósito — o que não podem é passar a linha.
+        */
         const avancoBola = bola.z * attDir;
         const avancoP = p.model.position.z * attDir;
-        if (avancoP > avancoBola + 0.01) apoioAdiantado++;
+        let linhaDef = -999;
+        for (const o of def) {
+            if (o.role === 'gk') continue;
+            linhaDef = Math.max(linhaDef, o.model.position.z * attDir);
+        }
+        if (avancoP > avancoBola + 0.01 && avancoP > linhaDef + 0.01) apoioAdiantado++;
         const px = p.model.position.x - bola.x, pz = p.model.position.z - bola.z;
         const lateral = Math.abs(dirX * pz - dirZ2 * px) / dl;
         const aoLongo = (dirX * px + dirZ2 * pz) / dl;
@@ -95,8 +114,11 @@ for (let n = 0; n < quantas; n++) {
 
     // ---- o guarda-redes
     const gk = def.find(p => p.role === 'gk');
-    if (gk && (Math.abs(gk.model.position.x) > 0.5 ||
-        Math.abs(Math.abs(gk.model.position.z) - LINHA_FUNDO) > 0.5)) gkForaDoCentro++;
+    /*
+    Ele espera NA LINHA — mas não ao centro: a barreira fecha um canto e ele
+    cobre o outro (`FreeKickModel.deslocamentoGK`). O que se mede é a linha.
+    */
+    if (gk && Math.abs(Math.abs(gk.model.position.z) - LINHA_FUNDO) > 1.0) gkForaDoCentro++;
 
     // ---- corre o lance
     let estadoFinal = 'sem_desfecho';
@@ -151,10 +173,10 @@ console.log('\nBARREIRA');
 console.log('  com número errado    : ' + barreiraErrada);
 console.log('  canto do remate aberto: ' + cantoAberto);
 console.log('\nEQUIPA QUE BATE');
-console.log('  companheiros à frente da bola (fora-de-jogo): ' + apoioAdiantado);
+console.log('  companheiros em fora-de-jogo               : ' + apoioAdiantado);
 console.log('  companheiros no corredor da cobrança       : ' + apoioNoCorredor);
 console.log('\nGUARDA-REDES');
-console.log('  fora do centro da linha: ' + gkForaDoCentro);
+console.log('  fora da propria linha  : ' + gkForaDoCentro);
 console.log('  atraso médio de reacção: ' + media(atrasos).toFixed(3) + ' s');
 console.log('\nDESFECHOS SORTEADOS');
 Object.keys(desfechos).sort((a, b) => desfechos[b] - desfechos[a])

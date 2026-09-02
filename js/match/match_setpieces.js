@@ -445,6 +445,11 @@ Object.assign(Match, {
             Quando a falta é direta/no terço ofensivo, a barreira cobre o lado do poste
             mais próximo da bola, e o goleiro desloca-se ligeiramente para o lado oposto da barreira.
             */
+            // Avanço da bola no eixo de ataque: negativo no campo próprio,
+            // positivo no adversário. É por ele que se lê o sector (ver
+            // FreeKickModel.setores) — usado mais abaixo, no guarda-redes.
+            const avancoFK = bolaFK.z * attDir;
+
             const distGolFK = Math.hypot(bolaFK.x - golFK.x, bolaFK.z - golFK.z);
             let nBarreira = F.barreiraMax || 4;
             if (distGolFK > (F.barreira1MaxDist !== undefined ? F.barreira1MaxDist : 30.0)) {
@@ -463,12 +468,24 @@ Object.assign(Match, {
                 .filter(p => p.role !== 'gk')
                 .sort((a, b) => a.model.position.distanceTo(bolaFK) - b.model.position.distanceTo(bolaFK));
 
+            /*
+            QUEM ESTÁ NA BARREIRA fica marcado e guardado: é essa lista que
+            leva o `touchLock` na batida (senão o `resolveBallContact` dava-lhes
+            o toque por acidente e o desfecho sorteado nunca acontecia), que
+            salta ao ser batida e que o desvio lê. Ver o ramo
+            `faltaDirectaPlano` no Match.update e `executarFalta` em player.js.
+            */
+            this.players.concat(this.opponents).forEach(p => { p.naBarreiraFalta = false; });
+            this.faltaDirectaBarreira = [];
+
             defesaOrdenada.forEach((p, i) => {
                 if (i < nBarreira) {
                     const off = (i - (nBarreira - 1) / 2) * F.espacamentoBarreira + offsetCentroBarreira;
                     p.model.position.set(
                         bolaFK.x + dirFK.x * F.distanciaBarreira + perpFK.x * off, ALTURA_BASE_Y,
                         bolaFK.z + dirFK.z * F.distanciaBarreira + perpFK.z * off);
+                    p.naBarreiraFalta = true;
+                    this.faltaDirectaBarreira.push(p);
                 } else {
                     // Fora da barreira: só não pode estar mais perto do que 9.15 m.
                     const dx = p.model.position.x - bolaFK.x;
@@ -535,8 +552,46 @@ Object.assign(Match, {
             const restantes = attackingPlayers.filter(p => p !== takerFK && p.role !== 'gk');
             const lugares = lugaresDaFalta(bolaFK.x, bolaFK.z, attDir, restantes, setorFK);
 
+            /*
+            O CORREDOR DA COBRANÇA FICA LIVRE (ver FreeKickModel.corredorLivre).
+
+            Numa falta que acaba em REMATE, os lugares do `lugaresDaFalta`
+            punham companheiros do batedor em cima da linha bola->baliza: os
+            dois avançados do `ataque_entrada` esperam o ressalto a 13.5 m da
+            linha de fundo e a 2.5 m do eixo, o que numa falta a 20 m os deixa
+            À FRENTE DA BARREIRA e no caminho da bola. Medido em 60 cobranças:
+            87% com um companheiro dentro do corredor, o mais perto a 7.0 m da
+            bola — a barreira está a 9.15.
+
+            Quem lá está é empurrado de LADO até à borda do corredor, mantendo
+            a mesma profundidade: continua a atacar o ressalto, mas de onde se
+            espera um ressalto em campo. O empurrão é lateral e não para trás
+            porque a profundidade é que diz o que ele lá vai fazer.
+            */
+            const foraDoCorredor = (x, z) => {
+                if (decisaoFK !== 'remate') return { x: x, z: z };
+                const meia = (F.corredorLivre !== undefined) ? F.corredorLivre : 5.0;
+                const rx = x - bolaFK.x, rz = z - bolaFK.z;
+                const compFK = Math.hypot(golFK.x - bolaFK.x, golFK.z - bolaFK.z) || 1;
+                const aoLongo = rx * dirFK.x + rz * dirFK.z;
+                if (aoLongo <= 0.5 || aoLongo >= compFK) return { x: x, z: z };
+                const lateral = rx * perpFK.x + rz * perpFK.z;
+                if (Math.abs(lateral) >= meia) return { x: x, z: z };
+                // Para o lado mais perto; em cima da linha, para o lado
+                // contrário ao de onde se bate (é o lado que a barreira fecha).
+                const sinal = (Math.abs(lateral) > 0.05)
+                    ? Math.sign(lateral) : -(Math.sign(bolaFK.x) || 1);
+                return {
+                    x: bolaFK.x + dirFK.x * aoLongo + perpFK.x * sinal * meia,
+                    z: bolaFK.z + dirFK.z * aoLongo + perpFK.z * sinal * meia
+                };
+            };
+
             lugares.forEach(l => {
                 const p = l.p;
+                const ajustado = foraDoCorredor(l.x, l.z);
+                l.x = THREE.MathUtils.clamp(ajustado.x, -(CAMPO_LARG / 2 - 2), CAMPO_LARG / 2 - 2);
+                l.z = THREE.MathUtils.clamp(ajustado.z, -(CAMPO_COMP / 2 - 2), CAMPO_COMP / 2 - 2);
                 p.model.position.set(l.x, ALTURA_BASE_Y, l.z);
                 p.dynamicTarget.set(l.x, ALTURA_BASE_Y, l.z);
                 p.setPieceTarget = new THREE.Vector3(l.x, ALTURA_BASE_Y, l.z);

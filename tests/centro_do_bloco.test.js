@@ -91,12 +91,39 @@ test('com bola o centro fica avancoDoCentroComBola à frente da bola', () => {
     }
 });
 
+/*
+Sem bola o centro fica `recuoDoCentroSemBola` atrás dela — MAIS o avanço do
+meio-campo: com a bola na faixa central o bloco inteiro sobe
+`avancoNoMeioCampo` do próprio comprimento (pedido: 'quando a bola estiver no
+meio campo vamos adiantar a linha da zaga em 10% do Length Compactness').
+*/
 test('sem bola o centro fica recuoDoCentroSemBola atrás da bola', () => {
+    const profundidade = CAMPO_COMP * BlockShape.profundidade.short;   // a defender é sempre short
+    const avancoMeio = profundidade * (BlockShape.avancoNoMeioCampo || 0);
     for (const bolaZ of [-10, -5, 0]) {
+        const naFaixa = Math.abs(bolaZ) <= (BlockShape.faixaMeioCampo || 20);
+        const esperado = -BlockShape.recuoDoCentroSemBola + (naFaixa ? avancoMeio : 0);
         const d = centroMenosBola(bolaZ, false);
-        assert.ok(Math.abs(d + BlockShape.recuoDoCentroSemBola) < 0.01,
-            `bola em ${bolaZ}: centro a ${d.toFixed(2)} m, esperado ${-BlockShape.recuoDoCentroSemBola}`);
+        assert.ok(Math.abs(d - esperado) < 0.01,
+            `bola em ${bolaZ}: centro a ${d.toFixed(2)} m, esperado ${esperado.toFixed(2)}`);
     }
+});
+
+test('o avanço do meio-campo sai do config e vale só na faixa central', () => {
+    assert.ok(BlockShape.avancoNoMeioCampo > 0 && BlockShape.avancoNoMeioCampo <= 0.35,
+        `avancoNoMeioCampo=${BlockShape.avancoNoMeioCampo} fora do que é um ajuste de bloco`);
+    const ini = srcTeam.indexOf('function computeBlock(');
+    const corpo = srcTeam.slice(ini, srcTeam.indexOf(LF + '}' + LF, ini));
+    assert.ok(corpo.includes('avancoNoMeioCampo'),
+        'o computeBlock já não adianta o bloco com a bola no meio-campo');
+    assert.ok(corpo.includes('faixaMeioCampo'),
+        'a faixa do meio-campo voltou a estar escrita à mão');
+
+    // E o tecto da última linha sobe com ele: sem isso o `recuoDaUltimaLinha`
+    // voltava a ancorar o bloco no tecto do painel e o avanço não chegava ao
+    // terreno (medido: 1.75 m dos 3 m pedidos).
+    assert.ok(corpo.includes('+ avancoMeio'),
+        'o tecto da última linha já não acompanha o avanço do meio-campo');
 });
 
 test('junto às linhas de fundo o campo morde, e é a única coisa que morde', () => {

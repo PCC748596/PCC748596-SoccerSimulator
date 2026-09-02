@@ -29,7 +29,26 @@ Object.assign(Match, {
             }
         }
 
-        if (this.ball.position.y > r + 0.001) this.ballVel.y -= B.gravidade * dt;
+        /*
+        A FOLHA SECA DA FALTA (`freeKickDip`). A cobrança tensa é resolvida com
+        uma gravidade EFECTIVA maior do que a real: é ela que deixa bater com
+        força e a bola cair na mesma dentro da baliza (ver
+        `tiroTensoDaFaltaDirecta` em utils.js e `executarFalta` em player.js).
+
+        Dura só o voo: apaga-se no chão, quando alguém domina a bola, e no
+        `resetPlay`.
+        */
+        let gBola = B.gravidade;
+        if (this.freeKickDip && this.freeKickDip.active) {
+            if (this.ballCarrier) {
+                this.freeKickDip = null;
+            } else {
+                this.freeKickDip.timer += dt;
+                gBola += this.freeKickDip.extraGrav;
+            }
+        }
+
+        if (this.ball.position.y > r + 0.001) this.ballVel.y -= gBola * dt;
 
         if (!this.prevBallPos) this.prevBallPos = new THREE.Vector3();
         this.prevBallPos.copy(this.ball.position);
@@ -38,6 +57,9 @@ Object.assign(Match, {
 
         if (this.ball.position.y <= r) {
             this.ball.position.y = r;
+
+            // A curva da falta acaba aqui: no chão já não há folha seca.
+            this.freeKickDip = null;
 
             // Bola tocou no chão: reseta a contagem de cabeceios aéreos sucessivos
             this.aerialHeaderCount = 0;

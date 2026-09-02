@@ -5,6 +5,277 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 2 de Setembro de 2026 — a falta directa volta a ser um lance
+
+Relato, em duas partes: *"a batida da falta directa é directa para o golo; o
+jogador demora quase um minuto do relógio do jogo para bater e ainda não está a
+chutar para o golo; tem de ser um chute por cima da barreira"* e, depois de ver
+o lance montado, *"tem jogador do próprio time à frente da barreira na hora da
+falta; quero que as faltas tenham o mesmo sistema dos penáltis"*.
+
+#### A montagem rebentava a meio, e por isso não havia cobrança nenhuma
+
+O `setupSetPiece`, no ramo `FREE_KICK`, lia `avancoFK` para decidir o desvio do
+guarda-redes — e a definição dessa variável (`bolaFK.z * attDir`) tinha sido
+apagada na mesma alteração que acrescentou a leitura. `ReferenceError` a meio do
+posicionamento, com o batedor já escolhido mas o `faltaPendente` nunca posto: o
+lance ficava parado até ao prazo de segurança do `FREE_KICK` (15 s reais, que o
+`MatchDuration.timeScale` de 5 transforma em **75 s de relógio de jogo**) e o
+`timeout_falta` devolvia o jogo sem cobrança. É o "quase um minuto e não chuta"
+do relato — a bola nunca chegava a ser batida.
+
+Reposta a definição, a decisão sai como deve: **60 em 60 cobranças decidem
+`remate`** (a faixa do botão — 17 a 23 m da linha, até 10 m do eixo — cai toda
+dentro do trapézio do `decisaoDeFalta`), e o tempo até ao contacto é de **3,3 s
+reais, ou 16,7 s de relógio**: os 3 s do `ESPERA_APOS_REPOSICAO` mais o
+`contactTime` do gesto.
+
+#### O corredor da cobrança estava ocupado por quem ia beneficiar dela
+
+Os lugares do `lugaresDaFalta` punham companheiros do batedor em cima da linha
+bola->baliza: os dois avançados do `ataque_entrada` esperam o ressalto a 13.5 m
+da linha de fundo e a 2.5 m do eixo, o que numa falta a 20 m os deixa **à frente
+da barreira**. Medido em 60 montagens: **87% com um companheiro dentro do
+corredor**, o mais perto a 7.0 m da bola — e a barreira está a 9.15.
+
+O `FreeKickModel.corredorLivre` (5 m de meia-largura) empurra-os de LADO,
+mantendo a profundidade: continuam a atacar o ressalto, mas de onde se espera um
+ressalto. Só vale para o remate — num cruzamento ou num passe não há linha de
+cobrança a proteger. Depois: **0% dentro de 2.5 m da linha do remate no instante
+da batida** (a 5 m, a borda exacta, o jostle traz metade deles de volta uns
+centímetros para dentro).
+
+#### O remate: doze desfechos sorteados, como no penálti
+
+A grelha de 9 colunas × 5 linhas que resolvia o remate saiu, e com ela o
+`Match.freeKickDip`: aquele código resolvia a elevação com uma gravidade
+EFECTIVA (a real mais 9 a 20 m/s²) e escrevia o pedido de queda extra num
+objecto que **nunca era lido por ninguém** — a bola saía com o ângulo calculado
+para ~25 m/s² e voava com 9,8. Medido: passava a barreira a 4,29 m de altura e
+26 de 30 cobranças acabavam em pontapé de baliza.
+
+No lugar disso está o sistema pedido, que é o do penálti: o duelo
+`diff = (TEC + d10) - (GK + d10)` escolhe a banda, a banda escolhe a tabela de
+pesos (`DirectFreeKickModel.desfechos`) e dela sai UM desfecho.
+
+    gol             defesa          defesa_fora
+    trave_gol       trave_fora      travessao_gol   travessao_fora
+    fora
+    na_barreira     barreira_gol    barreira_fora
+    por_baixo
+
+O `na_barreira` é a bola que bate na barreira e **sai de lado, para os lados da
+área** — `ricocheteAnguloMin/Max` (65°–115° da direcção do remate), ou 30% que
+sobram para o guarda-redes. Nunca volta para quem bateu.
+
+Quem escolhe o ponto é o `alvoDaFaltaDirecta` e quem procura a elevação mais
+tensa que limpa a barreira e lá chega é o `tiroDaFaltaDirecta` — os dois em
+utils.js, puros e medíveis sem montar um jogo. O salto da barreira e o desvio
+nela resolvem-se no `Match.update` (ramo `faltaDirectaPlano`), que já lá estava.
+
+Forçando cada desfecho, 20 cobranças por cada:
+
+    gol            20/20 golo          defesa        19/20 defendida, em jogo
+    defesa_fora    18/20 canto         trave_gol     19/20 golo
+    travessao_gol  19/20 golo          fora          20/20 tiro de meta
+    barreira_fora  18/20 fora          barreira_gol  12/20 golo
+    por_baixo      12/20 golo          na_barreira   ressalto em jogo
+
+E sem forçar nada, 200 cobranças da faixa do botão: **20 golos (10%)**, que é a
+ordem de grandeza de uma falta directa a sério. Antes desta sessão eram 42%.
+
+Três coisas tiveram de ser corrigidas para os desfechos valerem alguma coisa, e
+todas se mediram:
+
+- **O mergulho guiado era apagado no primeiro frame de PLAY.** O `Match.state`
+  passa a PLAY no instante do contacto e o guarda-redes ainda nem reagiu — o
+  atraso é dele. O `isPenaltyDive` caía ali e ele passava a ler a trajectória
+  REAL da bola. Agora sobrevive enquanto houver `faltaDirectaPlano`.
+- **A defesa era um AGARRAR e não a espalmada do desfecho.** O gesto de mãos do
+  guarda-redes (`resolverDefesaComMaos`) resolve o contacto a 1.3 m da mão, ou
+  seja a ~1.8 m da linha — antes da janela de `distanciaDaDefesa`, que era 1.6.
+  No `defesa_fora`: 3 cantos em 20, com as outras 17 agarradas por ele. A janela
+  passou a 2.8 m e o toque dele fica travado durante o voo: **18 a 20 cantos em
+  20**.
+- **Ele não esperava na linha.** A montagem põe-no em cima dela, deslocado para
+  o canto que a barreira não fecha, mas a âncora do jogo corrido (`gkAnchor`)
+  puxava-o dali durante os três segundos de espera: medido, **1.27 m à frente da
+  própria linha** no instante da batida. Agora fica preso à linha enquanto durar
+  o `FREE_KICK` (`naLinhaDaFalta`), com o x que a montagem lhe deu. Depois:
+  **0.02 m**.
+
+#### E a cobrança sai TENSA — a força é do batedor, a queda é do efeito
+
+Relato: *"o chute na falta está muito fraco"*. Medido no sorteio inteiro:
+**19,1 m/s a 23,7°**, com 1,64 s de voo — uma bola lobada, não uma falta.
+
+A causa não é a potência escrita em lado nenhum, é o SOLVER. O
+`tiroDaFaltaDirecta` fixa o ponto de chegada e procura a elevação mais baixa que
+limpa a barreira: com arrasto puro, velocidade e elevação ficam presas ao ponto
+de queda, e a 20 m isso dá ~22° e ~22 m/s, sempre.
+
+Subir a `forcaMinima` não resolve — ela é um LIMIAR, não um alvo. Acima do que a
+geometria dá, nenhuma elevação qualifica e cai-se na lobada de recurso na mesma:
+
+    forcaMinima   23    v média 23,0 m/s     (a que fica)
+                  26            22,0
+                  28            22,1
+                  30            21,6
+
+O que solta a velocidade é a QUEDA EXTRA, que é o que um batedor põe na bola com
+efeito. O `tiroTensoDaFaltaDirecta` (utils.js) faz o problema ao contrário:
+
+  - a velocidade é DADA — `DirectFreeKickModel.potencia` mais o atributo FOR
+    (`potenciaPorForca`);
+  - varre-se a elevação de baixo para cima e, para cada uma, procura-se por
+    bissecção a gravidade EFECTIVA que põe a bola no ponto pedido (a altura no
+    alvo cai quando a gravidade sobe, portanto é monótona);
+  - fica a PRIMEIRA — a mais tensa — que ainda limpa a barreira a saltar com
+    essa queda já a contar.
+
+O tecto da queda é o `dipMax` (24 m/s²): acima disso já não é uma falta, é uma
+pedra. E quem a aplica é a física, pelo `Match.freeKickDip` — o mesmo objecto
+que antes era escrito e nunca lido, agora com quem o escreva e quem o leia.
+
+    antes    19,1 m/s   23,7°   voo 1,64 s
+    depois   28,8 m/s   18,8°   voo 1,17 s   (limpa a barreira a 2,7-2,9 m)
+
+Contra a barreira também se bate com força: os três desfechos que lá vão apontam
+a 9 m e não têm nada para contornar, e pedir ao solver a elevação mínima dava-lhes
+a velocidade mínima que serve — o ressalto saía morto, porque ele sai de
+`vIn * barreiraTravagem`.
+
+**A queda extra tem de morrer no embate — e SÓ no embate.** Apagá-la em toda a
+gente quando a bola chega ao plano da barreira parecia igual e não é: o desfecho
+`gol` passa por lá sem tocar em ninguém, e sem a queda a partir dali voava por
+cima do travessão — medido, **13 desfechos `gol` em 13 acabados em pontapé de
+baliza**. Apaga-se quando a bola BATE mesmo na barreira, quando o guarda-redes
+espalma (a espalmada tem de sair por fora do poste, e com a queda ligada caía
+dentro do campo: `defesa_fora` foi a 5 cantos em 20), no chão, com a posse, e no
+`resetPlay`.
+
+Desfechos depois de tudo isto, 20 cobranças forçadas por desfecho:
+
+    gol            20/20 golo      defesa        20/20 defendida, em jogo
+    defesa_fora    20/20 canto     trave_gol     20/20 golo
+    travessao_gol  20/20 golo      fora          20/20 tiro de meta
+    barreira_fora  18/20 fora      barreira_gol   9/20 golo
+    por_baixo      13/20 golo      na_barreira   ressalto em jogo
+
+E sem forçar nada, 200 cobranças: **22 golos (11%)**.
+
+#### A taxa de golo da falta: 25% a pedido
+
+Pedido: *"vamos aumentar isso para 25% de golos"*. Fica registado que 11% é a
+ordem de grandeza real de uma falta directa (a real anda pelos 6-10%); 25% é
+uma escolha de jogo, não uma medição.
+
+O botão é a tabela de pesos (`DirectFreeKickModel.desfechos`). Os cinco
+desfechos que marcam — `gol`, `trave_gol`, `travessao_gol`, `barreira_gol`,
+`por_baixo` — foram multiplicados por **3,0** em todas as seis bandas; os
+outros sete ficaram como estavam, portanto o que muda é a PARTILHA e não o
+desenho. A escada das bandas mantém-se: a fatia dos desfechos que marcam vai de
+**76% no `perfeito` a 15% no `pessimo`**.
+
+O factor saiu de um solver e não de tentativa e erro: a banda do duelo é barata
+de amostrar (monta-se o lance e tira-se o `diff`, sem simular), a probabilidade
+de golo de cada desfecho está medida em lotes forçados, e daí resolve-se o
+factor por bissecção. O que a simulação ensinou pelo caminho:
+
+    banda do duelo   pessimo 45%   fraco 20%   mau 18%   medio 9%   bom 6%   perfeito 0.5%
+
+É esta distribuição que manda: com o batedor quase sempre em desvantagem
+técnica contra o guarda-redes, a taxa de golo vive das bandas más, e é por isso
+que subir só o `perfeito` não move o número.
+
+Verificado com **1500 cobranças: 383 golos, 25,5%** (a margem a esse n é
+±1,1 pp).
+
+#### O passe erra menos 25%
+
+Pedido directo. Os dois erros do passe descem um quarto:
+
+    PassModel.erroPesoMax        0.162  -> 0.1215   (o PESO: chegar curto ou longo)
+    PassErrorModel.sigmaMax      0.117  -> 0.0878   (a DIRECÇÃO, ~6.7° -> ~5.0°)
+    PassErrorModel.sigmaMin      0.0081 -> 0.0061
+    PassErrorModel.sigmaTecto    0.234  -> 0.1755
+
+Medido em 240 s de jogo corrido, no passe `direct` (o mais frequente):
+
+    recebido pelo destinatario   73% -> 77%
+    erro ao ponto pedido         2.5 m -> 2.2 m
+
+O erro no terreno não cai os 25% inteiros porque só parte dele é dispersão: o
+resto é o destinatário andar entre a saída e a chegada.
+
+#### Com a bola no meio-campo, o bloco sobe 10%
+
+Relato: *"a linha de zaga está ficando muito longe da linha de meio campo"*.
+
+Com a bola na faixa central (±`BlockShape.faixaMeioCampo`, 20 m — a mesma que já
+manda no `offsetMeio` do `computeBlock`), o bloco avança
+`BlockShape.avancoNoMeioCampo` do próprio comprimento: 10% do Length
+Compactness, que a defender (bloco `short`) são 3 m.
+
+**Avança o rectângulo, não só a traseira.** O bloco é rígido por desenho e o z0
+sai sempre de `centroZ - profundidade/2`; adiantar a zaga é adiantar o bloco, e
+a frente sobe com ela.
+
+**E o tecto da última linha tem de subir com ele.** Sem isso quase não se via: o
+bloco subia e o `recuoDaUltimaLinha` voltava a ancorá-lo no tecto do painel
+(`linhaDefensiva`, -18.25 m no `medium`), puxando o rectângulo de volta —
+chegavam **1,75 m dos 3 m** pedidos. O tecto é uma escolha do utilizador para o
+jogo todo, o avanço é uma resposta ao momento: somam-se.
+
+Medido em 240 s, só nas leituras com a bola no miolo, distância do defesa mais
+recuado à linha do meio:
+
+    antes   18.8 m de media   mediana 17.7
+    depois  15.8 m            mediana 15.2
+
+#### O drible existia nas estatísticas e não existia no ecrã
+
+Relato: *"não consigo identificar nenhum drible"*. Existiam: 14 em 25 minutos de
+jogo, 8 com sucesso. O que não existia era o LANCE.
+
+Medido: sete entradas no estado `DRIBBLE`, **todas com 0,02 s — um frame**. O
+`case 'DRIBBLE'` resolvia o 1x1 inteiro no primeiro frame: sorteava o sucesso,
+largava a bola de lado e voltava a `CARRY`. Não há gesto nenhum para se ver.
+
+Agora o estado tem duas partes. O ARRANQUE (a decisão e a direcção de fuga)
+continua no primeiro frame — a probabilidade não mudou — e o GESTO dura
+`DribbleModel.duracaoGesto` (0,55 s), com o jogador a levar a bola no pé, virado
+para o lado de fuga e já em aceleração (`sprintBoost`), com o `dynamicTarget`
+posto `alcanceGesto` à frente nesse lado. Só no fim é que a bola é tocada para
+lá do adversário.
+
+**E a árvore tem de tirar as mãos.** Com o gesto a durar, o `PlayerBT.tick`
+passou a correr por cima dele todos os frames — e como o `podeDriblar` responde
+false a quem já está a driblar, o ramo escolhido a seguir era o PASSE: das 14
+entradas, **10 saíam para `PASS` antes do toque**. O `DRIBBLE` entrou na lista
+de estados que a árvore não pisa, onde já estavam o `LATERAL`, o `SHOOT` e o
+`CROSS`, e pela mesma razão.
+
+    duracao media do drible    0.02 s  ->  0.43 s   (o gesto inteiro são 0.55)
+    saidas para PASS           10/14   ->  0/15
+
+Ficheiros: `avancoFK`, `naBarreiraFalta`/`faltaDirectaBarreira` e o
+`foraDoCorredor` no ramo `FREE_KICK` do `setupSetPiece`
+(js/match/match_setpieces.js); `DirectFreeKickModel` e
+`FreeKickModel.corredorLivre` (js/config/shooting.js); `tiroTensoDaFaltaDirecta`
+(js/utils.js); o `freeKickDip` na integração da gravidade
+(js/match/match_physics.js); o ramo do remate em
+`executarFalta` e o `naLinhaDaFalta` do guarda-redes (js/player.js); o plano do
+lance no `Match.update` (js/match/match_loop.js) e a limpeza no `resetPlay`
+(js/match/match_setup.js). O erro do passe em `PassModel`/`PassErrorModel`
+(js/config/passing.js); o avanço do bloco em `BlockShape.avancoNoMeioCampo` /
+`faixaMeioCampo` (js/config/tactics.js) e no `computeBlock` (js/bt/team_bt.js);
+o gesto do drible em `DribbleModel.duracaoGesto` (js/config/player_behavior.js),
+no `case DRIBBLE` (js/fsm.js) e na lista de estados que o `PlayerBT.tick` não
+pisa (js/bt/player_bt.js). Testes: `tests/falta_directa.test.js` (16 casos) e
+`tests/centro_do_bloco.test.js`.
+Medição: `node tools/headless/falta_directa.js [quantas]`.
+
 ### Sessão de 1 de Setembro de 2026 — a formação é do treinador
 
 Relato: *"a posição do CB está desalinhando com o TeamBT, saindo do Formation

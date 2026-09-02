@@ -920,6 +920,12 @@ Object.assign(Match, {
         this.setPieceTimer = 0;
         this.recuoParaGR = null;
         this.peitosSeguidos = 0;
+        // O lance da falta morre com a jogada: sem isto o plano sobrevivia ao
+        // reset e o salto da barreira disparava no lance seguinte.
+        this.faltaDirectaPlano = null;
+        this.freeKickDip = null;
+        (this.faltaDirectaBarreira || []).forEach(p => { p.naBarreiraFalta = false; });
+        this.faltaDirectaBarreira = null;
         [...this.players, ...this.opponents].forEach(p => { p.jostleAncora = null; });
         this.counterAttackTeam = null;
         this.counterAttackTimer = 0;

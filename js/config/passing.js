@@ -343,7 +343,9 @@ const PassModel = {
     antigo `passBoost`, que aumentava a força em vez da precisão — e com a
     balística resolvida isso só voltava a pôr a bola longe do alvo.
     */
-    erroPesoMax: 0.162,
+    // Reduzido 25% a pedido (era 0.162): a 80 de PASS o erro passa de +-3.6%
+    // para +-2.7%. Ver a nota do lote no docs/filesSummary.md.
+    erroPesoMax: 0.1215,
 
     /*
     --- Percepção e margem de segurança de limites de campo (Linhas Laterais / Fundo) ---
@@ -374,14 +376,14 @@ vinham so de decisao ma ou de dominio falhado.
                      documentado para sigmaMax sozinho
 */
 const PassErrorModel = {
-    sigmaMax: 0.117,       // ~6.7 graus (reduzido 10%)
-    sigmaMin: 0.0081,      // ~0.45 graus (reduzido 10%)
+    sigmaMax: 0.0878,      // ~5.0 graus (reduzido 10% e depois 25%)
+    sigmaMin: 0.0061,      // ~0.35 graus (reduzido 10% e depois 25%)
     pesoTecnica: 0.35,
     raioPressao: 3.5,
     pressaoMult: 1.55,
     costasMult: 2.0,
     forcaMinPressao: 0.85,
-    sigmaTecto: 0.234      // reduzido 10%
+    sigmaTecto: 0.1755     // reduzido 10% e depois 25%
 };
 
 /*

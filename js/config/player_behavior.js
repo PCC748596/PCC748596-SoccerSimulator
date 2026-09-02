@@ -423,7 +423,24 @@ const DribbleModel = {
     successSideBonus: 0.20, // bónus por ir para o lado (vs reto)
     failLossBall: 0.65,   // prob. de perder a bola se falhar
     sprintBoost: 6.5,     // boost de velocidade após toque lateral
-    cooldown: 0.9         // tempo antes de poder driblar novamente
+    cooldown: 0.9,        // tempo antes de poder driblar novamente
+
+    /*
+    O DRIBLE TEM DE DURAR O SUFICIENTE PARA SE VER.
+
+    O estado DRIBBLE resolvia o 1x1 inteiro no PRIMEIRO frame — decidia,
+    largava a bola de lado e voltava a CARRY. Medido em 25 minutos de jogo:
+    sete entradas no estado, todas com 0.02 s de duracao. O lance existia nas
+    estatisticas e nao existia no ecra.
+
+    `duracaoGesto` e o tempo em que ele leva a bola no pe, ja virado para o
+    lado de fuga e em aceleracao, antes de a tocar para la do adversario;
+    `alcanceGesto` e a que distancia a frente lhe fica o alvo de movimento
+    durante esse tempo. A decisao continua a ser tomada no primeiro frame — o
+    que mudou foi o tempo entre decidir e executar.
+    */
+    duracaoGesto: 0.55,   // segundos de gesto antes do toque
+    alcanceGesto: 6.0     // metros a frente, no lado de fuga
 };
 
 /*

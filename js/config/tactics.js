@@ -348,6 +348,21 @@ const BlockShape = {
     distanciaMaxX: 22.0,
 
     /*
+    COM A BOLA NO MEIO-CAMPO, O BLOCO SOBE.
+
+    Relato: a linha de zaga ficava longe demais da linha de meio-campo. Com a
+    bola no miolo (a faixa que o `computeBlock` ja usa para o `offsetMeio`,
+    +-`faixaMeioCampo` do eixo), o bloco inteiro avanca `avancoNoMeioCampo` do
+    seu proprio COMPRIMENTO — 10% do Length Compactness.
+
+    Avanca o RECTANGULO, nao so a linha de tras: o rectangulo e rigido e nao se
+    deforma (ver a nota do bloco no docs/filesSummary.md), portanto adiantar a
+    zaga e adiantar o bloco. A frente sobe com ela.
+    */
+    faixaMeioCampo: 20.0,       // metros do eixo que contam como meio-campo
+    avancoNoMeioCampo: 0.10,    // fraccao do comprimento do bloco
+
+    /*
     O PENDULO NAO PODE EMBOLAR O LATERAL COM O EXTREMO.
 
     Medido depois de o ligar: o par lateral/extremo do mesmo lado passou a

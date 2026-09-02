@@ -2784,7 +2784,13 @@ const PlayerAI = {
         const s = player.fsm ? player.fsm.currentState : "";
         // LATERAL entra na lista: é um gesto com duração própria (ThrowInClip),
         // e deixar o BT decidir por cima dele tirava-lhe a bola das mãos a meio.
-        if (player.actionState || s === "PASS" || s === "SHOOT" || s === "CROSS" || s === "TACKLE" || s === "SLIDE_TACKLE" || s === "CHEST_CONTROL" || s === "LATERAL") return;
+        //
+        // DRIBBLE pela mesma razão, e é o que o fazia não existir no ecrã: o
+        // gesto do 1x1 dura `DribbleModel.duracaoGesto`, mas a árvore corria
+        // por cima dele todos os frames — e como o `podeDriblar` responde
+        // false a quem já está a driblar, o ramo seguinte era o passe. Medido:
+        // das 14 entradas no estado, 10 saíam para PASS antes do toque.
+        if (player.actionState || s === "PASS" || s === "SHOOT" || s === "CROSS" || s === "TACKLE" || s === "SLIDE_TACKLE" || s === "CHEST_CONTROL" || s === "LATERAL" || s === "DRIBBLE") return;
 
         if (!player.btCtx) player.btCtx = new PlayerContext(player);
         const ctx = player.btCtx.prepare(dt);

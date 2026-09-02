@@ -863,6 +863,23 @@ function computeBlock(bb) {
         }
     }
 
+    /*
+    COM A BOLA NO MEIO-CAMPO, O BLOCO SOBE (pedido).
+
+    A linha de zaga ficava longe da linha de meio-campo. O bloco inteiro avanca
+    `BlockShape.avancoNoMeioCampo` do proprio comprimento — 10% do Length
+    Compactness — enquanto a bola estiver na faixa central, que e a mesma faixa
+    que ja manda no `offsetMeio` aqui em cima.
+
+    Avanca o RECTANGULO e nao so a traseira: ele e rigido por desenho, e o z0
+    sai sempre de `centroZ - profundidade/2`. Adiantar a zaga e adiantar o
+    bloco.
+    */
+    const faixaMeio = (typeof B.faixaMeioCampo === 'number') ? B.faixaMeioCampo : 20.0;
+    const bolaNoMeioCampo = Math.abs(bZ) <= faixaMeio;
+    const avancoMeio = bolaNoMeioCampo ? profundidade * (B.avancoNoMeioCampo || 0) : 0;
+    targetOffsetZ += avancoMeio;
+
     if (bb.blocoZSuave === undefined) {
         bb.blocoZSuave = targetOffsetZ;
     } else {
@@ -911,7 +928,18 @@ function computeBlock(bb) {
         const pesoMental = (typeof MentalidadeModel !== 'undefined' &&
             typeof MentalidadeModel.pesoNaLinha === 'number')
             ? MentalidadeModel.pesoNaLinha : 0;
-        const capLinha = capBase + mentalBloco * pesoMental;
+        /*
+        E O TECTO DA ULTIMA LINHA SOBE COM O BLOCO.
+
+        Sem isto o avanco do meio-campo quase nao se via: o bloco subia, mas o
+        `recuoDaUltimaLinha` voltava a ancora-lo no tecto do painel
+        (`linhaDefensiva`, -18.25 m no medium) e puxava o rectangulo inteiro
+        de volta. Medido: dos 3 m pedidos a defender, chegavam 1.75 ao terreno.
+
+        O tecto e uma escolha do utilizador para o jogo todo; o avanco e uma
+        resposta ao momento. Somam-se.
+        */
+        const capLinha = capBase + mentalBloco * pesoMental + avancoMeio;
 
         let maisRecuadoDir = null, pisoDir = null;
         if (bb.opp && bb.opp.length) {

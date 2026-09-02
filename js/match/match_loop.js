@@ -293,6 +293,18 @@ Object.assign(Match, {
                     plano.desfecho === 'barreira_fora');
 
                 if (bate) {
+                    /*
+                    A FOLHA SECA ACABA NO EMBATE — e SO no embate. A queda extra
+                    foi calculada para a bola cair no ponto do REMATE; depois de
+                    bater na barreira o desvio traz balistica propria, e manter a
+                    gravidade dobrada punha a bola a cair como uma pedra.
+
+                    Apaga-la aqui para toda a gente era pior: o `gol` passa pelo
+                    plano da barreira sem lhe tocar, e sem a queda extra a partir
+                    dali voava por cima do travessao — medido, 13 desfechos `gol`
+                    em 13 acabados em pontape de baliza.
+                    */
+                    this.freeKickDip = null;
                     const bx = this.ball.position.x, bz = this.ball.position.z;
                     const by = Math.max(BallPhysics.raio, this.ball.position.y);
                     const golZ = plano.golZ;
@@ -419,6 +431,13 @@ Object.assign(Match, {
                 const dentroDosPostes = Math.abs(this.ball.position.x) < (LARGURA_BALIZA / 2 + 0.6);
                 if (vaiParaLa && dentroDosPostes && faltaZ <= DirectFreeKickModel.distanciaDaDefesa) {
                     plano.defesaFeita = true;
+                    /*
+                    E acaba na defesa, pela mesma razao: a espalmada tem de
+                    sair por fora do poste, e com a queda extra ainda ligada
+                    caia dentro do campo. Medido no `defesa_fora`: 5 cantos
+                    em 20, com as outras 15 a morrerem em jogo.
+                    */
+                    this.freeKickDip = null;
                     const gkD = (plano.equipa === 'TeamA')
                         ? this.opponents.find(p => p.role === 'gk')
                         : this.players.find(p => p.role === 'gk');

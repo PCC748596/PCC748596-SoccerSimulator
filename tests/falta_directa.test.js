@@ -1,8 +1,8 @@
 /*
 FALTA DIRECTA — a faixa, a barreira, o remate por cima dela e os doze desfechos.
 
-O lance monta-se em `setupSetPiece('DIRECT_FREE_KICK')` e cobra-se em
-`baterFaltaDirecta` (player.js), mas toda a GEOMETRIA e o SORTEIO vivem em
+O lance monta-se no ramo `FREE_KICK` do `setupSetPiece` e resolve-se em
+`executarFalta` (player.js), no ramo do REMATE, mas toda a GEOMETRIA e o SORTEIO vivem em
 funções puras do utils.js — é isso que permite varrer mil cobranças aqui sem
 montar um jogo. O comportamento em campo (quem defende, quem sai pela linha de
 fundo) mede-se com `node tools/headless/falta_directa.js`.
@@ -58,7 +58,8 @@ const nomesFn = ['velocidadeParaAlturaNoAlvo', 'velocidadeParaAlcance',
     'velocidadeRasteiraPara',
     'pontoDaFaltaDirecta', 'lugaresDaBarreira', 'alturaDaBolaEm',
     'bandaDaFaltaDirecta', 'desfechoDaFaltaDirecta', 'alvoDaFaltaDirecta',
-    'tiroDaFaltaDirecta', 'lugaresDoApoioNaFaltaDirecta'];
+    'tiroDaFaltaDirecta', 'tiroTensoDaFaltaDirecta',
+    'lugaresDoApoioNaFaltaDirecta'];
 const codigo = nomesFn.map(n => extrairFuncao(srcUtils, n)).join(LF + LF);
 const fns = new Function(
     'BallPhysics', 'Area', 'DirectFreeKickModel',
@@ -69,7 +70,7 @@ const fns = new Function(
 
 const { pontoDaFaltaDirecta, lugaresDaBarreira, alturaDaBolaEm,
     desfechoDaFaltaDirecta, alvoDaFaltaDirecta, tiroDaFaltaDirecta,
-    lugaresDoApoioNaFaltaDirecta } = fns;
+    tiroTensoDaFaltaDirecta, lugaresDoApoioNaFaltaDirecta } = fns;
 
 const meiaBaliza = LARGURA_BALIZA / 2;
 
@@ -266,7 +267,7 @@ test('o atraso do guarda-redes sai da habilidade dele', () => {
         'o atraso tem de ficar dentro dos limites');
 
     // E a fórmula é mesmo a que está no jogo (não uma cópia deste teste).
-    const ini = srcPlayer.indexOf('baterFaltaDirecta() {');
+    const ini = srcPlayer.indexOf('executarFalta(decisao) {');
     const fim = srcPlayer.indexOf(LF + '    }' + LF, ini);
     const corpo = srcPlayer.slice(ini, fim);
     assert.ok(corpo.includes('DF.atrasoBase - ((gkSkill - 50) / 50) * DF.atrasoAmplitude'),
@@ -275,9 +276,17 @@ test('o atraso do guarda-redes sai da habilidade dele', () => {
         'o tecto do atraso nas defesas desapareceu');
 });
 
-test('o guarda-redes espera como num penálti, e é a flag faltaDirecta que o prende', () => {
-    assert.ok(srcPlayer.includes("Match.state === 'PENALTY' || Match.faltaDirecta"),
-        'a âncora do guarda-redes já não trata a falta directa como um penálti');
+test('o guarda-redes espera na linha, como num penálti', () => {
+    /*
+    A montagem põe-no em cima da linha e desloca-o para o canto que a barreira
+    não fecha; sem isto a âncora do jogo corrido (`gkAnchor`) puxava-o dali
+    durante os três segundos de espera — medido, 1.27 m à frente da linha no
+    instante da batida.
+    */
+    assert.ok(srcPlayer.includes('const naLinhaDaFalta ='),
+        'a âncora do guarda-redes já não o prende à linha durante a falta');
+    assert.ok(srcPlayer.includes(': naLinhaDaFalta'),
+        'o naLinhaDaFalta existe mas a âncora não o lê');
 });
 
 /*
@@ -301,28 +310,75 @@ test('o ressalto na barreira sai de lado, nunca para quem bateu', () => {
         'o ressalto voltou a ser a velocidade invertida (ia direito ao batedor)');
 });
 
-test('o leque atrás da bola não leva a equipa toda', () => {
-    assert.ok(DF.apoiosNoLeque >= 2 && DF.apoiosNoLeque <= 5,
-        `apoiosNoLeque=${DF.apoiosNoLeque}: com os nove o leque tem 40 m e arrasta a defesa toda`);
-    assert.ok(srcSetPieces.includes('DF.apoiosNoLeque'),
-        'a montagem já não limita o leque');
-});
-
-test('a marcação não sai do raio da bola, e quem sobra volta à área', () => {
-    assert.ok(DF.raioDaMarcacao > 0 && DF.raioDaMarcacao <= 35,
-        'raioDaMarcacao fora do que é uma marcação de bola parada');
-    assert.ok(srcSetPieces.includes('DF.raioDaMarcacao'),
-        'a marcação voltou a emparelhar com atacantes em qualquer sítio do campo');
-    assert.ok(srcSetPieces.includes('DF.recuoLinhaDefensiva'),
-        'os defensores que sobram já não recuam para a própria área');
-    assert.ok(DF.recuoLinhaDefensiva > Area.profundidade,
-        'a linha de quem sobra tem de ficar à frente da própria área, não lá dentro');
+/*
+O leque e a marcação da montagem própria do DIRECT_FREE_KICK deixaram de
+existir: a falta directa passou a ser o ramo FREE_KICK do `setupSetPiece`, com
+o desenho por SECTOR (`lugaresDaFalta`, `FreeKickModel.formacaoPorSetor`) e a
+marcação pelos `slotsMarcacao`. O que se guarda daquele desenho é o que o
+remate precisa: a linha da cobrança livre.
+*/
+test('a montagem deixa livre o corredor da cobrança', () => {
+    const F = extrairObjecto(srcTiro, 'FreeKickModel', { Area });
+    assert.ok(F.corredorLivre >= 3 && F.corredorLivre <= 8,
+        `corredorLivre=${F.corredorLivre}: fora do que é um corredor de cobrança`);
+    assert.ok(srcSetPieces.includes('foraDoCorredor'),
+        'a montagem já não tira os companheiros da linha bola->baliza');
+    assert.ok(srcSetPieces.includes("decisaoFK !== 'remate'"),
+        'o corredor livre passou a valer também para o cruzamento e o passe');
 });
 
 test('a batida solta toda a gente do lugar do lance parado', () => {
-    const ini = srcPlayer.indexOf('baterFaltaDirecta() {');
+    const ini = srcPlayer.indexOf('executarFalta(decisao) {');
     const fim = srcPlayer.indexOf(LF + '    }' + LF, ini);
     const corpo = srcPlayer.slice(ini, fim);
     assert.ok(corpo.includes('pl.setPieceTarget = null'),
         'o setPieceTarget não é limpo na batida: a equipa fica especada nos lugares da cobrança');
+});
+
+/*
+A COBRANÇA SAI TENSA: a velocidade é a do batedor, não a que a geometria dá.
+
+Com o solver antigo — fixar o ponto de chegada e procurar a elevação — a bola
+saía a 19.1 m/s a 23.7°, uma bola lobada. O `tiroTensoDaFaltaDirecta` bate com
+a força pedida e procura a QUEDA EXTRA que a põe no ponto.
+*/
+test('a cobrança sai com a força do batedor, e é a queda extra que a faz cair', () => {
+    const topo = DF.alturaSalto + DF.folgaSobreBarreira;
+    let houve = 0;
+    for (let dist = 17; dist <= 25; dist += 2) {
+        for (const alvoY of [1.0, 1.6, 2.1]) {
+            const t = tiroTensoDaFaltaDirecta(dist, DF.distanciaBarreira, alvoY, 28.0, DF);
+            if (!t) continue;
+            houve++;
+            assert.strictEqual(t.v, 28.0, 'a velocidade tem de ser a que se pediu');
+            assert.ok(t.extraGrav >= 0 && t.extraGrav <= DF.dipMax + 1e-9,
+                `extraGrav=${t.extraGrav.toFixed(1)} fora do tecto dipMax`);
+            assert.ok(t.alturaNaBarreira >= topo - 1e-6,
+                `a ${dist} m a bola passa a ${t.alturaNaBarreira.toFixed(2)} m: bate na barreira`);
+        }
+    }
+    assert.ok(houve >= 10, `só ${houve} cobranças tensas resolveram: a faixa toda tem de ter solução`);
+});
+
+test('bater com força é bater mais tenso do que o solver antigo', () => {
+    let tensoMedio = 0, antigoMedio = 0, n = 0;
+    for (let dist = 18; dist <= 24; dist += 2) {
+        const t = tiroTensoDaFaltaDirecta(dist, DF.distanciaBarreira, 1.6, 28.0, DF);
+        const a = tiroDaFaltaDirecta(dist, DF.distanciaBarreira, 1.6, false, DF);
+        if (!t || !a) continue;
+        tensoMedio += t.v; antigoMedio += a.v; n++;
+    }
+    assert.ok(n > 0, 'nenhuma distância resolveu nos dois solvers');
+    assert.ok(tensoMedio / n > antigoMedio / n + 3.0,
+        `tenso ${(tensoMedio / n).toFixed(1)} m/s vs antigo ${(antigoMedio / n).toFixed(1)}: a cobrança não ficou mais forte`);
+});
+
+test('a queda extra é pedida pelo remate e aplicada pela física', () => {
+    assert.ok(srcPlayer.includes('Match.freeKickDip ='),
+        'o remate já não pede a queda extra');
+    const srcFisica2 = semCR(fs.readFileSync(path.join(raiz, 'js', 'match', 'match_physics.js'), 'utf8'));
+    assert.ok(srcFisica2.includes('this.freeKickDip.extraGrav'),
+        'a física não lê o freeKickDip: a bola sai com o ângulo de uma gravidade que não existe');
+    assert.ok(srcFisica2.includes('this.freeKickDip = null'),
+        'a queda extra nunca se apaga: fica ligada para o resto do jogo');
 });

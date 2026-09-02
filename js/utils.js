@@ -3469,15 +3469,50 @@ function tiroDaFaltaDirecta(distGol, distBarreira, alvoY, porBaixo, cfg) {
         return { v: vRas, elev: 0, alturaNaBarreira: y0 };
     }
 
+    /*
+    A FORCA PEDIDA MANDA NA ALTURA A LIMPAR.
+
+    Procurar so a elevacao mais baixa que limpa a barreira A SALTAR da uma
+    bola lobada: medido, 19.1 m/s a 23.7 graus. A causa nao e a balistica, e a
+    ALTURA A LIMPAR — para o mesmo ponto da baliza, cada grau a menos de
+    elevacao e mais velocidade. A 20 m, com o alvo a 1.5 m:
+
+        limpar 2.63 m (barreira a saltar + folga)   ~24 graus   19.6 m/s
+        limpar 2.43 m                               ~21 graus   21.5 m/s
+        limpar 2.11 m (barreira sem saltar)         ~18 graus   22.8 m/s
+
+    Por isso: procura-se na mesma a elevacao mais baixa que limpa a barreira a
+    saltar, e SE a velocidade que sai dai ficar abaixo de `forcaMinima`,
+    baixa-se o que se exige limpar — ate `alturaMinimaSobreBarreira`, que e a
+    barreira PARADA mais o raio da bola.
+
+    E a troca que um batedor faz mesmo: bater mais tenso e passar mais rente, e
+    passar mais rente e arriscar a barreira. O desfecho `na_barreira` ja existe
+    e e ele que paga esse risco.
+    */
+    const topoMinimo = (!porBaixo && typeof D.alturaMinimaSobreBarreira === 'number')
+        ? D.alturaMinimaSobreBarreira : topo;
+    const forcaMinima = (!porBaixo && typeof D.forcaMinima === 'number') ? D.forcaMinima : 0;
+
     const PASSOS = 26;
     let melhor = null;
+    let comFolga = null;   // a que limpa a barreira a saltar, se a forca nao chegar
     for (let i = 0; i <= PASSOS; i++) {
         const elev = D.elevMin + (D.elevMax - D.elevMin) * (i / PASSOS);
         const v = velocidadeParaAlturaNoAlvo(distGol, elev, alvoY, y0);
         if (v === null) continue;
         const hBarreira = alturaDaBolaEm(distBarreira, v, elev, y0);
+
+        // Tensa que chegue e a passar acima do minimo: e esta.
+        if (!porBaixo && v >= forcaMinima && hBarreira >= topoMinimo) {
+            return { v: v, elev: elev, alturaNaBarreira: hBarreira };
+        }
+
         const passa = porBaixo ? (hBarreira <= topo) : (hBarreira >= topo);
-        if (passa) return { v: v, elev: elev, alturaNaBarreira: hBarreira };
+        if (passa && !comFolga) comFolga = { v: v, elev: elev, alturaNaBarreira: hBarreira };
+        if (passa && (porBaixo || forcaMinima <= 0)) {
+            return { v: v, elev: elev, alturaNaBarreira: hBarreira };
+        }
         /*
         Guarda a tentativa que menos falha o criterio: um remate que so falha a
         folga por centimetros e melhor do que devolver null e nao haver
@@ -3488,7 +3523,89 @@ function tiroDaFaltaDirecta(distGol, distBarreira, alvoY, porBaixo, cfg) {
             melhor = { v: v, elev: elev, alturaNaBarreira: hBarreira, erro: erro };
         }
     }
+    // Sem nenhuma tensa que sirva, vale a que limpa a barreira com folga.
+    if (comFolga) return comFolga;
     return melhor ? { v: melhor.v, elev: melhor.elev, alturaNaBarreira: melhor.alturaNaBarreira } : null;
+}
+
+/*
+A COBRANCA TENSA: bate-se com a FORCA que se tem, e e a QUEDA EXTRA que poe a
+bola no sitio.
+
+O `tiroDaFaltaDirecta` acima resolve o problema ao contrario — fixa o ponto de
+chegada e procura a elevacao, e dai sai sempre a velocidade que a geometria
+permitir (medido: 19.1 m/s a 23.7 graus, uma bola lobada). Aqui a velocidade e
+DADA, e o que se procura e:
+
+  - a elevacao MAIS BAIXA que ainda limpa a barreira a saltar (a mais baixa e a
+    mais tensa, e a que se ve na televisao);
+  - a gravidade EFECTIVA que, com essa elevacao e essa velocidade, poe a bola
+    no ponto pedido — a folha seca.
+
+A altura no alvo cai quando a gravidade sobe, portanto a gravidade procura-se
+por biseccao. Devolve `{ v, elev, extraGrav, alturaNaBarreira }`, ou null quando
+com aquela forca nao ha cobranca nenhuma — o chamador cai no
+`tiroDaFaltaDirecta`.
+
+Puro: so BallPhysics e o config.
+*/
+function tiroTensoDaFaltaDirecta(distGol, distBarreira, alvoY, v, cfg) {
+    const D = cfg || DirectFreeKickModel;
+    const y0 = BallPhysics.raio;
+    const k = BallPhysics.kArrasto;
+    const gReal = BallPhysics.gravidade;
+    const topo = D.alturaSalto + D.folgaSobreBarreira;
+    const dipMax = (typeof D.dipMax === 'number') ? D.dipMax : 20.0;
+
+    // A mesma integracao do updateBall, com a gravidade a variar.
+    const alturaEm = (dist, elev, g) => {
+        let x = 0, y = y0;
+        let vx = v * Math.cos(elev), vy = v * Math.sin(elev);
+        const dt = 1 / 120;
+        for (let i = 0; i < 900; i++) {
+            const s = Math.hypot(vx, vy);
+            if (s > 0.001) { const dv = k * s * s * dt; vx -= vx / s * dv; vy -= vy / s * dv; }
+            vy -= g * dt;
+            const xAnt = x, yAnt = y;
+            x += vx * dt; y += vy * dt;
+            if (x >= dist) {
+                const f = (dist - xAnt) / Math.max(1e-6, x - xAnt);
+                return yAnt + (y - yAnt) * f;
+            }
+            if (y < -2) return -Infinity;
+        }
+        return -Infinity;
+    };
+
+    const PASSOS = 30;
+    for (let i = 0; i <= PASSOS; i++) {
+        const elev = D.elevMin + (D.elevMax - D.elevMin) * (i / PASSOS);
+
+        /*
+        A gravidade que faz a bola chegar EXACTAMENTE a `alvoY`. Se nem com a
+        gravidade real ela la chega, a elevacao e baixa demais; se nem com o
+        tecto ela desce, e alta demais para esta forca.
+        */
+        let lo = gReal, hi = gReal + dipMax;
+        if (alturaEm(distGol, elev, lo) < alvoY) continue;
+        if (alturaEm(distGol, elev, hi) > alvoY) continue;
+        for (let n = 0; n < 20; n++) {
+            const mid = (lo + hi) / 2;
+            if (alturaEm(distGol, elev, mid) > alvoY) lo = mid; else hi = mid;
+        }
+        const g = (lo + hi) / 2;
+
+        // E tem de limpar a barreira COM essa queda ja a contar.
+        const hBarreira = alturaEm(distBarreira, elev, g);
+        if (hBarreira >= topo) {
+            return {
+                v: v, elev: elev,
+                extraGrav: Math.max(0, g - gReal),
+                alturaNaBarreira: hBarreira
+            };
+        }
+    }
+    return null;
 }
 
 /*
@@ -3528,6 +3645,6 @@ if (typeof window !== 'undefined') {
         esperarPeloSlot, eixoDeConducao, distanciaMinimaNoLateral,
         pontoDaFaltaDirecta, lugaresDaBarreira, alturaDaBolaEm,
         bandaDaFaltaDirecta, desfechoDaFaltaDirecta, alvoDaFaltaDirecta,
-        tiroDaFaltaDirecta, lugaresDoApoioNaFaltaDirecta
+        tiroDaFaltaDirecta, tiroTensoDaFaltaDirecta, lugaresDoApoioNaFaltaDirecta
     });
 }

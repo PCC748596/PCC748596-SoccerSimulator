@@ -1510,38 +1510,88 @@ class PlayerFSM {
                     const opp = p.dribbleOpponent;
                     // Se perdeu a bola ou o adversário desapareceu, volta a CARRY
                     if (!p.hasBall || !opp) {
+                        p.driblePlano = null;
                         this.changeState('CARRY');
                         break;
                     }
 
-                    let forward = p.velocity.lengthSq() > 0.1
-                        ? _v2.copy(p.velocity).normalize()
-                        : _v2.set(0, 0, p.dirZ);
+                    /*
+                    O DRIBLE TEM DE DURAR O SUFICIENTE PARA SE VER.
 
-                    // Calcular de que lado o adversário está
-                    let toOpp = _v3.subVectors(opp.model.position, p.model.position);
-                    toOpp.y = 0;
-                    // Produto cruzado: positivo = adversário à direita, negativo = à esquerda
-                    let cross = forward.x * toOpp.z - forward.z * toOpp.x;
-                    // Ir para o lado OPOSTO ao adversário
-                    let escapeSide = (cross >= 0) ? -1 : 1;
+                    Estava tudo resolvido no PRIMEIRO frame: decidia-se o
+                    sucesso, largava-se a bola de lado e voltava-se a CARRY.
+                    Medido em 25 minutos de jogo: 7 entradas no estado, todas
+                    com **0.02 s** de duração — um frame. O lance existia nas
+                    estatísticas e não existia no ecrã, que é o relato.
 
-                    // Toque lateral (30-45°) para o lado oposto
-                    let angle = DribbleModel.angleSide * escapeSide;
-                    let cosA = Math.cos(angle), sinA = Math.sin(angle);
-                    let pushDir = _v4.set(
-                        forward.x * cosA - forward.z * sinA,
-                        0,
-                        forward.x * sinA + forward.z * cosA
-                    ).normalize();
+                    Agora o estado tem duas partes: o ARRANQUE (a decisão e a
+                    direcção, calculados uma vez) e o GESTO, que dura
+                    `DribbleModel.duracaoGesto` — o jogador leva a bola no pé,
+                    virado para o lado de fuga e já em aceleração, e só no fim
+                    é que a bola é tocada para lá do adversário.
 
-                    // Chance de sucesso: ir para o lado dá bónus
-                    let successChance = DribbleModel.successBase + DribbleModel.successSideBonus;
-                    // Skill do jogador modifica (+10% para skill > 70, -10% para skill < 40)
-                    let skill = p.skillFor ? p.skillFor('TEC') : 50;
-                    successChance += (skill - 50) * 0.003;
+                    A decisão é a mesma e é tomada no mesmo instante: o que
+                    mudou foi o tempo entre decidir e executar, não a
+                    probabilidade.
+                    */
+                    if (!p.driblePlano) {
+                        let forward = p.velocity.lengthSq() > 0.1
+                            ? _v2.copy(p.velocity).normalize()
+                            : _v2.set(0, 0, p.dirZ);
 
-                    if (Math.random() < successChance) {
+                        // Calcular de que lado o adversário está
+                        let toOpp = _v3.subVectors(opp.model.position, p.model.position);
+                        toOpp.y = 0;
+                        // Produto cruzado: positivo = adversário à direita, negativo = à esquerda
+                        let cross = forward.x * toOpp.z - forward.z * toOpp.x;
+                        // Ir para o lado OPOSTO ao adversário
+                        let escapeSide = (cross >= 0) ? -1 : 1;
+
+                        // Toque lateral (30-45°) para o lado oposto
+                        let angle = DribbleModel.angleSide * escapeSide;
+                        let cosA = Math.cos(angle), sinA = Math.sin(angle);
+                        let pushDir = _v4.set(
+                            forward.x * cosA - forward.z * sinA,
+                            0,
+                            forward.x * sinA + forward.z * cosA
+                        ).normalize();
+
+                        // Chance de sucesso: ir para o lado dá bónus
+                        let successChance = DribbleModel.successBase + DribbleModel.successSideBonus;
+                        // Skill do jogador modifica (+10% para skill > 70, -10% para skill < 40)
+                        let skill = p.skillFor ? p.skillFor('TEC') : 50;
+                        successChance += (skill - 50) * 0.003;
+
+                        p.driblePlano = {
+                            t: 0,
+                            sucesso: (Math.random() < successChance),
+                            dir: { x: pushDir.x, z: pushDir.z },
+                            frente: { x: forward.x, z: forward.z }
+                        };
+                    }
+
+                    const plano = p.driblePlano;
+                    plano.t += dt;
+
+                    /*
+                    O GESTO. Ele acelera para o lado de fuga com a bola no pé —
+                    é o `dynamicTarget` que o move (a camada de movimento é a
+                    mesma de sempre) e o `speedMult` que lhe dá o arranque.
+                    */
+                    p.speedMult = DribbleModel.sprintBoost;
+                    p.dynamicTarget.set(
+                        p.model.position.x + plano.dir.x * DribbleModel.alcanceGesto,
+                        ALTURA_BASE_Y,
+                        p.model.position.z + plano.dir.z * DribbleModel.alcanceGesto);
+
+                    if (plano.t < DribbleModel.duracaoGesto) break;
+
+                    // ---- o toque, no fim do gesto
+                    const dirFuga = _v4.set(plano.dir.x, 0, plano.dir.z);
+                    const dirFrente = _v2.set(plano.frente.x, 0, plano.frente.z);
+                    p.driblePlano = null;
+
+                    if (plano.sucesso) {
                         if (typeof MatchStats !== 'undefined') MatchStats[p.team].dribles.sucesso++;
                         p.speedMult = DribbleModel.sprintBoost;
                         window.bolaChutada = false;
@@ -1551,11 +1601,11 @@ class PlayerFSM {
                         p.carryTouchGrace = 1.2;
                         Match.ballCarrier = null;
                         Match.intendedReceiver = p;
-                        Match.ballVel.copy(pushDir).multiplyScalar(Math.max(6.0, p.velocity.length() + 3.5));
+                        Match.ballVel.copy(dirFuga).multiplyScalar(Math.max(6.0, p.velocity.length() + 3.5));
                         Match.ballVel.y = 0;
                         Match.lastTouchedTeam = p.team;
                         Match.lastTouchedPlayer = p;
-                        
+
                         this.changeState('CARRY');
                         break;
                     } else {
@@ -1565,7 +1615,7 @@ class PlayerFSM {
                         Match.ballCarrier = null;
                         Match.intendedReceiver = p;
                         // Bola para frente fraca, fácil para o defensor
-                        Match.ballVel.copy(forward).multiplyScalar(3.0 + Math.random() * 3.0);
+                        Match.ballVel.copy(dirFrente).multiplyScalar(3.0 + Math.random() * 3.0);
                         Match.ballVel.y = 0;
                         Match.lastTouchedTeam = p.team;
                         Match.lastTouchedPlayer = p;
