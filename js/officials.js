@@ -819,8 +819,8 @@ const Officials = {
             // quando o angulo passava por +/-PI.
             guinada = Math.atan2(Math.sin(guinada), Math.cos(guinada));
 
-            // Escolhe o braco que fica do lado do ataque: direito se o alvo
-            // estiver a direita do corpo, esquerdo se estiver a esquerda.
+            // Escolhe o braco que fica do lado da baliza apontada: direito se o
+            // alvo estiver a direita do corpo, esquerdo se estiver a esquerda.
             // Assim o braco nao precisa de cruzar o tronco.
             const useRight = guinada >= 0;
             const signalArm = useRight ? rig.rArm : rig.lArm;
@@ -831,9 +831,23 @@ const Officials = {
             otherArm.rotation.x = lerpTo(otherArm.rotation.x, 0, k);
 
             signalArm.rotation.order = 'YXZ';
-            // Braco direito com +PI/2 aponta para a direita; braco esquerdo,
-            // simetrico, aponta para a esquerda com -PI/2.
-            signalArm.rotation.y = useRight ? Math.PI / 2 : -Math.PI / 2;
+            /*
+            Com `rotation.x = -PI/2` e `y = 0` o braco fica na horizontal a
+            apontar para a FRENTE do corpo; a guinada roda-o em torno do eixo
+            vertical, portanto `y = guinada` aponta-o exactamente para o alvo,
+            seja qual for o angulo entre o corpo (virado para a bola) e a
+            baliza. Estava fixo em +/-PI/2 — sempre perpendicular ao tronco —
+            e por isso o gesto apontava para o lado errado sempre que o alvo
+            nao estivesse mesmo de lado.
+
+            `margem` impede o braco de encostar ao tronco quando o alvo esta
+            quase em frente, e de o atravessar por tras quando esta atras: e
+            para isso que o lado do braco foi escolhido acima.
+            */
+            const margem = 0.35;
+            signalArm.rotation.y = useRight
+                ? Math.min(Math.max(guinada, margem), Math.PI - margem)
+                : Math.max(Math.min(guinada, -margem), -Math.PI + margem);
 
             // Infrações (falta livre) ficam paralelas ao chao.
             const ehHorizontal = Math.abs(arb.sinal.elev - RefereeModel.elevacaoSinal) < 0.01;

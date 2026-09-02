@@ -696,7 +696,14 @@ function pickSupportMid(bb) {
     // slot inteiro do médio escolhido, por isso trocar de escolhido a cada
     // frame (dois médios a distâncias parecidas) fazia o alvo saltar entre
     // o slot normal e "ir buscar a bola" de um jogador para o outro.
-    const prev = bb.supportMid;
+    /*
+    A memoria da histerese NAO pode ser o proprio `bb.supportMid`: ele e posto
+    a null nos dois `return` acima (bola fora da zona de construcao, GR com a
+    bola nas maos), portanto a cada reentrada o "anterior" era null — a
+    histerese comecava do zero e a troca nunca era contada (`trocasSupportMid`
+    dava 0 em lotes inteiros). `_supportMidUltimo` sobrevive a essas saidas.
+    */
+    const prev = bb._supportMidUltimo || bb.supportMid;
     // Só médios CENTRAIS — RM/LM são alas, arrastá-los pro meio pra apoiar a
     // construção junto ao GR quebra a largura da equipa (é função de um
     // 6/8, não de um ala). Sem este filtro, um RM/LM que calhasse ser o
@@ -712,10 +719,12 @@ function pickSupportMid(bb) {
         bb.supportMid = prev;
     } else {
         bb.supportMid = candidatos.length ? candidatos[0].p : null;
-        if (typeof MatchStats !== 'undefined' && prev && bb.supportMid !== prev) {
+        if (typeof MatchStats !== 'undefined' && prev && bb.supportMid &&
+            bb.supportMid !== prev) {
             MatchStats[bb.team].trocasSupportMid++;
         }
     }
+    if (bb.supportMid) bb._supportMidUltimo = bb.supportMid;
 }
 
 /*

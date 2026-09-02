@@ -1107,6 +1107,7 @@ class FootballPlayer {
             if (typeof MatchStats !== 'undefined') {
                 MatchStats[this.team].remates.tentados++;
                 if (alvo.naBaliza) MatchStats[this.team].remates.noAlvo++;
+                if (MatchStats.marcarRemateEmVoo) MatchStats.marcarRemateEmVoo(this.team);
             }
             if (typeof EventBus !== 'undefined') {
                 EventBus.emit('DIRECT_FREE_KICK_TAKEN',
@@ -1417,7 +1418,10 @@ class FootballPlayer {
                 Match.lastTouchedTeam = this.team;
                 Match.lastTouchedPlayer = this;
                 window.bolaChutada = true;
-                if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
+                if (typeof MatchStats !== 'undefined') {
+                    MatchStats[this.team].remates.tentados++;
+                    if (MatchStats.marcarRemateEmVoo) MatchStats.marcarRemateEmVoo(this.team);
+                }
                 if (typeof EventBus !== 'undefined') EventBus.emit('PENALTY_TAKEN', { team: this.team, p: this });
             }
         });
@@ -2700,7 +2704,10 @@ class FootballPlayer {
             (this.targetGoalZ - this.model.position.z) * this.dirZ > 0);
 
         if (inShootingRange) {
-            if (typeof MatchStats !== 'undefined') MatchStats[this.team].remates.tentados++;
+            if (typeof MatchStats !== 'undefined') {
+                MatchStats[this.team].remates.tentados++;
+                if (MatchStats.marcarRemateEmVoo) MatchStats.marcarRemateEmVoo(this.team);
+            }
 
             // Conectar bem a cabeçada é Técnica x Marcação (marcador mais
             // perto dele) — base 0.55, favorece quem salta pra bola.

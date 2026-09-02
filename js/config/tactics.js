@@ -844,16 +844,42 @@ const PlayingStyles = {
         colaNaLinha: true
     },
 
+
+/*
+=============================================================================
+METADE DEFENSIVA DOS ESTILOS — o bloco `defensivo`
+=============================================================================
+O `aplicarEstiloPosicional` (playing_styles.js) so aplica a metade OFENSIVA
+com a equipa a atacar; sem posse le `estiloDefensivoDe`, que exige um bloco
+`defensivo` no estilo. Nenhum estilo o tinha — e o `distanciaComEstilo`, que
+aperta a marcacao, le `defensivo.pressao`, que tambem nao existia.
+
+Consequencia medida em lote: o The Destroyer, cujo gatilho SO liga a defender
+(ver Gatilhos em playing_styles.js), tinha 6995 activacoes e 0.2 m de
+deslocamento — activo exactamente na fase em que nada do estilo se aplicava.
+O mesmo valia para o Anchor Man, o Box-to-Box e o Defensive Full-back.
+
+`recuo` sao metros ATRAS do slot no referencial de ataque (espelho do
+`avanco`); `pressao` multiplica o aperto da marcacao (>1 marca mais perto),
+limitado por `MarkingModel.distanciaMinimaEstilo`.
+=============================================================================
+*/
+
     /* --- Meio-campo ------------------------------------------------------ */
     box_to_box: {
         nome: 'Box-to-Box', posicoes: ['AM', 'LM', 'RM', 'CM', 'DM'],
         amplitudeZ: 1.5, avancoComBola: 5, pressao: 1.2,
-        travaNaEntradaArea: true // "da entrada de uma área até a entrada da outra" — não passa da entrada
+        travaNaEntradaArea: true, // "da entrada de uma área até a entrada da outra" — não passa da entrada
+        // Cobre o campo todo: a defender recua e acompanha, sem se sentar.
+        defensivo: { recuo: 3, pressao: 1.2 }
     },
     the_destroyer: {
         nome: 'The Destroyer', posicoes: ['CM', 'DM', 'CB'],
         driblar: 0.4,
-        avanco: -2, pressao: 1.6, conduzir: 0.6, lancar: 0.7, amplitudeZ: 0.85
+        avanco: -2, pressao: 1.6, conduzir: 0.6, lancar: 0.7, amplitudeZ: 0.85,
+        // Ver a nota do bloco `defensivo` acima: e a defender que este estilo
+        // existe, e sem isto nao fazia nada.
+        defensivo: { recuo: 2, pressao: 1.6 }
     },
     orchestrator: {
         nome: 'Orchestrator', posicoes: ['CM', 'DM'],
@@ -863,7 +889,8 @@ const PlayingStyles = {
     anchor_man: {
         nome: 'Anchor Man', posicoes: ['DM'],
         driblar: 0.3,
-        avanco: -7, pressao: 1.25, lancar: 0.5, conduzir: 0.5, amplitudeZ: 0.6
+        avanco: -7, pressao: 1.25, lancar: 0.5, conduzir: 0.5, amplitudeZ: 0.6,
+        defensivo: { recuo: 7, pressao: 1.25 }
     },
 
     /* --- Defesas --------------------------------------------------------- */
@@ -905,7 +932,8 @@ const PlayingStyles = {
     },
     defensive_fullback: {
         nome: 'Defensive Full-back', posicoes: ['LB', 'RB'],
-        avanco: -2, pressao: 1.2, cruzar: 0.7
+        avanco: -2, pressao: 1.2, cruzar: 0.7,
+        defensivo: { recuo: 2, pressao: 1.2 }
     },
 
     /* --- Guarda-redes ---------------------------------------------------- */

@@ -101,6 +101,11 @@ function novoContadorEquipa() {
         remateBloqueados: 0,
         // Remates com xG acima de `StatsModel.limiarGrandeChance`.
         grandesChances: 0,
+        // Quantas dessas acabaram em golo. Sem este contador a
+        // `conversaoDeChances` era golos/grandesChances — todos os golos a
+        // dividir pelas grandes chances — e dava valores impossiveis (200%
+        // com dois golos e uma grande chance).
+        grandesChancesConvertidas: 0,
 
         // --- ATAQUE ------------------------------------------------------
         // Sequências de posse que ENTRARAM no último terço (uma por sequência,
@@ -205,6 +210,8 @@ const MatchStats = {
         this._arrefPressao = null;
         this._ultimoPasseCerto = null;
         this._remateArmado = null;
+        this._grandeChancePendente = null;
+        this._remateEmVoo = null;
         this._ultimaPerda = null;
     },
 
@@ -229,9 +236,34 @@ const MatchStats = {
     estão protegidas com `&&`, falhavam em silêncio e o contador ficava a
     zero. É a estatística mais visível de um jogo.
     */
+    /*
+    Ha remates que nao passam pelo `registarRemateNaFicha` — livre directo,
+    penalti e cabeceamento resolvem-se por caminhos proprios. Sem isto, uma
+    defesa nesses lances nao contava (o `registarDefesa` exige um remate a
+    caminho).
+    */
+    marcarRemateEmVoo: function (team) {
+        this._remateEmVoo = { equipa: team, t: this.relogio };
+    },
+
     registarDefesa: function (team) {
         const s = this[team];
         if (!s) return;
+        /*
+        DEFESA E UM REMATE IMPEDIDO, nao "o guarda-redes tocou na bola". Isto
+        e chamado no gesto de maos e no mergulho, que tambem apanham cruzamentos
+        e passes atrasados — e por isso o lote dava 6 a 9 defesas por jogo com
+        2 remates enquadrados, o que e impossivel numa ficha.
+
+        So conta se houver um remate da OUTRA equipa a caminho, dentro da mesma
+        janela que confirma a assistencia. O remate e consumido: uma bola so se
+        defende uma vez.
+        */
+        const M = (typeof StatsModel !== 'undefined') ? StatsModel : null;
+        const r = this._remateEmVoo;
+        if (!M || !r || r.equipa === team) return;
+        if ((this.relogio - r.t) > M.janelaChave) return;
+        this._remateEmVoo = null;
         s.defesas++;
     },
 
@@ -247,6 +279,21 @@ const MatchStats = {
         if ((this.relogio - r.t) > M.janelaChave) return;
         s.assistencias++;
         this._remateArmado = null;
+    },
+
+    /*
+    Golo entrou: se o remate que o fez era uma grande chance, ela conta como
+    convertida. A janela e a mesma do passe-chave — entre o remate e a bola na
+    baliza passam frames, nao segundos.
+    */
+    confirmarGrandeChance: function (team) {
+        const s = this[team];
+        const M = (typeof StatsModel !== 'undefined') ? StatsModel : null;
+        const g = this._grandeChancePendente;
+        if (!s || !M || !g || g.equipa !== team) return;
+        if ((this.relogio - g.t) > M.janelaChave) return;
+        s.grandesChancesConvertidas++;
+        this._grandeChancePendente = null;
     },
 
     registarGoloSofrido: function (team) {
@@ -400,7 +447,20 @@ const MatchStats = {
         const s = this[team];
         if (!s) return;
         const M = (typeof StatsModel !== 'undefined') ? StatsModel : null;
-        if (M && xg >= M.limiarGrandeChance) s.grandesChances++;
+        /*
+        No instante do remate ainda nao se sabe se ele entrou (o `foiGolo` da
+        chamada e sempre false — a bola so cruza a linha frames depois), por
+        isso a chance fica PENDENTE e e o golo que a confirma, exactamente como
+        a assistencia aqui em baixo.
+        */
+        // Remate a caminho: e o que autoriza a contar uma DEFESA do outro lado.
+        this._remateEmVoo = { equipa: team, t: this.relogio };
+
+        if (M && xg >= M.limiarGrandeChance) {
+            s.grandesChances++;
+            this._grandeChancePendente = { equipa: team, t: this.relogio };
+        }
+        if (foiGolo) this.confirmarGrandeChance(team);
 
         /*
         No instante do remate ainda nao se sabe se ele vai ser golo, por isso
@@ -910,7 +970,7 @@ const MatchStats = {
                 eficienciaRemate: pct(s.remates.golos, s.remates.tentados) + '%',
                 eficienciaPasse: pct(s.passes.certos, s.passes.tentados) + '%',
                 eficienciaDefensiva: pct(s.duelos.ganhos, duelosTotais) + '%',
-                conversaoDeChances: pct(s.remates.golos, s.grandesChances) + '%',
+                conversaoDeChances: pct(s.grandesChancesConvertidas, s.grandesChances) + '%',
 
                 // --- CHURN DOS ALVOS (calibração, não é ficha de jogo)
                 trocasChaser: s.trocasChaser,

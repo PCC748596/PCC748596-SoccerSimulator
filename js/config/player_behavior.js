@@ -525,6 +525,24 @@ const BallControl = {
     */
     easySpeed: 10.66,     // abaixo disto domina-se sempre (a regra antiga)
     hardSpeed: 30.0,      // acima disto é praticamente impossível dominar
+
+    /*
+    BOLA QUE CAI NAO SE TRAVA, AMORTECE-SE.
+
+    O limiar acima media a velocidade 3D, e uma bola alta de 20 m chega a
+    16 m/s por balistica pura — nao por estar a ser chutada com forca. Medido
+    em lote: nos passes de 15-25 m pelo alto, 30% dos dominios falhavam contra
+    7% nos rasteiros da mesma faixa, e a bola ainda ressaltava para o
+    adversario. Um jogador de verdade mata essa bola no peito ou na coxa quase
+    sempre: o contacto e amortecido, e a componente que ele tem de travar e a
+    horizontal, nao a queda.
+
+    Por isso, com a bola A DESCER e acima de `alturaQueda` (medida aos pes, ver
+    distanciaAoCorpo), o limiar do dominio facil sobe para `easySpeedQueda`. O
+    `hardSpeed` nao muda: uma bomba continua a ser uma bomba.
+    */
+    easySpeedQueda: 16.0,
+    alturaQueda: 0.8,
     receiverBonus: 0.35,  // vantagem de quem é o destinatário do passe
     touchLock: 0.35,      // segundos sem poder tocar depois de largar a bola
     retryLock: 0.25,      // segundos até nova tentativa depois de falhar uma
@@ -898,3 +916,47 @@ const PerceptionModel = {
 
 // Segundos que a equipa SEM bola espera, depois de a perder, antes de
 // reavaliar chaser/marcação — ligado ao selector "Defensive Pressure".
+
+/*
+=============================================================================
+RITMO DE REPOSICIONAMENTO — quanto se corre SEM bola
+=============================================================================
+O `actHoldPosition` (ocuparPosicao + marcar: 66% do tempo de jogo medido em
+lote) pedia 7.43 m/s a mais de 2 m do alvo e 4.73 m/s dentro desses 2 m. Ou
+seja o PISO era 4.7 m/s: ninguém andava nunca. O lote de 20 jogos dava 50 km
+por equipa em 18 minutos — 22.7 km por jogador por 90 minutos, o dobro dos
+10-12 km de um jogo a sério, e isso arrasta tudo o resto para cima (mais
+passes, mais faltas, mais duelos por minuto).
+
+Um jogador de futebol passa a maior parte do jogo a andar e a trotar, e
+sprinta em rajadas curtas. O ritmo tem de sair da DISTÂNCIA que falta:
+recuperar 30 m é um sprint, ajustar 2 m é andar. Os valores são a velocidade
+de cruzeiro em m/s — o `steerArrive` trava sozinho à chegada.
+
+`ganhoSkill` é quanto a velocidade (SPD 0-100) mexe no cruzeiro, em fracção:
+±20% entre um jogador lentíssimo e um rapidíssimo.
+=============================================================================
+*/
+const RepositionPace = {
+    // [distância mínima ao alvo, m/s de cruzeiro], da mais longe para a mais perto.
+    escaloes: [
+        [25.0, 6.8],   // fora de posição: sprint de recuperação
+        [10.0, 4.4],   // trote
+        [3.0, 2.6],    // trote curto
+        [0.0, 1.5]     // já posicionado: andar
+    ],
+    ganhoSkill: 0.20,
+    // Contra-ataque: a transição é a rajada, aqui sim.
+    bonusContraAtaque: 1.25,
+    // O guarda-redes anda quase sempre — reposiciona-se, não corre o campo.
+    velocidadeGK: 2.6,
+
+    cruzeiro: function (dist, skillSpeed) {
+        let base = this.escaloes[this.escaloes.length - 1][1];
+        for (const [d, v] of this.escaloes) {
+            if (dist >= d) { base = v; break; }
+        }
+        const f = 1 + ((skillSpeed - 50) / 50) * this.ganhoSkill;
+        return base * f;
+    }
+};

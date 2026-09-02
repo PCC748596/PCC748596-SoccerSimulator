@@ -1730,16 +1730,21 @@ function actHoldPosition(ctx) {
     }
     const dist = p.model.position.distanceTo(p.dynamicTarget);
 
-    // Longe da posição (a recuperar/marcar): velocidade máxima até uns 2m
-    // do alvo. Dentro disso (já posicionado, só a ajustar): ritmo moderado
-    // — o steerArrive já trava sozinho perto do alvo, isto é só sobre a
-    // velocidade de cruzeiro. +25% pedido: velocidade máxima SEM bola.
-    if (dist > 2.0) {
-        p.speedMult = (6.6 + ((ctx.skillSpeed - 50) / 50) * 1.4) * 1.25 * 0.9;
+    /*
+    O ritmo sai da distância que falta (RepositionPace, player_behavior.js).
+    Eram dois escalões só, com o piso em 4.73 m/s a 2 m do alvo: ninguém
+    andava nunca e cada jogador fazia 22.7 km por 90 minutos. Agora são
+    quatro, do sprint de recuperação ao andar de quem já está no sítio.
+    */
+    if (typeof RepositionPace !== 'undefined') {
+        p.speedMult = RepositionPace.cruzeiro(dist, ctx.skillSpeed);
+        if (Match.counterAttackTeam === p.team) {
+            p.speedMult *= RepositionPace.bonusContraAtaque;
+        }
     } else {
-        p.speedMult = (4.2 + ((ctx.skillSpeed - 50) / 50) * 1.2) * 1.25 * 0.9;
+        p.speedMult = (dist > 2.0 ? 6.6 : 4.2) + ((ctx.skillSpeed - 50) / 50) * 1.2;
+        if (Match.counterAttackTeam === p.team) p.speedMult *= 1.25;
     }
-    if (Match.counterAttackTeam === p.team) p.speedMult *= 1.25;
 
     /*
     O nível 2 (defendZonal/marcar em position_bt.js) já decidiu O ALVO
@@ -1783,7 +1788,9 @@ function actHoldPosition(ctx) {
 function actGoalkeeperPosition(ctx) {
     const p = ctx.p;
     p.apoioAtivo = false;
-    p.speedMult = (4.2 + ((ctx.skillSpeed - 50) / 50) * 1.2) * 1.25 * 0.9;
+    p.speedMult = (typeof RepositionPace !== 'undefined')
+        ? RepositionPace.velocidadeGK
+        : 4.2;
     /*
     Delega em gkAnchor() (config.js), a mesma função que updateGK() usa. Esta
     folha nunca corre — update() manda os guarda-redes para updateGK e nunca

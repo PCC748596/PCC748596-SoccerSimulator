@@ -82,6 +82,15 @@ const MarkingModel = {
     */
     distancia: 2.0,
 
+    /*
+    Piso do aperto por ESTILO (ver distanciaComEstilo, playing_styles.js): um
+    estilo com `defensivo.pressao` divide a distancia acima, e sem piso um
+    Destroyer a 1.6 ficava a 1.25 m do homem — isso nao e marcar, e falta. O
+    `distanciaComEstilo` ja o procurava aqui; nao existia, e caia num 1.0
+    escrito a mao no fallback.
+    */
+    distanciaMinimaEstilo: 1.5,
+
     distanciaPara(zoneAhead) {
         return this.distancia;
     },

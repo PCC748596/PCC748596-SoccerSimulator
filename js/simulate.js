@@ -384,6 +384,22 @@ function aplicarCoberturaNoJogo(plano, forma, originais) {
 // no mesmo desvio) e RMS do deslocamento (mede se o estilo desloca alguma
 // coisa). Marca `semEfeito` quando ativa mas não desloca (>0 ativações, RMS
 // desprezável) — sinal de flag sem código de posicionamento por trás.
+/*
+O estilo tem sequer algum campo que MOVA o jogador? Se nao tiver, um
+deslocamento de zero e o comportamento correcto e nao um contador morto.
+Os campos sao os que o `aplicarEstiloPosicional` (playing_styles.js) le.
+*/
+const CAMPOS_POSICIONAIS = ['avanco', 'avancoComBola', 'largura', 'amplitudeZ',
+    'colaNaLinha', 'fechaComBolaCentral', 'cortaParaDentro', 'dentroArea',
+    'travaNaEntradaArea'];
+
+function estiloDeslocaPorDefinicao(chave) {
+    const def = (typeof PlayingStyles !== 'undefined') ? PlayingStyles[chave] : null;
+    if (!def) return true;   // desconhecido: nao se assume que esta certo
+    if (def.defensivo && def.defensivo.recuo) return true;
+    return CAMPOS_POSICIONAIS.some(c => def[c]);
+}
+
 function resumirEstilos(stats) {
     const linhas = [];
     for (const key in stats) {
@@ -404,7 +420,17 @@ function resumirEstilos(stats) {
             deslocamentoTotalMaxM: +st.totMax.toFixed(2),
             desvioPadraoXM: +stdDx.toFixed(2),
             desvioPadraoZM: +stdDz.toFixed(2),
-            semEfeito: st.ativacoes > 0 && rms < 0.3
+            /*
+            `semEfeito` = ligado e nao desloca NADA. Mas ha estilos que nao
+            tem, de propria definicao, nenhum campo posicional: o Target Man
+            mexe no passe e na cadencia, o Extra Frontman so sobe na BOLA
+            PARADA (ver a nota dele em tactics.js). Marcar esses como defeito
+            mandava procurar codigo em falta que nao existe — por isso saem
+            separados, em `semDeslocacaoPorDesenho`.
+            */
+            semDeslocacaoPorDesenho: !estiloDeslocaPorDefinicao(st.style),
+            semEfeito: st.ativacoes > 0 && rms < 0.3 &&
+                estiloDeslocaPorDefinicao(st.style)
         });
     }
     linhas.sort((a, b) => (a.semEfeito === b.semEfeito) ? (a.estilo < b.estilo ? -1 : 1) : (a.semEfeito ? -1 : 1));
@@ -659,6 +685,13 @@ const Sim = {
 
             Match.resetPlay();
             MatchStats.reset();
+            /*
+            O `resumo().placar` le `Match.placarA/placarB`, que ninguem repunha
+            entre jogos — o relatorio do lote trazia o placar ACUMULADO (jogo
+            20 dizia "17-25" com 0 e 3 golos marcados nesse jogo). O
+            `MatchStats.reset` zera as estatisticas, nao o marcador do Match.
+            */
+            Match.placarA = 0; Match.placarB = 0;
             vigia.pos = null; vigia.parada = 0; vigia.jaRegistou = false;
 
             const totalPassos = Math.round(duracaoSeg / dt);
@@ -790,6 +823,11 @@ const Sim = {
         if (relatorioEstilos) {
             console.table(relatorioEstilos);
             const semEfeito = relatorioEstilos.filter(l => l.semEfeito);
+            const porDesenho = relatorioEstilos.filter(l => l.semDeslocacaoPorDesenho);
+            if (porDesenho.length) {
+                console.log('Sim: estilo(s) sem deslocacao POR DESENHO (nao e defeito):',
+                    porDesenho.map(l => `${l.estilo} (${l.posicao})`).join(', '));
+            }
             if (semEfeito.length) {
                 console.warn('Sim: estilos que ATIVAM mas não deslocam o alvo (sem código de posicionamento por trás):',
                     semEfeito.map(l => `${l.estilo} (${l.posicao})`).join(', '));

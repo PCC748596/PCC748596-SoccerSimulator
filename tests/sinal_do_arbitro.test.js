@@ -231,17 +231,48 @@ console.log(LF + '5 — o braço volta a cair');
     } else ok('o corpo continua virado para onde o mover o pôs');
 
     /*
-    E o braço aponta o alvo em coordenadas do MUNDO: a guinada dele é a
-    diferença entre o ângulo para o alvo e o ângulo do corpo. Com o corpo a
-    olhar para +z e o alvo em +z, o braço direito aponta para a frente com
-    guinada de +90° em relação ao corpo.
+    E o braço APONTA O ALVO em coordenadas do mundo: a guinada dele é a
+    diferença entre o ângulo para o alvo e o ângulo do corpo — não um ângulo
+    fixo. Estava travado em +/-90°, sempre perpendicular ao tronco, e por isso
+    o gesto saía cruzado sempre que o alvo não estivesse mesmo de lado.
+
+    Com o corpo a olhar para +z e o alvo em +z a guinada certa é 0; o que se
+    vê é a MARGEM que afasta o braço do tronco, e nada mais do que ela.
     */
     const guinada = Math.atan2(
         Math.sin(signalArm.rotation.y), Math.cos(signalArm.rotation.y));
-    if (Math.abs(Math.abs(guinada) - Math.PI / 2) > 0.25) {
-        erro(`a guinada do braço devia ser ~90°, é ${Math.round(guinada * 180 / Math.PI)}°`);
-    } else ok(`braço com ${Math.round(Math.abs(guinada) * 180 / Math.PI)}° de guinada, ` +
-        'a apontar o alvo com o corpo virado para ele');
+    const margem = 0.35;
+    if (Math.abs(guinada) > margem + 0.01) {
+        erro(`alvo em frente: a guinada devia ficar na margem (${margem} rad), ` +
+            `é ${guinada.toFixed(2)}`);
+    } else ok(`alvo em frente: braço a ${Math.round(guinada * 180 / Math.PI)}° ` +
+        'do corpo, encostado à margem e não cruzado');
+
+    /*
+    E com o alvo MESMO DE LADO a guinada acompanha-o: 90° e o braço direito,
+    que é o que fica do lado do alvo.
+    */
+    const rigLado = {
+        rArm: { rotation: { x: 0, y: 0, order: 'XYZ' } },
+        lArm: { rotation: { x: 0, y: 0, order: 'XYZ' } },
+        rElbow: { rotation: { x: 0 } },
+        lElbow: { rotation: { x: 0 } }
+    };
+    const selfLado = {
+        arbitro: {
+            rig: rigLado,
+            model: { position: { x: 0, z: 0 }, rotation: { y: 0 } },
+            sinal: { x: 20, z: 0, elev: -1.5, timer: 1.0 }
+        }
+    };
+    for (let n = 0; n < 30; n++) tick(selfLado, 0.016);
+    if (rigLado.rArm.rotation.order !== 'YXZ') {
+        erro('alvo à direita: devia sinalizar com o braço DIREITO, o mais ' +
+            'próximo do alvo — senão cruza o tronco');
+    } else if (Math.abs(rigLado.rArm.rotation.y - Math.PI / 2) > 0.05) {
+        erro(`alvo a 90°: a guinada devia acompanhar, é ` +
+            `${rigLado.rArm.rotation.y.toFixed(2)}`);
+    } else ok('alvo de lado: braço direito, guinada a acompanhar o alvo');
 
     // A ordem das rotações tem de ser guinada-primeiro, senão a elevação
     // roda em torno do eixo errado e o braço acaba a apontar para o sítio errado.

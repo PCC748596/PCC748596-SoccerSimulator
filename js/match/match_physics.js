@@ -189,6 +189,9 @@ Object.assign(Match, {
                         if (MatchStats.registarGoloSofrido) MatchStats.registarGoloSofrido(sofreu);
                         // E a assistencia, que so aqui se confirma.
                         if (MatchStats.registarAssistencia) MatchStats.registarAssistencia(this.lastTouchedTeam);
+                        // Idem para a grande chance: no instante do remate
+                        // ainda nao se sabia se ela ia dentro.
+                        if (MatchStats.confirmarGrandeChance) MatchStats.confirmarGrandeChance(this.lastTouchedTeam);
                     }
                     if (this.lastTouchedTeam === 'TeamA') this.placarA++; else if (this.lastTouchedTeam === 'TeamB') this.placarB++;
                     this.updatePlacar();
@@ -520,12 +523,22 @@ Object.assign(Match, {
             }
         }
 
+        /*
+        Bola a cair de alto amortece-se; ver BallControl.easySpeedQueda. Sem
+        isto, um passe alto de 20 m (16 m/s so por balistica) era tratado como
+        um tiro rasteiro de 16 m/s.
+        */
+        const aDescer = this.ballVel.y < 0;
+        const limiarFacil = (aDescer && bestAltura > BallControl.alturaQueda &&
+            typeof BallControl.easySpeedQueda === 'number')
+            ? BallControl.easySpeedQueda : BallControl.easySpeed;
+
         let dominou;
-        if (speed < BallControl.easySpeed) {
+        if (speed < limiarFacil) {
             dominou = true;
         } else {
             const dificuldade = THREE.MathUtils.clamp(
-                (speed - BallControl.easySpeed) / (BallControl.hardSpeed - BallControl.easySpeed), 0, 1);
+                (speed - limiarFacil) / (BallControl.hardSpeed - limiarFacil), 0, 1);
             let hipotese = (best.skillFor('TEC') / 100) * (1 - dificuldade);
             if (best === this.intendedReceiver) hipotese += BallControl.receiverBonus;
 
