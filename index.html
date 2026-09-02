@@ -304,8 +304,12 @@
                         <label style="flex: 1; margin: 0;">Jogos
                             <input type="number" id="sim-jogos" min="1" max="100" step="1" value="2"
                                 oninput="actualizarAvisoDoLote()" style="width: 100%;"></label>
+                        <!-- O rótulo dizia "RELÓGIO DO JOGO" e o código usa este
+                         número como segundos SIMULADOS: o relógio da partida corre
+                         MatchDuration.timeScale (5x) mais depressa, portanto 25 aqui
+                         são ~122 minutos de jogo. A conversão vai no aviso abaixo. -->
                         <label style="flex: 1; margin: 0;"
-                            title="Minutos do RELÓGIO DO JOGO, não tempo real de espera">Min/jogo (jogo)
+                            title="Minutos SIMULADOS por jogo. O relógio da partida corre 5x mais depressa — a conversão está no aviso abaixo.">Min/jogo (sim)
                             <input type="number" id="sim-minutos" min="1" max="90" step="1" value="25"
                                 oninput="actualizarAvisoDoLote()" style="width: 100%;"></label>
                     </div>

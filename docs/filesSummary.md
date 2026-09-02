@@ -583,6 +583,33 @@ aceitar as duas pernas (`aguardarPassada` -> `emJanelaDeToque`), e o `ShotClip`
 continua a bater sempre com a direita. Passá-los ao pé bom é o mesmo `p.pe` e
 uma linha em cada sítio, mas é outro pedido.
 
+#### O tempo do lote: o rótulo mentia, e agora diz o que o código faz
+
+Pergunta: *"o tempo da simulação por lote é o tempo do relógio do jogo?"*.
+
+Não era, e o painel dizia que sim. A caixa "Min/jogo" tinha o `title`
+*"Minutos do RELÓGIO DO JOGO, não tempo real de espera"* — mas o
+`lerParametrosDoLote` faz `duracaoSeg = minutos * 60` e o `Sim.run` gasta esses
+segundos a passos de 1/60 s, ou seja como tempo SIMULADO. O relógio da partida
+anda `MatchDuration.timeScale` vezes mais depressa (4.5 / GAME_SPEED 0.9 = 5).
+
+Medido: **120 s simulados dão 585 s de relógio de jogo — 4,87×**. Com 25 na
+caixa não se simulavam 25 minutos de jogo, simulavam-se ~122.
+
+Havia duas correcções opostas — fazer o código honrar o rótulo (dividir pelo
+`timeScale`), ou fazer o rótulo honrar o código. Escolheu-se a segunda, para não
+mexer no significado de todos os lotes já corridos: a caixa passou a
+**"Min/jogo (sim)"** e o aviso por baixo faz a conversão à vista:
+
+    2 x 25 min simulados = 125 min de relogio por jogo   |  ~76 s reais de espera
+    2 x 9  min simulados =  45 min de relogio por jogo   |  ~27 s reais
+    11 x 18 min simulados =  90 min de relogio por jogo   |  ~5 min reais
+
+Assim ficam os três tempos à vista ao mesmo tempo, que era o que faltava: o que
+se escreve, o que a partida vê, e quanto se espera.
+
+> Para um jogo inteiro de 90 minutos de relógio, o número da caixa é **18**.
+
 #### +20% na nota do passe para quem está num sector activo
 
 Pedido: *"aumenta as notas de passe para os jogadores que estão nos sectores

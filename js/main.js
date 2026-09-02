@@ -652,7 +652,20 @@ function actualizarAvisoDoLote() {
         ? `~${Math.round(segundos)} s`
         : `~${Math.round(segundos / 60)} min`;
     const cobre = jogos >= SIM_JOGOS_PARA_COBERTURA;
-    el.innerHTML = `${jogos} × ${minutos} min de jogo — ${tempo} reais de espera (estimativa).<br>` +
+
+    /*
+    O QUE A CAIXA PEDE E O QUE O JOGO VE SAO COISAS DIFERENTES.
+
+    A caixa sao minutos SIMULADOS (o `duracaoSeg` que o Sim gasta a passos de
+    1/60 s). O relogio da partida anda `MatchDuration.timeScale` vezes mais
+    depressa — medido, 120 s simulados dao 585 s de relogio. Sem esta linha,
+    quem punha 25 julgava estar a simular 25 minutos de jogo e simulava 122.
+    */
+    const escala = (typeof MatchDuration !== 'undefined') ? MatchDuration.timeScale : 1;
+    const minJogo = Math.round(minutos * escala);
+
+    el.innerHTML = `${jogos} × ${minutos} min simulados = <b>${minJogo} min de relógio</b> por jogo.<br>` +
+        `${tempo} reais de espera (estimativa).<br>` +
         (cobre
             ? 'Cobre os 21 playing styles.'
             : `Estilos NÃO cobertos (precisa de ${SIM_JOGOS_PARA_COBERTURA} jogos).`);
