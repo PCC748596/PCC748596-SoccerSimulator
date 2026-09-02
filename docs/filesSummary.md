@@ -583,6 +583,319 @@ aceitar as duas pernas (`aguardarPassada` -> `emJanelaDeToque`), e o `ShotClip`
 continua a bater sempre com a direita. Passá-los ao pé bom é o mesmo `p.pe` e
 uma linha em cada sítio, mas é outro pedido.
 
+#### Quem fica acima do relvado depois do apito — é quem CORRE
+
+Relato: *"depois do início do jogo alguns jogadores ficam acima do gramado"*,
+com as poses paradas já dadas como boas.
+
+O "alguns" tinha nome. Medido por ESTADO, o ponto mais baixo do corpo:
+
+    estado           mediana    acima de 5 cm    modelY medio
+    BLOCKING          0.122         88%            -0.013
+    SUPPORT_PASS      0.104         81%            -0.013
+    MARKING           0.089         75%            -0.014
+    MOVE_TO_POS       0.078         70%            -0.019
+    IDLE              0.046         49%            -0.028
+
+O `modelY` — onde o corpo está posto — é **o mesmo em todos**. Logo não é
+posicionamento, é POSE. E a repartição por velocidade diz qual:
+
+    parado   mediana +0.061   acima de 5 cm 54%
+    andar    mediana +0.045   acima de 5 cm 46%
+    correr   mediana +0.108   acima de 5 cm 74%
+
+**A correr flutua-se 5 cm mais do que parado.** Os estados do topo da tabela são
+simplesmente aqueles em que se corre. A pose de corrida dobra e levanta as duas
+pernas, e ninguém baixa o corpo para compensar.
+
+A correcção segue a mesma ideia do desnível constante que já tinha sido
+aprovada, mas por ANDAMENTO: o `GaitModel.descida` diz quanto o corpo assenta
+mais abaixo em cada andamento, e mistura-se com a velocidade como todos os
+outros campos (o `misturarAndamento` percorre o objecto, portanto não foi
+preciso tocar-lhe). Parado e a andar é zero — são os casos já aprovados; trote
+0.040 e corrida 0.075.
+
+    correr    mediana +0.108 -> +0.064    acima de 5 cm 74% -> 56%
+    parado    mediana +0.045              acima de 5 cm 48%
+
+A corrida passou a assentar praticamente à mesma altura de quem está parado.
+
+**O que NÃO se resolve com um número por andamento**, e fica dito: a pose de
+corrida tem uma amplitude vertical grande — p05 de -0.10 e p95 de +0.29, ou
+seja 39 cm entre o ponto mais baixo e o mais alto do ciclo. Parte disso é
+legítimo (uma corrida tem fase de voo), mas 29 cm no percentil 95 é muito.
+Baixar mais o `descida` já não ajuda: só enterra o pé de apoio, que a -0.10 já
+está no limite. Estreitar aquilo é mexer nos keyframes da corrida
+(`anca`, `joelhoOscila`), ou seja mexer na animação.
+
+> Nota de lado, apanhada na mesma medição: o carrinho fica a **-0.33** do
+> relvado. Vem do `ALTURA_BASE_Y - 0.4` escrito no `case SLIDE_TACKLE`
+> (js/fsm.js) — com a base a -0.03, são -0.43. Está 3 cm mais fundo do que
+> antes, pela mesma razão que todos desceram; é literal no código e não passa
+> pelo `descida`.
+
+#### A ficha de jogo completa — 53 contadores a mexer, e as definições escritas
+
+Pedido: a lista tradicional de uma ficha de jogo (finalização, ataque, passe,
+defesa, guarda-redes, controlo) mais as métricas próprias do motor. O que se
+fez, e como se sabe que está a funcionar.
+
+**O método**: correr um jogo headless inteiro e imprimir TODOS os campos do
+contador, separando os que mexem dos que ficam a zero
+(`auditoria_stats.js`). Antes: **33 mexiam, 10 a zero**. Depois: **53 mexem,
+11 a zero** — e os 11 estão explicados um a um mais abaixo.
+
+**Os números que DEFINEM cada métrica vivem no `StatsModel`**
+(js/config/tactics.js), não espalhados pelo código que os conta: uma métrica
+sem definição escrita muda de sentido à segunda leitura.
+
+    progressivoMin       10 m   aproximar-se disto da linha de fundo = passe progressivo
+    corredorLinha         4 m   meia-largura do corredor, para contar quem ficou para tras
+    raioPressao           4 m   a que distancia um adversario ja e pressao
+    janelaChave           5 s   do passe ao remate, para contar como passe para finalizacao
+    janelaErro            6 s   da perda ao remate adversario, para contar como erro
+    limiarGrandeChance   0.25   xG a partir do qual o remate e uma grande chance
+    arrefecimentoPressao  2 s   para um defensor colado nao somar 60 pressoes por segundo
+
+**Novo na ficha** (com o sítio onde cada um é contado):
+
+    FINALIZACAO   rematesNoAlvo (ja existia, nunca era mostrado), bloqueados,
+                  foraDoAlvo (derivado), xg (existia, escondido), grandesChances
+    ATAQUE        entradasUltimoTerco (uma por SEQUENCIA), toquesNaArea,
+                  progressaoComBola (metros ganhos a conduzir), passesParaFinalizacao
+    PASSE         progressivos, noTercoFinal, quebraLinhas, sobPressao, assistencias
+    DEFESA        duelos e duelosAereos (ganhos/perdidos), recuperacoes e
+                  recuperacoesNoAtaque, pressoes, perdasZonaPerigosa,
+                  errosQueGeraramRemate, afastamentos, bloqueios
+    GUARDA-REDES  defesas, golosSofridos, saidasDoGolo, cruzamentosCortadosGK
+    CONTROLO      posse em %, placar, dominios (existia fora do esquema)
+    EFICIENCIAS   qualidadeDasChances (xG por remate), xgPorAtaque,
+                  eficienciaRemate, eficienciaPasse, eficienciaDefensiva,
+                  conversaoDeChances
+
+**Quatro defeitos que a auditoria apanhou, e que não eram números — eram
+código morto:**
+
+- **`MatchStats.registarDefesa` era chamado em dois sítios e a função NÃO
+  EXISTIA.** Como as chamadas estão protegidas com `&&`, falhavam em silêncio.
+  A estatística mais visível de um jogo estava a zero por isso. Agora existe, e
+  o caminho principal (o gesto de mãos e o mergulho) chama-a: **8 defesas** num
+  jogo.
+- **`pontapesBaliza` não tinha escritor nenhum.** Fica ao lado do `cantos`, no
+  `setupSetPiece`, que é por onde todos os lances parados passam: **3 num jogo**.
+- **`trocasMarcacao` comparava com `p.markingTarget`** — e esse é posto a NULL
+  pelo `runBehaviorTree` a abrir cada tick, portanto a condição nunca podia ser
+  verdadeira. A memória da marcação passou a ser um campo que ninguém limpa
+  (`p._marcadoAnterior`): **582 num jogo**.
+- **`perdasDePosse` exigia `ballCarrier` posto com a bola já a 2 m** — e o toque
+  de condução limpa o portador no instante em que a solta. Passou a contar-se na
+  mudança de posse, quando não havia passe em curso: **74 num jogo**.
+
+E um quinto, que só apareceu ao ver a ficha: **o golo sofrido era atribuído "ao
+outro que não marcou"**, o que num autogolo dá a mesma equipa duas vezes e a
+conta de marcados/sofridos deixa de fechar (viu-se: placar 1-3 com 3 e 2
+sofridos). Agora sai da BALIZA em que a bola entrou.
+
+**Os 11 que continuam a zero, e porquê** — nenhum é instrumentação em falta:
+
+    impedimentos                  de proposito: nao ha regra de fora-de-jogo
+    caraACara, overlaps           o ramo existe (ao lado do `tabelinhas`, que da
+                                  47 por jogo) e o jogo nunca os produz
+    trocasSupportMid              idem
+    remates.furados, cantos,      raros: acontecem, so nao neste jogo
+    cartoes.vermelhos, penaltis
+    grandesChances                nenhum remate chega a 0.25 de xG — a
+                                  `qualidadeDasChances` medida e 0.05
+    afastamentos, saidasDoGolo,   ja instrumentados; o guarda-redes e que
+    cruzamentosCortadosGK         quase nunca sai da area
+
+Exemplo de ficha (um jogo de 1200 s):
+
+    placar 1-1
+    remates 6 (2 no alvo, 3 fora, 1 bloqueado)   xg 0.28   grandes chances 0
+    ataques 52, perigosos 20, entradas no ultimo terco 20, toques na area 3
+    passes 160/130 (81.3%)  progressivos 44  no terco final 28
+    quebra-linhas 56  sob pressao 93  assistencias 1
+    duelos 8/27  aereos 1/4  recuperacoes 73 (5 no ataque)  pressoes 238
+    defesas 8  perdas em zona perigosa 2  erros que geraram remate 2
+    posse 51.6%  progressao com bola 728 m
+    qualidade das chances 0.05  eficiencia de remate 40%  defensiva 48.3%
+
+**E o lote do painel apanha tudo isto**, porque o `Sim.run` (js/simulate.js)
+chama o `MatchStats.resumo()` e empurra o que ele devolver. Corrido o proprio
+caminho do botao com dois jogos: **64 campos por equipa** (o lote anterior tinha
+21). Faltava-lhe uma coisa, que ficou: o `placar` — o resumo passou a devolve-lo
+e o `Sim` a guarda-lo por jogo, senao o lote tinha as estatisticas todas e nao
+dizia quem ganhou.
+
+> O que NAO mudou e o painel de CALIBRACAO (o `MatchStats.porJogo`, lido pelo
+> main.js): e uma lista curta de dez numeros escalados para 90 minutos e
+> comparados com alvos reais — outro widget, outro proposito.
+
+Ficheiros: `StatsModel` (js/config/tactics.js); esquema, registadores,
+`medirComBola` e `resumo` (js/stats.js); ganchos no `executePassGameplay` e nos
+duelos (js/fsm.js), na mudança de posse (js/match/match_loop.js), no golo
+(js/match/match_physics.js), na defesa do guarda-redes, no alívio, no duelo
+aéreo e na saída da área (js/player.js), no pontapé de baliza
+(js/match/match_setpieces.js) e na marcação (js/bt/player_bt.js).
+
+#### Auditoria: que estatísticas é que o jogo mede mesmo?
+
+Pergunta: *"quero saber se todas as estatísticas possíveis que um jogo tem estão
+a ser verificadas"*. O método foi correr um jogo headless inteiro (1200 s) e
+imprimir TODOS os campos do contador, em vez de ler o `stats.js` e acreditar.
+Ferramenta: `auditoria_stats.js` (scratchpad).
+
+**33 contadores mexem.** passes (tentados/certos), lançamentos, cruzamentos,
+remates (tentados/golos/furados/noAlvo), xg, ataques (totais/perigosos),
+desarmes, carrinhos, dribles, cortes, disputas falhadas, faltas (cometidas e
+sofridas), primeira tocada, tabelinhas, cartões amarelos, posse, terços,
+distância, trocas de chaser, domínios.
+
+**Dez ficaram a zero num jogo inteiro**, e não são todos a mesma coisa:
+
+*Mortos — o contador existe e ninguém lhe toca:*
+
+    pontapesBaliza    NAO TEM ESCRITOR NENHUM. Declarado, exportado, sem `++`.
+    trocasMarcacao    o `++` esta la (actMarcar) mas e inalcancavel: o
+                      runBehaviorTree faz `markingTarget = null` ANTES da
+                      arvore (player_bt.js:2858), portanto a condicao
+                      `p.markingTarget !== homem` nunca e verdadeira.
+    perdasDePosse     o `++` exige `ballCarrier` posto E bola a mais de 2 m,
+                      mas o toque de conducao limpa o `ballCarrier` no instante
+                      em que solta a bola.
+
+*Vivos, mas o jogo nunca os produz:*
+
+    caraACara         o ramo existe (player_bt.js:1044), ao lado do
+    overlaps          `tabelinhas` que dispara 43 vezes por jogo. Estes dois
+                      dao zero em 40 jogos do lote E no jogo headless: as duas
+                      jogadas combinadas nunca acontecem.
+    cantos            um escritor a serio, mas menos de um por equipa por jogo.
+    penaltis          0 a 2 por jogo no lote — raro, mas vivo.
+    cartoes.vermelhos zero em 40 jogos.
+    trocasSupportMid  zero no lote e no headless.
+
+*Zero de propósito:* `impedimentos` — não há regra de fora-de-jogo, e o
+comentário do `stats.js` diz isso.
+
+**Nove contadores são colhidos e NUNCA aparecem no relatório.** O `resumo()`
+(stats.js) monta a ficha à mão e deixa de fora: **xg**, **ataques.totais**,
+**ataques.perigosos**, **remates.noAlvo**, **primeiraTocada**, **tabelinhas**,
+**caraACara**, **overlaps**, **impedimentos** e ainda os **dominios** — que
+nem sequer estão no `novoContadorEquipa`, são criados à mão no player.js:794.
+O xG e os remates À BALIZA estão medidos e escondidos.
+
+**E o que falta de uma ficha de jogo a sério:**
+
+    defesas do guarda-redes   o match_loop.js:493 CHAMA `MatchStats.registarDefesa`
+                              — e essa funcao NAO EXISTE. Como a chamada esta
+                              protegida com `&&`, falha em silencio. E a
+                              estatistica mais visivel de um jogo e nao existe.
+    duelos aereos             nao ha contador de cabeceamento nenhum.
+    lancamentos laterais      nao ha contador (o estado LATERAL existe).
+    remates bloqueados        so ha `furados`; um remate tapado nao se distingue.
+    posse em %                so ha segundos; a percentagem nao e calculada.
+    xG sofrido                so se soma o proprio.
+    tudo por JOGADOR          todos os contadores sao por equipa. Nao ha passes,
+                              distancia, remates nem duelos por jogador.
+
+Resumo de uma linha: dos ~45 números que uma ficha de jogo mostra, o simulador
+mede 33, esconde 9 que já tem, e três estão declarados mas mortos — sendo o mais
+grave o das **defesas do guarda-redes**, que tem chamada e não tem função.
+
+#### Leitura do lote de 40 jogos (soccer-sim-results 13)
+
+40 jogos de 1200 s. O que o relatório diz, separado em duas pilhas: o que é
+INSTRUMENTAÇÃO PARTIDA (zeros que não são resultados) e o que é JOGO.
+
+**Quatro colunas do relatório estão mortas.** Confirmado no código e reproduzido
+num jogo headless de 600 s, onde ficam todas a zero:
+
+    pontapesBaliza      NINGUEM o incrementa. Esta declarado no stats.js e
+                        exportado no relatorio, e nao ha um `++` em lado nenhum.
+    trocasMarcacao      o `++` existe (actMarcar, player_bt.js) mas e
+                        inalcancavel: o `runBehaviorTree` faz
+                        `player.markingTarget = null` ANTES da arvore correr
+                        (player_bt.js:2858), portanto a condicao
+                        `p.markingTarget && p.markingTarget !== homem` e sempre
+                        falsa. O comentario que la esta diz que o contador foi
+                        instrumentado justamente por estar morto — voltou a
+                        estar, por outra razao.
+    perdasDePosse       o `++` (match_loop.js) exige `ballCarrier` posto E a
+                        bola a mais de 2 m. Mas o toque de conducao limpa o
+                        `ballCarrier` no proprio instante em que solta a bola,
+                        portanto quando ela chega aos 2 m ja nao ha portador.
+    trocasSupportMid    zero em 40 jogos e em 600 s de headless.
+
+Enquanto isto não se arranjar, esses quatro números não dizem nada sobre o jogo.
+
+**E o que é jogo, por ordem do que mais salta:**
+
+**1. A bola não é de ninguém 60% do tempo.** Somando a posse das duas equipas
+dá ~450 a 520 s dos 1200 (jogo 1: 448; jogo 5: 489; jogo 21: 521). Ou seja
+**~40% de posse contabilizada**, o resto é bola solta, em voo ou em disputa.
+
+**2. Quase não há cantos, e o relatório não sabe dos pontapés de baliza.**
+Menos de um canto por equipa por jogo (a maioria dos jogos tem 0). No futebol
+real são ~10 por jogo. Como o `pontapesBaliza` está morto, não dá para saber se
+a bola sai pela linha de fundo e é sempre tiro de meta, ou se simplesmente não
+sai. É a primeira coisa a medir a seguir.
+
+**3. Toda a gente joga de lado ou para trás.** Na tabela dos ramos:
+
+    passarLadoOuTras   19849 entradas
+    executarPasse        838
+    atacarOEspaco       2075
+    cruzar              1990
+    rematar              629
+    driblar              661
+    conduzir              54
+
+O `passarLadoOuTras` é o ramo `CaminhoFechado` — "dois pela frente e sem espaço
+para conduzir". Entra 24 vezes mais do que o ramo normal do passe. A causa está
+no `caminhoFechadoAFrente` (player_bt.js): `naDefesa` é `z < 0` **OU
+`role === 'def'`**, e nesse caso basta **UM** adversário à frente para o caminho
+contar como fechado. Um lateral é `role: 'def'` em todo o campo — é a mesma
+confusão entre POSTO e FUNÇÃO que já apareceu no corredor da ala.
+
+**4. O passe longo não chega.** Por faixa, no lote inteiro:
+
+    0-8 m     769 passes   82% certo   18% cortado
+    8-15 m   1639          84%         14%
+    15-25 m  1176          77%         12% cortado,  9% dominio falhado
+    25 m+     416          48%         23% cortado, 17% dominio falhado, 12% ninguem tocou
+
+Acima dos 25 m falha-se mais de metade, e em 12% a bola morre sem ninguém lhe
+tocar.
+
+**5. Os `lancamentos` são mais do que os passes.** ~85 a 100 por equipa por
+jogo, contra ~150 passes. Um lançamento a sério é raro; isto é a etiqueta a ser
+aplicada de mais (o `docs` já descreve o problema em "lançamento vs passe no
+espaço"). Enquanto for assim, a coluna não separa nada.
+
+**6. Números de futebol, comparados com o real:**
+
+    remates        ~6 por equipa/jogo      real ~12       metade
+    dribles        ~15 tentados, 73% certos real ~50%      alto
+    faltas         ~8 por equipa           real ~11       ok
+    cartoes        ~1 por equipa           real ~1.9      baixo
+    distancia      57 km por equipa        real ~105 km   metade
+    cruzamentos    ~6 tentados, ~2 certos  real ~17/5     baixo
+
+A distância é a mais fácil de ler: 57 km por equipa em 100 minutos de relógio
+são **5.2 km por jogador**, metade do que um jogador percorre a sério.
+
+**7. Dois estilos não fazem nada.** O relatório marca-os:
+`extra_frontman` (CB, 1432 activações) e `the_destroyer` (CM, 16082 activações)
+com `semEfeito: true` e deslocamento 0.00 m. Activam-se e não mexem ninguém.
+
+**8. O que está bem:** a permanência nos estados está saudável
+(`SET_PIECE_WAIT` 3.34 s de média, `CARRY` 0.54 s, `DRIBBLE` 0.46 s — o gesto
+do drible desta sessão aparece aqui, e o máximo de 0.6 s é o
+`DribbleModel.duracaoGesto` mais o frame de saída). Os desvios ao alvo táctico
+também: `MARKING` 3.88 m e `SET_PIECE_WAIT` 3.82 m de média.
+
 Ficheiros: `avancoFK`, `naBarreiraFalta`/`faltaDirectaBarreira` e o
 `foraDoCorredor` no ramo `FREE_KICK` do `setupSetPiece`
 (js/match/match_setpieces.js); `DirectFreeKickModel` e

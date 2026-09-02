@@ -83,6 +83,9 @@ class FootballPlayer {
         this.dribbleCooldownTimer = 0;
         this.isCross = false;
         this.isThroughBall = false;
+        // Passe A FRENTE para espaco LIVRE — nao passa entre ninguem, e por
+        // isso NAO e um lancamento (ver aplicarMiraDoPasse em player_bt.js).
+        this.isPasseEspaco = false;
         this.throughBallTarget = null;
         // Ponto do leque que este passe mira (ver PassTypes). null = aos pés.
         this.passAimPoint = null;
@@ -790,10 +793,9 @@ class FootballPlayer {
                 }
                 Match.ballVel.set(dirToque.x * forcaToque, 0.35, dirToque.z * forcaToque);
                 p.touchLock = 0.15;
-                if (typeof MatchStats !== 'undefined') {
-                    if (!MatchStats[p.team].dominios) MatchStats[p.team].dominios = 0;
-                    MatchStats[p.team].dominios++;
-                }
+                // `dominios` passou a estar no esquema do contador (stats.js);
+                // antes era criado a mao aqui e nunca chegava ao relatorio.
+                if (typeof MatchStats !== 'undefined') MatchStats[p.team].dominios++;
             },
             onFollowThrough: (p, norm) => {
                 if (p.dominioSaidaDir) {
@@ -2265,7 +2267,11 @@ class FootballPlayer {
         if (this.isCross) {
             this.showActionBanner('CROSS');
         } else if (this.isThroughBall) {
+            // Lancamento a serio: bola longa por entre dois adversarios.
             this.showActionBanner('THROUGH');
+        } else if (this.isPasseEspaco) {
+            // Passe a frente para espaco LIVRE — nao passa entre ninguem.
+            this.showActionBanner('SPACE');
         } else if (targetPlayer && this.model.position.distanceTo(targetPlayer.model.position) > 30) {
             this.showActionBanner('L.PASS');
         } else {
@@ -2274,7 +2280,7 @@ class FootballPlayer {
         this.passTarget = targetPlayer;
         
         let _v1 = _p_v3;
-        if (this.isThroughBall && this.throughBallTarget) {
+        if ((this.isThroughBall || this.isPasseEspaco) && this.throughBallTarget) {
             _v1.set(this.throughBallTarget.x, 0, this.throughBallTarget.z);
         } else if (this.passAimPoint) {
             /*
@@ -2419,6 +2425,7 @@ class FootballPlayer {
         this.passTarget = targetPlayer;
         this.passTargetPos = alvo.clone();
         this.isThroughBall = false;
+        this.isPasseEspaco = false;
         this.isCross = false;
         this.cosCorpoNoPasse = 1.0;
         // A bola sai da MÃO: o executePassGameplay é partilhado, o som do
@@ -2458,6 +2465,9 @@ class FootballPlayer {
 
         const v = alivioDoGuardaRedes(Match.ball.position.x, this.dirZ, G, CAMPO_LARG);
         Match.ballVel.set(v.x, v.y, v.z);
+        if (typeof MatchStats !== 'undefined' && MatchStats.registarAfastamento) {
+            MatchStats.registarAfastamento(this.team);
+        }
 
         this.hasBall = false;
         this.touchLock = BallControl.touchLock;
@@ -2812,7 +2822,24 @@ class FootballPlayer {
             this.hasBall = false;
             this.touchLock = 0.75;
             this.headLeanTimer = 0;
-            if (this.jumpTimer > 0) this.hasHeaderedInJump = true;
+            if (this.jumpTimer > 0) {
+                this.hasHeaderedInJump = true;
+                /*
+                DUELO AEREO: se havia um adversario a saltar pela mesma bola,
+                quem lhe tocou ganhou-o. Sem adversario no ar nao ha duelo —
+                e um cabeceamento livre, nao uma disputa.
+                */
+                if (typeof MatchStats !== 'undefined' && MatchStats.registarDuelo) {
+                    const advs = (this.team === 'TeamA') ? Match.opponents : Match.players;
+                    const raio = (typeof StatsModel !== 'undefined') ? StatsModel.raioPressao : 4.0;
+                    for (const o of advs) {
+                        if (!o || !o.model || o.jumpTimer <= 0) continue;
+                        const d = Math.hypot(o.model.position.x - this.model.position.x,
+                            o.model.position.z - this.model.position.z);
+                        if (d <= raio) { MatchStats.registarDuelo(this.team, o.team, true); break; }
+                    }
+                }
+            }
             this.jumpCooldown = (typeof SaltoCabeceio !== 'undefined' ? SaltoCabeceio.duracao : 0.62) + 1.2;
             if (typeof Match !== 'undefined') Match.lastHeaderPlayer = this;
             Match.ballCarrier = null;
@@ -2875,7 +2902,24 @@ class FootballPlayer {
             this.hasBall = false;
             this.touchLock = 0.75;
             this.headLeanTimer = 0;
-            if (this.jumpTimer > 0) this.hasHeaderedInJump = true;
+            if (this.jumpTimer > 0) {
+                this.hasHeaderedInJump = true;
+                /*
+                DUELO AEREO: se havia um adversario a saltar pela mesma bola,
+                quem lhe tocou ganhou-o. Sem adversario no ar nao ha duelo —
+                e um cabeceamento livre, nao uma disputa.
+                */
+                if (typeof MatchStats !== 'undefined' && MatchStats.registarDuelo) {
+                    const advs = (this.team === 'TeamA') ? Match.opponents : Match.players;
+                    const raio = (typeof StatsModel !== 'undefined') ? StatsModel.raioPressao : 4.0;
+                    for (const o of advs) {
+                        if (!o || !o.model || o.jumpTimer <= 0) continue;
+                        const d = Math.hypot(o.model.position.x - this.model.position.x,
+                            o.model.position.z - this.model.position.z);
+                        if (d <= raio) { MatchStats.registarDuelo(this.team, o.team, true); break; }
+                    }
+                }
+            }
             this.jumpCooldown = (typeof SaltoCabeceio !== 'undefined' ? SaltoCabeceio.duracao : 0.62) + 1.2;
             if (typeof Match !== 'undefined') Match.lastHeaderPlayer = this;
             Match.ballCarrier = null;
@@ -3966,7 +4010,9 @@ class FootballPlayer {
                 suavizacao: Math.min(1, speed / 0.5)
             });
 
-            this.model.position.y = ALTURA_BASE_Y + P.ressalto;
+            // O `descida` baixa o corpo com a velocidade: a correr a pose
+            // levanta as duas pernas e o boneco fica no ar (ver GaitModel).
+            this.model.position.y = ALTURA_BASE_Y + P.ressalto - (P.descida || 0);
         }
     }
 
@@ -4244,6 +4290,18 @@ class FootballPlayer {
                 folgaFora = G_SAI.alcanceFora;
             }
         }
+
+        /*
+        SAIDA DO GOLO, para a ficha: conta-se a TRAVESSIA da linha da area,
+        uma vez por saida — nao os frames que ele passa la fora.
+        */
+        const dzGkFicha = (gkCorpo.position.z - this.ownGoalZ) * this.dirZ;
+        const foraAgora = dzGkFicha > Area.profundidade;
+        if (foraAgora && !this._gkForaDaArea && typeof MatchStats !== 'undefined' &&
+            MatchStats.registarSaidaDoGolo) {
+            MatchStats.registarSaidaDoGolo(this.team);
+        }
+        this._gkForaDaArea = foraAgora;
 
         const limX = Area.meiaLargura + folgaFora;
         gkCorpo.position.x = Math.max(-limX, Math.min(limX, gkCorpo.position.x));
@@ -5327,6 +5385,15 @@ class FootballPlayer {
 
         Match.lastTouchedPlayer = this;
         Match.lastTouchedTeam = this.team;
+
+        /*
+        E A DEFESA CONTA-SE. O `registarDefesa` era chamado noutros sitios e
+        a funcao nem existia; agora existe, e este e o caminho por onde passa
+        a maior parte das defesas do jogo (o gesto de maos e o mergulho).
+        */
+        if (typeof MatchStats !== 'undefined' && MatchStats.registarDefesa) {
+            MatchStats.registarDefesa(this.team);
+        }
 
         if (decisao.resultado === 'agarra') {
             this.grabBall();

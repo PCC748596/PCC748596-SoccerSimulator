@@ -86,6 +86,91 @@ function novoContadorEquipa() {
         distanciaPercorrida: 0,
         // Churn dos alvos com histerese (Fase 1) — quantas vezes por jogo o
         // chaser/a marcação/o apoio na construção TROCARAM de jogador.
+        /*
+        =====================================================================
+        FICHA DE JOGO COMPLETA — o que se acrescentou, e o que cada um quer
+        dizer. As definições estão aqui e não num documento à parte porque é
+        aqui que se contam: uma métrica sem definição escrita é uma métrica
+        que muda de sentido à segunda leitura.
+        =====================================================================
+        */
+
+        // --- FINALIZAÇÃO -------------------------------------------------
+        // `bloqueados`: o remate foi tocado por um jogador de linha da equipa
+        // que defende antes de chegar à baliza. Não conta como `noAlvo`.
+        remateBloqueados: 0,
+        // Remates com xG acima de `StatsModel.limiarGrandeChance`.
+        grandesChances: 0,
+
+        // --- ATAQUE ------------------------------------------------------
+        // Sequências de posse que ENTRARAM no último terço (uma por sequência,
+        // não uma por frame). Ver seguirAtaque.
+        entradasUltimoTerco: 0,
+        // Toques de um atacante DENTRO da grande área adversária.
+        toquesNaArea: 0,
+        // Metros ganhos na direcção da baliza adversária com a bola no pé.
+        progressaoComBolaM: 0,
+
+        // --- PASSE -------------------------------------------------------
+        /*
+        `progressivos`: passe CERTO que aproxima a bola da linha de fundo
+        adversária em pelo menos `StatsModel.progressivoMin` metros.
+        `noTercoFinal`: passe certo que ACABA no último terço.
+        `quebraLinhas`: passe certo que deixa para trás pelo menos um
+        adversário — alguém que estava entre a origem e o destino, dentro do
+        corredor do passe.
+        `sobPressao`: no instante do contacto havia um adversário a menos de
+        `StatsModel.raioPressao` de quem passou.
+        `paraFinalizacao`: foi o último passe certo da equipa antes de um
+        remate dela (dentro de `StatsModel.janelaChave` segundos).
+        `assistencias`: o mesmo, mas o remate foi golo.
+        */
+        passesProgressivos: 0,
+        passesNoTercoFinal: 0,
+        passesQuebraLinhas: 0,
+        passesSobPressao: 0,
+        passesParaFinalizacao: 0,
+        assistencias: 0,
+
+        // --- DEFESA ------------------------------------------------------
+        /*
+        `duelos`: desarmes, carrinhos e disputas de bola dividida, ganhos e
+        perdidos. `duelosAereos` são os do ar (dois a saltar pela mesma bola).
+        `recuperacoes`: a posse mudou para esta equipa. `recuperacoesAtaque`
+        são as que aconteceram no terço ofensivo dela.
+        `pressoes`: um adversário entrou no raio de pressão do portador — é o
+        acto de pressionar, ganhe-se a bola ou não.
+        `perdasZonaPerigosa`: perdeu-se a bola no PRÓPRIO terço defensivo.
+        `errosQueGeraramRemate`: perda de posse seguida de remate adversário
+        dentro de `StatsModel.janelaErro` segundos.
+        */
+        duelos: { ganhos: 0, perdidos: 0 },
+        duelosAereos: { ganhos: 0, perdidos: 0 },
+        recuperacoes: 0,
+        recuperacoesAtaque: 0,
+        pressoes: 0,
+        perdasZonaPerigosa: 0,
+        errosQueGeraramRemate: 0,
+        // Afastamentos: bola mandada para longe sem destinatário (alívios).
+        afastamentos: 0,
+
+        // --- GUARDA-REDES -------------------------------------------------
+        /*
+        `defesas` é o número de vezes que o guarda-redes IMPEDIU o golo — a
+        chamada `MatchStats.registarDefesa` já existia espalhada pelo código e
+        a função nunca tinha sido escrita, por isso a estatística mais visível
+        de um jogo estava sempre a zero.
+        */
+        defesas: 0,
+        golosSofridos: 0,
+        saidasDoGolo: 0,
+        cruzamentosCortadosGK: 0,
+
+        // --- CONTROLO -----------------------------------------------------
+        // Domínios de bola (primeiro toque com sucesso). Estava a ser criado à
+        // mão no player.js, fora do contador; agora é do esquema.
+        dominios: 0,
+
         trocasChaser: 0,
         trocasMarcacao: 0,
         trocasSupportMid: 0
@@ -114,6 +199,13 @@ const MatchStats = {
         // Sem isto, a primeira sequência do jogo seguinte herdava a equipa e o
         // "já passou o meio" do jogo anterior.
         this._ataque = null;
+        this._pendingPasseCtx = null;
+        this._zAnterior = null;
+        this._arrefArea = null;
+        this._arrefPressao = null;
+        this._ultimoPasseCerto = null;
+        this._remateArmado = null;
+        this._ultimaPerda = null;
     },
 
     /*
@@ -122,6 +214,279 @@ const MatchStats = {
     (posição.z * dirZ, tal como PlayerContext.zoneAhead). Limiares a 1/6 e
     3/6 do comprimento do campo dividem-no em três terços iguais.
     */
+    /*
+    =========================================================================
+    OS REGISTADORES DA FICHA COMPLETA
+    =========================================================================
+    Cada um é chamado de UM sítio do jogo, no instante do evento. Nenhum deles
+    lê o mundo por si: recebe o que já foi calculado onde o evento acontece.
+    =========================================================================
+    */
+
+    /*
+    A DEFESA DO GUARDA-REDES. Esta função era CHAMADA em dois sítios
+    (match_loop.js e player.js) e nunca tinha sido escrita — como as chamadas
+    estão protegidas com `&&`, falhavam em silêncio e o contador ficava a
+    zero. É a estatística mais visível de um jogo.
+    */
+    registarDefesa: function (team) {
+        const s = this[team];
+        if (!s) return;
+        s.defesas++;
+    },
+
+    /*
+    A ASSISTENCIA confirma-se no GOLO. `janelaChave` conta do remate ao golo:
+    a bola pode demorar a entrar, mas nao um lance inteiro.
+    */
+    registarAssistencia: function (team) {
+        const s = this[team];
+        const M = (typeof StatsModel !== 'undefined') ? StatsModel : null;
+        const r = this._remateArmado;
+        if (!s || !M || !r || r.equipa !== team) return;
+        if ((this.relogio - r.t) > M.janelaChave) return;
+        s.assistencias++;
+        this._remateArmado = null;
+    },
+
+    registarGoloSofrido: function (team) {
+        const s = this[team];
+        if (s) s.golosSofridos++;
+    },
+
+    registarSaidaDoGolo: function (team) {
+        const s = this[team];
+        if (s) s.saidasDoGolo++;
+    },
+
+    registarCruzamentoCortadoGK: function (team) {
+        const s = this[team];
+        if (s) s.cruzamentosCortadosGK++;
+    },
+
+    registarRemateBloqueado: function (team) {
+        const s = this[team];
+        if (s) s.remateBloqueados++;
+    },
+
+    registarAfastamento: function (team) {
+        const s = this[team];
+        if (s) s.afastamentos++;
+    },
+
+    /*
+    DUELOS. `aereo` separa a disputa no ar da disputa no chão; `ganhou` diz de
+    que lado fica o ponto. Chamado uma vez por duelo, pela equipa de quem
+    ganhou — a outra leva o perdido.
+    */
+    registarDuelo: function (teamGanhou, teamPerdeu, aereo) {
+        const g = this[teamGanhou], p = this[teamPerdeu];
+        if (g) { g.duelos.ganhos++; if (aereo) g.duelosAereos.ganhos++; }
+        if (p) { p.duelos.perdidos++; if (aereo) p.duelosAereos.perdidos++; }
+    },
+
+    /*
+    PRESSÃO: um adversário entrou no raio de pressão do portador. Conta o
+    ACTO, não o resultado — quem pressiona é quem se aproxima.
+    */
+    registarPressao: function (team) {
+        const s = this[team];
+        if (s) s.pressoes++;
+    },
+
+    /*
+    RECUPERAÇÃO e PERDA. Chamadas do `updatePossession`, no frame em que a
+    posse muda de dono. `zoneAhead` é do ponto de vista de QUEM RECUPERA.
+    */
+    registarRecuperacao: function (team, zoneAhead) {
+        const s = this[team];
+        if (!s) return;
+        s.recuperacoes++;
+        if (zoneAhead > (CAMPO_COMP / 6)) s.recuperacoesAtaque++;
+    },
+
+    /*
+    A perda conta-se no terço defensivo de quem perdeu — é a que dói.
+    Guarda-se também o instante, para o `errosQueGeraramRemate`.
+    */
+    registarPerda: function (team, zoneAhead) {
+        const s = this[team];
+        if (!s) return;
+        if (zoneAhead < -(CAMPO_COMP / 6)) s.perdasZonaPerigosa++;
+        /*
+        PERDA DE POSSE: a bola mudou de dono SEM ser num passe. O contador
+        antigo vivia no match_loop e nunca disparava — exigia `ballCarrier`
+        posto com a bola ja a 2 m, e o toque de conducao limpa o portador no
+        instante em que a solta. Aqui sabe-se as duas coisas: que a posse
+        mudou, e se havia passe em curso quando mudou.
+        */
+        if (!this._pendingPassType) s.perdasDePosse++;
+        this._ultimaPerda = { equipa: team, t: this.relogio };
+    },
+
+    registarToqueNaArea: function (team) {
+        const s = this[team];
+        if (s) s.toquesNaArea++;
+    },
+
+    registarProgressao: function (team, metros) {
+        const s = this[team];
+        if (s && metros > 0) s.progressaoComBolaM += metros;
+    },
+
+    /*
+    O PASSE CERTO, com a qualidade dele. Chamado do `registarRecepcao` quando
+    a bola chega mesmo a um companheiro: é aí que se sabe que o passe valeu.
+
+    `origem`/`destino` são {x, z}; `dirZ` é o sentido de ataque de quem passou;
+    `adversarios` é a lista de {x, z} do adversário, para o teste das linhas.
+    */
+    registarPasseCerto: function (team, ctx) {
+        const s = this[team];
+        if (!s || !ctx || !ctx.origem || !ctx.destino) return;
+        const M = (typeof StatsModel !== 'undefined') ? StatsModel : null;
+        if (!M) return;
+
+        const dir = ctx.dirZ || 1;
+        const fundo = (typeof LINHA_FUNDO !== 'undefined') ? LINHA_FUNDO : 53;
+
+        // PROGRESSIVO: aproximou-se da linha de fundo adversária.
+        const antes = fundo - ctx.origem.z * dir;
+        const depois = fundo - ctx.destino.z * dir;
+        if (antes - depois >= M.progressivoMin) s.passesProgressivos++;
+
+        // NO TERÇO FINAL: acabou lá.
+        if (ctx.destino.z * dir > (CAMPO_COMP / 6)) s.passesNoTercoFinal++;
+
+        // SOB PRESSÃO: havia alguém em cima de quem passou.
+        if (typeof ctx.distAdversario === 'number' &&
+            ctx.distAdversario < M.raioPressao) s.passesSobPressao++;
+
+        // QUEBRA LINHAS: deixou alguém para trás, dentro do corredor do passe.
+        if (ctx.adversarios && ctx.adversarios.length &&
+            this.contarUltrapassados(ctx, M.corredorLinha) >= 1) s.passesQuebraLinhas++;
+
+        // E fica guardado para a assistência / passe para finalização.
+        this._ultimoPasseCerto = { equipa: team, t: this.relogio };
+    },
+
+    /*
+    QUANTOS ADVERSÁRIOS FICARAM PARA TRÁS. Conta quem estava entre a origem e
+    o destino no eixo do passe e dentro de `largura` da linha dele — a conta
+    de "passe que quebra linhas" sem precisar de saber onde estão as linhas.
+    */
+    contarUltrapassados: function (ctx, largura) {
+        const dx = ctx.destino.x - ctx.origem.x;
+        const dz = ctx.destino.z - ctx.origem.z;
+        const comp = Math.hypot(dx, dz);
+        if (comp < 1e-3) return 0;
+        const ux = dx / comp, uz = dz / comp;
+        let n = 0;
+        for (const o of ctx.adversarios) {
+            if (!o) continue;
+            const rx = o.x - ctx.origem.x, rz = o.z - ctx.origem.z;
+            const aoLongo = rx * ux + rz * uz;
+            if (aoLongo <= 0 || aoLongo >= comp) continue;
+            if (Math.abs(rx * (-uz) + rz * ux) <= largura) n++;
+        }
+        return n;
+    },
+
+    /*
+    O REMATE, para o que depende dele: grande chance, passe para finalização e
+    assistência. Chamado no instante do remate, com o xG já calculado.
+    */
+    registarRemateNaFicha: function (team, xg, foiGolo) {
+        const s = this[team];
+        if (!s) return;
+        const M = (typeof StatsModel !== 'undefined') ? StatsModel : null;
+        if (M && xg >= M.limiarGrandeChance) s.grandesChances++;
+
+        /*
+        No instante do remate ainda nao se sabe se ele vai ser golo, por isso
+        a ASSISTENCIA nao se pode decidir aqui: marca-se que este remate teve
+        um passe a arma-lo, e e o golo que depois a confirma (registarAssistencia).
+        */
+        this._remateArmado = null;
+        const ult = this._ultimoPasseCerto;
+        if (M && ult && ult.equipa === team && (this.relogio - ult.t) <= M.janelaChave) {
+            s.passesParaFinalizacao++;
+            this._remateArmado = { equipa: team, t: this.relogio };
+        }
+
+        /*
+        E o ERRO que gerou o remate: se a posse tinha mudado há pouco, quem a
+        perdeu leva a marca. É a leitura de "sofremos por nossa causa".
+        */
+        const perda = this._ultimaPerda;
+        if (M && perda && perda.equipa !== team && (this.relogio - perda.t) <= M.janelaErro) {
+            const q = this[perda.equipa];
+            if (q) q.errosQueGeraramRemate++;
+            this._ultimaPerda = null;
+        }
+    },
+
+    /*
+    =========================================================================
+    O QUE SE MEDE POR FRAME, COM A BOLA NO PÉ DE ALGUÉM
+    =========================================================================
+    Três coisas que não têm evento próprio e por isso se lêem do estado:
+
+      PRESSÃO      um adversário entrou no raio do portador. Conta o ACTO, uma
+                   vez por par enquanto ele lá estiver (`arrefecimentoPressao`)
+                   — sem isso, um defensor colado somava sessenta pressões por
+                   segundo.
+      TOQUE NA ÁREA  o portador está dentro da grande área adversária. Também
+                   com arrefecimento: é um toque, não um frame.
+      PROGRESSÃO   metros ganhos na direcção da baliza adversária com a bola.
+
+    Chamado uma vez por frame do `updatePossession`, que é onde o portador já
+    está identificado.
+    =========================================================================
+    */
+    medirComBola: function (portador, dt) {
+        if (!portador || !portador.model || typeof StatsModel === 'undefined') return;
+        const M = StatsModel;
+        const s = this[portador.team];
+        if (!s) return;
+
+        const pos = portador.model.position;
+        const zAtaque = pos.z * portador.dirZ;
+
+        // --- PROGRESSÃO: só o que avança conta.
+        if (this._zAnterior && this._zAnterior.p === portador) {
+            this.registarProgressao(portador.team, zAtaque - this._zAnterior.z);
+        }
+        this._zAnterior = { p: portador, z: zAtaque };
+
+        // --- TOQUE NA ÁREA
+        if (!this._arrefArea) this._arrefArea = new Map();
+        const tArea = this._arrefArea.get(portador) || 0;
+        const linhaFundo = portador.dirZ * ((typeof LINHA_FUNDO !== 'undefined') ? LINHA_FUNDO : 53);
+        const naArea = (typeof Area !== 'undefined' && Area.contem)
+            ? Area.contem(pos.x, pos.z, linhaFundo) : false;
+        if (naArea && this.relogio - tArea > M.arrefecimentoPressao) {
+            this._arrefArea.set(portador, this.relogio);
+            this.registarToqueNaArea(portador.team);
+        }
+
+        // --- PRESSÃO sobre ele
+        if (!this._arrefPressao) this._arrefPressao = new Map();
+        const adversarios = (portador.team === 'TeamA')
+            ? (Match.opponents || []) : (Match.players || []);
+        for (const o of adversarios) {
+            if (!o || o.role === 'gk' || !o.model) continue;
+            const d = Math.hypot(o.model.position.x - pos.x, o.model.position.z - pos.z);
+            if (d > M.raioPressao) continue;
+            const chave = o.id + ':' + portador.id;
+            const t = this._arrefPressao.get(chave) || -999;
+            if (this.relogio - t > M.arrefecimentoPressao) {
+                this._arrefPressao.set(chave, this.relogio);
+                this.registarPressao(o.team);
+            }
+        }
+    },
+
     registarZona: function (team, zoneAhead, dt) {
         const s = this[team];
         if (!s) return;
@@ -176,7 +541,17 @@ const MatchStats = {
         }
         const a = this._ataque;
         if (zoneAhead > 0) a.passouOMeio = true;
-        if (zoneAhead > CAMPO_COMP / 6) a.chegouAoTerco = true;
+        /*
+        ENTRADA NO ULTIMO TERCO: uma por SEQUENCIA e nao uma por frame — e a
+        sequencia que entra no terco, nao a bola que la esta.
+        */
+        if (zoneAhead > CAMPO_COMP / 6) {
+            if (!a.chegouAoTerco) {
+                const s = this[team];
+                if (s) s.entradasUltimoTerco++;
+            }
+            a.chegouAoTerco = true;
+        }
     },
 
     /*
@@ -208,6 +583,12 @@ const MatchStats = {
 
         this._pendingPassType = tipo;
         this._pendingPassTeam = team;
+        // O CONTEXTO do passe fica guardado: a qualidade dele (progressivo,
+        // quebra-linhas, sob pressao) so se pode contar quando a bola chegar.
+        this._pendingPasseCtx = (dados && dados.origem) ? {
+            origem: dados.origem, destino: dados.destino, dirZ: dados.dirZ,
+            distAdversario: dados.distAdversario, adversarios: dados.adversarios
+        } : null;
 
         if (dados) {
             this._pendingSample = {
@@ -304,6 +685,8 @@ const MatchStats = {
         const equipaPasse = this._pendingPassTeam;
         this._pendingPassType = null;
         this._pendingPassTeam = null;
+        const ctxPasse = this._pendingPasseCtx;
+        this._pendingPasseCtx = null;
 
         if (!tipo || !equipaPasse) return;
         const s = this[equipaPasse];
@@ -323,10 +706,17 @@ const MatchStats = {
                 : (tipo === 'cruzamento') ? s.cruzamentos
                     : s.passes;
             bucket.certos++;
+            // E a QUALIDADE do passe, agora que se sabe que ele chegou.
+            this.registarPasseCerto(equipaPasse, ctxPasse);
             this.fecharAmostraPasse('certo', vChegada);
         } else {
             const outra = this[jogador.team];
-            if (outra) outra.cortes++;
+            if (outra) {
+                outra.cortes++;
+                // Um cruzamento cortado pelo GUARDA-REDES e uma estatistica
+                // propria dele numa ficha de jogo.
+                if (jogador.role === 'gk' && tipo === 'cruzamento') outra.cruzamentosCortadosGK++;
+            }
             this.fecharAmostraPasse('corte', vChegada);
         }
     },
@@ -404,35 +794,135 @@ const MatchStats = {
         }, razoes);
     },
 
+    /*
+    =========================================================================
+    A FICHA DE JOGO
+    =========================================================================
+    Organizada por categoria, como uma ficha a sério, e com os DERIVADOS
+    calculados aqui — percentagens, eficiências e médias não se guardam,
+    calculam-se, senão ficam desactualizadas à primeira alteração.
+
+    O que é derivado e de onde:
+
+        posse %              posseSegundos / (posse das duas equipas)
+        foraDoAlvo           tentados - noAlvo - bloqueados - furados
+        qualidadeDasChances  xg / remates tentados     (xG por remate)
+        xgPorAtaque          xg / ataques totais
+        eficienciaRemate     golos / remates tentados
+        eficienciaPasse      passes certos / tentados
+        eficienciaDefensiva  duelos ganhos / duelos disputados
+        conversaoDeChances   golos / grandes chances
+
+    `impedimentos` fica de fora da ficha de propósito: não há regra de
+    fora-de-jogo no jogo (ver a nota no contador), e um zero ali lê-se como
+    "nunca esteve em fora-de-jogo" em vez de "não é medido".
+    =========================================================================
+    */
     resumo: function () {
         const pct = (a, b) => b > 0 ? Math.round((a / b) * 1000) / 10 : 0;
-        const porEquipa = (s) => ({
-            passes: s.passes.tentados + '/' + s.passes.certos + ' (' + pct(s.passes.certos, s.passes.tentados) + '%)',
-            lancamentos: s.lancamentos.tentados + '/' + s.lancamentos.certos,
-            cruzamentos: s.cruzamentos.tentados + '/' + s.cruzamentos.certos,
-            remates: s.remates.tentados + ' (' + s.remates.golos + ' golos, ' + s.remates.furados + ' furados)',
-            desarmes: s.desarmes.tentados + '/' + s.desarmes.sucesso,
-            carrinhos: s.carrinhos.tentados + '/' + s.carrinhos.sucesso,
-            dribles: s.dribles.tentados + '/' + s.dribles.sucesso,
-            cortes: s.cortes,
-            disputasFalhadas: s.disputasFalhadas,
-            perdasDePosse: s.perdasDePosse,
-            cantos: s.cantos,
-            pontapesBaliza: s.pontapesBaliza,
-            faltas: s.faltas.cometidas + ' (sofridas ' + s.faltas.sofridas + ')',
-            cartoes: s.cartoes.amarelos + 'A/' + s.cartoes.vermelhos + 'V',
-            penaltis: s.penaltis,
-            posseSegundos: Math.round(s.posseSegundos * 10) / 10,
-            tercoSegundos: {
-                def: Math.round(s.tercoSegundos.def * 10) / 10,
-                mid: Math.round(s.tercoSegundos.mid * 10) / 10,
-                atk: Math.round(s.tercoSegundos.atk * 10) / 10
-            },
-            distanciaPercorrida: Math.round(s.distanciaPercorrida) + 'm',
-            trocasChaser: s.trocasChaser,
-            trocasMarcacao: s.trocasMarcacao,
-            trocasSupportMid: s.trocasSupportMid
-        });
-        return { TeamA: porEquipa(this.TeamA), TeamB: porEquipa(this.TeamB) };
+        const r2 = (v) => Math.round(v * 100) / 100;
+        const posseTotal = this.TeamA.posseSegundos + this.TeamB.posseSegundos;
+
+        const porEquipa = (s, adversario) => {
+            const remForaDoAlvo = Math.max(0,
+                s.remates.tentados - s.remates.noAlvo - s.remateBloqueados - s.remates.furados);
+            const duelosTotais = s.duelos.ganhos + s.duelos.perdidos;
+            const aereosTotais = s.duelosAereos.ganhos + s.duelosAereos.perdidos;
+
+            return {
+                // --- RESULTADO
+                golos: s.remates.golos,
+                golosSofridos: s.golosSofridos,
+
+                // --- FINALIZAÇÃO
+                remates: s.remates.tentados,
+                rematesNoAlvo: s.remates.noAlvo,
+                rematesForaDoAlvo: remForaDoAlvo,
+                rematesBloqueados: s.remateBloqueados,
+                rematesFurados: s.remates.furados,
+                xg: r2(s.xg),
+                grandesChances: s.grandesChances,
+
+                // --- ATAQUE
+                ataques: s.ataques.totais,
+                ataquesPerigosos: s.ataques.perigosos,
+                entradasUltimoTerco: s.entradasUltimoTerco,
+                toquesNaArea: s.toquesNaArea,
+                cruzamentos: s.cruzamentos.tentados + '/' + s.cruzamentos.certos,
+                passesParaFinalizacao: s.passesParaFinalizacao,
+                progressaoComBola: Math.round(s.progressaoComBolaM) + 'm',
+
+                // --- PASSE
+                passes: s.passes.tentados + '/' + s.passes.certos +
+                    ' (' + pct(s.passes.certos, s.passes.tentados) + '%)',
+                lancamentos: s.lancamentos.tentados + '/' + s.lancamentos.certos,
+                passesProgressivos: s.passesProgressivos,
+                passesNoTercoFinal: s.passesNoTercoFinal,
+                passesQuebraLinhas: s.passesQuebraLinhas,
+                passesSobPressao: s.passesSobPressao,
+                assistencias: s.assistencias,
+                primeiraTocada: s.primeiraTocada,
+                dominios: s.dominios,
+
+                // --- DEFESA
+                desarmes: s.desarmes.tentados + '/' + s.desarmes.sucesso,
+                carrinhos: s.carrinhos.tentados + '/' + s.carrinhos.sucesso,
+                intercecoes: s.cortes,
+                afastamentos: s.afastamentos,
+                bloqueios: s.remateBloqueados,
+                duelos: s.duelos.ganhos + '/' + duelosTotais,
+                duelosAereos: s.duelosAereos.ganhos + '/' + aereosTotais,
+                recuperacoes: s.recuperacoes,
+                recuperacoesNoAtaque: s.recuperacoesAtaque,
+                pressoes: s.pressoes,
+                perdasZonaPerigosa: s.perdasZonaPerigosa,
+                errosQueGeraramRemate: s.errosQueGeraramRemate,
+                disputasFalhadas: s.disputasFalhadas,
+                perdasDePosse: s.perdasDePosse,
+
+                // --- GUARDA-REDES
+                defesas: s.defesas,
+                saidasDoGolo: s.saidasDoGolo,
+                cruzamentosCortadosGK: s.cruzamentosCortadosGK,
+
+                // --- CONTROLO
+                posse: pct(s.posseSegundos, posseTotal) + '%',
+                posseSegundos: Math.round(s.posseSegundos * 10) / 10,
+                tercoSegundos: {
+                    def: Math.round(s.tercoSegundos.def * 10) / 10,
+                    mid: Math.round(s.tercoSegundos.mid * 10) / 10,
+                    atk: Math.round(s.tercoSegundos.atk * 10) / 10
+                },
+                cantos: s.cantos,
+                pontapesBaliza: s.pontapesBaliza,
+                faltas: s.faltas.cometidas + ' (sofridas ' + s.faltas.sofridas + ')',
+                cartoes: s.cartoes.amarelos + 'A/' + s.cartoes.vermelhos + 'V',
+                penaltis: s.penaltis,
+                dribles: s.dribles.tentados + '/' + s.dribles.sucesso,
+                tabelinhas: s.tabelinhas,
+                caraACara: s.caraACara,
+                overlaps: s.overlaps,
+                distanciaPercorrida: Math.round(s.distanciaPercorrida) + 'm',
+
+                // --- EFICIÊNCIAS (derivadas)
+                qualidadeDasChances: r2(s.remates.tentados ? s.xg / s.remates.tentados : 0),
+                xgPorAtaque: r2(s.ataques.totais ? s.xg / s.ataques.totais : 0),
+                eficienciaRemate: pct(s.remates.golos, s.remates.tentados) + '%',
+                eficienciaPasse: pct(s.passes.certos, s.passes.tentados) + '%',
+                eficienciaDefensiva: pct(s.duelos.ganhos, duelosTotais) + '%',
+                conversaoDeChances: pct(s.remates.golos, s.grandesChances) + '%',
+
+                // --- CHURN DOS ALVOS (calibração, não é ficha de jogo)
+                trocasChaser: s.trocasChaser,
+                trocasMarcacao: s.trocasMarcacao,
+                trocasSupportMid: s.trocasSupportMid
+            };
+        };
+        return {
+            placar: (typeof Match !== 'undefined')
+                ? (Match.placarA + '-' + Match.placarB) : null,
+            TeamA: porEquipa(this.TeamA, this.TeamB),
+            TeamB: porEquipa(this.TeamB, this.TeamA)
+        };
     }
 };

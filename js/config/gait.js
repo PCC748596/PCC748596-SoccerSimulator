@@ -49,7 +49,21 @@ const GaitModel = {
         braco: 0.0,
         cotovelo: -0.22,      // os braços ficam como estão de pé
         tronco: 0.0,
-        ressalto: 0.0
+        ressalto: 0.0,
+        /*
+        A QUE ALTURA O CORPO ASSENTA NESTE ANDAMENTO.
+
+        Medido: o corpo flutua mais a CORRER do que parado — a mediana do
+        ponto mais baixo passa de +6.1 cm parado para +10.8 cm a correr, e
+        74% das leituras a correr estao mais de 5 cm acima do relvado. Nao
+        e o sitio onde o corpo esta (o `model.position.y` e o mesmo nos tres
+        andamentos): e a POSE, que a correr dobra e levanta as duas pernas.
+
+        `descida` e o que o corpo baixa NESTE andamento, misturado com a
+        velocidade como todo o resto (ver misturarAndamento). Parado e zero,
+        que e o caso que ja estava aprovado.
+        */
+        descida: 0.0
     },
     andar: {
         vel: 1.8,             // velocidade típica deste andamento (m/s)
@@ -61,6 +75,7 @@ const GaitModel = {
         braco: 0.16,          // a andar os braços quase não se mexem
         cotovelo: -0.22,      // e vão quase esticados
         tronco: 0.05,         // a prumo
+        descida: 0.0,          // a andar flutua-se MENOS do que parado (medido)
         ressalto: 0.015       // meia-amplitude da subida/descida da anca (m)
     },
     trote: {
@@ -73,6 +88,7 @@ const GaitModel = {
         braco: 0.52,
         cotovelo: -0.95,
         tronco: 0.15,
+        descida: 0.040,
         ressalto: 0.028
     },
     correr: {
@@ -85,6 +101,7 @@ const GaitModel = {
         braco: 1.00,
         cotovelo: -1.55,      // braços bem dobrados a bombear
         tronco: 0.30,         // inclinado para a frente
+        descida: 0.075,        // centra a corrida na mesma altura do parado (medido)
         ressalto: 0.045       // ~9 cm de oscilação total, como numa corrida a sério
     }
 };

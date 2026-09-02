@@ -89,7 +89,22 @@ const PassModel = {
     disso é passe rasteiro normal — uma bola pelo ar para um colega a 12 m
     só complica a recepção sem ganhar nada.
     */
+    /*
+    O QUE E UM LANCAMENTO, e o que nao e.
+
+    Um lancamento e uma bola LONGA (>= `distMinLonga`) que RASGA a linha —
+    sai por entre dois adversarios. Uma bola a frente do companheiro, para
+    espaco livre, e um passe no espaco: pode ter 2 m e nao passa por entre
+    ninguem.
+
+    `throughBallCorredorLargura` e a que distancia da linha do passe um
+    adversario ainda conta como estando la; `throughBallVaoMax` e o vao
+    maximo entre os dois — acima disso nao e um corredor, e campo aberto.
+    Ver `passaEntreAdversarios` (utils.js).
+    */
     distMinLonga: 30.0,
+    throughBallCorredorLargura: 7.0,
+    throughBallVaoMax: 13.0,
     distAereo: 30.0,
     elevacaoCurta: 24 * Math.PI / 180,
     elevacaoLonga: 25 * Math.PI / 180,
@@ -183,6 +198,28 @@ const PassModel = {
         se pelo ângulo — só que dentro da faixa de um passe, e o que não couber
         resolve-se onde deve, na força.
         */
+        /*
+        TECTO DE ALTURA DO PASSE, POR DISTANCIA (pedido).
+
+        Abaixo de `distanciaAlto` (35 m) a bola pode sair do chao — e
+        preciso, para passar por cima de quem esta na linha — mas nao passa
+        de `apexMaxCurto`, que e a altura do PEITO: dali para baixo o
+        companheiro mata-a no peito em vez de a ver passar por cima da
+        cabeca. Acima dos 35 m vale o tecto normal (`apexMax`).
+
+        Os quatro campos existiam e foram apagados num refactor; o
+        `executePassGameplay` continuou a le-los, e como `distanciaAlto`
+        vinha `undefined` o teste `alcance < undefined` dava sempre false —
+        ou seja, TODOS os passes usavam o tecto dos 7 m. Era esse o "passe
+        pelo alto num passe de 2 m".
+
+        `elevMinCurto` e o piso de angulo que este tecto precisa: 1.3 m de
+        apex a 25 m sai a ~11.8 graus, e o piso dos longos nao deixaria la
+        chegar.
+        */
+        apexMaxCurto: 1.30,
+        distanciaAlto: 35.0,
+        elevMinCurto: 4 * Math.PI / 180,
         elevMin: 25 * Math.PI / 180,
         elevMax: 35 * Math.PI / 180,
 

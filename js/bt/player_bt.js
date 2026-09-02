@@ -260,6 +260,21 @@ function findThroughBall(ctx) {
         // Lançamento é bola longa: abaixo de distMinLonga é passe normal.
         if (dist < PassModel.distMinLonga || dist > PassModel.throughBallMaxDist) continue;
 
+        /*
+        E TEM DE RASGAR A LINHA. Longo nao chega: um lancamento sai por
+        entre DOIS adversarios, senao e so uma bola comprida para o espaco.
+        */
+        if (typeof passaEntreAdversarios === 'function') {
+            const advPontos = [];
+            for (const o of ctx.opponents) {
+                if (o.role === 'gk' || !o.model) continue;
+                advPontos.push({ x: o.model.position.x, z: o.model.position.z });
+            }
+            if (!passaEntreAdversarios(p.model.position.x, p.model.position.z,
+                mateAlvo.x, mateAlvo.z, advPontos,
+                PassModel.throughBallCorredorLargura, PassModel.throughBallVaoMax)) continue;
+        }
+
         // Calcula o alvo baseado na velocidade relativa (bola ~15m/s, jogador ~7m/s)
         // O jogador corre aproximadamente 45% da distância do passe durante o tempo de voo.
         let corridaM = dist * 0.45;
@@ -671,7 +686,15 @@ function aplicarMiraDoPasse(p, tipo, ponto) {
         (tipo === PassTypes.SPACE || tipo === PassTypes.LEADING);
 
     if (paraOEspaco) {
-        p.isThroughBall = true;
+        /*
+        E um PASSE NO ESPACO, nao um lancamento. A bola vai para o ponto e
+        nao aos pes — e por isso partilha a balistica de encontro — mas a
+        etiqueta e a contabilidade sao outras: um lancamento tem de ser
+        longo E passar entre dois adversarios (ver findThroughBall e
+        `passaEntreAdversarios`). Sem esta separacao, um passe de 2 m saia
+        marcado como THROUGH.
+        */
+        p.isPasseEspaco = true;
         p.throughBallTarget = { x: ponto.x, z: ponto.z };
         // Rasteiro: o corredor já foi validado pelo filtro do leque (nenhum
         // adversário a menos de 2 m, linha de passe livre).
@@ -1825,9 +1848,16 @@ function actMarcar(ctx) {
     nao era um resultado, era a ausencia de instrumentacao. Aqui e o unico
     sitio onde a marcacao muda de homem.
     */
-    if (typeof MatchStats !== 'undefined' && p.markingTarget && p.markingTarget !== homem) {
+    /*
+    O contador comparava com `p.markingTarget` — e esse e posto a NULL pelo
+    runBehaviorTree a abrir cada tick (ver `player.markingTarget = null`),
+    portanto a condicao nunca podia ser verdadeira e o numero ficava a zero.
+    A memoria da marcacao tem de ser um campo que ninguem limpa.
+    */
+    if (typeof MatchStats !== 'undefined' && p._marcadoAnterior && p._marcadoAnterior !== homem) {
         MatchStats[p.team].trocasMarcacao++;
     }
+    p._marcadoAnterior = homem;
     p.markingTarget = homem;
 
     /*

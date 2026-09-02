@@ -732,7 +732,12 @@ const Sim = {
             fecharPermanencias(permanenciaStats);
 
             const resumo = MatchStats.resumo();
-            this.resultados.push({ jogo: jogo + 1, TeamA: resumo.TeamA, TeamB: resumo.TeamB });
+            // O `placar` vem do resumo e e por jogo: sem ele o lote tinha as
+            // estatisticas todas e nao dizia quem ganhou.
+            this.resultados.push({
+                jogo: jogo + 1, placar: resumo.placar,
+                TeamA: resumo.TeamA, TeamB: resumo.TeamB
+            });
             console.log(`Sim: jogo ${jogo + 1}/${nJogos} concluído.`, resumo);
         }
 

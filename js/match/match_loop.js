@@ -841,6 +841,19 @@ Object.assign(Match, {
         if (this.ballCarrier) {
             if (this.possessionTeam !== this.ballCarrier.team) {
                 const oldPossessionTeam = this.possessionTeam;
+                /*
+                A MUDANCA DE POSSE e o unico sitio onde se sabe que uma equipa
+                RECUPEROU e a outra PERDEU. As duas contam-se aqui, com a zona
+                lida do ponto de vista de cada uma (ver StatsModel).
+                */
+                if (typeof MatchStats !== 'undefined' && MatchStats.registarRecuperacao) {
+                    const novo = this.ballCarrier;
+                    const zNovo = novo.model.position.z * novo.dirZ;
+                    MatchStats.registarRecuperacao(novo.team, zNovo);
+                    if (oldPossessionTeam && oldPossessionTeam !== novo.team) {
+                        MatchStats.registarPerda(oldPossessionTeam, -zNovo);
+                    }
+                }
                 this.possessionTeam = this.ballCarrier.team;
                 this.possessionTimer = 0;
 
@@ -859,6 +872,8 @@ Object.assign(Match, {
 
             if (typeof MatchStats !== 'undefined') {
                 MatchStats[this.ballCarrier.team].posseSegundos += this.delta;
+                // Pressao, toques na area e progressao com bola — ver medirComBola.
+                if (MatchStats.medirComBola) MatchStats.medirComBola(this.ballCarrier, this.delta);
                 const zoneAhead = this.ballCarrier.model.position.z * this.ballCarrier.dirZ;
                 MatchStats.registarZona(this.ballCarrier.team, zoneAhead, this.delta);
             }

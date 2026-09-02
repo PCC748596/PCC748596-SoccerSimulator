@@ -105,13 +105,18 @@ function apexDe(alcance, elev) {
 }
 
 test('as constantes do tecto curto estão no config', () => {
-    assert.strictEqual(B.apexMaxCurto, 1.0, 'apexMaxCurto devia ser 1 m');
-    assert.strictEqual(B.distanciaAlto, 30.0, 'distanciaAlto devia ser 30 m');
+    /*
+    Os numeros mudaram a pedido: o tecto passou a ser a altura do PEITO (para
+    a bola poder ser matada no peito) e a fronteira do passe alto subiu dos
+    30 para os 35 m.
+    */
+    assert.strictEqual(B.apexMaxCurto, 1.30, 'apexMaxCurto devia ser a altura do peito');
+    assert.strictEqual(B.distanciaAlto, 35.0, 'distanciaAlto devia ser 35 m');
     assert.ok(B.elevMinCurto < B.elevMinLonga,
         'elevMinCurto tem de ser mais baixo que elevMinLonga, senão o tecto de 1 m não cabe');
 });
 
-test('nenhum passe abaixo de 30 m passa de 1 m de altura', () => {
+test('nenhum passe abaixo de 35 m passa da altura do peito', () => {
     const altos = [];
     for (let d = B.rasteiroMax + 0.5; d < B.distanciaAlto; d += 0.25) {
         // A elevação pedida pior possível: o topo da faixa do gesto.

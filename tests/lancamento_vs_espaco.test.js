@@ -119,14 +119,19 @@ test('as duas marcas partilham a balística, mas não o nome', () => {
         'o passe no espaço não tem etiqueta própria no ecrã');
 });
 
+/*
+O grito do golo mudou de casa: e o `AmbienteSonoro` que o toca, disparado na
+ENTRADA em GOAL e por cima da faixa de fundo (que baixa para lhe dar espaco).
+O que este teste guarda continua a ser o mesmo: que o golo tem o som da
+bancada, que ha forma de o tocar, e que o ficheiro existe.
+*/
 test('o golo tem o som do estádio', () => {
-    const srcSom = semCR(fs.readFileSync(path.join(raiz, 'js', 'efeitos_sonoros.js'), 'utf8'));
-    const srcFis = semCR(fs.readFileSync(path.join(raiz, 'js', 'match', 'match_physics.js'), 'utf8'));
+    const srcSom = semCR(fs.readFileSync(path.join(raiz, 'js', 'ambiente_sonoro.js'), 'utf8'));
     assert.ok(srcSom.includes('Soccer_Crowd_Cheerin.mp3'),
-        'a amostra da bancada saiu do EfeitosSonoros');
-    assert.ok(/golo\(\)\s*\{/.test(srcSom), 'não há forma de tocar o som do golo');
-    assert.ok(srcFis.includes('EfeitosSonoros.golo()'),
-        'o golo já não toca o som da bancada');
+        'a amostra da bancada saiu do AmbienteSonoro');
+    assert.ok(/gritarGolo\(\)\s*\{/.test(srcSom), 'não há forma de tocar o som do golo');
+    assert.ok(srcSom.indexOf("this.gritarGolo()") > 0,
+        'o grito já não é disparado por ninguém');
     assert.ok(fs.existsSync(path.join(raiz, 'assets', 'Soccer_Crowd_Cheerin.mp3')),
         'o ficheiro de som desapareceu do assets/');
 });

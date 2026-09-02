@@ -37,6 +37,38 @@ não for executado dentro deste tempo (devido a interrupção, perda de batedor
 ou bloqueio físico), o simulador força a retoma do jogo para evitar travamentos.
 =============================================================================
 */
+/*
+=============================================================================
+LIMIARES DA FICHA DE JOGO (ver js/stats.js)
+=============================================================================
+Uma metrica sem definicao escrita muda de sentido a segunda leitura, por isso
+os numeros que DEFINEM cada estatistica vivem aqui e nao espalhados pelo
+codigo que os conta.
+=============================================================================
+*/
+const StatsModel = {
+    // Passe progressivo: aproxima a bola da linha de fundo adversaria em pelo
+    // menos isto. 10 m e o criterio dos fornecedores para o campo adversario.
+    progressivoMin: 10.0,
+    // Meia-largura do corredor do passe, para contar quem ficou para tras.
+    corredorLinha: 4.0,
+    // A que distancia um adversario ja e pressao sobre quem tem a bola.
+    raioPressao: 4.0,
+    // Quanto tempo depois de um passe certo um remate ainda conta como
+    // 'passe para finalizacao' (e o golo como assistencia).
+    janelaChave: 5.0,
+    // E quanto tempo depois de uma perda um remate adversario ainda e culpa
+    // de quem perdeu a bola.
+    janelaErro: 6.0,
+    // xG a partir do qual um remate conta como GRANDE CHANCE.
+    limiarGrandeChance: 0.25,
+    // Arrefecimento por par (pressionador, portador), para uma aproximacao
+    // nao contar dezenas de pressoes enquanto ele la esta.
+    arrefecimentoPressao: 2.0
+};
+
+if (typeof window !== 'undefined') window.StatsModel = StatsModel;
+
 const SetPiecePrazos = {
     canto: 20.0,
     falta: 15.0,

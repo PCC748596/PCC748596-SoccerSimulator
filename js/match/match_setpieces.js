@@ -64,6 +64,9 @@ Object.assign(Match, {
 
         if (typeof MatchStats !== 'undefined' && MatchStats[team]) {
             if (type === 'CORNER_KICK') MatchStats[team].cantos++;
+            // O `pontapesBaliza` estava declarado e exportado sem NINGUEM o
+            // incrementar — o zero do relatorio nao era um resultado.
+            if (type === 'GOAL_KICK') MatchStats[team].pontapesBaliza++;
         }
 
         let attackingPlayers = (team === 'TeamA') ? this.players : this.opponents;

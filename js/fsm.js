@@ -14,12 +14,18 @@ function executePassGameplay(p) {
     // calibrada para lá chegar mesmo (ver PassModel).
     let ehLancamento = false;
     let lancamentoAlto = false;
-    if (p.isThroughBall && p.throughBallTarget) {
+    /*
+    O ALVO e o mesmo nos dois (a bola vai a um PONTO e nao aos pes), mas so o
+    `isThroughBall` e LANCAMENTO — o passe no espaco tem etiqueta e
+    contabilidade proprias. Ver aplicarMiraDoPasse (player_bt.js).
+    */
+    if ((p.isThroughBall || p.isPasseEspaco) && p.throughBallTarget) {
+        ehLancamento = !!p.isThroughBall;
         p.isThroughBall = false;
         p.throughBallTarget = null;
-        ehLancamento = true;
         lancamentoAlto = !!p.throughBallAlto;
         p.throughBallAlto = false;
+        p.isPasseEspaco = false;
     }
     const ehCruzamento = !!p.isCross;
     // Capturado antes de p.isCross ser limpo mais abaixo.
@@ -533,11 +539,28 @@ function executePassGameplay(p) {
     if (typeof MatchStats !== 'undefined') {
         // Telemetria: distância pedida, se saiu pelo alto e com que
         // velocidade horizontal. Ver MatchStats.resumoPasses.
+        /*
+        Alem da telemetria, vai o CONTEXTO que a ficha de jogo precisa para
+        classificar o passe quando ele chegar: de onde para onde, o sentido
+        de ataque, quem estava em cima do passador e onde estava o
+        adversario (para o teste de quebra de linhas). Ver
+        MatchStats.registarPasseCerto.
+        */
+        const advFicha = [];
+        for (const o of adversarios) {
+            if (o.role === 'gk' || !o.model) continue;
+            advFicha.push({ x: o.model.position.x, z: o.model.position.z });
+        }
         MatchStats.registarPasseIniciado(p.team, tipoPasseStats, {
             dist: distToTarget,
             alto: Match.ballVel.y > 0.01,
             vx: Match.ballVel.x,
-            vz: Match.ballVel.z
+            vz: Match.ballVel.z,
+            origem: { x: Match.ball.position.x, z: Match.ball.position.z },
+            destino: { x: Match.passTargetPos.x, z: Match.passTargetPos.z },
+            dirZ: p.dirZ,
+            distAdversario: distAdversario,
+            adversarios: advFicha
         });
     }
 }
@@ -564,10 +587,16 @@ function executeShotGameplay(p) {
     oportunidade criada, e é assim que os fornecedores a contam.
     */
     if (typeof MatchStats !== 'undefined' && typeof xgDoRemate === 'function') {
-        MatchStats[p.team].xg += xgDoRemate(
+        const xgDeste = xgDoRemate(
             p.model.position.x, p.model.position.z,
             p.targetGoalZ, LARGURA_BALIZA, XGModel);
+        MatchStats[p.team].xg += xgDeste;
         MatchStats.registarRemateNoAtaque(p.team);
+        // A ficha de jogo: grande chance, passe para finalizacao e o erro
+        // adversario que deu origem a isto. Ver registarRemateNaFicha.
+        if (MatchStats.registarRemateNaFicha) {
+            MatchStats.registarRemateNaFicha(p.team, xgDeste, false);
+        }
     }
 
     const opponentsShoot = (p.team === 'TeamA') ? Match.opponents : Match.players;
@@ -585,6 +614,9 @@ function executeShotGameplay(p) {
     let pow, alvoX, alvoY;
 
     if (bloqueado) {
+        if (typeof MatchStats !== 'undefined' && MatchStats.registarRemateBloqueado) {
+            MatchStats.registarRemateBloqueado(bloqueador.team);
+        }
         // Bola desviada, curta e fraca — não mira a baliza.
         pow = 4.0 + Math.random() * 2.4;
         alvoX = p.model.position.x + (Math.random() - 0.5) * 4.0;
@@ -1866,7 +1898,14 @@ class PlayerFSM {
                                 Match.ballVel.y = 2.0;
                                 Match.lastTouchedTeam = p.team;
                                 Match.lastTouchedPlayer = p;
-                                if (typeof MatchStats !== 'undefined') MatchStats[p.team].desarmes.sucesso++;
+                                if (typeof MatchStats !== 'undefined') {
+                                    MatchStats[p.team].desarmes.sucesso++;
+                                    // Um desarme e um DUELO ganho — a ficha de
+                                    // jogo conta as duas coisas.
+                                    if (MatchStats.registarDuelo && carrier) {
+                                        MatchStats.registarDuelo(p.team, carrier.team, false);
+                                    }
+                                }
                             }
                         }
                     }
@@ -1946,7 +1985,12 @@ class PlayerFSM {
                             carrierSlide.hasBall = false;
                             carrierSlide.touchLock = BallControl.touchLock;
                             Match.ballCarrier = null;
-                            if (typeof MatchStats !== 'undefined') MatchStats[p.team].carrinhos.sucesso++;
+                            if (typeof MatchStats !== 'undefined') {
+                                MatchStats[p.team].carrinhos.sucesso++;
+                                if (MatchStats.registarDuelo) {
+                                    MatchStats.registarDuelo(p.team, carrierSlide.team, false);
+                                }
+                            }
                         }
 
                         if (venceu || !alvoValido) {

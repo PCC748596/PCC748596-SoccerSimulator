@@ -179,6 +179,16 @@ Object.assign(Match, {
 
                     if (typeof MatchStats !== 'undefined' && MatchStats[this.lastTouchedTeam]) {
                         MatchStats[this.lastTouchedTeam].remates.golos++;
+                        /*
+                        E do outro lado, o golo SOFRIDO. Quem o sofre sai da
+                        BALIZA em que a bola entrou (`zSinal`) e nao de 'o outro
+                        que nao marcou': num autogolo sao a mesma equipa, e a
+                        conta de marcados/sofridos deixava de fechar.
+                        */
+                        const sofreu = (zSinal < 0) ? 'TeamA' : 'TeamB';
+                        if (MatchStats.registarGoloSofrido) MatchStats.registarGoloSofrido(sofreu);
+                        // E a assistencia, que so aqui se confirma.
+                        if (MatchStats.registarAssistencia) MatchStats.registarAssistencia(this.lastTouchedTeam);
                     }
                     if (this.lastTouchedTeam === 'TeamA') this.placarA++; else if (this.lastTouchedTeam === 'TeamB') this.placarB++;
                     this.updatePlacar();
