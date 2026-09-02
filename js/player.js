@@ -74,7 +74,6 @@ class FootballPlayer {
         this.dribbleCooldownTimer = 0;
         this.isCross = false;
         this.isThroughBall = false;
-        this.isPasseEspaco = false;
         this.throughBallTarget = null;
         // Ponto do leque que este passe mira (ver PassTypes). null = aos pés.
         this.passAimPoint = null;
@@ -2122,11 +2121,7 @@ class FootballPlayer {
         if (this.isCross) {
             this.showActionBanner('CROSS');
         } else if (this.isThroughBall) {
-            // Lancamento a serio: bola longa por entre dois adversarios.
             this.showActionBanner('THROUGH');
-        } else if (this.isPasseEspaco) {
-            // Passe a frente para espaco LIVRE — nao passa entre ninguem.
-            this.showActionBanner('SPACE');
         } else if (targetPlayer && this.model.position.distanceTo(targetPlayer.model.position) > 30) {
             this.showActionBanner('L.PASS');
         } else {
@@ -2135,7 +2130,7 @@ class FootballPlayer {
         this.passTarget = targetPlayer;
         
         let _v1 = _p_v3;
-        if ((this.isThroughBall || this.isPasseEspaco) && this.throughBallTarget) {
+        if (this.isThroughBall && this.throughBallTarget) {
             _v1.set(this.throughBallTarget.x, 0, this.throughBallTarget.z);
         } else if (this.passAimPoint) {
             /*
@@ -2280,7 +2275,6 @@ class FootballPlayer {
         this.passTarget = targetPlayer;
         this.passTargetPos = alvo.clone();
         this.isThroughBall = false;
-        this.isPasseEspaco = false;
         this.isCross = false;
         this.cosCorpoNoPasse = 1.0;
         // A bola sai da MÃO: o executePassGameplay é partilhado, o som do
@@ -3940,15 +3934,7 @@ class FootballPlayer {
             */
             const paradoNaLinha = (typeof Match !== 'undefined' &&
                 (Match.state === 'PENALTY' || Match.faltaDirecta));
-            /*
-            Na falta directa nao e ao meio: a barreira fecha um canto e ele
-            cobre o outro (ver DirectFreeKickModel.deslocamentoGk e o ramo
-            DIRECT_FREE_KICK do setupSetPiece, que escreve o
-            `Match.faltaDirectaGkX`).
-            */
-            const xParado = (typeof Match !== 'undefined' && Match.faltaDirecta &&
-                typeof Match.faltaDirectaGkX === 'number') ? Match.faltaDirectaGkX : 0;
-            let alvoGkX = (typeof Match !== 'undefined' && (Match.state === 'GOAL' || Match.state === 'OUT' || paradoNaLinha)) ? xParado : gkCorpo.position.x;
+            let alvoGkX = (typeof Match !== 'undefined' && (Match.state === 'GOAL' || Match.state === 'OUT' || paradoNaLinha)) ? 0 : gkCorpo.position.x;
 
             /*
             Posição de repouso: sai toda de gkAnchor() (config.js), a mesma
@@ -3959,7 +3945,7 @@ class FootballPlayer {
             */
             const gkStyleAtual = GoalkeeperStyle[this.gkStyle] || GoalkeeperStyle.defensive;
             const ancora = paradoNaLinha
-                ? { x: xParado, z: this.ownGoalZ }
+                ? { x: 0, z: this.ownGoalZ }
                 : gkAnchor(Match.ball.position.x, Match.ball.position.z,
                     this.ownGoalZ, this.dirZ, gkStyleAtual);
 

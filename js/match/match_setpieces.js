@@ -132,36 +132,9 @@ Object.assign(Match, {
             // para lá todos os frames, e é para lá que ele centra.
             if (!this.cornerAlvo) this.cornerAlvo = new THREE.Vector3(); this.cornerAlvo.set(canto.alvo.x, ALTURA_BASE_Y, canto.alvo.z);
 
-            /*
-            O BATEDOR VAI BUSCAR A BOLA (multibola).
-
-            Antes: a bola ia sozinha para a quina (cantoBolaAlvo) e o batedor
-            aparecia ao lado dela. Agora ele vai buscar a reserva mais perto e
-            leva-a a quina; so quando la chega e que assume o lugar e o lance
-            comeca. Sem reservas, faz-se como antes.
-            */
-            const assumirCanto = (t) => {
-                if (!t) return;
-                t.model.position.set(canto.batedor.x, ALTURA_BASE_Y, canto.batedor.z);
-                lookAtBola(t.model, this.cornerAlvo);
-                t.fsm.changeState('SET_PIECE_TAKER');
-            };
-
-            const cantoComReserva = this.iniciarReposicao(
-                'CORNER_KICK', taker,
-                { x: canto.bola.x, z: canto.bola.z }, assumirCanto);
-
-            if (cantoComReserva) {
-                /*
-                A bola do jogo ja nao voa para a quina: quem la a poe e o
-                batedor. Estas tres linhas eram esse voo.
-                */
-                this.cantoBolaAlvo = null;
-                this.cantoAguardaChao = false;
-                this.cantoBolaAtraso = 0;
-            } else {
-                assumirCanto(taker);
-            }
+            taker.model.position.set(canto.batedor.x, ALTURA_BASE_Y, canto.batedor.z);
+            lookAtBola(taker.model, this.cornerAlvo);
+            taker.fsm.changeState('SET_PIECE_TAKER');
 
             const lado = Math.sign(this.ball.position.x) || 1;
             const linhaZ = attDir * (CAMPO_COMP / 2);
@@ -363,37 +336,16 @@ Object.assign(Match, {
             const taker = escolherBatedorDoLateral(attackingPlayers, this.ball.position);
             this.setPieceTaker = taker || null;
 
-            /*
-            O BATEDOR JA NAO APARECE NA LINHA (pedido explicito).
-
-            Ia para la teleportado no mesmo frame; agora vai buscar a bola de
-            reserva mais perto e leva-a ao ponto do lateral (ver
-            iniciarReposicao). So quando la chega e que assume a posicao
-            regulamentar — fora do campo, atras da linha — e o gesto comeca.
-
-            Sem multibola disponivel, cai no comportamento antigo, para o jogo
-            nunca ficar a espera de material.
-            */
-            const postoLateral = {
-                x: ladoLinha * (CAMPO_LARG / 2 + ThrowInModel.recuoDaLinha),
-                z: zLinha
-            };
-
-            const assumirLateral = (t) => {
-                if (!t) return;
-                t.model.position.set(postoLateral.x, ALTURA_BASE_Y, postoLateral.z);
-                t.hasBall = false;
-                t.lateralAction = null;
-                t.lateralLargou = false;
-                t.fsm.changeState('LATERAL');
-                this.lateralPendente = true;
-                this.lateralAtraso = ESPERA_APOS_REPOSICAO;
-            };
-
-            const comReserva = taker && this.iniciarReposicao(
-                'THROW_IN', taker, postoLateral, assumirLateral);
-
-            if (taker && !comReserva) assumirLateral(taker);
+            if (taker) {
+                // Fica FORA do campo, atrás da linha, como manda a regra.
+                taker.model.position.set(
+                    ladoLinha * (CAMPO_LARG / 2 + ThrowInModel.recuoDaLinha),
+                    ALTURA_BASE_Y, zLinha);
+                taker.hasBall = false;
+                taker.lateralAction = null;
+                taker.lateralLargou = false;
+                taker.fsm.changeState('LATERAL');
+            }
 
             /*
             Adversários a menos de `afastaAdversarios` da bola dão um passo
@@ -412,8 +364,8 @@ Object.assign(Match, {
                 }
             });
 
-            // O `lateralPendente` e ligado pelo `assumirLateral`, quando a bola
-            // chega mesmo a linha — ver a reposicao acima.
+            this.lateralPendente = true;
+            this.lateralAtraso = ESPERA_APOS_REPOSICAO;
 
         } else if (type === 'DIRECT_FREE_KICK') {
             /*
@@ -612,21 +564,9 @@ Object.assign(Match, {
             parado a espera. A ancora do `updateGK` le a flag `faltaDirecta`
             para nao o mandar sair da baliza antes da batida.
             */
-            /*
-            E ELE FICA DO LADO QUE A BARREIRA NAO FECHA (pedido).
-
-            A barreira esta encostada ao poste do lado de onde se bate — esse
-            canto e dela. Ao meio da linha, como num penalti, o guarda-redes
-            duplicava metade do que a barreira ja tapava e deixava o outro
-            canto a mesma distancia de sempre. Desloca-se `deslocamentoGk`
-            para o lado ABERTO.
-            */
-            const ladoBarreira = Math.sign(bolaDF.x) || 1;
-            this.faltaDirectaGkX = -ladoBarreira * (DF.deslocamentoGk || 0);
-
             const gkDF = defendingPlayers.find(p => p.role === 'gk');
             if (gkDF) {
-                gkDF.model.position.set(this.faltaDirectaGkX, ALTURA_BASE_Y, attDir * (CAMPO_COMP / 2));
+                gkDF.model.position.set(0, ALTURA_BASE_Y, attDir * (CAMPO_COMP / 2));
                 gkDF.velocity.set(0, 0, 0);
                 gkDF.gkEstado = 'idle';
                 gkDF.gkReagiu = false;
@@ -1108,7 +1048,6 @@ Object.assign(Match, {
             this.golKickBolaAlvo = { x: bolaX, z: bolaZ };
             this.golKickAguardaChao = true;
             this.golKickBolaAtraso = 3.0;
-            // (a reposicao com bola de reserva substitui isto, mais abaixo)
 
             this.ballCarrier = null;
             this.golKickProntos = false;
@@ -1138,225 +1077,51 @@ Object.assign(Match, {
                     x: bolaX + gk.dirZ * 0.70,
                     z: bolaZ - gk.dirZ * recuo
                 };
-                /*
-                O GUARDA-REDES VAI BUSCAR A BOLA (multibola).
-
-                Antes a bola caia, esperava 3 s e teleportava-se para a quina
-                da pequena area, com ele ja la a espera. Agora ele vai buscar a
-                reserva mais perto — quase sempre uma das de tras da baliza — e
-                poe-a na quina; so ai comeca a espera do gesto.
-                */
-                const assumirTiroMeta = (t) => {
-                    if (!t) return;
-                    t.model.position.set(t.gkTiroAlvo.x, ALTURA_BASE_Y, t.gkTiroAlvo.z);
-                    lookAtBola(t.model, { x: bolaX, y: ALTURA_BASE_Y, z: bolaZ });
-                    t.gkEstado = 'tiro_meta_espera';
-                    t.gkTiroFase = 0;
-                    this.golKickPendente = true;
-                    this.golKickAtrasoInicio = ESPERA_APOS_REPOSICAO;
-                };
-
-                const metaComReserva = this.iniciarReposicao(
-                    'GOAL_KICK', gk, { x: bolaX, z: bolaZ }, assumirTiroMeta);
-
-                if (metaComReserva) {
-                    // A bola do jogo ja nao teleporta: quem a poe la e ele.
-                    this.golKickBolaAlvo = null;
-                    this.golKickAguardaChao = false;
-                    this.golKickBolaAtraso = 0;
-                    this.golKickPendente = false;
-                } else {
-                    assumirTiroMeta(gk);
-                }
+                // Posiciona o goleiro no ponto de partida do tiro de meta virado para a bola
+                gk.model.position.set(gk.gkTiroAlvo.x, ALTURA_BASE_Y, gk.gkTiroAlvo.z);
+                lookAtBola(gk.model, { x: bolaX, y: ALTURA_BASE_Y, z: bolaZ });
             }
 
             /*
-            Os outros de quem bate: sobem um pouco para o meio-campo, como na
-            construção normal quando o próprio guarda-redes tem a bola — não
-            ficam encolhidos junto à própria área. Referência é o mesmo tecto
-            "Linha Defensiva" do painel que baliza a equipa em jogo corrido
-            (TeamShape.linhaDefensiva, aplicado à traseira do bloco em
-            computeBlock, team_bt.js), só
-            que aqui aplicado como avanço a partir da posição de formação
-            (`baseTarget`), não como recuo a partir da bola.
-
-            `MOVE_TO_POS` sobrevive ao ramo `esperarLance` do PlayerBT (ver
-            player_bt.js) — sem essa excepção o BT reescrevia o estado para
-            IDLE no frame seguinte e ninguém saía do sítio.
+            No tiro de meta, a posição dos jogadores (de ambas as equipas) é
+            determinada exclusivamente pelo TeamBT (nível 1 e nível 2), sem
+            cálculos manuais arbitrários. Os jogadores entram em MOVE_TO_POS
+            para se deslocarem para as posições ditadas pelo TeamBT.
             */
-            /*
-            QUEM BATE VAI PARA O SLOT DO TeamBT — pedido explicito.
-
-            Aqui nao se escreve alvo nenhum: o nivel 2 corre durante o
-            GOAL_KICK (ver nivel2Activo) e e ele que os coloca, com as guardas
-            do lance aplicadas ao slot (fora da propria area, fora do corredor
-            do chuto — ver o ramo do tiro de meta no tickFinal, team_bt.js).
-
-            O que se faz aqui e so tirar de dentro da area quem la esteja no
-            instante do apito, e po-los a andar.
-            */
-            const margemGK = G.tiroMetaMargemForaDaArea || 0;
             attackingPlayers.forEach(p => {
                 if (p.role === 'gk') return;
                 p.hasBall = false;
-                if (Area.contem(p.model.position.x, p.model.position.z, linhaZ)) {
-                    p.model.position.z = linhaZ + p.dirZ * (Area.profundidade + margemGK);
-                }
                 p.speedMult = 4.0;
                 p.fsm.changeState('MOVE_TO_POS');
             });
-
             defendingPlayers.forEach(p => {
                 if (p.role === 'gk') return;
-                // Empurra para fora da grande área adversária.
+                p.hasBall = false;
+                // Empurra para fora da grande área adversária se estiver dentro.
                 const dentroArea = Area.contem(p.model.position.x, p.model.position.z, linhaZ);
                 if (dentroArea) {
                     p.model.position.z = linhaZ + attDir * (Area.profundidade + 1.0);
                 }
-
-                /*
-                Antes ficavam SET_PIECE_WAIT logo aqui — que zera a velocity
-                todos os frames e só vira para a bola, nunca anda. Quem já
-                estava fora da área ficava plantado onde a bola saiu, sem se
-                reorganizar (ver screenshot: adversário todo desalinhado no
-                tiro de meta). MOVE_TO_POS sobrevive ao BolaParada do
-                PlayerBT durante GOAL_KICK (ver esperarLance em
-                player_bt.js) — usa-se o mesmo caminho de quem bate, só que
-                para a posição de formação normal.
-                */
-                p.dynamicTarget.set(p.baseTarget.x, ALTURA_BASE_Y, p.baseTarget.z);
                 p.speedMult = 4.0;
                 p.fsm.changeState('MOVE_TO_POS');
             });
-        }
-    },
 
-    /*
-    ==================================================================
-    REPOSICAO COM BOLA DE RESERVA (multibola)
-    ==================================================================
-    A bola que saiu fica onde caiu e desaparece 3 s depois (o prop e do
-    MultiBall). Quem vai bater vai buscar a reserva mais perto, leva-a a marca
-    e pousa-a — e so entao o lance parado comeca a contar o tempo.
-
-    O jogo NAO para: o resto das duas equipas ja esta a reorganizar-se pelo
-    setupSetPiece, como sempre esteve. O que muda e que a bola deixa de
-    aparecer teleportada na marca, e o batedor deixa de aparecer teleportado ao
-    lado dela.
-
-    Fases:
-        'buscar'  vai ao cone (a bola do jogo esta invisivel, quem se ve e a
-                  reserva em cima do cone)
-        'levar'   traz a reserva ate a marca
-        (fim)     pousa: a bola do jogo reaparece na marca e o `aoPousar`
-                  arranca o lance como antes
-
-    Sem reservas livres, ou sem MultiBall (testes, harness antigo), devolve
-    false e quem chama repoe como sempre — a bola na marca, sem espera.
-    */
-    iniciarReposicao: function (tipo, taker, marca, aoPousar) {
-        if (typeof MultiBall === 'undefined' || !MultiBall.reservas ||
-            !MultiBall.reservas.length || !taker) return false;
-
-        const reserva = MultiBall.maisProxima(marca.x, marca.z);
-        if (!reserva) return false;
-
-        // A bola que saiu fica no relvado (3 s, ver MultiBallModel).
-        if (MultiBall.largarBolaMorta) MultiBall.largarBolaMorta(this.ball.position);
-        MultiBall.retirar(reserva);
-
-        if (this.ball) this.ball.visible = false;
-        if (reserva.mesh) reserva.mesh.visible = true;
-
-        this.reposicao = {
-            tipo: tipo, taker: taker, reserva: reserva,
-            marca: { x: marca.x, z: marca.z },
-            fase: 'buscar', tempo: 0, aoPousar: aoPousar || null
-        };
-
-        /*
-        A BOLA DO JOGO VAI JA PARA O CONE.
-
-        Fica invisivel — quem se ve e a reserva em cima do cone — mas a POSICAO
-        tem de acompanhar: meia duzia de sitios leem `Match.ball.position` (o
-        bloco, o guarda-redes, o minimapa). Deixa-la onde saiu punha o jogo a
-        organizar-se a volta de um ponto onde ja nao ha bola nenhuma.
-        */
-        this.ball.position.set(reserva.x, BallPhysics.raio, reserva.z);
-        this.ballVel.set(0, 0, 0);
-
-        taker.hasBall = false;
-        taker.speedMult = 6.0;
-        taker.dynamicTarget.set(reserva.x, ALTURA_BASE_Y, reserva.z);
-        taker.fsm.changeState('MOVE_TO_POS');
-        return true;
-    },
-
-    /*
-    Um frame da reposicao. Corre do match_loop, em qualquer estado de bola
-    parada. O prazo (`SetPieceReposicao.prazo`) e a rede de seguranca: se o
-    batedor nao la chegar — foi derrubado, ficou preso —, pousa-se a bola na
-    marca e o jogo segue.
-    */
-    atualizarReposicao: function (dt) {
-        const r = this.reposicao;
-        if (!r) return;
-        r.tempo += dt;
-
-        const taker = r.taker;
-        const R = (typeof SetPieceReposicao !== 'undefined') ? SetPieceReposicao :
-            { distanciaApanhar: 1.2, distanciaPousar: 0.8, prazo: 12.0, alturaNaMao: 1.1 };
-
-        if (!taker || !taker.model) { this._pousarReposicao(); return; }
-
-        if (r.fase === 'buscar') {
-            const d = Math.hypot(taker.model.position.x - r.reserva.x,
-                taker.model.position.z - r.reserva.z);
-            if (d < R.distanciaApanhar || r.tempo > R.prazo * 0.6) {
-                r.fase = 'levar';
-                taker.dynamicTarget.set(r.marca.x, ALTURA_BASE_Y, r.marca.z);
-                taker.fsm.changeState('MOVE_TO_POS');
-            } else {
-                taker.dynamicTarget.set(r.reserva.x, ALTURA_BASE_Y, r.reserva.z);
-                taker.speedMult = 6.0;
-                if (taker.fsm.currentState !== 'MOVE_TO_POS') taker.fsm.changeState('MOVE_TO_POS');
+            // Actualiza de imediato os alvos táticos através do TeamBT
+            if (typeof TeamAI !== 'undefined' && typeof PosicionamentoAI !== 'undefined') {
+                const bbA = TeamAI.tick('TeamA', this);
+                const bbB = TeamAI.tick('TeamB', this);
+                PosicionamentoAI.otimizarSlotsPorPosicao(this.players, bbA);
+                PosicionamentoAI.otimizarSlotsPorPosicao(this.opponents, bbB);
+                this.players.forEach(p => { if (p.role !== 'gk') PosicionamentoAI.tickBase(p, bbA); });
+                this.opponents.forEach(p => { if (p.role !== 'gk') PosicionamentoAI.tickBase(p, bbB); });
+                if (typeof atribuirMarcacoesDaEquipa === 'function') {
+                    atribuirMarcacoesDaEquipa(this.players, bbA);
+                    atribuirMarcacoesDaEquipa(this.opponents, bbB);
+                }
+                this.players.forEach(p => { if (p.role !== 'gk') PosicionamentoAI.tickFinal(p, bbA); });
+                this.opponents.forEach(p => { if (p.role !== 'gk') PosicionamentoAI.tickFinal(p, bbB); });
             }
-        } else {
-            /*
-            Leva a bola na mao: a malha da reserva segue-o, e a bola do jogo
-            (invisivel) vai com ela — ver a nota no iniciarReposicao.
-            */
-            if (r.reserva.mesh) {
-                r.reserva.mesh.position.set(
-                    taker.model.position.x, R.alturaNaMao, taker.model.position.z);
-            }
-            this.ball.position.set(taker.model.position.x, R.alturaNaMao, taker.model.position.z);
-            const d = Math.hypot(taker.model.position.x - r.marca.x,
-                taker.model.position.z - r.marca.z);
-            if (d < R.distanciaPousar || r.tempo > R.prazo) {
-                this._pousarReposicao();
-                return;
-            }
-            taker.dynamicTarget.set(r.marca.x, ALTURA_BASE_Y, r.marca.z);
-            taker.speedMult = 6.0;
-            if (taker.fsm.currentState !== 'MOVE_TO_POS') taker.fsm.changeState('MOVE_TO_POS');
         }
-    },
-
-    _pousarReposicao: function () {
-        const r = this.reposicao;
-        this.reposicao = null;
-        if (!r) return;
-
-        if (r.reserva && r.reserva.mesh) {
-            r.reserva.mesh.visible = false;
-            r.reserva.mesh.position.set(r.reserva.x, r.reserva.y, r.reserva.z);
-        }
-        this.ball.position.set(r.marca.x, BallPhysics.raio, r.marca.z);
-        this.ballVel.set(0, 0, 0);
-        if (this.ball) this.ball.visible = true;
-
-        if (typeof r.aoPousar === 'function') r.aoPousar(r.taker);
     },
 
     triggerGoalKick: function (forceTeam = null) {
@@ -1418,16 +1183,17 @@ Object.assign(Match, {
     updateGoalKickWait: function (dt) {
         if (this.state !== 'GOAL_KICK') return;
 
-        const team = this.setPieceTaker ? this.setPieceTaker.team : null;
-        const atacantes = (team === 'TeamA') ? this.players : this.opponents;
-
-        atacantes.forEach(p => {
+        const todosDeCampo = [...this.players, ...this.opponents];
+        todosDeCampo.forEach(p => {
             if (p.role === 'gk') return;
             if (p.fsm.currentState === 'MOVE_TO_POS' &&
                 p.model.position.distanceTo(p.dynamicTarget) < 1.5) {
                 p.fsm.changeState('SET_PIECE_WAIT');
             }
         });
+
+        const team = this.setPieceTaker ? this.setPieceTaker.team : null;
+        const atacantes = (team === 'TeamA') ? this.players : this.opponents;
 
         if (!this.golKickProntos) {
             const todosProntos = atacantes.every(p => {

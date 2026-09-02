@@ -3469,38 +3469,15 @@ function tiroDaFaltaDirecta(distGol, distBarreira, alvoY, porBaixo, cfg) {
         return { v: vRas, elev: 0, alturaNaBarreira: y0 };
     }
 
-    /*
-    A FORCA PEDIDA MANDA NA ALTURA A LIMPAR.
-
-    Para o mesmo ponto da baliza, menos elevacao e mais velocidade — e o que
-    impoe a elevacao e a altura a limpar. Se limpar a barreira A SALTAR deixa a
-    bola abaixo de `forcaMinima`, baixa-se o que se exige limpar ate
-    `alturaMinimaSobreBarreira` (a barreira parada, mais o raio da bola). Ver a
-    nota no DirectFreeKickModel.
-    */
-    const topoMinimo = (!porBaixo && typeof D.alturaMinimaSobreBarreira === 'number')
-        ? D.alturaMinimaSobreBarreira : topo;
-    const forcaMinima = (!porBaixo && typeof D.forcaMinima === 'number') ? D.forcaMinima : 0;
-
     const PASSOS = 26;
     let melhor = null;
-    let comFolga = null;   // a que limpa a barreira a saltar, se a forca nao chegar
     for (let i = 0; i <= PASSOS; i++) {
         const elev = D.elevMin + (D.elevMax - D.elevMin) * (i / PASSOS);
         const v = velocidadeParaAlturaNoAlvo(distGol, elev, alvoY, y0);
         if (v === null) continue;
         const hBarreira = alturaDaBolaEm(distBarreira, v, elev, y0);
-
-        // Tenso que chegue e a passar acima do minimo: e esta.
-        if (!porBaixo && v >= forcaMinima && hBarreira >= topoMinimo) {
-            return { v: v, elev: elev, alturaNaBarreira: hBarreira };
-        }
-
         const passa = porBaixo ? (hBarreira <= topo) : (hBarreira >= topo);
-        if (passa && !comFolga) comFolga = { v: v, elev: elev, alturaNaBarreira: hBarreira };
-        if (passa && (porBaixo || forcaMinima <= 0)) {
-            return { v: v, elev: elev, alturaNaBarreira: hBarreira };
-        }
+        if (passa) return { v: v, elev: elev, alturaNaBarreira: hBarreira };
         /*
         Guarda a tentativa que menos falha o criterio: um remate que so falha a
         folga por centimetros e melhor do que devolver null e nao haver
@@ -3511,8 +3488,6 @@ function tiroDaFaltaDirecta(distGol, distBarreira, alvoY, porBaixo, cfg) {
             melhor = { v: v, elev: elev, alturaNaBarreira: hBarreira, erro: erro };
         }
     }
-    // Sem nenhuma tensa que sirva, vale a que limpa a barreira com folga.
-    if (comFolga) return comFolga;
     return melhor ? { v: melhor.v, elev: melhor.elev, alturaNaBarreira: melhor.alturaNaBarreira } : null;
 }
 
@@ -3543,56 +3518,6 @@ function lugaresDoApoioNaFaltaDirecta(bolaX, bolaZ, attDir, quantos, cfg) {
     return lugares;
 }
 
-/*
-O PASSE PASSA ENTRE DOIS ADVERSARIOS?
-
-E isto que separa um LANCAMENTO (through ball) de um passe no espaco:
-
-    lancamento        bola longa que RASGA a linha — sai por entre dois
-                      adversarios e cai nas costas deles
-    passe no espaco   bola para a frente, para o espaco livre, que NAO passa
-                      por entre ninguem
-
-O codigo tratava os dois como a mesma coisa (ver aplicarMiraDoPasse em
-player_bt.js): qualquer passe do tipo SPACE/LEADING acendia a etiqueta THROUGH
-e usava a balistica de lancamento — dai as "bolas de 10 m" marcadas como
-lancamento.
-
-Teste: ha um adversario de CADA LADO da linha origem->alvo, os dois dentro do
-segmento e a menos de `larguraCorredor` dela, e a distancia entre eles (medida
-na perpendicular) nao passa de `vaoMax`. Um vao maior do que isso nao e um
-corredor entre dois homens, e campo aberto.
-
-Puro: sem Match, sem THREE. `adversarios` e uma lista de {x, z}.
-*/
-function passaEntreAdversarios(ox, oz, ax, az, adversarios, larguraCorredor, vaoMax) {
-    const dx = ax - ox, dz = az - oz;
-    const comp = Math.hypot(dx, dz);
-    if (comp < 0.001 || !adversarios || !adversarios.length) return false;
-
-    const ux = dx / comp, uz = dz / comp;   // ao longo da linha
-    const px = -uz, pz = ux;                // perpendicular
-
-    let esquerda = null, direita = null;    // o mais perto de cada lado
-    for (const o of adversarios) {
-        if (!o) continue;
-        const rx = o.x - ox, rz = o.z - oz;
-        const aoLongo = rx * ux + rz * uz;
-        if (aoLongo < 1.0 || aoLongo > comp) continue;      // fora do segmento
-        const lateral = rx * px + rz * pz;
-        if (Math.abs(lateral) > larguraCorredor) continue;  // longe da linha
-
-        if (lateral >= 0) {
-            if (esquerda === null || lateral < esquerda) esquerda = lateral;
-        } else {
-            if (direita === null || -lateral < direita) direita = -lateral;
-        }
-    }
-
-    if (esquerda === null || direita === null) return false;
-    return (esquerda + direita) <= vaoMax;
-}
-
 if (typeof window !== 'undefined') {
     Object.assign(window, {
         gkAnchor, gkAlvoSegurando, gkPodeLancar, gkSweepTarget,
@@ -3603,7 +3528,6 @@ if (typeof window !== 'undefined') {
         esperarPeloSlot, eixoDeConducao, distanciaMinimaNoLateral,
         pontoDaFaltaDirecta, lugaresDaBarreira, alturaDaBolaEm,
         bandaDaFaltaDirecta, desfechoDaFaltaDirecta, alvoDaFaltaDirecta,
-        tiroDaFaltaDirecta, lugaresDoApoioNaFaltaDirecta,
-        passaEntreAdversarios
+        tiroDaFaltaDirecta, lugaresDoApoioNaFaltaDirecta
     });
 }

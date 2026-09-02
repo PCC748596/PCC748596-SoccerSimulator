@@ -204,48 +204,22 @@ test('o alvo de cada desfecho está do lado certo do ferro', () => {
     }
 });
 
-test('o remate passa por cima da barreira, e mais tenso quando pode', () => {
-    /*
-    O CONTRATO MUDOU com o pedido de "um pouco mais forte".
-
-    Antes: limpar sempre a barreira A SALTAR mais a folga. Isso impunha o
-    ângulo, e o ângulo impõe a velocidade — media-se 18,4 m/s a 25,1°, uma bola
-    lobada. Agora procura-se a elevação mais baixa que chega a `forcaMinima`, e
-    o que se exige limpar pode descer até `alturaMinimaSobreBarreira` (a
-    barreira PARADA mais o raio da bola).
-
-    O que este teste fixa: a bola nunca passa abaixo desse mínimo, e sempre que
-    passa por baixo do topo da barreira a saltar é porque a força o pediu.
-    */
-    const topoSalto = DF.alturaSalto + DF.folgaSobreBarreira;
+test('o remate limpa a barreira em toda a faixa de distâncias', () => {
+    const topo = DF.alturaSalto + DF.folgaSobreBarreira;
     const baixos = [];
     for (let dist = 17.5; dist <= 23; dist += 0.5) {
         for (const alvoY of [1.0, 1.6, 2.2]) {
             const t = tiroDaFaltaDirecta(dist, DF.distanciaBarreira, alvoY, false, DF);
             assert.ok(t, `sem solução a ${dist} m`);
-
-            if (t.alturaNaBarreira < DF.alturaMinimaSobreBarreira - 0.01) {
+            if (t.alturaNaBarreira < topo - 0.01) {
                 baixos.push(`${dist}m/${alvoY}m -> ${t.alturaNaBarreira.toFixed(2)}m`);
             }
-            if (t.alturaNaBarreira < topoSalto - 0.01) {
-                assert.ok(t.v >= DF.forcaMinima - 0.5,
-                    `a ${dist} m passou rente (${t.alturaNaBarreira.toFixed(2)}m) sem ganhar ` +
-                    `força: ${t.v.toFixed(1)} m/s, e o pedido era ${DF.forcaMinima}`);
-            }
+            // E a elevação é de remate, não de balão.
             assert.ok(t.elev >= DF.elevMin - 1e-9 && t.elev <= DF.elevMax + 1e-9,
                 `elevação fora da faixa: ${(t.elev * 180 / Math.PI).toFixed(1)}°`);
         }
     }
-    assert.strictEqual(baixos.length, 0,
-        `remates por baixo do mínimo: ${baixos.slice(0, 4).join(', ')}`);
-});
-
-test('a força pedida é a de um remate, e o mínimo a limpar é a barreira parada', () => {
-    assert.ok(DF.forcaMinima >= 20 && DF.forcaMinima <= 30,
-        `forcaMinima=${DF.forcaMinima}: fora do que é bater uma falta`);
-    assert.ok(DF.alturaMinimaSobreBarreira >= DF.alturaParado &&
-        DF.alturaMinimaSobreBarreira < DF.alturaSalto,
-        'o mínimo a limpar tem de ficar entre a barreira parada e a barreira a saltar');
+    assert.strictEqual(baixos.length, 0, `remates dentro da barreira: ${baixos.slice(0, 4).join(', ')}`);
 });
 
 test('o remate por baixo passa mesmo por baixo da barreira no ar', () => {
@@ -351,23 +325,4 @@ test('a batida solta toda a gente do lugar do lance parado', () => {
     const corpo = srcPlayer.slice(ini, fim);
     assert.ok(corpo.includes('pl.setPieceTarget = null'),
         'o setPieceTarget não é limpo na batida: a equipa fica especada nos lugares da cobrança');
-});
-
-test('o guarda-redes cobre o lado que a barreira NÃO fecha', () => {
-    /*
-    A barreira está encostada ao poste do lado de onde se bate (ver
-    lugaresDaBarreira); esse canto é dela. Ao meio da linha, como num penálti,
-    o guarda-redes duplicava metade do que ela já tapava.
-    */
-    assert.ok(DF.deslocamentoGk > 0 && DF.deslocamentoGk <= 3.0,
-        `deslocamentoGk=${DF.deslocamentoGk}: ou não sai do meio, ou já deixou o poste dele aberto`);
-
-    const srcSet = semCR(fs.readFileSync(
-        path.join(raiz, 'js', 'match', 'match_setpieces.js'), 'utf8'));
-    assert.ok(srcSet.includes('this.faltaDirectaGkX = -ladoBarreira'),
-        'o guarda-redes voltou a ficar ao meio da linha na montagem');
-
-    const srcPl = semCR(fs.readFileSync(path.join(raiz, 'js', 'player.js'), 'utf8'));
-    assert.ok(srcPl.includes('Match.faltaDirectaGkX'),
-        'o updateGK não lê a posição de espera da falta directa: ele volta ao meio no primeiro frame');
 });

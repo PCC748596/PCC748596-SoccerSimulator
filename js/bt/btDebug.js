@@ -104,7 +104,6 @@ const BTDebug = {
                 if (stateAfter === 'SHOOT') tipo = 'Rematar';
                 else if (player.isCross) tipo = 'Cruzar';
                 else if (player.isThroughBall) tipo = 'Lancar';
-                else if (player.isPasseEspaco) tipo = 'Espaco';
                 else tipo = 'Passar';
 
                 const pressao = this._nearestOpponentDist(player) < this.PRESSURE_DIST_THRESHOLD;

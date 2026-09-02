@@ -465,19 +465,10 @@ Object.assign(Match, {
                 (this.state !== 'PLAY' && this.state !== 'FREE_KICK')) {
                 this.faltaDirecta = false;
                 this.faltaDirectaPlano = null;
-                this.faltaDirectaGkX = null;
                 (this.faltaDirectaBarreira || []).forEach(p => { p.naBarreiraFalta = false; });
                 this.faltaDirectaBarreira = null;
             }
         }
-
-        /*
-        A reposicao com bola de reserva corre em qualquer lance parado — ver
-        Match.iniciarReposicao (match_setpieces.js). E antes dos ramos de cada
-        tipo porque e ela que decide QUANDO o lance passa a contar tempo.
-        */
-        if (this.reposicao) this.atualizarReposicao(dt);
-        if (typeof MultiBall !== 'undefined' && MultiBall.update) MultiBall.update(dt);
 
         if (this.state === 'THROW_IN') {
             this.setPieceTimer += dt;

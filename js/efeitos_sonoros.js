@@ -33,26 +33,12 @@ const EfeitosSonoros = {
     volumeApito: 0.55,
     volumeChute: 0.40,
 
-    /*
-    O ESTÁDIO NO GOLO (assets/Soccer_Crowd_Cheerin.mp3).
-
-    Alto de propósito, e acima do apito: é a única altura em que o estádio
-    tapa tudo o resto. Não leva atenuação por distância — a bancada não está
-    onde a bola está.
-    */
-    volumeGolo: 0.75,
-
     // Quantas cópias de cada som podem tocar ao mesmo tempo.
     vozes: 4,
 
     // Segundos mínimos entre dois disparos do MESMO som.
     intervaloMinApito: 0.25,
     intervaloMinChute: 0.08,
-    /*
-    O festejo é longo; dois golos seguidos dentro deste intervalo (só acontece
-    com o jogo em 10x) não sobrepõem duas multidões.
-    */
-    intervaloMinGolo: 3.0,
 
     /*
     Distância a partir da qual o chute deixa de se ouvir, e a que ele já está
@@ -77,7 +63,6 @@ const EfeitosSonoros = {
         const c = caminhos || {};
         this._criar('apito', c.apito || 'assets/apito.mpeg', this.volumeApito);
         this._criar('chute', c.chute || 'assets/chute.mpeg', this.volumeChute);
-        this._criar('golo', c.golo || 'assets/Soccer_Crowd_Cheerin.mp3', this.volumeGolo);
     },
 
     _criar(nome, url, volume) {
@@ -140,14 +125,6 @@ const EfeitosSonoros = {
     */
     apito(forca) {
         this.tocar('apito', forca, this.intervaloMinApito);
-    },
-
-    /*
-    GOLO. A bancada. Uma voz só, e sem atenuação por distância: o estádio
-    inteiro festeja, não é um som que venha de um sítio do campo.
-    */
-    golo() {
-        this.tocar('golo', 1.0, this.intervaloMinGolo);
     },
 
     /*
