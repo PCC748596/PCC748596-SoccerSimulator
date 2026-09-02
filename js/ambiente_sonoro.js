@@ -28,12 +28,27 @@ const AmbienteSonoro = {
     volumeAtaque: 0.55,
     volumeGolo: 1.00,
 
+    /*
+    O GRITO DO GOLO e uma faixa PROPRIA, nao a de fundo mais alta.
+
+    O golo levantava o volume do murmurio do estadio ate 1.0 — mais alto, mas
+    o mesmo som: um estadio a murmurar. O grito e outra coisa, e agora e o
+    `assets/Soccer_Crowd_Cheerin.mp3`, disparado uma vez na entrada em GOAL e
+    tocado POR CIMA da faixa de fundo, que baixa para lhe dar espaco.
+    */
+    ficheiroGrito: 'assets/Soccer_Crowd_Cheerin.mp3',
+    volumeGrito: 0.9,
+    // Enquanto o grito toca, o fundo baixa para isto (fica la, mas atras).
+    volumeFundoNoGrito: 0.35,
+
     // Segundos para o volume subir e descer. A subida é mais rápida do que a
     // descida: uma bancada acende-se de repente e vai-se abaixo devagar.
     subida: 0.6,
     descida: 2.5,
 
     _audio: null,
+    _grito: null,
+    _estadoAnterior: null,
     /*
     ARRANCA DESLIGADO, e o botão do painel nasce em OFF a condizer
     (index.html, `btn-som`). Quem quiser som liga-o; um separador a abrir
@@ -47,6 +62,9 @@ const AmbienteSonoro = {
 
     init() {
         this._audio = new Audio('assets/SoccerStadium1.mp3');
+        this._grito = new Audio(this.ficheiroGrito);
+        this._grito.preload = 'auto';
+        this._grito.volume = this.volumeGrito;
         this._audio.loop = true;
         this._audio.preload = 'auto';
         // Desligado nasce MESMO a zero: o `update` só corrige no frame
@@ -83,6 +101,14 @@ const AmbienteSonoro = {
     update(dt) {
         if (!this._audio) return;
 
+        /*
+        O GRITO DISPARA NA ENTRADA EM GOAL, e so uma vez: enquanto o estado
+        for GOAL a faixa continua a tocar sozinha ate ao fim.
+        */
+        const estado = (typeof Match !== 'undefined') ? Match.state : null;
+        if (estado === 'GOAL' && this._estadoAnterior !== 'GOAL') this.gritarGolo();
+        this._estadoAnterior = estado;
+
         this._alvo = this.volumeAlvo();
 
         // Aproximação exponencial, com constante de tempo diferente a subir e
@@ -91,8 +117,11 @@ const AmbienteSonoro = {
         const k = 1 - Math.exp(-dt / Math.max(0.01, tau));
         this._actual += (this._alvo - this._actual) * k;
 
+        // Com o grito no ar, o fundo sai da frente.
+        const aGritar = !!(this._grito && !this._grito.paused && !this._grito.ended);
+        const tecto = aGritar ? this.volumeFundoNoGrito : 1;
         this._audio.volume = this._ligado
-            ? Math.max(0, Math.min(1, this._actual))
+            ? Math.max(0, Math.min(tecto, this._actual))
             : 0;
     },
 
@@ -110,11 +139,27 @@ const AmbienteSonoro = {
         return (maior > repouso + 0.01) ? this.volumeAtaque : this.volumeRepouso;
     },
 
+    /*
+    Toca o grito do inicio. Se o golo anterior ainda estiver a soar, recomeca
+    — dois golos seguidos sao dois gritos, nao um a montar-se no outro.
+    */
+    gritarGolo() {
+        if (!this._grito || !this._ligado) return;
+        this._grito.volume = this.volumeGrito;
+        try { this._grito.currentTime = 0; } catch (e) { /* ainda sem dados */ }
+        const pr = this._grito.play();
+        // Recusado pela politica de autoplay: nao e erro (ver tentarTocar).
+        if (pr && pr.catch) pr.catch(() => { });
+    },
+
     setLigado(on) {
         this._ligado = on;
         if (!this._audio) return;
         if (on) this.tentarTocar();
-        else this._audio.volume = 0;
+        else {
+            this._audio.volume = 0;
+            if (this._grito) { this._grito.pause(); this._grito.volume = 0; }
+        }
     },
 
     get ligado() { return this._ligado; }

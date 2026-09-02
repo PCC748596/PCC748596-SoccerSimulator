@@ -56,7 +56,7 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     const sockMats = [new THREE.MeshStandardMaterial({ map: sockTex }), new THREE.MeshStandardMaterial({ map: sockTex }), new THREE.MeshStandardMaterial({ color: corCamisa }), new THREE.MeshStandardMaterial({ color: corCamisa }), new THREE.MeshStandardMaterial({ map: sockTex }), new THREE.MeshStandardMaterial({ map: sockTex })];
 
     const u = 1.0; const corpo = new THREE.Group();
-    const rig = { pelvis: null, chest: null, neck: null, lArm: null, rArm: null, lElbow: null, rElbow: null, lHand: null, rHand: null, lLeg: null, rLeg: null, lKnee: null, rKnee: null, lFoot: null, rFoot: null, olhoEsq: null, olhoDir: null };
+    const rig = { pelvis: null, chest: null, neck: null, lArm: null, rArm: null, lElbow: null, rElbow: null, lHand: null, rHand: null, lLeg: null, rLeg: null, lKnee: null, rKnee: null, lFoot: null, rFoot: null, lSola: null, rSola: null, olhoEsq: null, olhoDir: null };
 
     const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 850);
     /*
@@ -147,15 +147,30 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
         const posTravas = [[-u * 0.12, u * 0.25], [u * 0.12, u * 0.25], [-u * 0.12, 0], [u * 0.12, 0], [-u * 0.12, -u * 0.3], [u * 0.12, -u * 0.3]];
         posTravas.forEach(pos => { const t = criarPeca(studGeo, studMat); t.position.set(pos[0], -0.22, pos[1]); chuteira.add(t); });
 
-        grp.rotation.z = x < 0 ? -Math.PI / 32 : Math.PI / 32; peG.rotation.y = x < 0 ? -Math.PI / 16 : Math.PI / 16; pelvis.add(grp); return { raiz: grp, joelho: joelho, pe: peG };
+        /*
+        A SOLA — um marcador vazio no ponto mais baixo da chuteira.
+
+        Serve para o corpo poder ASSENTAR no relvado (ver `assentarNoRelvado`
+        em player.js): ler a posicao mundial deste no e uma conta, e
+        acompanha a rotacao do pe — ao contrario de um offset fixo, que
+        deixaria de valer assim que o tornozelo roda.
+
+        A chuteira esta em y = -0.2 e tem u*0.4 de altura, portanto a base
+        fica em -0.2 - u*0.2; as travas descem mais u*0.02.
+        */
+        const sola = new THREE.Object3D();
+        sola.position.set(0, -0.2 - u * 0.2 - u * 0.02, u * 0.25);
+        peG.add(sola);
+
+        grp.rotation.z = x < 0 ? -Math.PI / 32 : Math.PI / 32; peG.rotation.y = x < 0 ? -Math.PI / 16 : Math.PI / 16; pelvis.add(grp); return { raiz: grp, joelho: joelho, pe: peG, sola: sola };
     }
 
     // As mãos entram no rig: o IK precisa da ponta da cadeia, e o teste
     // de defesa lê a posição REAL dela no mundo (ver js/gk_dive.js).
     const bracoEsq = criarBraco(0.8); rig.lArm = bracoEsq.raiz; rig.lElbow = bracoEsq.cotovelo; rig.lHand = bracoEsq.mao;
     const bracoDir = criarBraco(-0.8); rig.rArm = bracoDir.raiz; rig.rElbow = bracoDir.cotovelo; rig.rHand = bracoDir.mao;
-    const pernaEsq = criarPerna(0.4); rig.lLeg = pernaEsq.raiz; rig.lKnee = pernaEsq.joelho; rig.lFoot = pernaEsq.pe;
-    const pernaDir = criarPerna(-0.4); rig.rLeg = pernaDir.raiz; rig.rKnee = pernaDir.joelho; rig.rFoot = pernaDir.pe;
+    const pernaEsq = criarPerna(0.4); rig.lLeg = pernaEsq.raiz; rig.lKnee = pernaEsq.joelho; rig.lFoot = pernaEsq.pe; rig.lSola = pernaEsq.sola;
+    const pernaDir = criarPerna(-0.4); rig.rLeg = pernaDir.raiz; rig.rKnee = pernaDir.joelho; rig.rFoot = pernaDir.pe; rig.rSola = pernaDir.sola;
 
     corpo.scale.set((1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9); return { corpo, rig, backMat };
 }

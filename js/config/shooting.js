@@ -12,6 +12,25 @@ const ShootingModel = {
     // metros adicionais a skill 100
     skillRange: 10.0,
     maxOffsetX: 24.0,    // além disto o ângulo é mau demais para rematar
+
+    /*
+    E O ANGULO CONTA, nao so o |x| e a distancia.
+
+    O `emZonaDeFinalizacao` era um rectangulo — distancia dentro do
+    `shootingRange` e |x| abaixo do `maxOffsetX` — e um rectangulo nao sabe
+    nada de trave. Medido em 2400 s: 44% dos remates saiam com menos de 15
+    graus de baliza aberta, e os piores eram um CF a |x| 13.7 m e 4.3 m da
+    linha de fundo (9.3 graus) e outro a |x| 21.2 m — fora da largura da area
+    — e 8.1 m da linha (6.7 graus). Dali cruza-se.
+
+    Para referencia: da marca do penalti a baliza abre ~37 graus, e da entrada
+    da area pelo eixo ~22.
+
+    `distanciaSemAngulo` e a excepcao que tem de existir: encostado a baliza,
+    o desvio ao primeiro poste e remate, por mais fechado que seja o angulo.
+    */
+    anguloMinimo: 14 * Math.PI / 180,
+    distanciaSemAngulo: 6.0,   // metros a baliza: dai para dentro o angulo nao manda
     angleFloor: 0.66,    // fracção do alcance que sobra no pior ângulo
 
     // Um defesa que suba não remata como um avançado: só de muito perto.

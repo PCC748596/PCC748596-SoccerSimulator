@@ -3,6 +3,12 @@ const _p_v2 = new THREE.Vector3();
 const _p_v3 = new THREE.Vector3();
 const _p_v4 = new THREE.Vector3();
 
+/*
+Os estados do guarda-redes em que o corpo esta no ar de propósito — quem
+esta neles nao e assentado no relvado (ver assentarNoRelvado).
+*/
+const GK_ESTADOS_NO_AR = ['mergulho', 'salto_alto'];
+
 class FootballPlayer {
     constructor(id, color1, color2, team) {
         this.id = id; this.team = team; this.role = 'def';
@@ -1463,6 +1469,9 @@ class FootballPlayer {
         }
         
         this.model.position.y = ALTURA_BASE_Y;
+        // E assenta: esta e a pose de quem espera num lance parado, e era
+        // dela que o guarda-redes ficava a 11 cm do relvado.
+        this.assentarNoRelvado();
     }
 
     findPassTargetRelaxed(filterOrDir) {
@@ -3623,7 +3632,21 @@ class FootballPlayer {
         rig.rFoot.rotation.x = lerpTo(rig.rFoot.rotation.x, 0, 0.5);
     }
 
+    /*
+    O INVOLUCRO existe por causa dos RETURNS.
+
+    O `animateBonesInterno` sai por quatro sitios diferentes (o domínio pela
+    direita, o carrinho, o salto e o ramo de quem esta PARADO) e era
+    precisamente o ultimo que deixava meia equipa a pairar num lance parado:
+    a chamada ao `assentarNoRelvado` estava no fim do metodo, depois do
+    return. Aqui corre sempre, e qualquer saida futura fica coberta.
+    */
     animateBones(dt) {
+        this.animateBonesInterno(dt);
+        this.assentarNoRelvado();
+    }
+
+    animateBonesInterno(dt) {
         let speed = this.velocity.length(); let rig = this.rig;
 
         // CHEST_CONTROL NÃO entra na lista: a matada no peito não mexe na
@@ -3925,6 +3948,60 @@ class FootballPlayer {
 
             this.model.position.y = ALTURA_BASE_Y + P.ressalto;
         }
+    }
+
+    /*
+    ASSENTAR NO RELVADO — o pé de apoio toca o chão.
+
+    Nada no desenho do corpo garantia isto. A pose escreve o `ressalto` da
+    passada directamente no `model.position.y` (ver o fim do `animateBones`) e
+    os keyframes trazem `altura` até +0.15 m; a perna, essa, faz o que o clip
+    mandar. O resultado media-se: em 36% das leituras de um jogo o ponto mais
+    baixo do corpo estava mais de 5 cm ACIMA do relvado, com p95 de 11 cm — e
+    num lance parado, com toda a gente à espera, era o que mais se via.
+
+    A correcção é a mais simples que resolve: lê-se a altura das duas SOLAS
+    (marcadores no ponto mais baixo de cada chuteira, ver `criarPerna` em
+    pose.js — acompanham a rotação do tornozelo, ao contrário de um offset
+    fixo) e desce-se o corpo até a mais baixa assentar.
+
+    SÓ DESCE. Levantar quem está enterrado seria a mesma conta ao contrário,
+    mas quem está enterrado 1 cm lê-se como pé na relva; quem flutua 11 cm
+    lê-se como um boneco a pairar. E há gente que TEM de estar no ar — quem
+    salta, quem se atira num carrinho, o guarda-redes a voar — e essa fica de
+    fora pela guarda, não pela conta.
+
+    `tectoAssentamento` limita a descida: uma pose partida não pode enterrar
+    ninguém no relvado.
+    */
+    assentarNoRelvado() {
+        const rig = this.rig;
+        if (!rig || !rig.lSola || !rig.rSola) return;
+
+        // Quem está no ar de propósito não é assentado.
+        if (this.jumpTimer > 0) return;
+        const s = this.fsm ? this.fsm.currentState : '';
+        if (s === 'SLIDE_TACKLE' || s === 'TACKLE') return;
+        /*
+        Os estados em que ele esta MESMO no ar saem de uma lista e nao de
+        comparacoes escritas aqui: `tests/gk_agarra_no_fim_do_gesto.test.js`
+        procura o ramo do `updateGK` pela PRIMEIRA ocorrencia de
+        `this.gkEstado === '<estado>'` no ficheiro, e uma comparacao solta
+        aqui em cima passava a ser a que ele encontrava.
+        */
+        if (this.role === 'gk' &&
+            (this.dive || GK_ESTADOS_NO_AR.indexOf(this.gkEstado) >= 0)) return;
+
+        if (!this._solaEsq) { this._solaEsq = new THREE.Vector3(); this._solaDir = new THREE.Vector3(); }
+        this.model.updateMatrixWorld(true);
+        const sola = Math.min(
+            rig.lSola.getWorldPosition(this._solaEsq).y,
+            rig.rSola.getWorldPosition(this._solaDir).y);
+
+        if (sola <= 0) return;   // já toca, ou está mais abaixo: não se levanta
+        const tecto = (typeof PlayerPose !== 'undefined' && PlayerPose.tectoAssentamento)
+            ? PlayerPose.tectoAssentamento : 0.30;
+        this.model.position.y -= Math.min(sola, tecto);
     }
 
     /*
@@ -4563,8 +4640,24 @@ class FootballPlayer {
                 sempre um pouco flectidos — fica; o que muda é o ciclo das
                 pernas, que passa a ser o do jogo.
                 */
+                /*
+                E O CICLO CORRE AO CONTRARIO QUANDO ELE ANDA DE COSTAS.
+
+                O guarda-redes olha SEMPRE para a bola (`lookAtBola`, aqui em
+                cima), portanto recuar para a linha e andar para tras — e o
+                `animTimer` so sabia somar. O que se via era ele a deslocar-se
+                para tras com passos para a frente.
+
+                E a mesma regra do jogador de campo (ver `movingBackwards` no
+                animateBonesInterno): se a velocidade aponta contra a frente do
+                corpo, o relogio da passada anda ao contrario.
+                */
+                const frenteGk = _v2.set(0, 0, 1).applyQuaternion(gkCorpo.quaternion);
+                const deCostas = (frenteGk.x * velX + frenteGk.z * velZ) < -0.3 * velPlanar;
+
                 const P0 = getGaitPose(0, velPlanar);
-                this.animTimer += (velPlanar * dt) / P0.passada;
+                const avancoGk = (velPlanar * dt) / P0.passada;
+                this.animTimer += deCostas ? -avancoGk : avancoGk;
                 const t = ((this.animTimer % 1.0) + 1.0) % 1.0;
                 const pose = getGaitPose(t, velPlanar);
 
@@ -5218,6 +5311,14 @@ class FootballPlayer {
         } else if (this.gkEstado !== 'idle') {
             this.velocity.set(0, 0, 0);
         }
+
+        /*
+        O guarda-redes NAO passa pelo animateBones — a pose dele sai daqui —
+        e por isso era o que mais flutuava: medido num lance parado, a sola a
+        11 cm do relvado com o corpo em y = 0. O `assentarNoRelvado` sabe
+        deixar em paz quem esta a voar (mergulho, salto).
+        */
+        this.assentarNoRelvado();
     }
 
     /*

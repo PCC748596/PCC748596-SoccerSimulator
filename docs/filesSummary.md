@@ -259,6 +259,200 @@ de estados que a árvore não pisa, onde já estavam o `LATERAL`, o `SHOOT` e o
     duracao media do drible    0.02 s  ->  0.43 s   (o gesto inteiro são 0.55)
     saidas para PASS           10/14   ->  0/15
 
+#### A devolução do guarda-redes com a mão vai ao pé
+
+Pedido: *"ajusta a devolução da bola do goleiro com a mão para o pé ou, no
+máximo, peito dos jogadores"*.
+
+A entrega ia pelo caminho do passe normal (`executePassGameplay`, TIPO 1), e o
+passe normal sorteia arco por faixa de distância. Medido a 15,8 m de distância
+média: **apex de 2,27 m, 3,27 no pior caso** — a bola por cima da cabeça de
+quem a ia receber.
+
+Agora tem balística própria (`GkThrowModel`, js/config/passing.js):
+
+  - até `rasteiraMax` (18 m) **rola**, com `vChegada` de ritmo de chegada;
+  - daí para a frente procura-se a trajectória mais BAIXA que lá chega, com o
+    apex travado em `apexMax` (1,40 m — a altura do peito) e a saída em `vMax`;
+  - sem solução dentro dos dois tectos, rola na mesma.
+
+Duas coisas que a medição obrigou a corrigir:
+
+- **O tecto do apex é medido do CHÃO, e a bola parte da MÃO (~1,1 m).** Medido
+  a partir do ponto de largada, ela subia 1,2 m acima da mão — 2,3 m do chão,
+  outra vez a altura da cabeça. O que sobra até ao tecto é o que ela pode subir.
+- **A bola rolada sai do CHÃO, não da mão.** O `velocidadeRasteiraPara` resolve
+  uma bola que rola desde o início; largá-la a 1,1 m fazia-a cair, ressaltar e
+  perder a energia toda: a 18 m chegava a **1,6 m/s** em vez dos 7,5 pedidos, e
+  a 20 m já não chegava. Um guarda-redes que rola a bola põe-lhe a mão no
+  relvado, e é isso que o código faz agora.
+
+Lote forçado, 12 entregas por distância:
+
+    dist     apex    altura no alvo   chegou a        velocidade de chegada
+     8 m     0.11    0.11             8.1 m           8.4 m/s
+    12 m     0.11    0.11            12.1 m           7.8
+    16 m     0.11    0.11            16.0 m           7.7
+    20 m     0.11    0.11            20.1 m           7.3
+    24 m     0.11    0.11            24.1 m           6.6
+
+Com estes tectos a entrega acaba sempre rolada: para servir 20 m por baixo do
+peito seriam precisos ~30 m/s, acima do `vMax`. É o que o pedido descreve — a
+mão rola, o pé é que atira longe.
+
+#### O grito do golo é uma faixa própria
+
+Pedido: usar o `assets/Soccer_Crowd_Cheerin.mp3`, que estava no repositório sem
+ninguém o chamar. O golo apenas levantava o volume da faixa de fundo
+(`SoccerStadium1.mp3`) até 1.0 — mais alto, mas o mesmo murmúrio.
+
+Agora o `AmbienteSonoro` tem uma segunda faixa, disparada uma vez na ENTRADA em
+`GOAL` (`gritarGolo`) e tocada por cima do fundo, que baixa a
+`volumeFundoNoGrito` enquanto o grito dura. Dois golos seguidos são dois gritos:
+a faixa recomeça em vez de se montar sobre si própria. Segue o interruptor do
+painel como o resto do som, e a recusa do autoplay é engolida como no
+`tentarTocar`.
+
+#### A falta do carrinho apitava a dois metros e meio de distância
+
+Relato: *"estão a acontecer umas faltas em que os jogadores não parecem
+próximos"*. Medido em 900 s, distância entre infractor e vítima no instante do
+apito:
+
+    carrinho   8 faltas   media 2.32 m   mediana 2.34   max 2.61
+    contacto   4          media 0.91     mediana 0.90
+    desarme    5          media 0.90     mediana 0.90
+
+Metade das faltas do jogo eram carrinhos apitados com **2,3 m entre os dois
+corpos**. A causa: o desfecho do duelo (`avaliarDueloPerdido`) resolve-se no
+instante em que o carrinho é LANÇADO — o corpo ainda vem a caminho, e a falta
+já foi marcada.
+
+O contacto passou a ser condição: `RefereeModel.faltas.raioDuelo` (1,6 m — mais
+largo do que o 1,0 m do choque, porque num carrinho a perna vai esticada). Sem
+contacto não há falta. Depois:
+
+    carrinho   media 1.44 m   mediana 1.51   max 1.60
+    acima de 2 m entre os dois:  8/17  ->  0/12
+
+O preço é menos faltas por jogo (17 -> 12 em 900 s): as que desapareceram são
+exactamente as que não se viam como falta. `RefereeModel.faltas.escala` é o
+botão para repor o volume, se se quiser.
+
+#### Os pés e o relvado — MEDIDO, não corrigido
+
+Relato: *"os jogadores não estão encostando no gramado"*. Confirma-se. Ponto
+mais baixo do corpo, em metros acima do relvado, a 4 Hz num jogo corrido
+(5277 leituras, saltos excluídos):
+
+    todos                media  0.030   p05 -0.033   mediana -0.013   p95  0.111
+    parados ou a andar   media  0.016   p05 -0.051   mediana -0.013   p95  0.111
+    acima de 5 cm do chao: 1888/5277 (36%)      enterrados (< -2 cm): 329
+
+Ou seja: um terço do tempo o corpo inteiro está a flutuar até 11 cm, e em 6% das
+leituras está enterrado. A causa está nos clips: o `altura` dos keyframes
+(js/config/animations.js) sobe até **+0.15 m** em algumas poses de corrida e de
+remate, e escreve-se directo no `model.position.y` — **não há nada que force o
+pé de apoio a tocar o chão**. É uma camada que falta (plantar o pé: medir o
+ponto mais baixo do rig e descer o corpo até ele assentar), não um número
+errado, e por isso fica medida aqui e não mexida.
+
+#### Os pés assentam no relvado — e o `return` que escondia meia equipa
+
+Relato: *"os jogadores continuam acima do gramado depois que os resets são
+accionados: falta, penálti, falta directa"*.
+
+Confirmado, e é geral (também em jogo corrido, mas num lance parado — toda a
+gente quieta — é que se vê). Ponto mais baixo do corpo durante a montagem,
+22 jogadores × 12 leituras por lance:
+
+    antes   media +0.032   mediana -0.013   p95 +0.111   acima de 5 cm: 96/264
+
+A causa não é um número errado: **não havia camada nenhuma** que garantisse o
+pé no chão. A pose escreve o `ressalto` da passada directamente no
+`model.position.y` e os keyframes trazem `altura` até +0.15 m; a perna faz o
+que o clip mandar, e ninguém confere o resultado.
+
+Agora há: cada chuteira leva um marcador na SOLA (`criarPerna`, pose.js — um
+`Object3D` no ponto mais baixo do calçado, que acompanha a rotação do
+tornozelo, ao contrário de um offset fixo), e o `assentarNoRelvado`
+(player.js) desce o corpo até a mais baixa das duas assentar. **Só desce**:
+quem salta, quem se atira num carrinho e o guarda-redes a voar ficam de fora
+pela guarda, e quem está um centímetro na relva lê-se como pé na relva.
+
+Três sítios tiveram de a chamar, e a ordem em que apareceram conta a história:
+
+- **o `animateBones`** — e não bastou pô-la no fim dele. O método sai por
+  QUATRO returns, e um deles é o ramo de quem está PARADO: era exactamente
+  meia equipa de um lance parado a saltar a chamada. Passou a haver um
+  invólucro (`animateBones` chama `animateBonesInterno` e assenta a seguir),
+  que cobre as saídas de hoje e as de amanhã;
+- **o `updateGK`**, porque o guarda-redes não passa pelo `animateBones` — a
+  pose dele sai dali. Era o que mais flutuava: sola a 11 cm com o corpo em
+  y = 0;
+- **o `resetBonesToDefault`**, que é a pose de quem espera num lance parado.
+
+Depois, nos seis lances parados forçados:
+
+    falta / falta directa / penalti / canto / lateral / tiro de meta
+    media -0.017 .. -0.013   p95 -0.012   acima de 5 cm: 0/264 em todos
+
+E em jogo corrido, 7913 leituras: **acima de 5 cm passou de 36% para 3.7%** — o
+que sobra são os casos em que o corpo está mesmo no ar e a guarda os deixa
+passar (mergulhos, carrinhos, o frame a seguir a um salto).
+
+> Nota da medição: o metro é o canto mais baixo da caixa de cada malha, que
+> num pé rodado desce abaixo da sola verdadeira. Por isso o "enterrado" que
+> aparece nas contas (mediana -0.03 m) é sobretudo o método, não o corpo: o
+> marcador da sola fica em 0 e as travas 1.2 cm abaixo.
+
+#### O guarda-redes recuava com passos para a frente
+
+Relato directo. Ele olha SEMPRE para a bola (`lookAtBola` no `updateGK`),
+portanto recuar para a linha é andar de costas — e o relógio da passada só
+sabia somar:
+
+    this.animTimer += (velPlanar * dt) / P0.passada;
+
+O jogador de campo já tinha a regra (`movingBackwards` no
+`animateBonesInterno`): se a velocidade aponta contra a frente do corpo, o
+ciclo corre ao contrário. O guarda-redes não a tinha. Medido em 240 s:
+
+    frames a andar                       16880
+    frames a RECUAR de costas             5792   (34% do tempo a andar)
+    desses, com o ciclo PARA A FRENTE     5766   (100%)
+
+Depois: **0%**.
+
+#### Remata-se de junto da linha de fundo, onde se devia cruzar
+
+Relato: *"os jogadores estão a tentar chutar para o golo praticamente sem
+ângulo, quase na linha de fundo, quando deveriam cruzar"*.
+
+O `emZonaDeFinalizacao` (utils.js) era um RECTÂNGULO: distância dentro do
+`shootingRange` e |x| abaixo do `maxOffsetX`. Um rectângulo não sabe nada de
+trave — é a mesma falha que a falta directa já tinha corrigido no seu lado
+(ver o trapézio do `decisaoDeFalta`).
+
+Medido em 2400 s, ângulo que a baliza abre no ponto do remate:
+
+    media 17.7 graus   mediana 19.7   minimo 6.7
+    abaixo de 15 graus: 8/18 (44%)      abaixo de 10: 2/18
+
+Os dois piores diziam tudo: um CF a **|x| 13.7 m e 4.3 m da linha de fundo**
+(9.3°) e outro a **|x| 21.2 m — fora da largura da grande área — e 8.1 m da
+linha** (6.7°). Dali cruza-se.
+
+Agora o ângulo entra na decisão (`ShootingModel.anguloMinimo`, 14°), com uma
+excepção que tem de existir: encostado à baliza (`distanciaSemAngulo`, 6 m) o
+ângulo deixa de mandar, porque o desvio ao primeiro poste é remate. Depois:
+
+    media 21.7 graus   mediana 16.6   minimo 11.5
+    abaixo de 10 graus: 0/23        |x| medio do remate: 10.3 m -> 7.2 m
+
+Para referência: da marca do penálti a baliza abre ~37°, e da entrada da área
+pelo eixo ~22°.
+
 Ficheiros: `avancoFK`, `naBarreiraFalta`/`faltaDirectaBarreira` e o
 `foraDoCorredor` no ramo `FREE_KICK` do `setupSetPiece`
 (js/match/match_setpieces.js); `DirectFreeKickModel` e
@@ -273,7 +467,16 @@ lance no `Match.update` (js/match/match_loop.js) e a limpeza no `resetPlay`
 o gesto do drible em `DribbleModel.duracaoGesto` (js/config/player_behavior.js),
 no `case DRIBBLE` (js/fsm.js) e na lista de estados que o `PlayerBT.tick` não
 pisa (js/bt/player_bt.js). Testes: `tests/falta_directa.test.js` (16 casos) e
-`tests/centro_do_bloco.test.js`.
+`tests/centro_do_bloco.test.js`. A entrega do guarda-redes em `GkThrowModel`
+(js/config/passing.js) e no ramo do TIPO 1 do `executePassGameplay` (js/fsm.js);
+o grito do golo em `AmbienteSonoro.gritarGolo` (js/ambiente_sonoro.js); o
+contacto obrigatorio da falta em `RefereeModel.faltas.raioDuelo` e
+`avaliarDueloPerdido` (js/officials.js). O marcador da sola em `criarPerna`
+(js/pose.js) e o `assentarNoRelvado` com o invólucro do `animateBones`
+(js/player.js); a marcha de costas do guarda-redes no ramo `andando` do
+`updateGK` (js/player.js); o ângulo mínimo do remate em
+`ShootingModel.anguloMinimo` (js/config/shooting.js) e no `emZonaDeFinalizacao`
+(js/utils.js).
 Medição: `node tools/headless/falta_directa.js [quantas]`.
 
 ### Sessão de 1 de Setembro de 2026 — a formação é do treinador

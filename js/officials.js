@@ -165,6 +165,21 @@ const RefereeModel = {
         acontece no jogo: o corpo vai no chão, em movimento, e quem falha a
         bola acerta na perna.
         */
+        /*
+        E O DUELO PERDIDO SO E FALTA SE HOUVER CONTACTO.
+
+        O desfecho do duelo resolve-se no instante em que o carrinho e
+        LANCADO, e o corpo ainda vem a caminho: media medida, o apito saia
+        com **2.32 m entre os dois** (mediana 2.34, maximo 2.61), contra 0.90
+        no desarme e 0.91 no choque. Metade das faltas de um jogo eram assim,
+        e o que se via era o arbitro a marcar falta a dois jogadores que nao
+        se tocaram — o relato.
+
+        `raioDuelo` e a distancia a que a perna ainda alcanca o adversario:
+        mais larga do que o raio do choque (1.0 m), porque num carrinho o
+        corpo esta esticado, mas nao tanto que apanhe quem passou ao lado.
+        */
+        raioDuelo: 1.6,
         probCarrinhoFalhado: 0.15,
         probDesarmeFalhado: 0.030,
 
@@ -1150,6 +1165,19 @@ const Officials = {
         if (!defensor || !portador || defensor.expulso) return;
 
         const F = RefereeModel.faltas;
+
+        /*
+        SEM CONTACTO NAO HA FALTA. Ver a nota do `raioDuelo`: o desfecho do
+        duelo e conhecido quando o carrinho parte, com o corpo ainda a
+        caminho, e apitava-se a 2.3 m de distancia.
+        */
+        if (defensor.model && portador.model) {
+            const dx = defensor.model.position.x - portador.model.position.x;
+            const dz = defensor.model.position.z - portador.model.position.z;
+            const raio = (typeof F.raioDuelo === 'number') ? F.raioDuelo : 1.6;
+            if (dx * dx + dz * dz > raio * raio) return;
+        }
+
         const prob = (tipo === 'carrinho' ? F.probCarrinhoFalhado : F.probDesarmeFalhado) * F.escala;
         if (Math.random() >= prob) return;
 

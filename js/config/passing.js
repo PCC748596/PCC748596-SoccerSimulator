@@ -375,6 +375,45 @@ vinham so de decisao ma ou de dominio falhado.
                      costasMult) passa dos 30°, muito acima do "~9.2 graus"
                      documentado para sigmaMax sozinho
 */
+/*
+A DEVOLUCAO DO GUARDA-REDES COM A MAO.
+
+Ela ia pelo caminho do passe normal (`executePassGameplay`, TIPO 1), e o passe
+normal sorteia arco por faixa de distancia: media a 15.8 m, o lancamento subia
+a **2.27 m de apex** e chegava a 3.27 no pior caso — uma bola por cima da
+cabeca, que ninguem devolve com o pe.
+
+Um guarda-redes que entrega com a mao ou ROLA a bola pelo chao ou atira-a rente
+— nunca a lobe. Por isso a entrega tem balistica propria:
+
+    ate `rasteiraMax`   rola pelo chao, com `vChegada` de ritmo de chegada
+    dai para a frente   a trajectoria mais BAIXA que la chega, com o apex
+                        travado em `apexMax` (a altura do peito)
+
+Se nem com o tecto ha solucao, rola: uma bola no chao a 30 m e feia, uma bola
+a 4 m de altura e impossivel de dominar.
+*/
+const GkThrowModel = {
+    rasteiraMax: 18.0,    // ate aqui vai sempre pelo chao
+    vChegada: 7.5,        // m/s de chegada da bola rolada
+    /*
+    O tecto e ABSOLUTO, medido do chao — e a bola parte da MAO, a ~1.1 m.
+    Medir o apex a partir do ponto de largada deixava-a subir 1.2 m acima da
+    mao, ou seja 2.3 m do chao: a altura da cabeca, que e o que se via.
+    */
+    apexMax: 1.40,        // altura do PEITO, medida do CHAO: o tecto do voo
+    /*
+    E ha um tecto de FORCA. Uma bola rolada a 32 m pede 44 m/s para chegar
+    com ritmo — isso nao e uma entrega, e um tiro. Acima de `vMax` a bola sai
+    a `vMax` e chega mais lenta; quem entrega tao longe e o pe, nao a mao.
+    */
+    vMax: 22.0,           // m/s a saida, no maximo
+    elevMin: 4 * Math.PI / 180,
+    elevMax: 20 * Math.PI / 180
+};
+
+if (typeof window !== 'undefined') window.GkThrowModel = GkThrowModel;
+
 const PassErrorModel = {
     sigmaMax: 0.0878,      // ~5.0 graus (reduzido 10% e depois 25%)
     sigmaMin: 0.0061,      // ~0.35 graus (reduzido 10% e depois 25%)

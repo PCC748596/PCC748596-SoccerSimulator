@@ -1600,8 +1600,26 @@ function emZonaDeFinalizacao(p) {
     if (typeof ShootingModel === 'undefined') return false;
     const dx = p.model.position.x;
     const dz = p.targetGoalZ - p.model.position.z;
-    return Math.hypot(dx, dz) < p.shootingRange() &&
-        Math.abs(dx) < ShootingModel.maxOffsetX;
+    const dist = Math.hypot(dx, dz);
+    if (dist >= p.shootingRange() || Math.abs(dx) >= ShootingModel.maxOffsetX) return false;
+
+    /*
+    E O ANGULO. Um rectangulo nao sabe nada de trave: media-se 44% dos remates
+    com menos de 15 graus de baliza aberta, e os piores vinham de junto a linha
+    de fundo, de onde se cruza. Ver a nota do `anguloMinimo` no ShootingModel.
+
+    Encostado a baliza (`distanciaSemAngulo`) o angulo deixa de mandar: o
+    desvio ao primeiro poste e remate.
+    */
+    const angMin = ShootingModel.anguloMinimo;
+    if (typeof angMin === 'number' && dist > (ShootingModel.distanciaSemAngulo || 0) &&
+        typeof anguloDaBaliza === 'function') {
+        const larg = (typeof LARGURA_BALIZA !== 'undefined') ? LARGURA_BALIZA : 7.32;
+        if (anguloDaBaliza(p.model.position.x, p.model.position.z, p.targetGoalZ, larg) < angMin) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /*

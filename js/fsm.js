@@ -258,10 +258,64 @@ function executePassGameplay(p) {
         entre 30-45°. Estilo de passe "longo" força sempre o arco acima
         de `rasteiroMax` (`forcarArco`), como já fazia antes.
         */
-        const forcarArco = (Tatics.passe === 'longo');
-        const elev = resolverElevacaoPasse(distToTarget, forcarArco);
+        /*
+        A DEVOLUCAO DO GUARDA-REDES COM A MAO nao passa por aqui.
 
-        if (elev === null) {
+        O passe normal sorteia arco por faixa de distancia, e por isso a
+        entrega do guarda-redes saia lobada: medida a 15.8 m, subia a 2.27 m
+        de apex (3.27 no pior caso) — por cima da cabeca de quem a ia receber.
+        Um guarda-redes rola a bola ou atira-a rente; nunca a lobe.
+
+        Ate `rasteiraMax` vai pelo chao; dai para a frente e a trajectoria
+        mais baixa que la chega, com o apex travado a altura do PEITO
+        (`apexMax`). Sem solucao dentro do tecto, rola — ver GkThrowModel.
+        */
+        const G = (typeof GkThrowModel !== 'undefined') ? GkThrowModel : null;
+        if (p.isGkThrow && G) {
+            p.isGkThrow = false;
+            let resolvido = false;
+            // A bola parte da MAO: o que sobra ate ao tecto e o que ela pode
+            // SUBIR. Medir o apex a partir da largada deixava-a a 2.3 m do chao.
+            const y0Mao = Math.max(BallPhysics.raio, Match.ball.position.y);
+            const subidaMax = G.apexMax - y0Mao;
+            if (distToTarget > G.rasteiraMax && subidaMax > 0.05) {
+                const elevG = elevacaoComTectoDeApex(
+                    distToTarget, G.elevMax, subidaMax, G.elevMin);
+                const vG = velocidadeParaAlcance(distToTarget, elevG);
+                const subida = (vG !== null)
+                    ? Math.pow(vG * Math.sin(elevG), 2) / (2 * BallPhysics.gravidade)
+                    : Infinity;
+                if (vG !== null && vG <= G.vMax && subida <= subidaMax + 0.02) {
+                    Match.ballVel.y = vG * Math.sin(elevG);
+                    forcaPasse = vG * Math.cos(elevG);
+                    resolvido = true;
+                }
+            }
+            if (!resolvido) {
+                /*
+                A BOLA ROLADA SAI DO CHAO, nao da mao.
+
+                O `velocidadeRasteiraPara` resolve uma bola que ROLA desde o
+                inicio; larga-la a 1.1 m fazia-a cair, ressaltar e perder a
+                energia toda no caminho — medido, a 18 m chegava a 1.6 m/s em
+                vez dos 7.5 pedidos, e a 20 m ja nao chegava. Um guarda-redes
+                que rola a bola poe-lhe a mao no relvado, que e o que isto e.
+                */
+                Match.ball.position.y = BallPhysics.raio;
+                forcaPasse = Math.min(G.vMax,
+                    velocidadeRasteiraPara(distToTarget, G.vChegada));
+                Match.ballVel.y = 0;
+            }
+            usouBalistica = true;
+        }
+
+        const forcarArco = (Tatics.passe === 'longo');
+        const elev = (p.isGkThrow || usouBalistica)
+            ? null : resolverElevacaoPasse(distToTarget, forcarArco);
+
+        if (usouBalistica) {
+            // Ja resolvido acima (entrega do guarda-redes).
+        } else if (elev === null) {
             /*
             Passe rasteiro: chega jogável, não morto nem a queimar.
 
