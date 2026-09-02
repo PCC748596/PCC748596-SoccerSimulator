@@ -60,19 +60,31 @@ console.log(LF + '2 — a decisao, corrida');
     const iCond = src.indexOf("cond('campoAberto', (ctx) => {");
     const corpo = src.slice(iCond, src.indexOf(LF + '                }),', iCond));
 
-    const correr = ({ zoneAhead, haPasse }) => {
+    const correr = ({ zoneAhead, haPasse, naAlaLivre }) => {
         const CarryModel = { conduzirSoAcimaDe: LIMITE, limiteConducaoDefesa: 999 };
         const findBestPassAnywhere = () => (haPasse ? { type: 'direct', target: {} } : null);
+        /*
+        A excepcao da ala entra injectada: aqui testa-se a FRONTEIRA do
+        passe-antes-de-conduzir, e o corredor livre e outra pergunta (ver
+        `alaLivreParaOFundo` em player_bt.js). Com ela a false, o ramo tem de
+        se comportar como sempre.
+        */
+        const alaLivreParaOFundo = () => !!naAlaLivre;
         const ctx = {
             p: { role: 'mid', model: { position: { x: 0, z: 0 } }, dirZ: 1 },
             zoneAhead: zoneAhead,
             campoAberto: true
         };
-        const fn = new Function('CarryModel', 'findBestPassAnywhere',
+        const fn = new Function('CarryModel', 'findBestPassAnywhere', 'alaLivreParaOFundo',
             'return function (ctx) {' + corpo.slice(corpo.indexOf('{') + 1) + LF + 'return true; };'
-        )(CarryModel, findBestPassAnywhere);
+        )(CarryModel, findBestPassAnywhere, alaLivreParaOFundo);
         return { conduz: fn(ctx), ctx };
     };
+
+    // A EXCEPCAO DA ALA: corredor livre para o fundo ganha ao passe (pedido).
+    const rAla = correr({ zoneAhead: -10, haPasse: true, naAlaLivre: true });
+    if (!rAla.conduz) erro('o corredor da ala livre ja nao ganha ao passe');
+    else ok('homem da ala com o corredor livre: conduz, mesmo havendo passe');
 
     // O CASO QUE MOTIVOU ISTO: bola no proprio meio-campo, ha a quem passar.
     const r1 = correr({ zoneAhead: -10, haPasse: true });

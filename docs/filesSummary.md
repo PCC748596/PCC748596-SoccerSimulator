@@ -357,54 +357,38 @@ pé de apoio a tocar o chão**. É uma camada que falta (plantar o pé: medir o
 ponto mais baixo do rig e descer o corpo até ele assentar), não um número
 errado, e por isso fica medida aqui e não mexida.
 
-#### Os pés assentam no relvado — e o `return` que escondia meia equipa
+#### Os pés e o relvado — a camada de assentamento foi TENTADA e DESFEITA
 
-Relato: *"os jogadores continuam acima do gramado depois que os resets são
-accionados: falta, penálti, falta directa"*.
+Relato inicial: *"os jogadores não estão encostando no gramado"*, e depois
+*"continuam acima do gramado depois que os resets são accionados"*.
 
-Confirmado, e é geral (também em jogo corrido, mas num lance parado — toda a
-gente quieta — é que se vê). Ponto mais baixo do corpo durante a montagem,
-22 jogadores × 12 leituras por lance:
+Confirmado e medido. Ponto mais baixo do corpo em jogo corrido: **36% das
+leituras mais de 5 cm acima do relvado**, p95 de 11 cm. Num lance parado — toda
+a gente quieta — é onde se vê.
 
-    antes   media +0.032   mediana -0.013   p95 +0.111   acima de 5 cm: 96/264
+A causa não é um número errado: a pose escreve o `ressalto` da passada no
+`model.position.y` e os keyframes das acções trazem `altura` até +0.15 m; a
+perna faz o que o clip mandar e ninguém confere o resultado.
 
-A causa não é um número errado: **não havia camada nenhuma** que garantisse o
-pé no chão. A pose escreve o `ressalto` da passada directamente no
-`model.position.y` e os keyframes trazem `altura` até +0.15 m; a perna faz o
-que o clip mandar, e ninguém confere o resultado.
+**Tentou-se a solução a sério e foi desfeita.** Cada chuteira levou um marcador
+na sola e o corpo descia até a mais baixa assentar. Chegou a funcionar nos
+números (0/264 acima de 5 cm nos seis lances parados, 4.3% em jogo corrido) e
+exigiu três chamadas — o `animateBones` (com invólucro, porque o método sai por
+quatro `return` e um deles é o ramo de quem está PARADO, meia equipa de um lance
+parado), o `updateGK` e o `resetBonesToDefault`. Mas mexia na animação, e o
+veredicto de quem a vê foi que ficou pior. Está toda removida.
 
-Agora há: cada chuteira leva um marcador na SOLA (`criarPerna`, pose.js — um
-`Object3D` no ponto mais baixo do calçado, que acompanha a rotação do
-tornozelo, ao contrário de um offset fixo), e o `assentarNoRelvado`
-(player.js) desce o corpo até a mais baixa das duas assentar. **Só desce**:
-quem salta, quem se atira num carrinho e o guarda-redes a voar ficam de fora
-pela guarda, e quem está um centímetro na relva lê-se como pé na relva.
+O que fica é o que o pedido pediu — *"era só baixar um pouco a altura do
+modelo"*: `ALTURA_BASE_Y` passou de **0.0 para -0.03**. A animação é
+exactamente a de sempre; o boneco assenta três centímetros mais abaixo. Medido,
+o ponto mais baixo do corpo desce com ele (média de +0.105 para +0.064 m). É um
+número só, e é o botão se for para descer mais ou menos.
 
-Três sítios tiveram de a chamar, e a ordem em que apareceram conta a história:
-
-- **o `animateBones`** — e não bastou pô-la no fim dele. O método sai por
-  QUATRO returns, e um deles é o ramo de quem está PARADO: era exactamente
-  meia equipa de um lance parado a saltar a chamada. Passou a haver um
-  invólucro (`animateBones` chama `animateBonesInterno` e assenta a seguir),
-  que cobre as saídas de hoje e as de amanhã;
-- **o `updateGK`**, porque o guarda-redes não passa pelo `animateBones` — a
-  pose dele sai dali. Era o que mais flutuava: sola a 11 cm com o corpo em
-  y = 0;
-- **o `resetBonesToDefault`**, que é a pose de quem espera num lance parado.
-
-Depois, nos seis lances parados forçados:
-
-    falta / falta directa / penalti / canto / lateral / tiro de meta
-    media -0.017 .. -0.013   p95 -0.012   acima de 5 cm: 0/264 em todos
-
-E em jogo corrido, 7913 leituras: **acima de 5 cm passou de 36% para 3.7%** — o
-que sobra são os casos em que o corpo está mesmo no ar e a guarda os deixa
-passar (mergulhos, carrinhos, o frame a seguir a um salto).
-
-> Nota da medição: o metro é o canto mais baixo da caixa de cada malha, que
-> num pé rodado desce abaixo da sola verdadeira. Por isso o "enterrado" que
-> aparece nas contas (mediana -0.03 m) é sobretudo o método, não o corpo: o
-> marcador da sola fica em 0 e as travas 1.2 cm abaixo.
+Fica registado, para quem lá voltar: **um desnível constante não resolve as
+duas pontas.** A distribuição tem mediana em -0.013 e p95 em +0.111 — baixar o
+suficiente para a cauda que flutua enterra a mediana. Resolver isso a sério é
+mexer na amplitude vertical da pose (o `ressalto` e o `altura` dos keyframes),
+não no sítio onde o corpo assenta.
 
 #### O guarda-redes recuava com passos para a frente
 
@@ -453,6 +437,152 @@ excepção que tem de existir: encostado à baliza (`distanciaSemAngulo`, 6 m) o
 Para referência: da marca do penálti a baliza abre ~37°, e da entrada da área
 pelo eixo ~22°.
 
+#### O homem da ala sozinho no corredor vai ao fundo
+
+Relato: *"os laterais e meias pela lateral, às vezes, recebem a bola sozinhos e
+não vão pro fundo para cruzar; preferem tocar para o meio"*.
+
+Medido em 900 s, posses de LB/RB/LM/RM no corredor (|x| >= 15 m) do campo
+adversário, e nas que tinham espaço a sério (ninguém a menos de 6 m):
+
+    7 posses livres:  ZERO cruzamentos, quatro passes (tres para DENTRO, tres
+                      para TRAS), 1.2 m de avanco medio — acabavam a 42 m da
+                      linha de fundo, ou seja onde receberam.
+
+Duas regras os prendiam, e **nenhuma delas é sobre alas**:
+
+    CarryModel.conduzirSoAcimaDe (17 m)   havendo passe bom, so se conduz do
+                                          ultimo terco para a frente — e eles
+                                          recebem antes disso
+    CarryModel.limiteConducaoDefesa (0)   um DEFESA nao conduz no campo
+                                          adversario... e um lateral e `role: def`
+
+As duas continuam a valer em todo o lado menos numa situação: o
+`alaLivreParaOFundo` (player_bt.js). E a primeira versão dessa condição estava
+errada — pedia "ninguém a menos de 6 m", um CÍRCULO à volta dele, e disparava
+**6 vezes em 600 s**. Não é a pergunta certa: um marcador atrás dele, ou por
+dentro, não o impede de ir à linha. O que o impede é alguém no CAMINHO.
+
+Agora mede-se uma FAIXA ao longo da linha lateral — `CrossModel.corredor`,
+12 m à frente e 3.5 m para cada lado. Vazia, o corredor é dele: **1029
+avaliações verdadeiras nos mesmos 600 s**.
+
+Em 1800 s, todas as posses de ala:
+
+                      antes            depois
+    cruzamentos       10/118  (8%)     14/86  (16%)
+    avanco antes de cruzar   3.0 m     8.7 m
+    passes para tras  21/44 (48%)      12/27 (44%)
+    posses            118              86     (cada uma dura mais: conduz-se)
+
+Ou seja, cruza-se o dobro das vezes e ganha-se linha de fundo antes de cruzar.
+
+#### A defesa acontecia a dois metros do guarda-redes — e a culpa era minha
+
+Relato: *"às vezes o goleiro defende a bola, mas a bola está uns 2 ou 3 metros
+do goleiro"*.
+
+É consequência directa de uma correcção anterior desta sessão. Para a espalmada
+do desfecho ganhar ao gesto de mãos do próprio guarda-redes (que agarra a bola
+mal ela lhe passa ao alcance, e transformava `defesa_fora` em "agarrou"), a
+janela do plano tinha sido aberta de 1.6 m para **2.8 m da linha**. Funcionou
+nos números e falhou no ecrã: a bola era espalmada longe dele.
+
+A troca certa era outra, e é a que lá está agora:
+
+- a janela volta a **1.6 m** da linha;
+- o gesto de mãos (`resolverDefesaComMaos`) **cala-se** enquanto houver uma
+  defesa sorteada por acontecer — não é ele que resolve aquele lance;
+- e acrescenta-se o que faltava: a defesa também se resolve quando a bola chega
+  ao **alcance dele** (`alcanceDaDefesa`, 1.4 m), que é onde uma defesa se vê.
+
+    defesa       19/20 defendida, em jogo
+    defesa_fora  12/20 canto   (era 20/20 com a janela a 2.8 m)
+
+Os oito que ficam em jogo são espalmadas resolvidas já muito perto da linha, em
+que a bola não tem tempo de sair por fora do poste. É o preço de a defesa
+acontecer onde o guarda-redes está, e fica assim.
+
+#### A "afundadinha" — o que se mediu, e o que se mexeu
+
+Relato: *"a animação dos movimentos está estranha, os jogadores estão meio que
+dando uma pequena afundada"*.
+
+Primeiro o que NÃO é: não é o assentamento no relvado desta sessão. Medida a
+oscilação vertical do corpo de quem anda ou corre (sem saltos):
+
+    sem assentamento nenhum   |delta| 24.4 mm por frame   amplitude 210 mm / 0.5 s
+    com o assentamento        |delta| 24.8 mm             amplitude 206 mm
+
+Igual. O corpo sobe e desce 21 cm em meio segundo, e já subia antes — isso é a
+pose (o `ressalto` da passada mais o `altura` dos keyframes das acções, que vai
+a +0.15 m). Se for para diminuir, é aí que se mexe, e é um pedido à parte.
+
+O que ERA do assentamento, e foi corrigido, é o degrau: a correcção saltava de
+zero para o valor cheio no frame em que um salto, um carrinho ou um mergulho
+acabava — até 30 cm num frame. Duas tentativas antes da que ficou:
+
+    so descer (assimetrico)      o corpo alternava entre corrigido e nao
+                                 corrigido ao ritmo da passada
+    suavizar sempre (0.06 s)     mata metade da oscilacao — mas isso e alisar a
+                                 propria passada, e o pe volta a flutuar:
+                                 4.9% -> 12.4% das leituras acima de 5 cm
+
+Nenhuma delas ficou: a camada de assentamento foi removida por inteiro (ver a
+secção dos pés e do relvado). O que resolveu o pedido foi baixar o modelo três
+centímetros, e a oscilação vertical do corpo — os 21 cm por meio segundo — não
+mudou nada com isso, porque nunca foi do assentamento.
+
+#### O toque de condução sai no frame do pé bom — R12 e R41
+
+Pedido: *"as pequenas adiantadas de bola dos jogadores carregando a bola têm que
+ser no frame R12 para os destros e no frame R41 para os canhotos"*.
+
+Dá, e o vocabulário já era o do código: o ciclo da passada tem **60 frames** e o
+comentário do `emJanelaDeToque` dizia `R20 (0.333) para uma perna, R40 (0.666)
+para a outra`. A fase é o `animPhase` (0..1), portanto R12 é 0.20 e R41 é 0.683
+— a 29/60 um do outro, meia passada, que é como tem de ser: são pernas opostas.
+
+**Faltava uma coisa: o jogo não sabia quem é canhoto.** O `ShotClip.pernaChute`
+é um `'r'` global para toda a gente, com o comentário a dizer que "serve um
+canhoto trocando uma letra". Agora há `p.pe` (`'d'` / `'e'`), escolhido pelo
+`pePreferido` (utils.js) — determinista pelo `id`, portanto o mesmo jogador é
+sempre do mesmo pé, sem estado nenhum para guardar. O `FootModel` manda na
+proporção: 22% de canhotos (a do futebol real) e 70% nos postos da esquerda,
+porque um lateral esquerdo canhoto é a regra e não a excepção. Resolve-se onde o
+POSTO se conhece (no `updateShirt`), não no construtor, onde a posição ainda é
+`GK`.
+
+**E uma janela não servia.** A primeira versão manteve a tolerância de ±0.13 do
+ciclo (±8 frames) à volta do alvo, e o toque saía no primeiro frame que entrava
+nela — ou seja na BORDA: medido, os destros tocavam em **R5** com o alvo em R12.
+O `noFrameDoPe` passou a perguntar outra coisa: **a fase CRUZOU o alvo neste
+passo?** Contas em círculo (R59 para R1 são dois frames, não cinquenta e oito).
+
+E o tecto de espera teve de subir. Era 0.18 s, e chegava quando o toque aceitava
+as duas pernas — havia janela duas vezes por ciclo. Com um frame só, a espera
+pode ir a uma passada inteira:
+
+    touchMaxWait   toques forcados antes do frame
+    0.18 s         17/74
+    0.40 s          1/74      <- ficou este
+    0.70 s          0/72      (segura a bola meia passada a mais, sem ganho)
+
+Medido em 900 s, frame em que a bola é adiantada (o instrumento lê a fase do
+frame ANTES do toque, daí o desvio de um):
+
+    destros    alvo R12   mais frequentes: R13x14  R12x5  R14x4
+    canhotos   alvo R41   mais frequentes: R42x5   R41x1  R39x1   (11 de 14 dentro de 8 frames)
+
+Fica dito o que a medição NÃO cobre: ela conta qualquer largada de bola durante
+o CARRY, e há outras que não passam por este portão (o drible, o primeiro toque).
+São essas a cauda que aparece longe do alvo, não o portão a falhar.
+
+E fica dito o que NÃO foi mexido: o passe, o remate e o cruzamento continuam a
+aceitar as duas pernas (`aguardarPassada` -> `emJanelaDeToque`), e o `ShotClip`
+continua a bater sempre com a direita. Passá-los ao pé bom é o mesmo `p.pe` e
+uma linha em cada sítio, mas é outro pedido.
+
 Ficheiros: `avancoFK`, `naBarreiraFalta`/`faltaDirectaBarreira` e o
 `foraDoCorredor` no ramo `FREE_KICK` do `setupSetPiece`
 (js/match/match_setpieces.js); `DirectFreeKickModel` e
@@ -476,7 +606,14 @@ contacto obrigatorio da falta em `RefereeModel.faltas.raioDuelo` e
 (js/player.js); a marcha de costas do guarda-redes no ramo `andando` do
 `updateGK` (js/player.js); o ângulo mínimo do remate em
 `ShootingModel.anguloMinimo` (js/config/shooting.js) e no `emZonaDeFinalizacao`
-(js/utils.js).
+(js/utils.js). O corredor da ala em `CrossModel.corredor` (js/config/shooting.js)
+e `alaLivreParaOFundo` (js/bt/player_bt.js); a defesa da falta em
+`distanciaDaDefesa`/`alcanceDaDefesa` (js/config/shooting.js), no ramo da defesa
+do `Match.update` (js/match/match_loop.js) e na guarda do `resolverDefesaComMaos`
+(js/player.js); a rampa do assentamento em `GaitModel` (js/config/gait.js). O pe bom em `FootModel` e
+`CarryModel.frameToque` (js/config/player_behavior.js), `pePreferido`
+(js/utils.js), `p.pe` e `noFrameDoPe` (js/player.js), e o portao do toque no
+`case CARRY` (js/fsm.js).
 Medição: `node tools/headless/falta_directa.js [quantas]`.
 
 ### Sessão de 1 de Setembro de 2026 — a formação é do treinador

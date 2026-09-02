@@ -386,6 +386,45 @@ meia-largura), e não o `z > 24 && |x| < 14` de antes, que apanhava meio
 meio-campo. Entre vários candidatos escolhe o mais central: quem ataca o
 primeiro poste tem melhor ângulo do que quem está encostado à linha de fundo.
 */
+/*
+O CORREDOR DA ALA ESTA LIVRE PARA O FUNDO?
+
+Quatro condicoes, e sao as do relato: e um homem da ala, esta no corredor
+(|x| >= CrossModel.alaX), ja no campo adversario, ninguem a menos de
+`corredor.raioLivre` — e ainda ha linha de fundo para ganhar.
+
+Quem responde true a isto conduz, e conduz mesmo que haja passe (ver o
+`conduzirSoAcimaDe`) e mesmo sendo lateral (ver o `limiteConducaoDefesa`).
+*/
+function alaLivreParaOFundo(ctx) {
+    const p = ctx.p;
+    const C = CrossModel;
+    const K = C.corredor;
+    if (!K || p.role === 'gk') return false;
+
+    if (Math.abs(p.model.position.x) < C.alaX) return false;
+    if (ctx.zoneAhead < K.zonaZ) return false;
+
+    // Ja esta no fundo: dali nao se conduz mais, cruza-se.
+    const fundo = (typeof LINHA_FUNDO !== 'undefined') ? LINHA_FUNDO : 53;
+    if (fundo - (p.model.position.z * p.dirZ) < K.fundoMin) return false;
+
+    /*
+    A FAIXA A FRENTE, ao longo da linha lateral: `comprimento` metros para a
+    frente e `largura` para cada lado. E o caminho ate ao fundo, nao um circulo
+    a volta dele — um marcador atras ou por dentro nao o impede de ir la.
+    */
+    const lado = Math.sign(p.model.position.x) || 1;
+    for (const o of ctx.opponents) {
+        if (o.role === 'gk' || !o.model) continue;
+        const aoLongo = (o.model.position.z - p.model.position.z) * p.dirZ;
+        if (aoLongo < 0 || aoLongo > K.comprimento) continue;
+        const lateral = (o.model.position.x - p.model.position.x) * lado;
+        if (Math.abs(lateral) <= K.largura) return false;
+    }
+    return true;
+}
+
 function findCross(ctx) {
     if (ctx._cross !== undefined) return ctx._cross;
     const p = ctx.p;
@@ -2289,6 +2328,20 @@ const PlayerBT = sel('PlayerRoot',
                 cond('campoAberto', (ctx) => {
                     const p = ctx.p;
                     if (p.role === 'gk') return false;
+
+                    /*
+                    O CORREDOR DA ALA LIVRE GANHA AS DUAS REGRAS DE BAIXO.
+
+                    Um homem da ala sozinho no corredor, com linha de fundo a
+                    ganhar, vai la — nao toca para dentro. As duas regras que
+                    o prendiam sao gerais e continuam a valer em todo o lado
+                    menos aqui: o `conduzirSoAcimaDe` (que da o passe como
+                    preferido fora do ultimo terco) e o tecto do DEFESA, que
+                    apanhava os laterais por serem `role: def`.
+
+                    Ver `alaLivreParaOFundo` e `CrossModel.corredor`.
+                    */
+                    if (alaLivreParaOFundo(ctx)) return true;
 
                     /*
                     O PASSE VEM PRIMEIRO — ver CarryModel.conduzirSoAcimaDe.

@@ -6,7 +6,24 @@ Dimensões da baliza, campo, redes, barreiras, física da bola e bandeiras.
 =============================================================================
 */
 
-const LARGURA_BALIZA = 7.32; const ALTURA_BALIZA = 2.44; const ALTURA_BASE_Y = 0.0;
+/*
+ALTURA_BASE_Y — a altura a que o corpo do jogador assenta.
+
+Era 0.0 e o boneco lia-se a pairar: medido em jogo corrido, o ponto mais baixo
+do corpo estava mais de 5 cm acima do relvado em 36% das leituras. Vem da
+POSE — o `ressalto` da passada mais o `altura` dos keyframes das accoes, que
+vai a +0.15 m — e nao de um erro de posicionamento.
+
+Tentou-se resolver a serio, medindo a sola e assentando o corpo frame a frame.
+Mexia na animacao e ficou pior; foi desfeita por inteiro. O que fica e o que o
+pedido pede: um DESNIVEL CONSTANTE. A animacao e exactamente a de sempre, o
+boneco e que assenta tres centimetros mais abaixo.
+
+E a base de tudo no jogador — posicao, alvos, alcance da cabeca
+(`ALTURA_BASE_Y + ALTURA_TESTA`) — portanto o corpo desce inteiro e coerente.
+Mexer neste numero e mexer na altura de toda a gente, que e a ideia.
+*/
+const LARGURA_BALIZA = 7.32; const ALTURA_BALIZA = 2.44; const ALTURA_BASE_Y = -0.03;
 
 /*
 Rede da baliza — forma e comportamento.

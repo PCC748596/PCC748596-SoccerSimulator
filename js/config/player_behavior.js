@@ -194,6 +194,28 @@ const GiroDeCostasModel = {
     zonaLivre: 17.0
 };
 
+/*
+O PE BOM DE CADA JOGADOR.
+
+Nao existia: o `ShotClip.pernaChute` e um 'r' global, com o comentario a dizer
+que 'serve um canhoto trocando uma letra'. Foi preciso para o toque de
+conducao sair no frame do pe certo (ver `CarryModel.frameToque`).
+
+A escolha e determinista pelo `id` do jogador (ver `pePreferido` em utils.js):
+o mesmo jogador e sempre do mesmo pe, sem estado nenhum para guardar.
+
+`fraccaoCanhotos` e a proporcao geral, ~22%, que e a do futebol real; nos
+postos da esquerda ela sobe, porque um lateral esquerdo canhoto e a regra e
+nao a excepcao.
+*/
+const FootModel = {
+    fraccaoCanhotos: 0.22,
+    fraccaoCanhotosNaEsquerda: 0.70,
+    postosDaEsquerda: ['LB', 'LM', 'LW']
+};
+
+if (typeof window !== 'undefined') window.FootModel = FootModel;
+
 const CarryModel = {
     leque: [-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2],
     lookAhead: 10.0,      // base de distância (sobrescrita por player.tec * 0.5)
@@ -380,7 +402,37 @@ const CarryModel = {
     até à área adversária, driblando pelo caminho.
     */
     limiteConducaoDefesa: 0.0,
-    touchMaxWait: 0.18,   // espera máx. pela janela da passada antes de forçar o toque (seg)
+    /*
+    Era 0.18 s, e chegava quando o toque aceitava as DUAS pernas: havia janela
+    duas vezes por ciclo. Com um frame so (ver `frameToque`) a espera pode ir
+    a uma passada inteira, e a 0.18 s o toque saia forcado antes do frame —
+    medido, 17 de 74 toques. A 0.40 s: **1 em 74**.
+    */
+    touchMaxWait: 0.40,   // espera máx. pelo frame do pé antes de forçar o toque (seg)
+
+    /*
+    EM QUE FRAME DO CICLO SAI O TOQUE DE CONDUCAO (pedido).
+
+    O ciclo da passada tem 60 frames e o codigo ja falava essa lingua: a
+    janela antiga era 'R20 (0.333) para uma perna, R40 (0.666) para a outra',
+    ou seja aceitava as DUAS pernas, a que calhasse mais perto.
+
+    Agora e uma so, a do PE BOM: **R12 no destro, R41 no canhoto**. Os dois
+    frames estao a 29/60 de distancia — meia passada — que e como tem de ser,
+    porque sao pernas opostas.
+
+    A fase e `animPhase` (0..1), portanto o alvo e frame/`framesDoCiclo` e a
+    distancia mede-se em CIRCULO (R58 esta a 4 frames de R2, nao a 56).
+
+    So o toque de conducao passa por aqui. O passe, o remate e o cruzamento
+    continuam a aceitar as duas pernas (ver `aguardarPassada`): com uma so
+    janela por ciclo a espera passava a meia passada, que a esta velocidade
+    ja e mais do que o `touchMaxWait` — o gesto acabaria forcado na mesma,
+    so que mais tarde.
+    */
+    framesDoCiclo: 60,
+    frameToque: { d: 12, e: 41 },
+    toleranciaFrameToque: 0.13,   // em fraccao do ciclo (~8 frames para cada lado)
     recoverRadius: 0.8,   // distância para re-capturar a bola após toque
 
     /*

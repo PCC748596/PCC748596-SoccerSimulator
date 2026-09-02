@@ -1516,11 +1516,16 @@ class PlayerFSM {
                         if (leadDist <= 0) break;   // sem toque seguro: bola no pé
                     }
 
-                    // Só solta a bola quando a perna de balanço está à frente do
-                    // corpo (janela de toque da passada) — senão o toque sai com
-                    // a perna atrás e parece que a bola volta para o jogador.
-                    // Espera no máximo CarryModel.touchMaxWait antes de forçar.
-                    if (!p.emJanelaDeToque() && p.touchWaitTimer < CarryModel.touchMaxWait) {
+                    /*
+                    O TOQUE SAI NO FRAME DO PE BOM: R12 no destro, R41 no
+                    canhoto (pedido). Antes valia qualquer uma das duas pernas
+                    — a janela era R20 ou R40, a que calhasse mais perto.
+
+                    Continua a haver tecto de espera (`touchMaxWait`): com uma
+                    so janela por ciclo, esperar por ela de qualquer maneira
+                    seria segurar a bola meia passada a mais.
+                    */
+                    if (!p.noFrameDoPe() && p.touchWaitTimer < CarryModel.touchMaxWait) {
                         p.touchWaitTimer += dt;
                         break;
                     }

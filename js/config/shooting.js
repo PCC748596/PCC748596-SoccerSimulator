@@ -702,6 +702,47 @@ const PenaltyModel = {
 
 const CrossModel = {
     alaX: 15.0,           // a partir daqui conta como estar na ala
+
+    /*
+    O CORREDOR E DELE — quando esta livre, vai ao fundo.
+
+    Relato: *"os laterais e meias pela lateral, as vezes, recebem a bola
+    sozinhos e nao vao pro fundo para cruzar; preferem tocar para o meio"*.
+    Medido em 900 s, posses de LB/RB/LM/RM no corredor do campo adversario,
+    sem adversario a menos de 6 m: **7 posses, ZERO cruzamentos**, quatro
+    passes (tres para dentro, tres para tras) e 1.2 m de avanco medio — 
+    acabavam a 42 m da linha de fundo, ou seja onde receberam.
+
+    Duas regras os prendiam, e nenhuma delas e sobre alas:
+
+      `CarryModel.conduzirSoAcimaDe` (17 m)  havendo passe bom, so se conduz
+                                             do ultimo terco para a frente —
+                                             e eles recebem antes disso;
+      `CarryModel.limiteConducaoDefesa` (0)  um DEFESA nao conduz no campo
+                                             adversario, e um lateral e
+                                             `role: def`.
+
+    As duas continuam a valer em todo o lado menos aqui: com o corredor
+    vazio a frente e linha de fundo para ganhar, conduzir e a jogada.
+    */
+    corredor: {
+        /*
+        O QUE CONTA E O CORREDOR A FRENTE, nao um circulo a volta dele.
+
+        A primeira versao pedia 'nenhum adversario a menos de 6 m' e
+        praticamente nunca acontecia: 6 avaliacoes verdadeiras em 600 s. E
+        tambem nao e a pergunta certa — um marcador ATRAS dele, ou por
+        dentro, nao o impede de ir a linha; o que o impede e alguem no
+        caminho.
+
+        Agora mede-se uma FAIXA ao longo da linha lateral: `comprimento`
+        metros a frente, `largura` para cada lado. Vazia, o corredor e dele.
+        */
+        comprimento: 12.0,  // metros de faixa a frente que tem de estar vazia
+        largura: 3.5,       // meia-largura dessa faixa
+        zonaZ: 0.0,         // do meio-campo adversario para a frente
+        fundoMin: 6.0       // e ainda ha esta linha de fundo para ganhar
+    },
     zonaZ: 20.0,          // e daqui para a frente vale a pena olhar para a área (recuado para evitar cruzamento de muito longe)
 
     areaZ: 34.0,          // linha da grande área
@@ -1132,7 +1173,10 @@ const DirectFreeKickModel = {
     A 2.8 m a janela do plano vem primeiro e o desfecho sorteado é o que
     acontece. O mergulho continua a correr por cima — é ele que se vê.
     */
-    distanciaDaDefesa: 2.8,
+    distanciaDaDefesa: 1.6,
+    // E tambem se resolve quando a bola chega ao alcance da mao dele, que e
+    // onde uma defesa se ve (ver o ramo da defesa no Match.update).
+    alcanceDaDefesa: 1.4,
     espalmarVelocidade: 9.0,
 
     /*

@@ -3081,6 +3081,36 @@ function hashAparencia(seed, sal) {
     return h >>> 0;
 }
 
+/*
+QUAL E O PE BOM DO JOGADOR.
+
+O jogo nao tinha nocao nenhuma disto — o `ShotClip.pernaChute` e um 'r' global
+para toda a gente, com o comentario a dizer que "serve um canhoto trocando uma
+letra". Passa a haver, porque o toque de conducao tem de sair no frame do PE
+certo (ver `noFrameDoPe` em player.js e `CarryModel.frameToque`).
+
+Determinista pelo `id`: o mesmo jogador e sempre do mesmo pe, entre jogos e
+entre lotes, e nao ha estado nenhum para guardar. `FootModel.fraccaoCanhotos`
+manda na proporcao (~22%, que e a do futebol real) e os postos da esquerda
+levam um vies para o pe esquerdo — um lateral esquerdo canhoto e a regra, nao a
+excepcao.
+
+Devolve 'd' (destro) ou 'e' (canhoto). Pura: sem Match, sem THREE.
+*/
+function pePreferido(id, pos, cfg) {
+    const F = cfg || (typeof FootModel !== 'undefined' ? FootModel : null);
+    if (!F) return 'd';
+
+    const h = (typeof hashAparencia === 'function')
+        ? hashAparencia(id | 0, 7717)
+        : ((id | 0) * 2654435761) >>> 0;
+    const r = (h % 100000) / 100000;
+
+    const naEsquerda = (F.postosDaEsquerda || []).indexOf(pos) >= 0;
+    const limiar = naEsquerda ? F.fraccaoCanhotosNaEsquerda : F.fraccaoCanhotos;
+    return (r < limiar) ? 'e' : 'd';
+}
+
 function repartirPorPeso(lista, n) {
     const total = lista.reduce((soma, item) => soma + item.peso, 0);
     const quotas = lista.map((item) => {
@@ -3658,7 +3688,7 @@ if (typeof window !== 'undefined') {
         gkAnchor, gkAlvoSegurando, gkPodeLancar, gkSweepTarget,
         atribuirMarcacoes, recuoDaUltimaLinha, pontoDeMarcacao,
         pontoDeCanto, fechoDoSector, atribuirApoios,
-        hashAparencia, repartirPorPeso, baralharPorHash, escolherAparencia,
+        hashAparencia, repartirPorPeso, baralharPorHash, escolherAparencia, pePreferido,
         offsetInquietacao, coneVisao, alcanceVisao,
         esperarPeloSlot, eixoDeConducao, distanciaMinimaNoLateral,
         pontoDaFaltaDirecta, lugaresDaBarreira, alturaDaBolaEm,

@@ -429,7 +429,27 @@ Object.assign(Match, {
                 const faltaZ = Math.abs(plano.golZ - this.ball.position.z);
                 const vaiParaLa = ((plano.golZ - this.ball.position.z) * this.ballVel.z) > 0;
                 const dentroDosPostes = Math.abs(this.ball.position.x) < (LARGURA_BALIZA / 2 + 0.6);
-                if (vaiParaLa && dentroDosPostes && faltaZ <= DirectFreeKickModel.distanciaDaDefesa) {
+
+                /*
+                A DEFESA ACONTECE ONDE ELE ESTA.
+
+                So a distancia a linha nao chega: para a espalmada ganhar ao
+                gesto de maos do proprio guarda-redes, a janela tinha sido
+                aberta ate 2.8 m — e viu-se em campo, a bola a ser defendida a
+                dois ou tres metros dele. A janela voltou ao pe da linha e
+                acrescenta-se o que faltava: a bola tambem se resolve quando
+                chega ao ALCANCE DELE, que e onde uma defesa se ve.
+                */
+                const gkPlano = (plano.equipa === 'TeamA')
+                    ? this.opponents.find(pl => pl.role === 'gk')
+                    : this.players.find(pl => pl.role === 'gk');
+                const aoAlcance = !!(gkPlano && gkPlano.model &&
+                    Math.hypot(this.ball.position.x - gkPlano.model.position.x,
+                        this.ball.position.z - gkPlano.model.position.z) <=
+                        (DirectFreeKickModel.alcanceDaDefesa || 1.4));
+
+                if (vaiParaLa && dentroDosPostes &&
+                    (faltaZ <= DirectFreeKickModel.distanciaDaDefesa || aoAlcance)) {
                     plano.defesaFeita = true;
                     /*
                     E acaba na defesa, pela mesma razao: a espalmada tem de
