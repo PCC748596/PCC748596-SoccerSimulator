@@ -27,6 +27,14 @@ function executePassGameplay(p) {
         p.throughBallAlto = false;
         p.isPasseEspaco = false;
     }
+    /*
+    FORA-DE-JOGO: a posicao dos colegas congela-se no instante em que a bola
+    sai do pe, que e esta funcao. Ver Officials.marcarPosicoesDeImpedimento.
+    */
+    if (typeof Officials !== 'undefined' && Officials.marcarPosicoesDeImpedimento) {
+        Officials.marcarPosicoesDeImpedimento(p);
+    }
+
     const ehCruzamento = !!p.isCross;
     // Capturado antes de p.isCross ser limpo mais abaixo.
     const tipoPasseStats = ehLancamento ? 'lancamento' : (ehCruzamento ? 'cruzamento' : 'passe');

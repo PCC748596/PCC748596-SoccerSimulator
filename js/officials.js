@@ -489,6 +489,114 @@ const Officials = {
     },
 
     /*
+    =====================================================================
+    FORA-DE-JOGO — os dois tempos da Lei 11
+    =====================================================================
+    Ver OffsideModel (config/defense.js) para a regra escrita por extenso.
+    Aqui ficam as tres pecas:
+
+      marcarPosicoesDeImpedimento  chamada quando a bola SAI do pe de quem
+                                   passa: congela quem estava em posicao
+      limparImpedimento            apaga as marcas (bola de um adversario,
+                                   bola parada, golo)
+      verificarImpedimento         chamada no primeiro toque: se quem tocou
+                                   estava marcado, e infraccao
+
+    A linha e a `linhaDeImpedimento` que ja existia para posicionar o
+    assistente — o segundo adversario mais recuado, com o guarda-redes a
+    contar, que e exactamente a definicao da regra.
+    =====================================================================
+    */
+    marcarPosicoesDeImpedimento: function (passador) {
+        const M = (typeof OffsideModel !== 'undefined') ? OffsideModel : null;
+        if (!M || !M.activo || !passador || typeof Match === 'undefined') return;
+        // So em jogo corrido: canto, lateral e pontape de baliza nao tem
+        // fora-de-jogo, e a bola parada resolve-se noutro sitio.
+        if (Match.state !== 'PLAY') return;
+
+        const dir = passador.dirZ;
+        const colegas = (passador.team === 'TeamA') ? Match.players : Match.opponents;
+        const advs = (passador.team === 'TeamA') ? Match.opponents : Match.players;
+        if (!colegas || !advs || advs.length < 2) return;
+
+        /*
+        A `linhaDeImpedimento` ordena por `z * dirZ` e devolve o SEGUNDO MAIS
+        RECUADO — recuado no referencial de quem DEFENDE. Por isso leva o dirZ
+        dos adversarios (`-dir`), e nao o de quem passa.
+
+        Com o sinal trocado ela devolvia o segundo mais ADIANTADO, ou seja uma
+        linha la atras, e quase toda a gente aparecia em fora-de-jogo: medido,
+        97 impedimentos por jogo contra os 3.2 de um jogo a serio. Com tres
+        adversarios em campo os dois calculos coincidem — foi por isso que o
+        teste unitario nao apanhou o erro.
+        */
+        const linhaDir = this.linhaDeImpedimento(advs, -dir) * dir;
+        const bolaDir = Match.ball.position.z * dir;
+        const tol = M.tolerancia;
+
+        this._impedidos = [];
+        for (const p of colegas) {
+            if (p === passador || !p.model) continue;
+            const zDir = p.model.position.z * dir;
+            // Na propria metade nunca ha impedimento; em linha com a bola ou
+            // com o penultimo adversario tambem nao (dai a tolerancia).
+            if (zDir <= 0) continue;
+            if (zDir <= bolaDir + tol) continue;
+            if (zDir <= linhaDir + tol) continue;
+            this._impedidos.push({
+                jogador: p,
+                x: p.model.position.x,
+                z: p.model.position.z,
+                team: p.team
+            });
+        }
+    },
+
+    limparImpedimento: function () {
+        this._impedidos = null;
+    },
+
+    /*
+    Devolve true se marcou impedimento (e ja montou o livre). O chamador tem de
+    abortar o toque nesse caso: a bola passa a ser da outra equipa.
+    */
+    verificarImpedimento: function (jogador) {
+        const marcas = this._impedidos;
+        if (!marcas || !marcas.length || !jogador) return false;
+
+        // Bola tocada por um adversario de quem passou: a jogada morre aqui e
+        // as marcas deixam de valer (a regra so olha para o passe do colega).
+        const daEquipaDoPasse = marcas[0].team === jogador.team;
+        if (!daEquipaDoPasse) { this.limparImpedimento(); return false; }
+
+        const marca = marcas.find(m => m.jogador === jogador);
+        if (!marca) { this.limparImpedimento(); return false; }
+
+        this.limparImpedimento();
+
+        if (typeof MatchStats !== 'undefined' && MatchStats.registarImpedimento) {
+            MatchStats.registarImpedimento(jogador.team);
+        }
+
+        /*
+        O livre e no SITIO onde ele estava quando o passe saiu, e e INDIRECTO
+        — dai a bandeira `faltaIndirecta`, que o setupSetPiece le para nao
+        deixar rematar directamente a baliza.
+        */
+        Match.ball.position.set(marca.x, BallPhysics.raio, marca.z);
+        Match.ballVel.set(0, 0, 0);
+        Match.ballCarrier = null;
+        Match.intendedReceiver = null;
+        Match.faltaIndirecta = true;
+
+        const contra = (jogador.team === 'TeamA') ? 'TeamB' : 'TeamA';
+        Match.setupSetPiece('FREE_KICK', contra);
+        if (this.anunciar) this.anunciar('OFFSIDE');
+        if (typeof EfeitosSonoros !== 'undefined') EfeitosSonoros.apito(1.0);
+        return true;
+    },
+
+    /*
     Ponto da diagonal do árbitro mais próximo da bola, depois afastado ao longo
     dela até `distanciaBola`. Devolve {x, z}.
     */
@@ -689,10 +797,10 @@ const Officials = {
     (PASS, SHOT, TACKLE...). Um estado que nao e marcacao nenhuma devolve null,
     e o `anunciar` nao acende nada.
 
-    NAO HA "OFFSIDE" nesta tabela porque nao ha impedimento marcado no jogo: o
-    `offsideLimitDir` do TeamBT so limita onde os atacantes se poem. Por o
-    escrever aqui sem existir a regra ficava um rotulo que nunca aparecia — ou
-    pior, que aparecia a mentir.
+    O fora-de-jogo NAO esta nesta tabela, e e de proposito: o estado que ele
+    monta e um FREE_KICK como qualquer outro, e o rotulo 'OFFSIDE' e escrito a
+    mao pelo `verificarImpedimento` logo a seguir ao setup — se estivesse aqui,
+    todas as faltas passavam a dizer OFFSIDE.
     */
     rotulosDeMarcacao: {
         FREE_KICK: 'FOUL',

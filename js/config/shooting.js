@@ -800,9 +800,19 @@ const CrossModel = {
     metros à frente e `saidaLimpaLargura` para o lado, o cruzamento não sai —
     a árvore segue para o passe, o drible ou a condução, que é o que um
     jogador faz nessa situação.
+
+    CALIBRAÇÃO, medida em corridas de uma hora simulada cada:
+
+        5.0 m x 1.8 m de corte                    13 -> 1 cruzamento
+        2.5 m x 1.0 m + 0.35 de penalização       13 -> 1 cruzamento
+
+    O marcador do ala está quase sempre nessa zona, portanto qualquer das duas
+    equivale a desligar o cruzamento. Ficam os números pequenos e SEM
+    penalização: corta-se só o caso indefensável — alguém plantado a dois
+    metros, à frente, na linha da bola.
     */
-    saidaLimpaComprimento: 5.0,
-    saidaLimpaLargura: 1.8,
+    saidaLimpaComprimento: 2.0,
+    saidaLimpaLargura: 0.8,
 
     /*
     LEAD PRÓPRIO DO CRUZAMENTO.

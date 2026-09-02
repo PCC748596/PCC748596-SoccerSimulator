@@ -4,6 +4,16 @@ Object.assign(Match, {
         this.setPieceTeam = team;
 
         /*
+        Qualquer bola parada mata as marcas de fora-de-jogo: elas valem para a
+        jogada em que o passe saiu, e essa acabou. Sem isto um jogador ficava
+        marcado atraves de um canto ou de um lateral, e era assinalado
+        impedimento num lance onde a regra nem se aplica.
+        */
+        if (typeof Officials !== 'undefined' && Officials.limparImpedimento) {
+            Officials.limparImpedimento();
+        }
+
+        /*
         A ETIQUETA DA MARCACAO, por cima do arbitro. Aqui e nao em cada
         `trigger*`: este e o unico sitio por onde TODOS os lances parados
         passam, incluindo os que vierem a ser escritos.
@@ -413,8 +423,16 @@ Object.assign(Match, {
             A decisão da bola calcula-se aqui em cima porque o sector de ataque
             depende dela: cruzar e rematar não têm o mesmo desenho.
             */
-            const decisaoFK = (typeof decisaoDeFalta === 'function')
-                ? decisaoDeFalta(bolaFK.x, bolaFK.z, attDir) : 'passe';
+            /*
+            LIVRE INDIRECTO (fora-de-jogo): nao se pode rematar directamente a
+            baliza, portanto a decisao cai para o passe. A bandeira e posta por
+            quem marca a infraccao e consome-se aqui.
+            */
+            const indirecta = !!this.faltaIndirecta;
+            this.faltaIndirecta = false;
+            const decisaoFK = indirecta ? 'passe'
+                : ((typeof decisaoDeFalta === 'function')
+                    ? decisaoDeFalta(bolaFK.x, bolaFK.z, attDir) : 'passe');
             const setorPreliminar = (typeof setorDaFalta === 'function')
                 ? setorDaFalta(bolaFK.x, bolaFK.z, attDir, decisaoFK) : 'meio_avancado';
             const criterioFK = (F.batedorPorSetor && F.batedorPorSetor[setorPreliminar]) || 'naoDef';

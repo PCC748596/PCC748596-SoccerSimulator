@@ -558,9 +558,10 @@ function findCross(ctx) {
         E os primeiros metros TÊM de estar limpos: a bola sai a 22° e ainda
         vem junto ao chão (ver CrossModel.saidaLimpaComprimento).
         */
-        if (compSaida > 0 && desvio < largSaida &&
-            _v1.distanceTo(p.model.position) < compSaida) saidaTapada = true;
+        const aoLongo = _v1.distanceTo(p.model.position);
+        if (compSaida > 0 && desvio < largSaida && aoLongo < compSaida) saidaTapada = true;
     }
+    // Homem plantado à frente, na linha da bola: não sai cruzamento nenhum.
     if (saidaTapada) { ctx._cross = null; return null; }
 
     // Pontuação do ALTO: quem estiver no caminho pesa muito, distância e jogo

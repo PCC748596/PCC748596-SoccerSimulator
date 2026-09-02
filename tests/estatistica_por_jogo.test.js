@@ -240,33 +240,36 @@ console.log(LF + '4 — ataques: totais, perigosos, e o que não conta');
 }
 
 /* =====================================================================
-   5 — IMPEDIMENTOS: SEM REGRA, E O PAINEL TEM DE O DIZER
+   5 — IMPEDIMENTOS: AGORA HÁ REGRA, E O CONTADOR MEDE-A
+   =====================================================================
+   Isto era o contrário: o contador tinha de ser 0 e o painel tinha de dizer
+   `semRegra`, porque não havia fora-de-jogo no jogo. A Lei 11 está feita (ver
+   Officials.verificarImpedimento e tests/impedimento.test.js), portanto um
+   zero passou a ser uma medição — "não houve nenhum" — e a marca `semRegra`
+   teria de sair do painel, senão mentia ao contrário.
    ===================================================================== */
-console.log(LF + '5 — impedimentos não são zero, são "sem regra"');
+console.log(LF + '5 — impedimentos: medidos, e escalados como o resto');
 {
     const MS = montar();
     MS.reset();
-    const s = MS.porJogo(90 * 60);
+    MS.registarImpedimento('TeamA');
+    MS.registarImpedimento('TeamB');
+    // Meio jogo: o `porJogo` escala tudo para 90 minutos, impedimentos incluídos.
+    const s = MS.porJogo(45 * 60);
 
-    if (s.impedimentos !== 0) {
-        erro(`impedimentos deu ${s.impedimentos} — não há regra de fora-de-jogo ` +
-            `no jogo, tem de ser 0`);
+    if (s.impedimentos !== 4) {
+        erro(`dois impedimentos em meio jogo deviam dar 4 por jogo, deu ${s.impedimentos}`);
     } else {
-        ok('o contador é 0, porque não há regra que o incremente');
+        ok('as duas equipas somam e a escala é a mesma do resto da tabela');
     }
 
-    /*
-    E a linha do painel tem de estar marcada `semRegra`, senão o 0 lê-se como
-    "a equipa nunca esteve em fora-de-jogo" — que é uma medição, não uma
-    ausência de regra.
-    */
     const linha = srcMain.match(/\{[^}]*campo: 'impedimentos'[^}]*\}/);
     if (!linha) {
         erro('não encontrei a linha dos impedimentos em ALVOS_ESTATISTICA');
-    } else if (!linha[0].includes('semRegra')) {
-        erro('a linha dos impedimentos não está marcada `semRegra`');
+    } else if (linha[0].includes('semRegra')) {
+        erro('a linha ainda diz `semRegra` — já há regra, e o 0 é uma medição');
     } else {
-        ok('a linha do painel está marcada `semRegra`');
+        ok('o painel deixou de a marcar como "sem regra"');
     }
 }
 

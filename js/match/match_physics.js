@@ -495,6 +495,15 @@ Object.assign(Match, {
         if (!best || bestDist > BallControl.reach) return false;
 
         /*
+        FORA-DE-JOGO. O envolvimento no jogo e o TOQUE, e este e o sitio por
+        onde todos passam. Se quem chegou a bola estava em posicao de
+        impedimento no instante do passe, a jogada acaba aqui e monta-se o
+        livre indirecto (ver Officials.verificarImpedimento).
+        */
+        if (typeof Officials !== 'undefined' && Officials.verificarImpedimento &&
+            Officials.verificarImpedimento(best)) return false;
+
+        /*
         Anti Ping-Pong Aéreo / Domínio no Peito:
         1. Se a bola estiver na faixa do peito (ou se atingiu o limite de cabeceios seguidos),
            força o domínio no peito com os pés no chão.

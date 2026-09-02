@@ -502,3 +502,34 @@ const CornerDefenseModel = {
     alturaContestacao: 1.5,
     saidaDaArea: 4.0
 };
+
+/*
+=============================================================================
+FORA-DE-JOGO (Lei 11)
+=============================================================================
+Estar em posição de impedimento NÃO é infracção — é-o envolver-se no jogo a
+partir dela. Por isso a regra tem dois tempos, e é assim que está feita:
+
+  1. NO INSTANTE DO PASSE  congela-se quem está em posição: à frente da bola,
+                           à frente do penúltimo adversário (o guarda-redes
+                           conta como um dos dois, ver Officials.linhaDeImpedimento)
+                           e na metade adversária.
+  2. NO TOQUE              se um dos congelados for o primeiro a tocar na
+                           bola, aí sim é impedimento — livre INDIRECTO para a
+                           defesa, no sítio onde ele estava quando o passe saiu.
+
+Não há impedimento em pontapé de baliza, lançamento lateral nem canto, nem se
+a bola vier de um adversário. Estar EM LINHA com a bola ou com o penúltimo
+adversário é legal, e é para isso que serve a `tolerancia`: sem ela, meio
+centímetro à frente marcava fora-de-jogo, e a linha do simulador não tem a
+precisão que isso exigiria.
+
+`tolerancia` está em metros e vale para as duas comparações (bola e defesa).
+=============================================================================
+*/
+const OffsideModel = {
+    activo: true,
+    tolerancia: 0.35
+};
+
+if (typeof window !== 'undefined') window.OffsideModel = OffsideModel;

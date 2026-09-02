@@ -83,12 +83,13 @@ const ALVOS_ESTATISTICA = [
     { campo: 'vermelhos', rotulo: '🟥 Vermelhos', alvo: 0.08, casas: 2, provisorio: true },
     { campo: 'faltas', rotulo: '🦶 Faltas', alvo: 27.63, casas: 2 },
     /*
-    NÃO HÁ REGRA DE FORA-DE-JOGO NO JOGO. O `offsideLimitDir` do TeamBT limita
-    onde os atacantes se PÕEM, mas nada marca a infracção — por isso o contador
-    é sempre 0. `semRegra` faz a linha dizer isso, em vez de mostrar um zero
-    que se leria como "nunca ninguém está em fora-de-jogo".
+    A regra existe desde a Lei 11 implementada em Officials
+    (marcarPosicoesDeImpedimento / verificarImpedimento, com o OffsideModel em
+    config/defense.js): a posição congela no instante do passe e a infracção
+    conta-se no primeiro toque. O `semRegra` saiu daqui — o zero de antes era
+    "não é medido", agora um zero é mesmo "não houve nenhum".
     */
-    { campo: 'impedimentos', rotulo: '🚫 Impedimentos', alvo: 3.20, casas: 2, semRegra: true },
+    { campo: 'impedimentos', rotulo: '🚫 Impedimentos', alvo: 3.20, casas: 2 },
     { campo: 'ataquesPerigosos', rotulo: '🔥 Ataques perigosos', alvo: 77.84, casas: 1 },
     { campo: 'ataquesTotais', rotulo: '⚔️ Ataques totais', alvo: 176.63, casas: 1 },
     { campo: 'xg', rotulo: '📈 xG total', alvo: 2.84, casas: 2 },

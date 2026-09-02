@@ -296,6 +296,12 @@ const MatchStats = {
         this._grandeChancePendente = null;
     },
 
+    // Fora-de-jogo assinalado CONTRA esta equipa (ver Officials.verificarImpedimento).
+    registarImpedimento: function (team) {
+        const s = this[team];
+        if (s) s.impedimentos++;
+    },
+
     registarGoloSofrido: function (team) {
         const s = this[team];
         if (s) s.golosSofridos++;
@@ -873,9 +879,9 @@ const MatchStats = {
         eficienciaDefensiva  duelos ganhos / duelos disputados
         conversaoDeChances   golos / grandes chances
 
-    `impedimentos` fica de fora da ficha de propósito: não há regra de
-    fora-de-jogo no jogo (ver a nota no contador), e um zero ali lê-se como
-    "nunca esteve em fora-de-jogo" em vez de "não é medido".
+    `impedimentos` fica de fora da ficha por ser raro e caber melhor no painel
+    de alvos (porJogo). A regra existe — ver Officials.verificarImpedimento e
+    o OffsideModel.
     =========================================================================
     */
     resumo: function () {

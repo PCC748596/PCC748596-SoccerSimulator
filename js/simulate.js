@@ -400,6 +400,52 @@ function estiloDeslocaPorDefinicao(chave) {
     return CAMPOS_POSICIONAIS.some(c => def[c]);
 }
 
+/*
+=============================================================================
+MEDIA POR JOGO CONTRA OS ALVOS
+=============================================================================
+Recebe uma ficha `MatchStats.porJogo()` por partida (ja escalada para 90
+minutos de relogio e com as duas equipas somadas) e devolve uma linha por
+metrica: a media do lote, o alvo, e a percentagem do alvo.
+
+Os alvos e os rotulos vem do `ALVOS_ESTATISTICA` (main.js), que e a unica
+fonte deles — duplica-los aqui era garantir que divergiam. Sem essa tabela
+carregada (headless, por exemplo) devolve as medias sem coluna de alvo.
+
+`pctDoAlvo` e o numero que se le primeiro: 100 e estar la, 40 e ter menos de
+metade dos eventos que um jogo a serio tem.
+=============================================================================
+*/
+function montarMediaPorJogo(fichas) {
+    if (!fichas || !fichas.length) return null;
+    const validas = fichas.filter(f => f && f.escalado);
+    if (!validas.length) return null;
+
+    const tabela = (typeof ALVOS_ESTATISTICA !== 'undefined') ? ALVOS_ESTATISTICA : null;
+    const campos = tabela
+        ? tabela.map(l => ({ campo: l.campo, rotulo: l.rotulo, alvo: l.alvo, casas: l.casas,
+            nota: l.semRegra ? 'sem regra no jogo' : (l.provisorio ? 'alvo provisorio' : '') }))
+        : Object.keys(validas[0]).filter(k => typeof validas[0][k] === 'number')
+            .map(c => ({ campo: c, rotulo: c, alvo: null, casas: 2, nota: '' }));
+
+    const linhas = [];
+    for (const c of campos) {
+        const vals = validas.map(f => f[c.campo]).filter(v => typeof v === 'number');
+        if (!vals.length) continue;
+        const media = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const casas = (typeof c.casas === 'number') ? c.casas : 2;
+        linhas.push({
+            metrica: c.rotulo,
+            medido: Number(media.toFixed(casas)),
+            alvo: (typeof c.alvo === 'number') ? c.alvo : null,
+            pctDoAlvo: (typeof c.alvo === 'number' && c.alvo > 0)
+                ? Number((100 * media / c.alvo).toFixed(0)) : null,
+            nota: c.nota
+        });
+    }
+    return linhas;
+}
+
 function resumirEstilos(stats) {
     const linhas = [];
     for (const key in stats) {
@@ -665,6 +711,7 @@ const Sim = {
         const fixoOriginais = rotacionarFormacoes ? new Map() : null;
 
         const inicio = performance.now();
+        this._porJogo = [];
 
         for (let jogo = 0; jogo < nJogos; jogo++) {
             /*
@@ -765,6 +812,18 @@ const Sim = {
             fecharPermanencias(permanenciaStats);
 
             const resumo = MatchStats.resumo();
+            /*
+            A FICHA CONTRA OS ALVOS, por jogo. O painel do browser já mostra
+            isto ao vivo (ALVOS_ESTATISTICA em main.js), mas o lote só trazia
+            as fichas cruas das 20 partidas — e é no lote que se calibra.
+
+            `Match.tempoDeJogo` já vem multiplicado pelo MatchDuration.timeScale,
+            portanto são segundos de RELÓGIO: é a escala certa para comparar com
+            alvos de um jogo de 90 minutos.
+            */
+            if (MatchStats.porJogo) {
+                this._porJogo.push(MatchStats.porJogo(Match.tempoDeJogo));
+            }
             // O `placar` vem do resumo e e por jogo: sem ele o lote tinha as
             // estatisticas todas e nao dizia quem ganhou.
             this.resultados.push({
@@ -818,6 +877,12 @@ const Sim = {
             console.table(relatorioPasses);
         }
 
+        const relatorioMedia = montarMediaPorJogo(this._porJogo);
+        if (relatorioMedia && relatorioMedia.length) {
+            console.log('Sim: media por jogo contra os alvos (as duas equipas somadas)');
+            console.table(relatorioMedia);
+        }
+
         const relatorioEstilos = estiloStats ? resumirEstilos(estiloStats) : null;
         if (estilosAnteriores) restaurarEstilos(estilosAnteriores);
         if (relatorioEstilos) {
@@ -852,6 +917,12 @@ const Sim = {
                 rapido, amostragem, passosPorLote
             },
             duracaoRealSeg: Number(duracaoReal),
+            /*
+            Média das 20 fichas contra o alvo de cada métrica — a tabela que
+            diz, numa linha por métrica, o que falta ao jogo para parecer
+            futebol. Ver montarMediaPorJogo.
+            */
+            mediaPorJogo: relatorioMedia,
             resultados: this.resultados,
             heatmap: this.heatmap,
             estilos: relatorioEstilos,

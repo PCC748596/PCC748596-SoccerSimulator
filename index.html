@@ -16,7 +16,7 @@
                 <h2 id="app-title" style="font-size: 0.85em; font-weight: bold; margin: 0; padding: 0;">SOCCER SIM |
                     FPS: --
                 </h2>
-                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0628</div>
+                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0630</div>
             </div>
             <button type="button" id="btn-painel" title="Minimizar / maximizar (X) — Shift: todos"
                 onclick="togglePainel(undefined, event)">&minus;</button>
@@ -309,7 +309,8 @@
                          MatchDuration.timeScale (5x) mais depressa, portanto 25 aqui
                          são ~122 minutos de jogo. A conversão vai no aviso abaixo. -->
                         <label style="flex: 1; margin: 0;"
-                            title="Minutos SIMULADOS por jogo. O relógio da partida corre 5x mais depressa — a conversão está no aviso abaixo.">Min/jogo (sim)
+                            title="Minutos SIMULADOS por jogo. O relógio da partida corre 5x mais depressa — a conversão está no aviso abaixo.">Min/jogo
+                            (sim)
                             <input type="number" id="sim-minutos" min="1" max="90" step="1" value="25"
                                 oninput="actualizarAvisoDoLote()" style="width: 100%;"></label>
                     </div>
