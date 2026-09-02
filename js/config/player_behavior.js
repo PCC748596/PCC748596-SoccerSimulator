@@ -416,14 +416,14 @@ oposto (30-45°). Se tentar ir reto, probabilidade de perda é muito maior.
 jogador e pela proximidade do adversário.
 */
 const DribbleModel = {
-    triggerDist: 2.5,     // distância para activar drible 1v1 (adversário à frente)
+    triggerDist: 3.2,     // distância para activar drible 1v1 (adversário à frente)
     angleSide: 0.6,       // ângulo lateral do toque (~35°, entre 30 e 45)
-    touchPower: 8.25,     // força do toque lateral
-    successBase: 0.60,    // chance base de sucesso
+    touchPower: 8.5,      // força do toque lateral
+    successBase: 0.65,    // chance base de sucesso
     successSideBonus: 0.20, // bónus por ir para o lado (vs reto)
-    failLossBall: 0.70,   // prob. de perder a bola se falhar
-    sprintBoost: 6.2,     // boost de velocidade após toque lateral
-    cooldown: 1.2         // tempo antes de poder driblar novamente
+    failLossBall: 0.65,   // prob. de perder a bola se falhar
+    sprintBoost: 6.5,     // boost de velocidade após toque lateral
+    cooldown: 0.9         // tempo antes de poder driblar novamente
 };
 
 /*
@@ -508,6 +508,29 @@ const BallControl = {
     maxPeitosSeguidos: 2,
 
     /*
+    =====================================================================
+    PEITO OU CABEÇA? DEPENDE DE QUEM VEM A CHEGAR
+    =====================================================================
+    A decisão era só de ALTURA: bola entre `peitoYMin` e `peitoYMax` ia ao
+    peito, mais alta ia à cabeça, e mais nada contava.
+
+    Falta a pressão. Sem ninguém por perto, matar no peito e ficar com a bola
+    é sempre melhor do que a cabecear para longe; com um adversário a chegar,
+    o peito é lento demais e o que serve é a cabeça — para aliviar ou para
+    atacar a bola antes dele.
+
+    `peitoSemPressao` é a distância ao adversário mais próximo a partir da
+    qual não há pressão. `peitoAlturaLivre` é até que altura ele aceita a bola
+    no peito quando está livre: acima da faixa normal, porque um jogador sem
+    ninguém em cima tem tempo de a ajeitar com o peito alto.
+
+    O limite de peitos seguidos continua a valer — isto não abre a porta ao
+    ping-pong que ele fecha.
+    */
+    peitoSemPressao: 7.0,      // metros ao adversário mais próximo
+    peitoAlturaLivre: 1.75,    // sem pressão, aceita a bola até esta altura
+
+    /*
     Distância a que a bola fica ADIANTADA depois da matada, por TEC. O máximo
     (TEC 0) é o pior amortecimento que ainda conta como matada — acima disto
     seria um ressalto, não uma recepção.
@@ -588,8 +611,32 @@ vida real.
 
 const ThrowInModel = {
     alcanceMin: 9.0,
+
+    /*
+    ELEVAÇÃO SEM DESTINATÁRIO — o lançamento para o espaço, que só quer
+    distância. Sobe, e é suposto subir.
+    */
     elevMin: 16 * Math.PI / 180,
     elevMax: 26 * Math.PI / 180,
+
+    /*
+    ELEVAÇÃO COM DESTINATÁRIO — quase rasante, e pode ser NEGATIVA.
+
+    A bola sai das mãos a 1.82 m do chão. Com os 16°-26° do lançamento para o
+    espaço ela SOBE primeiro, e é geometricamente impossível chegar ao peito
+    (1.20 m) ou ao pé de alguém que a venha buscar: quem se aproxima encontra-a
+    a caminho do apex. Medido, com a balística já a acertar no ponto pedido:
+
+        altura de chegada ao receptor   1.85 m de média
+        17 de 19 lançamentos acima da cabeça (>1.7 m)
+
+    Um lateral para os pés é atirado a DESCER desde as mãos. Daí a faixa
+    negativa: o `velocidadeParaAlturaNoAlvo` resolve a velocidade para a bola
+    passar à altura pedida à distância pedida, e com a bola a descer desde a
+    saída ela está sempre abaixo da cabeça de toda a gente.
+    */
+    elevAlvoMin: -8 * Math.PI / 180,
+    elevAlvoMax: 4 * Math.PI / 180,
 
     /*
     ATÉ ONDE CHEGA UM LATERAL, POR STRENGTH — os dois extremos, escritos.
@@ -668,6 +715,42 @@ const ThrowInModel = {
     distanciaAosPes: 9.0,
 
     /*
+    ANTECIPAÇÃO DO RECEPTOR — ver lancarLateral (player.js).
+
+    `velocidadeTipica` é a velocidade horizontal média de um lateral, usada só
+    para estimar o TEMPO de voo antes de se saber a velocidade real (que
+    depende do alcance, que depende do ponto, que depende do tempo). Medida:
+    um lateral de 9 m sai a ~11 m/s e leva ~0.85 s, ou seja ~10.5 m/s de média
+    horizontal.
+
+    `antecipacaoMax` é o tecto do tempo projectado: sem ele, um receptor a
+    correr e um lançamento longo mandavam a bola para um ponto onde ele nunca
+    chegaria.
+    */
+    velocidadeTipica: 10.5,
+    antecipacaoMax: 1.2,
+
+    /*
+    O APOIO QUE NÃO RECEBEU, E O JOGO FOI PARA O OUTRO LADO.
+
+    Quem sobe a dar apoio no lateral fica adiantado. Se a bola sair dali e
+    atravessar o corredor central para a outra banda, ele ficou à frente da
+    jogada com a equipa a defender do lado oposto — é o buraco por onde entra o
+    contra-ataque. Pedido: recua um pouco, para estar pronto se a bola se
+    perder.
+
+    `recuoAposApoio`  metros atrás do posto dele, no referencial de ataque.
+    `recuoDuracao`    quanto tempo a regra vale depois do lance. Não é para
+                      sempre: passado isto o lance acabou e o posicionamento
+                      normal já o pôs onde tem de estar.
+    `recuoGatilhoX`   o "meio do corredor central" — a bola tem de passar daqui
+                      para o outro lado. É zero: o eixo do campo.
+    */
+    recuoAposApoio: 6.0,
+    recuoDuracao: 12.0,
+    recuoGatilhoX: 0.0,
+
+    /*
     APOIO AO BATEDOR. Os companheiros ficavam nos slots do bloco, a vinte e
     tal metros, e o lateral saia para ninguem — via-se no ecra o batedor
     sozinho com meio campo a frente.
@@ -701,9 +784,9 @@ const ThrowInModel = {
     O peso é um erro à parte, sobre a DISTÂNCIA alvo — cai curta ou passa o
     receptor. Ver sigmaDeLateral em utils.js.
     */
-    sigmaMax: 0.13,          // rad (~7.5°) a TEC 0
-    sigmaMin: 0.02,          // rad (~1.1°) a TEC 100
-    sigmaPeso: 0.10,         // desvio relativo no alcance a TEC 0
+    sigmaMax: 0.117,         // rad (~6.7°) a TEC 0 (reduzido 10%)
+    sigmaMin: 0.018,         // rad (~1.0°) a TEC 100 (reduzido 10%)
+    sigmaPeso: 0.09,         // desvio relativo no alcance a TEC 0 (reduzido 10%)
     pesoMin: 0.6,            // cortes do erro de peso, para não sair absurdo
     pesoMax: 1.4
 };

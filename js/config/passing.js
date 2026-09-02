@@ -140,10 +140,26 @@ const PassModel = {
     passeArco: {
         rasteiroMax: 15.0,
         chanceArco: 0.5,
+
+        /*
+        ABAIXO DOS 30 m A BOLA NÃO PASSA DA ALTURA DO PEITO.
+
+        Pedido explícito: passe PELO ALTO só acima dos 30 m. Até lá a bola pode
+        levantar-se — é preciso, para passar por cima de quem está na linha —
+        mas o tecto é o mesmo ponto onde o companheiro a mata no peito
+        (o `BallControl.peitoAltura`, 1.20 m — o número está aqui à mão porque o
+        player_behavior.js carrega depois deste ficheiro). A banda dos 20-30 m
+        estava em 4.2 m,
+        que é a parábola de um lançamento e não de um passe: chegava por cima
+        da cabeça de quem a esperava.
+
+        Continua a ser um TECTO e não um alvo: um passe de 16 m com o caminho
+        limpo sai rasteiro na mesma (o sorteio do `chanceArco` não mudou).
+        */
         bandas: [
             { max: 10.0, alturaMax: 1.0 },
-            { max: 20.0, alturaMax: 1.5 },
-            { max: 30.0, alturaMax: 4.2 }
+            { max: 20.0, alturaMax: 1.20 },
+            { max: 30.0, alturaMax: 1.20 }
         ],
 
         /*
@@ -171,6 +187,17 @@ const PassModel = {
         elevMax: 35 * Math.PI / 180,
 
         /*
+        PISO PRÓPRIO PARA QUEM ESTÁ DEBAIXO DO TECTO DO PEITO.
+
+        O `elevMin` de 25° é a faixa de um passe pelo alto de verdade, e a
+        clamp para cima ANULAVA o tecto da banda: um passe de 20 m com tecto de
+        1.20 m pede 13.5°, era subido para 25°, e o apex saía a 2.33 m — o dobro
+        do que o tecto dizia. Abaixo dos 30 m o que manda é a altura, portanto o
+        piso tem de ser baixo o suficiente para a bola poder sair rasante.
+        */
+        elevMinBaixa: 5 * Math.PI / 180,
+
+        /*
         TECTO DE ALTURA, em metros. A faixa de ângulos descreve o gesto e é a
         mesma a 18 m e a 55 m — mas o apex cresce com a VELOCIDADE, que cresce
         com a distância. Medido: um lançamento de 54.9 m a 35° saía com
@@ -180,20 +207,6 @@ const PassModel = {
         até caber.
         */
         apexMax: 7.0,
-
-        /*
-        TECTO DE ALTURA DOS PASSES ABAIXO DE `distanciaAlto` (pedido
-        explícito). Um passe de 18 m saía com 3-4 m de apex — pelo ar, mas
-        sem nada no caminho que justificasse levantá-lo. Abaixo dos 30 m a
-        bola pode sair do chão, mas no máximo `apexMaxCurto`; acima, vale o
-        `apexMax` normal.
-
-        `elevMinCurto` é o piso de ângulo que este tecto precisa: 1 m de apex
-        a 25 m dá 9.1°, e o `elevMinLonga` (15°) não deixaria lá chegar.
-        */
-        apexMaxCurto: 1.0,
-        distanciaAlto: 30.0,
-        elevMinCurto: 4 * Math.PI / 180,
 
         /*
         E quando nem no mínimo da faixa o apex cabe — um passe de 55 m a 25°
@@ -239,6 +252,19 @@ const PassModel = {
     alvo dele e um PONTO a frente de quem corre, nao o pe de ninguem.
     */
     vChegadaLancamento: 2.75,
+
+    /*
+    FRACÇÃO DO ALCANCE RASTEIRO ACIMA DA QUAL O LANÇAMENTO VAI PELO AR.
+
+    O rasteiro tem um tecto físico de ~28.8 m (ver alcanceRasteiroMaximo,
+    utils.js): pedir mais do que isso não dá erro nenhum, dá uma bola que morre
+    a meio caminho. Medido em 1200 s de jogo, 13 dos 167 lançamentos rasteiros
+    pediam mais de 28 m e ficaram em média 21.7 m aquém do ponto.
+
+    0.92 e não 1.0 porque na fronteira a bola chega ao ponto praticamente
+    parada — tecnicamente lá, inútil na prática.
+    */
+    fraccaoAlcanceRasteiro: 0.92,
 
     /*
     PASSE DE ENCONTRO — ver `passeDeEncontro` em utils.js.
@@ -317,7 +343,7 @@ const PassModel = {
     antigo `passBoost`, que aumentava a força em vez da precisão — e com a
     balística resolvida isso só voltava a pôr a bola longe do alvo.
     */
-    erroPesoMax: 0.18,
+    erroPesoMax: 0.162,
 
     /*
     --- Percepção e margem de segurança de limites de campo (Linhas Laterais / Fundo) ---
@@ -348,14 +374,14 @@ vinham so de decisao ma ou de dominio falhado.
                      documentado para sigmaMax sozinho
 */
 const PassErrorModel = {
-    sigmaMax: 0.13,        // ~7.5 graus
-    sigmaMin: 0.009,       // ~0.5 graus
+    sigmaMax: 0.117,       // ~6.7 graus (reduzido 10%)
+    sigmaMin: 0.0081,      // ~0.45 graus (reduzido 10%)
     pesoTecnica: 0.35,
     raioPressao: 3.5,
     pressaoMult: 1.55,
     costasMult: 2.0,
     forcaMinPressao: 0.85,
-    sigmaTecto: 0.26
+    sigmaTecto: 0.234      // reduzido 10%
 };
 
 /*

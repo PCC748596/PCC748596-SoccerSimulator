@@ -507,13 +507,25 @@ uma dúzia de frames alguma das faces já tinha saído — o resultado real seri
 "o que calhar primeiro", não os 80/20 pedidos. Fica gravada no jogador e só
 é limpa quando ele deixa de ter a bola (ver limparSaidaGK).
 */
-function decidirSaidaGK(p) {
+function decidirSaidaGK(ctx) {
+    const p = ctx.p;
     const G = GoalkeeperDistribution;
     let chance = G.laterais;
     if (G.porEstilo && typeof Tatics !== 'undefined' &&
         G.porEstilo[Tatics.teamPlayStyle] !== undefined) {
         chance = G.porEstilo[Tatics.teamPlayStyle];
     }
+    
+    // A preferência do estilo da equipa é a base, mas podemos ajustá-la em
+    // função da disponibilidade real das linhas de passe.
+    const lateralLivre = acharLateralParaSaida(ctx);
+    if (!lateralLivre) {
+        // Se ninguém está livre, não tem como sair a jogar curto.
+        chance = 0.0;
+    }
+    // Se há um lateral livre, a chance permanece a que o estilo de jogo mandou
+    // (ex: Possession = 70%, Direct = 25%).
+
     p.gkSaida = (Math.random() < chance) ? 'laterais' : 'chuteFrente';
     return p.gkSaida;
 }
@@ -1043,103 +1055,6 @@ O `overlapTimer` é o que diz a quem tem a bola que eu sou opção (ver o ramo 4
 do tratarJogadaCombinada) — e era ele que estava permanentemente a zero desde
 que o overlap foi desligado.
 */
-/*
-UM CENTRAL NAO ARRANCA PARA O ESPACO.
-
-O `podeCorrerNoEspaco` ja filtrava por posicao (`posicaoCorreAoEspaco`: os
-defesas so correm se forem laterais), mas a tabelinha e o overlap metiam o
-jogador em RUN_INTO_SPACE sem passar por esse filtro. Medido: 15% dos casos em
-que um CENTRAL estava a mais de 8 m do slot dele vinham de RUN_INTO_SPACE.
-*/
-function posicaoPodeArrancar(p) {
-    return (typeof posicaoCorreAoEspaco !== 'function') ||
-        posicaoCorreAoEspaco(p.role, p.pos);
-}
-
-function podeEsperarDevolucao(ctx) {
-    const p = ctx.p;
-    // Um central nao arranca para o espaco — ver posicaoPodeArrancar.
-    if (!posicaoPodeArrancar(p)) return false;
-    return !!(p.esperarDevolucao && p.esperarDevolucao.timer > 0 && p !== Match.ballCarrier);
-}
-
-function actEsperarDevolucao(ctx) {
-    const p = ctx.p;
-    const T = JogadasCombinadas.tabelinha;
-    p.dynamicTarget.set(p.esperarDevolucao.alvo.x, ALTURA_BASE_Y, p.esperarDevolucao.alvo.z);
-    p.speedMult = T.velocidadeArranque;
-    /*
-    O `runTimer` tem de vir com o estado. O `case RUN_INTO_SPACE` da FSM aborta
-    logo à entrada quando ele está a zero — e abortava, todos os frames, porque
-    esta folha pedia o estado e nunca lho punha. Ninguém guiava o jogador e a
-    velocidade do último frame ficava congelada a integrar: linha recta para
-    fora do campo. Vale o que resta do pedido de tabelinha.
-    */
-    p.runTimer = Math.max(p.runTimer || 0, p.esperarDevolucao.timer);
-    // `runTimer > 0` significa "corrida em curso" para o actRunIntoSpace, que
-    // a partir daí lê o `runTarget` sem o voltar a criar. Os dois andam juntos.
-    p.runTarget = { x: p.dynamicTarget.x, z: p.dynamicTarget.z };
-    p.fsm.changeState('RUN_INTO_SPACE');
-}
-
-function podeCorrerOverlap(ctx) {
-    const p = ctx.p;
-    const O = (typeof JogadasCombinadas !== 'undefined') ? JogadasCombinadas.overlap : null;
-    if (!O || p.role === 'gk') return false;
-    // Idem: quem nao corre ao espaco tambem nao faz overlap.
-    if (!posicaoPodeArrancar(p)) return false;
-
-    // Já a correr: mantém-se até o tempo acabar.
-    if (p.overlapTimer > 0) return true;
-
-    const portador = Match.ballCarrier;
-    if (!portador || portador === p || portador.team !== p.team) return false;
-    if (p.model.position.z * p.dirZ < O.avancoMin) return false;
-
-    // Só quem está do MESMO lado e ATRÁS do portador ultrapassa por fora.
-    const ladoDele = Math.sign(p.model.position.x) || 1;
-    if (Math.sign(portador.model.position.x) !== ladoDele) return false;
-    if (p.model.position.z * p.dirZ > portador.model.position.z * p.dirZ) return false;
-
-    // Corredor de fora livre à frente dele.
-    const advs = (p.team === 'TeamA') ? Match.opponents : Match.players;
-    const alvo = alvoDoOverlap(p, portador, O);
-    if (!corredorLivre(p.model.position.x, p.model.position.z, alvo.x, alvo.z,
-        advs, 2.5, true)) return false;
-
-    p.overlapTimer = O.duracao;
-    return true;
-}
-
-// Ponto do overlap: à frente do portador, no corredor lateral do lado dele.
-function alvoDoOverlap(p, portador, O) {
-    const lado = Math.sign(p.model.position.x) || 1;
-    return {
-        x: lado * O.larguraDoCorredor,
-        z: portador.model.position.z + p.dirZ * O.avancoDaCorrida
-    };
-}
-
-function actOverlap(ctx) {
-    const p = ctx.p;
-    const O = JogadasCombinadas.overlap;
-    const portador = Match.ballCarrier;
-    const alvo = portador && portador.model
-        ? alvoDoOverlap(p, portador, O)
-        : { x: p.model.position.x, z: p.model.position.z + p.dirZ * O.avancoDaCorrida };
-
-    p.dynamicTarget.set(
-        THREE.MathUtils.clamp(alvo.x, -(CAMPO_LARG / 2 - 2), CAMPO_LARG / 2 - 2),
-        ALTURA_BASE_Y,
-        THREE.MathUtils.clamp(alvo.z, -(CAMPO_COMP / 2 - 2), CAMPO_COMP / 2 - 2));
-    p.speedMult = O.velocidade;
-    // Ver a nota do runTimer no actEsperarDevolucao: sem ele o RUN_INTO_SPACE
-    // aborta à entrada e ninguém guia o jogador.
-    p.runTimer = Math.max(p.runTimer || 0, p.overlapTimer || O.duracao);
-    p.runTarget = { x: p.dynamicTarget.x, z: p.dynamicTarget.z };
-    p.fsm.changeState('RUN_INTO_SPACE');
-}
-
 function actPass(ctx) {
     const p = ctx.p;
     if (p.aguardarPassada()) return true;
@@ -1264,9 +1179,14 @@ function podeDriblar(ctx) {
     // Se a tendência for menor que 1.0, o jogador pode "desistir" da ideia do drible por mentalidade
     if (mult < 1.0 && Math.random() > mult) return false;
 
-    // Regra 4: Adversário próximo, espaço atrás do adversário, técnica >= 75 - Driblar
-    // Jogadores com tendência alta (ex: Pontas) arriscam driblar mesmo com técnica ligeiramente menor
-    let baseTec = 75 / Math.max(0.5, mult);
+    // No último terço ofensivo (zoneAhead >= 15 ou campo ofensivo avançado), os jogadores
+    // são incentivados a tentar o 1v1 com mais ousadia
+    const noUltimoTerco = (ctx.zoneAhead !== undefined && ctx.zoneAhead >= 15) || (p.model.position.z * p.dirZ > 17);
+    const bonusUltimoTerco = noUltimoTerco ? 1.35 : 1.0;
+
+    // Regra 4: Adversário próximo, espaço atrás do adversário - Driblar
+    // No último terço a barreira técnica necessária é mais baixa (ex: 60-65 em vez de 75)
+    let baseTec = (noUltimoTerco ? 60 : 72) / Math.max(0.5, mult * bonusUltimoTerco);
     const tec = p.skillFor ? p.skillFor('TEC') : ctx.skillTec;
     if (tec < baseTec) return false;
 
@@ -1278,16 +1198,18 @@ function podeDriblar(ctx) {
     if (p.role === 'def') return false;
 
     // Verificar se há adversário próximo à sua frente bloqueando a passagem
+    // No último terço a janela de distância para engajar o drible é mais ampla (até 5.5m)
+    const maxEngageDist = noUltimoTerco ? 5.5 : 4.8;
     let oppProximo = null;
     let menorDist = Infinity;
     for (const opp of ctx.opponents) {
         if (opp.role === 'gk') continue;
         const d = p.model.position.distanceTo(opp.model.position);
-        if (d >= 0.8 && d <= 4.8) {
+        if (d >= 0.8 && d <= maxEngageDist) {
             const dz = (opp.model.position.z - p.model.position.z) * p.dirZ;
-            if (dz > -0.5 && dz < 4.8) {
+            if (dz > -0.5 && dz < maxEngageDist) {
                 const dx = Math.abs(opp.model.position.x - p.model.position.x);
-                if (dx < 3.6 && d < menorDist) {
+                if (dx < 3.8 && d < menorDist) {
                     menorDist = d;
                     oppProximo = opp;
                 }
@@ -1297,15 +1219,19 @@ function podeDriblar(ctx) {
     if (!oppProximo) return false;
 
     // Verificar espaço atrás do adversário (costas do adversário desimpedidas para progressão)
+    // No último terço é mais permissivo com tráfego denso da área
     const oppZ = oppProximo.model.position.z;
     const oppX = oppProximo.model.position.x;
     let espacoAtrasLivre = true;
+    const distAtrasTol = noUltimoTerco ? 5.0 : 6.5;
+    const dxAtrasTol = noUltimoTerco ? 2.6 : 3.2;
+
     for (const opp2 of ctx.opponents) {
         if (opp2 === oppProximo || opp2.role === 'gk') continue;
         const dzAtras = (opp2.model.position.z - oppZ) * p.dirZ;
-        if (dzAtras > 0 && dzAtras < 6.5) {
+        if (dzAtras > 0 && dzAtras < distAtrasTol) {
             const dxAtras = Math.abs(opp2.model.position.x - oppX);
-            if (dxAtras < 3.2) {
+            if (dxAtras < dxAtrasTol) {
                 espacoAtrasLivre = false;
                 break;
             }
@@ -1692,7 +1618,11 @@ function actReceivePass(ctx) {
 
         const distAlvo = Math.hypot(p.model.position.x - p.dynamicTarget.x, p.model.position.z - p.dynamicTarget.z);
         const distBola = Math.hypot(p.model.position.x - bola.x, p.model.position.z - bola.z);
-        if (distAlvo < 0.8 && distBola > 1.2) {
+        
+        // Histerese para evitar sacudir (jitter)
+        const lim = (p.fsm.currentState === 'IDLE') ? 1.5 : 0.8;
+        
+        if (distAlvo < lim && distBola > 1.2) {
             p.velocity.set(0, 0, 0);
             p.fsm.changeState('IDLE');
             lookAtBola(p.model, bola);
@@ -1727,224 +1657,6 @@ function actApoioCirculacao(ctx) {
     p.speedMult = (6.2 + ((ctx.skillSpeed - 50) / 50) * 1.3) * 1.25 * 0.9;
     p.apoioAtivo = false;
     p.fsm.changeState('SUPPORT_PASS');
-}
-
-/*
-CORRIDA AO ESPACO — arrancar para um espaco livre a frente, sem bola.
-
-Quem ja esta a correr continua (o `runTimer` e a corrida em curso; quem a
-termina e a FSM, ver o case RUN_INTO_SPACE). Quem nao esta tem de cumprir
-tudo isto para arrancar:
-
-  - a equipa tem a bola, e nao sou eu que a tenho
-  - sou medio ou avancado (um central a arrancar para o espaco deixa a linha
-    a descoberto; isso e outra conversa, com outro nome)
-  - estou entre distMin e distMax do portador
-  - o arrefecimento passou (senao arranca e para no lugar, em ciclo)
-  - ha mesmo espaco livre a frente
-
-Ver RunIntoSpaceModel em config.js.
-*/
-function posicaoCorreAoEspaco(role, pos) {
-    if (role === 'gk') return false;
-    if (role !== 'def') {
-        if (typeof Tatics !== 'undefined' && (Tatics.estilo === 'defesa' || Tatics.estilo === 'muito_defensiva')) {
-            if (pos === 'LM' || pos === 'RM') return false;
-        }
-        return true;
-    }
-    if (typeof Tatics !== 'undefined' && (Tatics.estilo === 'defesa' || Tatics.estilo === 'muito_defensiva')) {
-        return false;
-    }
-    return pos === 'LB' || pos === 'RB';
-}
-
-/*
-QUEM SERVE DE REFERENCIA PARA A CORRIDA.
-
-Normalmente o portador. Mas durante o VOO de um passe nao ha portador nenhum
-(`Match.ballCarrier` fica null ate alguem receber) — e e exactamente esse o
-instante em que o passador tem de arrancar para receber de volta. Sem isto o
-toca-e-recebe era impossivel por construcao: quem passa nunca podia correr.
-*/
-function referenciaDaBola() {
-    if (typeof Match === 'undefined') return null;
-    return Match.ballCarrier || Match.intendedReceiver || null;
-}
-
-function podeCorrerNoEspaco(ctx) {
-    const p = ctx.p;
-    if (typeof RunIntoSpaceModel === 'undefined') return false;
-
-    const bb = ctx.bb;
-    if (!bb || !bb.isAttacking) {
-        p.runTimer = 0;
-        p.runCarrier = null;
-        return false;
-    }
-
-    if ((p.runTimer || 0) > 0) return true;          // ja vai a caminho
-
-    if (!posicaoCorreAoEspaco(p.role, p.pos)) return false;
-    if ((p.runCooldown || 0) > 0) return false;
-
-    const referencia = referenciaDaBola();
-    if (!referencia || referencia === p || referencia.team !== p.team) return false;
-
-    const R = RunIntoSpaceModel;
-    const dist = p.model.position.distanceTo(referencia.model.position);
-    if (dist < R.distMin || dist > R.distMax) return false;
-
-    return escolherDestinoDeCorrida(p, bb) !== null;
-}
-
-/*
-Onde ir. O SpatialGrid da a celula mais vazia num raio a frente do jogador; o
-destinoDeCorrida (utils.js) decide se ela serve e corta-a a medida (a frente,
-dentro do campo, aquem do fora-de-jogo, com comprimento de corrida).
-
-Devolve { x, z } ou null. Nao muda nada no jogador — e chamado tambem pela
-condicao, que nao pode ter efeitos.
-*/
-function escolherDestinoDeCorrida(p, bb) {
-    const R = RunIntoSpaceModel;
-    // A MESMA referencia da condicao (ver referenciaDaBola): se aqui fosse so
-    // o portador, quem acabou de passar passava na condicao e nao encontrava
-    // destino nenhum, e a corrida morria entre as duas.
-    const portador = referenciaDaBola();
-    if (!portador || portador === p) return null;
-
-    const pos = p.model.position;
-    const cp = portador.model.position;
-    const adversarios = ((p.team === 'TeamA') ? Match.opponents : Match.players)
-        .filter(o => o.role !== 'gk')
-        .map(o => ({ x: o.model.position.x, z: o.model.position.z }));
-
-    /*
-    A PRIMEIRA VERSAO PROCURAVA ESPACO LIVRE E MAIS NADA (SpatialGrid.
-    findFreeSpace a frente do jogador). Media, 10 sementes: os companheiros a
-    10-22 m do portador subiam de 4.4 para 4.3 e os que tinham LINHA LIVRE
-    ficavam nos 1.6-1.7 — ou seja, zero. Correr para um espaco onde ninguem
-    consegue servir a bola nao abre opcao de passe nenhuma; abre so um buraco
-    na formacao.
-
-    Agora o destino tem de cumprir as duas coisas ao mesmo tempo:
-
-        estar livre        sem adversario a menos de `margemDestino`
-        ser servivel       a linha PORTADOR -> destino aberta, e a uma
-                           distancia de passe (10 a 22 m dele)
-
-    A procura e um leque a frente do jogador, no sentido de ataque: tres
-    distancias por cinco angulos. Chega para 15 hipoteses por jogador, num
-    tick que ja e de 15 Hz.
-    */
-    let melhor = null, melhorNota = -Infinity;
-
-    for (const alcance of [8.0, 13.0, 18.0]) {
-        for (const graus of [-50, -25, 0, 25, 50]) {
-            const rad = graus * Math.PI / 180;
-            // Frente do jogador = sentido de ataque dele.
-            const dx = Math.sin(rad) * alcance;
-            const dz = Math.cos(rad) * alcance * p.dirZ;
-
-            const cand = destinoDeCorrida({
-                px: pos.x,
-                pz: pos.z,
-                dirZ: p.dirZ,
-                candidatoX: pos.x + dx,
-                candidatoZ: pos.z + dz,
-                offsideLimitDir: (typeof bb.offsideLimitDir === 'number') ? bb.offsideLimitDir : null,
-                maxCorrida: R.maxCorrida
-            });
-            if (!cand) continue;
-
-            // Distancia de passe a partir de quem tem a bola.
-            const distPasse = Math.hypot(cand.x - cp.x, cand.z - cp.z);
-            if (distPasse < R.passeMin || distPasse > R.passeMax) continue;
-
-            // O destino esta mesmo livre?
-            let maisPerto = Infinity;
-            for (const o of adversarios) {
-                const d = Math.hypot(o.x - cand.x, o.z - cand.z);
-                if (d < maisPerto) maisPerto = d;
-            }
-            if (maisPerto < R.margemDestino) continue;
-
-            // E da para lhe chegar a bola?
-            if (!linhaLivre(cp.x, cp.z, cand.x, cand.z, adversarios, R.margemLinha)) continue;
-
-            // Entre os que servem, o que ganha mais campo e tem mais folga.
-            const ganho = (cand.z - pos.z) * p.dirZ;
-            let nota = ganho + Math.min(maisPerto, 8.0);
-            
-            // "Quando um lateral recebe a bola, um meia pela lateral ou ponta 
-            // deve tentar se projetar para receber o lancamento"
-            if (portador.pos === 'LB' || portador.pos === 'RB') {
-                if (['LW', 'RW', 'LM', 'RM', 'LB', 'RB'].includes(p.pos) && p.playingStyle) {
-                    const isOutward = (pos.x >= 0 && dx > 0) || (pos.x <= 0 && dx < 0);
-                    const isInward = (pos.x > 0 && dx < 0) || (pos.x < 0 && dx > 0);
-                    const isStraight = (dx === 0);
-                    
-                    if (p.playingStyle === 'prolific_winger' || p.playingStyle === 'cross_specialist') {
-                        // Nas costas do lateral oposto (flanco)
-                        if (isOutward || isStraight) nota += 8.0;
-                    } else if (p.playingStyle === 'hole_player' || p.playingStyle === 'fullback_finisher') {
-                        // Nas costas na diagonal pelo meio
-                        if (isInward) nota += 8.0;
-                    } else if (p.playingStyle === 'roaming_flank') {
-                        // Seja nas costas do lateral oposto ou na diagonal pelo meio
-                        if (isOutward || isStraight || isInward) nota += 8.0;
-                    }
-                }
-            }
-
-            if (nota > melhorNota) { melhorNota = nota; melhor = cand; }
-        }
-    }
-
-    return melhor;
-}
-
-function actRunIntoSpace(ctx) {
-    const p = ctx.p;
-    const R = RunIntoSpaceModel;
-
-    // Corrida nova: fixa destino, prazo e quem tinha a bola ao arrancar.
-    if (!((p.runTimer || 0) > 0)) {
-        const destino = escolherDestinoDeCorrida(p, ctx.bb);
-        if (!destino) { actHoldPosition(ctx); return; }
-        p.runTarget = { x: destino.x, z: destino.z };
-        p.runTimer = R.duracao;
-        p.runCarrier = Match.ballCarrier;
-    }
-
-    /*
-    REVALIDAÇÃO POR FRAME contra a linha de fora-de-jogo.
-
-    A corrida é fixada `R.duracao` segundos (4 s) e só o instante do arranque
-    passava pelo corte da linha (destinoDeCorrida). Nesses 4 s a última linha
-    adversária sobe, ou a bola avança, e o jogador continuava a correr para um
-    ponto entretanto ilegal — era o caso reportado dos dummy runners a passar
-    a linha.
-
-    Se o corte deixar o destino atrás do próprio jogador, a corrida deixou de
-    fazer sentido: aborta e volta a posicionar-se.
-    */
-    const limite = (ctx.bb && typeof ctx.bb.offsideLimitDir === 'number') ? ctx.bb.offsideLimitDir : null;
-    const avancoAlvo = avancoLegalDeCorrida(p.runTarget.z * p.dirZ, limite);
-    p.runTarget.z = avancoAlvo * p.dirZ;
-
-    if (avancoAlvo <= p.model.position.z * p.dirZ) {
-        p.runTimer = 0;
-        actHoldPosition(ctx);
-        return;
-    }
-
-    p.dynamicTarget.set(p.runTarget.x, ALTURA_BASE_Y, p.runTarget.z);
-    // Sprint: quem ataca o espaco vai a fundo, senao chega depois da bola.
-    p.speedMult = (7.0 + ((ctx.skillSpeed - 50) / 50) * 1.5) * 1.25 * 0.9;
-    p.apoioAtivo = false;
-    p.fsm.changeState('RUN_INTO_SPACE');
 }
 
 function actHoldPosition(ctx) {
@@ -2107,32 +1819,7 @@ function actMarcar(ctx) {
     const ponto = pontoDeMarcacao(base.x, base.z, hx, hz,
         p.ownGoalZ, dist, MarkingModel.biasMaxPara(base.z * p.dirZ));
 
-    /*
-    NA TRANSICAO DEFENSIVA NAO SE SOBE PARA MARCAR.
-
-    O ponto de marcacao fica do lado da propria baliza EM RELACAO AO HOMEM —
-    mas se o homem esta a frente do marcador, o ponto tambem esta, e o que se
-    ve nos primeiros segundos depois de perder a bola e meia equipa a SUBIR
-    para colar aos seus homens enquanto o adversario sai em contra-ataque.
-    Medido: cinco jogadores em MARKING, todos com o alvo 3 a 6 m a frente,
-    com a equipa em T.Defensive.
-
-    A camada posicional ja corta isto (ver BlockShape.transicaoDefensivaRecuaSo
-    em team_bt.js); a marcacao corre DEPOIS dela e reescrevia o alvo, por isso
-    o corte tem de se repetir aqui. Quem vai a bola nao entra nesta guarda: o
-    chaser tem de poder ir para a frente.
-    */
-    let alvoZ = ponto.z;
-    const bbM = ctx.bb;
-    if (bbM && bbM.state === TeamState.TRANSITION_DEFENSIVE &&
-        typeof BlockShape !== 'undefined' && BlockShape.transicaoDefensivaRecuaSo &&
-        bbM.chaser !== p && bbM.intercetor !== p && !p.hasBall) {
-        const folga = BlockShape.folgaTransicao || 0;
-        const meuZDir = p.model.position.z * p.dirZ;
-        if (alvoZ * p.dirZ > meuZDir + folga) alvoZ = (meuZDir + folga) * p.dirZ;
-    }
-
-    p.dynamicTarget.set(ponto.x, ALTURA_BASE_Y, alvoZ);
+    p.dynamicTarget.set(ponto.x, ALTURA_BASE_Y, ponto.z);
     p.speedMult = (5.8 + ((ctx.skillSpeed - 50) / 50) * 1.4) * 1.25 * 0.9;
     p.apoioAtivo = false;
     p.fsm.changeState('MARKING');
@@ -2255,11 +1942,33 @@ function aproximarNoLateral(p) {
     }
     if (maisPertoQueEu >= T.apoioQuantos) return;
 
+    /*
+    A DIRECÇÃO SAI DO SLOT DELE, não de onde ele calhou estar.
+
+    O apoio era um clamp radial: mantinha o rumo em que o jogador já estava e
+    só corrigia a distância ao batedor. Dois apoios que chegam pela mesma banda
+    acabam no mesmo ponto do anel — é o RM e o CM em cima um do outro.
+
+    Com o slot do nível 1 como direcção, cada um fica do seu lado: o médio da
+    ala à frente pela linha, o lateral atrás, o CM para dentro. É também o que
+    o pedido diz — o médio da ala mais perto da posição dele, mais à frente.
+    */
+    const ref = p.slotTarget || p.baseTarget;
     const alvo = alvoDeApoioNoLateral(
         p.model.position.x, p.model.position.z,
         batedor.model.position.x, batedor.model.position.z,
-        T.apoioMin, T.apoioMax);
+        T.apoioMin, T.apoioMax,
+        ref ? ref.x - batedor.model.position.x : undefined,
+        ref ? ref.z - batedor.model.position.z : undefined);
     p.dynamicTarget.set(alvo.x, ALTURA_BASE_Y, alvo.z);
+
+    /*
+    Fica marcado que ele subiu para este lance, e de que lado. Quem lê é o
+    `aplicarRecuoAposApoio` (team_bt.js): se a bola atravessar o eixo para a
+    outra banda sem lhe chegar, ele recua. Ver ThrowInModel.recuoAposApoio.
+    */
+    p.apoioLateralLado = Math.sign(batedor.model.position.x) || 1;
+    p.apoioLateralTimer = T.recuoDuracao;
 }
 
 function tratarBolaParada(p) {
@@ -2316,7 +2025,7 @@ function tratarGuardaRedes(ctx) {
     const G = GoalkeeperDistribution;
     // Sorteada UMA vez por posse (ver decidirSaidaGK) — a cada frame seria
     // "o que calhar primeiro" em vez da proporção pedida.
-    const saida = p.gkSaida || decidirSaidaGK(p);
+    const saida = p.gkSaida || decidirSaidaGK(ctx);
 
     /*
     Quando o GR segura a bola nas mãos, o relançamento é tratado pelo estado
@@ -2488,8 +2197,8 @@ const PlayerBT = sel('PlayerRoot',
 
             cond('CalculaDebug', (ctx) => {
                 let carryPts = 0;
-                if (ctx.campoAberto) carryPts += 100;
-                if (ctx.livreAFrente10m20g) carryPts += 150;
+                if (ctx.campoAberto) carryPts += 110;
+                if (ctx.livreAFrente10m20g) carryPts += 165;
                 ctx.carryScore = carryPts;
                 if (window.showPlayerPoints) {
                     ctx.p.debugPoints = ctx.p.debugPoints || {};
@@ -2575,7 +2284,7 @@ const PlayerBT = sel('PlayerRoot',
                 act('cruzar', actCross)
             ),
 
-            // 3. Conduzir em espaço aberto (+150 pontos se sem marcação a 10m em 20 graus)
+            // 3. Conduzir em espaço aberto (+165 pontos se sem marcação a 10m em 20 graus)
             seq('ConduzirEmEspaco',
                 cond('campoAberto', (ctx) => {
                     const p = ctx.p;
@@ -2827,17 +2536,7 @@ const PlayerBT = sel('PlayerRoot',
             passe — o parceiro é —, e o movimento tem de acontecer enquanto a
             bola vai e volta.
             */
-            seq('EsperarDevolucao',
-                cond('pediTabelinha', podeEsperarDevolucao),
-                act('arrancar', actEsperarDevolucao)
-            ),
-
             // Ultrapassar por fora quem tem a bola.
-            seq('Overlap',
-                cond('vouPorFora', podeCorrerOverlap),
-                act('overlap', actOverlap)
-            ),
-
             // Sou o destinatário do passe.
             seq('Receber',
                 cond('vemParaMim', (ctx) => souODestinatario(ctx.p)),
@@ -2952,35 +2651,6 @@ const PlayerBT = sel('PlayerRoot',
                 seq('ApoioDeCirculacao',
                     cond('fuiChamadoAApoiar', podeApoiarCirculacao),
                     act('apoiarCirculacao', actApoioCirculacao)
-                ),
-
-                seq('CorrerNoEspaco',
-                    cond('haEspacoAFrente', podeCorrerNoEspaco),
-                    act('correrNoEspaco', actRunIntoSpace)
-                ),
-
-                seq('AtacarArea',
-                    cond('colegaVaiCruzar', (ctx) => {
-                        const p = ctx.p;
-                        if (p.role === 'def' || p.role === 'gk') return false;
-                        const c = Match.ballCarrier;
-                        if (!c || c.team !== p.team || c === p) return false;
-                        const carrierX = Math.abs(c.model.position.x);
-                        const carrierZ = c.model.position.z * c.dirZ;
-                        return carrierX >= CrossModel.alaX && carrierZ >= CrossModel.zonaZ;
-                    }),
-                    act('atacarArea', (ctx) => {
-                        const p = ctx.p;
-                        const c = Match.ballCarrier;
-                        const side = Math.sign(c.model.position.x) || 1;
-                        // Metade dos candidatos ataca o 1º poste (lado do cruzamento),
-                        // a outra o 2º poste — leque simples, sem coordenação fina.
-                        const targetX = (p.id % 2 === 0) ? -side * 5.0 : side * 9.0;
-                        const targetZ = (CrossModel.areaZ + 6.0) * p.dirZ;
-                        p.dynamicTarget.set(targetX, ALTURA_BASE_Y, targetZ);
-                        p.speedMult = (5.5 + ((ctx.skillSpeed - 50) / 50) * 1.2) * 1.25 * 0.9;
-                        p.fsm.changeState('MOVE_TO_POS');
-                    })
                 )
                 )
             ),
@@ -3112,23 +2782,9 @@ function tratarMarcacaoNoCanto(p) {
 const PlayerAI = {
     tick: function (player, dt) {
         const s = player.fsm ? player.fsm.currentState : "";
-        const bbAlvo = (typeof TeamAI !== 'undefined') ? TeamAI.get(player.team) : null;
-
-        /*
-        O ALVO E RESOLVIDO UMA VEZ, NO FIM — ver js/bt/alvo.js.
-
-        Mesmo quando a arvore nao corre (gesto em curso, passe, remate), as
-        propostas da camada posicional deste frame tem de ser resolvidas: sem
-        isso o `dynamicTarget` ficava congelado no valor do frame anterior
-        durante todo o gesto.
-        */
-        const fechar = () => {
-            if (typeof resolverAlvo === 'function') resolverAlvo(player, bbAlvo);
-        };
-
         // LATERAL entra na lista: é um gesto com duração própria (ThrowInClip),
         // e deixar o BT decidir por cima dele tirava-lhe a bola das mãos a meio.
-        if (player.actionState || s === "PASS" || s === "SHOOT" || s === "CROSS" || s === "TACKLE" || s === "SLIDE_TACKLE" || s === "CHEST_CONTROL" || s === "LATERAL") { fechar(); return; }
+        if (player.actionState || s === "PASS" || s === "SHOOT" || s === "CROSS" || s === "TACKLE" || s === "SLIDE_TACKLE" || s === "CHEST_CONTROL" || s === "LATERAL") return;
 
         if (!player.btCtx) player.btCtx = new PlayerContext(player);
         const ctx = player.btCtx.prepare(dt);
@@ -3147,7 +2803,7 @@ const PlayerAI = {
         marcação individual do canto tem prioridade sobre o bloco e sobre os
         estilos. Ver tratarMarcacaoNoCanto.
         */
-        if (tratarMarcacaoNoCanto(player)) { fechar(); return; }
+        if (tratarMarcacaoNoCanto(player)) return;
 
         /*
         1. BT do Playing Style — só na FASE DE ATAQUE da equipa.
@@ -3158,27 +2814,8 @@ const PlayerAI = {
         puxar o jogador para a sua zona preferida enquanto a equipa defende
         é exactamente o que abre buracos no bloco.
         */
-        const bbEquipa = bbAlvo;
+        const bbEquipa = (typeof TeamAI !== 'undefined') ? TeamAI.get(player.team) : null;
         const emAtaque = !!(bbEquipa && bbEquipa.isAttacking);
-
-        /*
-        O QUE A ARVORE ESCREVER NESTE FRAME VIRA UMA PROPOSTA.
-
-        As folhas continuam a escrever no `dynamicTarget` — sao dezenas e
-        migra-las uma a uma seria outro trabalho. Guarda-se o alvo ANTES de
-        elas correrem; se mudarem alguma coisa, essa mudanca entra como
-        proposta, com a prioridade da TAREFA e nao da folha:
-
-            tarefa de bola (portador, chaser, intercetor, receptor)  -> BOLA
-            tudo o resto (estilos, corridas, apoios, marcacao)        -> ACCAO
-
-        E por isso que um apoio deixa de furar o rest defense e o fora-de-jogo,
-        e um chaser continua a poder ir aonde tem de ir.
-        */
-        const alvoAntes = {
-            x: player.dynamicTarget.x,
-            z: player.dynamicTarget.z
-        };
 
         /*
         QUEM TEM A BOLA CHEGA SEMPRE AO PlayerBT.
@@ -3199,72 +2836,70 @@ const PlayerAI = {
         */
         const comBola = !!player.hasBall || (player.carryTouchGrace || 0) > 0;
 
-        /*
-        O que a arvore escreve entra como proposta (ver `alvoAntes`); a
-        prioridade sai da TAREFA. Fica numa funcao para os tres pontos de
-        saida da arvore a usarem.
-        */
-        const proporOQueAArvoreEscreveu = () => {
-            if (typeof proporAlvo !== 'function') return;
-            /*
-            NAO CHEGA VER SE O ALVO MUDOU.
-
-            Um chaser que ja vai a caminho escreve o MESMO alvo que escreveu no
-            frame anterior — e o frame anterior ja o tinha resolvido para o
-            `dynamicTarget`. Sem proposta, a estrutura ganhava e puxava-o de
-            volta ao slot: medido, o jogo parava (9 passes em 15 minutos de
-            fisica, contra ~210).
-
-            Por isso a evidencia de que a arvore quer o alvo dela e o ESTADO:
-            `MOVE_TO_POS` e `IDLE` sao os estados sem tarefa, tudo o resto e
-            uma accao em curso.
-            */
-            const est = player.fsm ? player.fsm.currentState : '';
-            const semTarefa = (est === 'MOVE_TO_POS' || est === 'IDLE' || est === '');
-            const mudou = Math.abs(player.dynamicTarget.x - alvoAntes.x) > 0.001 ||
-                Math.abs(player.dynamicTarget.z - alvoAntes.z) > 0.001;
-
-            /*
-            E QUEM VAI A BOLA PROPOE SEMPRE, mude ou nao mude o alvo.
-
-            O chaser vai a bola no estado MOVE_TO_POS — o estado nao distingue
-            "vou buscar a bola" de "estou a ocupar posicao", e o alvo dele nao
-            muda de frame para frame porque a bola esta parada. Sem esta linha
-            ele nao propunha nada, a estrutura ganhava, e ninguem ia a bola:
-            medido, 17 passes em 8 minutos de fisica contra 100 com o
-            resolvedor desligado.
-            */
-            const tarefaDeBola = (typeof temTarefaDeBola === 'function') &&
-                temTarefaDeBola(player, bbEquipa);
-            if (!mudou && semTarefa && !tarefaDeBola) return;
-            const prio = tarefaDeBola ? AlvoPrio.BOLA : AlvoPrio.ACCAO;
-            proporAlvo(player, prio, player.dynamicTarget.x, player.dynamicTarget.z,
-                'arvore:' + (player.fsm ? player.fsm.currentState : '?'));
-        };
-
-        // No tiro de meta, os jogadores de campo seguem somente o TeamBT (BolaParada)
-        if (typeof Match !== 'undefined' && Match.state === 'GOAL_KICK' && player !== Match.setPieceTaker) {
-            PlayerBT.tick(ctx);
-            fechar();
-            return;
-        }
-
         if (emAtaque && player.playingStyle && player.styleAtivo && PlayingStyleBTs[player.playingStyle]) {
             const res = PlayingStyleBTs[player.playingStyle].tick(ctx);
-            if (res === SUCCESS && !comBola) { proporOQueAArvoreEscreveu(); fechar(); return; }
+            if (res === SUCCESS && !comBola) return;
         }
 
         // 2. Prioridade: BT específico da Posição (se registado)
         if (player.pos && PositionBTs[player.pos]) {
             const res = PositionBTs[player.pos].tick(ctx);
-            if (res === SUCCESS && !comBola) { proporOQueAArvoreEscreveu(); fechar(); return; }
+            if (res === SUCCESS && !comBola) return;
         }
 
         // 3. BT Base Unificado
         PlayerBT.tick(ctx);
 
-        // 4. As propostas do frame resolvem-se aqui, e so aqui.
-        proporOQueAArvoreEscreveu();
-        fechar();
+        /*
+        A ÂNCORA DO BOX-TO-BOX SOBREVIVE À ÁRVORE.
+
+        O nível 2 põe-no a 4 m à frente (ou 3 m atrás) da linha da bola — ver
+        PlayingStyles.box_to_box.ancoraNaBola e aplicarTectoDoEstilo. Medido, o
+        alvo táctico saía certo (+3.3 m em `ataque`) e a ÁRVORE reescrevia-o a
+        seguir para -0.6 m: o `dynamicTarget` tem 25 escritas no player_bt.js e
+        a última é que vale.
+
+        Por isso o corte é aqui, depois de a árvore falar, e é um TECTO de um
+        lado só: à frente da bola nas mentalidades ofensivas, atrás dela nas
+        defensivas. Não empurra ninguém para a frente — só impede que a folha o
+        deixe do lado errado da bola.
+
+        FORA DA REGRA quem tem tarefa com a bola: portador, chaser, intercetor e
+        destinatário do passe. É a mesma lista do `esperarPeloSlot` (team_bt.js),
+        e pela mesma razão — travar quem vai à bola não é posicionamento, é
+        estragar a jogada.
+        */
+        aplicarAncoraBoxToBox(player, bbEquipa);
     }
 };
+
+/*
+Ver a nota no fim do PlayerAI.tick. Vive à parte por ser o único sítio onde o
+nível 3 é corrigido de fora da árvore — se isto crescer para outros estilos, é
+aqui que se vê.
+*/
+function aplicarAncoraBoxToBox(p, bb) {
+    if (!bb || !p || p.role === 'gk') return;
+    if (p.playingStyle !== 'box_to_box' || p.playingStyleDesligado) return;
+    if (typeof Config !== 'undefined' && Config.usePlayingStyles === false) return;
+    if (typeof Tatics === 'undefined' || typeof PlayingStyles === 'undefined') return;
+
+    const cfg = PlayingStyles.box_to_box && PlayingStyles.box_to_box.ancoraNaBola;
+    const offset = cfg ? cfg[Tatics.estilo] : undefined;
+    if (typeof offset !== 'number') return;
+
+    const comTarefaDeBola = p.hasBall ||
+        (bb.chaser === p) || (bb.intercetor === p) ||
+        (typeof Match !== 'undefined' && Match.intendedReceiver === p);
+    if (comTarefaDeBola) return;
+
+    const bolaDir = (typeof bb.bolaZSuave === 'number' ? bb.bolaZSuave : (bb.ballZ || 0)) * bb.dir;
+    const linhaDir = bolaDir + offset;
+    const alvoDir = p.dynamicTarget.z * p.dirZ;
+
+    if (offset >= 0) {
+        if (alvoDir < linhaDir) p.dynamicTarget.z = linhaDir * p.dirZ;
+    } else if (alvoDir > linhaDir) {
+        p.dynamicTarget.z = linhaDir * p.dirZ;
+    }
+}

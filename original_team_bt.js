@@ -1170,11 +1170,13 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPo
     o central que sobra e o lateral do lado oposto fecharem para o meio quando
     o outro central sobe. Ver LineShape.porFalta e classificarLinhas.
     */
-    const fechoOcup = 1.0; // Desativado para evitar pulos nas posições (TeamsBT)
+    const fechoOcup = (typeof fechoPorOcupacao === 'function')
+        ? fechoPorOcupacao(bb, linhaActual || role) : 1.0;
 
     // O de trás do par lateral/meia-lateral fecha para o eixo — ver a regra do
     // par em classificarLinhas.
-    const fechoPar = 1.0; // Desativado para evitar pulos nas posições (TeamsBT)
+    const fechoPar = (fecharPorPar && LineShape && typeof LineShape.parFecho === 'number')
+        ? LineShape.parFecho : 1.0;
 
     /*
     LINHA INCOMPLETA: REPARTE-SE POR INTERVALOS IGUAIS, CENTRADA.
@@ -1191,6 +1193,13 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPo
     treinador e é ela que manda.
     */
     let uBase = slot.u;
+    if (typeof ordemNaLinha === 'number' && typeof totalNaLinha === 'number' &&
+        totalNaLinha > 0 && bb.linhas && bb.linhas.nominal) {
+        const nom = bb.linhas.nominal[linhaActual || role] || 0;
+        if (nom > 0 && totalNaLinha < nom) {
+            uBase = (ordemNaLinha + 1) / (totalNaLinha + 1);
+        }
+    }
 
     const u = THREE.MathUtils.clamp(
         0.5 + (uBase - 0.5) * fecho * fechoSec * fechoAdicional * fechoOcup * fechoPar, 0.02, 0.98);
@@ -1320,27 +1329,6 @@ function calcularPontoDoSlot(slot, pos, role, fbStyle, bb, linhaActual, fecharPo
         const zMinBloco = Math.min(bloco.z0, bloco.z1) + empurraZ;
         const zMaxBloco = Math.max(bloco.z0, bloco.z1) + empurraZ;
         zAlvoDir = THREE.MathUtils.clamp(zAlvoDir, zMinBloco, zMaxBloco);
-
-        // Regra do lateral do lado oposto: tem de ficar entre a linha da bola e a linha dos zagueiros
-        const isLateralPos = (pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB');
-        if (isLateralPos) {
-            const meuLadoX = (pos === 'LB' || pos === 'LWB') ? -1 : 1;
-            const bx = (typeof bb.bolaXSuave === 'number') ? bb.bolaXSuave : (bb.ballX || 0);
-            const ladoOposto = (Math.sign(bx) !== meuLadoX) && (Math.abs(bx) > 2.0);
-            if (ladoOposto) {
-                const zBolaDir = (typeof bb.bolaZSuave === 'number' ? bb.bolaZSuave : (bb.ballZ || 0)) * bb.dir;
-                let zZagueirosDir = bb.defLineDir !== undefined ? bb.defLineDir : (bloco ? bloco.z0 : -15);
-                if (bb.own) {
-                    const cbs = bb.own.filter(pl => pl.pos === 'CB' || (pl.role === 'def' && !['LB', 'RB', 'LWB', 'RWB'].includes(pl.pos)));
-                    if (cbs.length > 0) {
-                        zZagueirosDir = cbs.reduce((acc, cb) => acc + (cb.model.position.z * bb.dir), 0) / cbs.length;
-                    }
-                }
-                const minZ = Math.min(zZagueirosDir, zBolaDir);
-                const maxZ = Math.max(zZagueirosDir, zBolaDir);
-                zAlvoDir = THREE.MathUtils.clamp(zAlvoDir, minZ, maxZ);
-            }
-        }
 
         zTarget = zAlvoDir * bb.dir;
     }
@@ -2081,6 +2069,21 @@ function classificarLinhas(lista, bb) {
     */
     for (const o of comZ) o.p.puxarParaBola = false;
 
+    const MM = (typeof MarkingModel !== 'undefined') ? MarkingModel : null;
+    if (MM && typeof MM.distMaxDaBola === 'number' && !bb.isAttacking &&
+        typeof Match !== 'undefined' && Match.ball) {
+        const avancoBola = Match.ball.position.z * bb.dir;
+        if (avancoBola < (MM.tercoParaTectoDaBola ?? -17.7)) {
+            let maisPerto = null, dMin = Infinity;
+            for (const o of comZ) {
+                if (o.p.pos !== 'CB') continue;
+                const d = o.p.model.position.distanceTo(Match.ball.position);
+                if (d < dMin) { dMin = d; maisPerto = o.p; }
+            }
+            if (maisPerto && dMin > MM.distMaxDaBola) maisPerto.puxarParaBola = true;
+        }
+    }
+
     /*
     A ORDEM DE CADA UM DENTRO DA SUA LINHA, da esquerda para a direita, pelo `u`
     da formação. É o que permite redistribuir uma linha incompleta por
@@ -2196,6 +2199,23 @@ const PosicionamentoAI = {
         E O CONTRÁRIO: com o outro lateral já na linha de trás, este não cai
         abaixo da linha média. Ver LineShape.pisoLinhaMedia.
         */
+        /*
+        TECTO DA DISTÂNCIA À BOLA: o central mais próximo aproxima-se até ficar
+        a `distMaxDaBola`. Não vai à bola — fica a essa distância, na direcção
+        dela. Ver MarkingModel.distMaxDaBola.
+        */
+        if (p.puxarParaBola && typeof Match !== 'undefined' && Match.ball &&
+            typeof MarkingModel !== 'undefined') {
+            const bx = Match.ball.position.x, bz = Match.ball.position.z;
+            const dx = targetX - bx, dz = targetZ - bz;
+            const d = Math.hypot(dx, dz);
+            const tecto = MarkingModel.distMaxDaBola;
+            if (d > tecto && d > 0.001) {
+                targetX = bx + (dx / d) * tecto;
+                targetZ = bz + (dz / d) * tecto;
+            }
+        }
+
         if (p.pisoLinhaMedia && bb.bloco) {
             const L = (typeof LineShape !== 'undefined') ? LineShape : null;
             const fr = (L && typeof L.pisoLinhaMedia === 'number') ? L.pisoLinhaMedia : 0.5;
@@ -2429,42 +2449,6 @@ const PosicionamentoAI = {
             
             // Suaviza a tentativa de espacamento mantendo-a dentro da faixa de accao original (nao empurrar alas pra lateral muito longe)
             // molaX ja estara com a forca aplicada
-        }
-
-        // Regra do lateral do lado oposto da jogada: fica entre a linha da bola e a linha dos zagueiros
-        const isLateral = (p.pos === 'LB' || p.pos === 'RB' || p.pos === 'LWB' || p.pos === 'RWB');
-        if (isLateral) {
-            const ballX = (typeof Match !== 'undefined' && Match.ball) 
-                ? Match.ball.position.x 
-                : ((bb && typeof bb.bolaXSuave === 'number') ? bb.bolaXSuave : 0);
-            const meuLadoX = (p.pos === 'LB' || p.pos === 'LWB') ? -1 : 1;
-            const ladoOposto = (Math.sign(ballX) !== meuLadoX) && (Math.abs(ballX) > 2.0);
-            
-            if (ladoOposto) {
-                const ballZ = (typeof Match !== 'undefined' && Match.ball) ? Match.ball.position.z : (bb ? bb.ballZ || 0 : 0);
-                const zBolaDir = ballZ * p.dirZ;
-                
-                const teamPlayers = (p.team === 'TeamA' ? Match.players : Match.opponents);
-                const zagueiros = teamPlayers 
-                    ? teamPlayers.filter(pl => pl.pos === 'CB' || (pl.role === 'def' && !['LB', 'RB', 'LWB', 'RWB'].includes(pl.pos))) 
-                    : [];
-                
-                let zZagueirosDir;
-                if (zagueiros.length > 0) {
-                    zZagueirosDir = zagueiros.reduce((acc, cb) => acc + (cb.model.position.z * p.dirZ), 0) / zagueiros.length;
-                } else if (bb && bb.defLineDir !== undefined) {
-                    zZagueirosDir = bb.defLineDir;
-                } else {
-                    zZagueirosDir = (bb && bb.bloco ? bb.bloco.z0 : -15);
-                }
-                
-                const minZDir = Math.min(zZagueirosDir, zBolaDir);
-                const maxZDir = Math.max(zZagueirosDir, zBolaDir);
-                
-                let zDir = finalZ * p.dirZ;
-                zDir = THREE.MathUtils.clamp(zDir, minZDir, maxZDir);
-                finalZ = zDir * p.dirZ;
-            }
         }
 
         const tx = THREE.MathUtils.clamp(molaX, -34, 34);
