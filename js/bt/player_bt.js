@@ -2659,14 +2659,40 @@ const PlayerBT = sel('PlayerRoot',
                     
                     if (dotAngle < -0.3) return false;
                     
+                    /*
+                    CAUTELA NA PROPRIA AREA (ver CautelaNaArea em
+                    config/defense.js): aqui dentro uma falta e penalti, e o
+                    defensor sabe-o. Sem carrinho, e o desarme de pe menos
+                    frequente.
+
+                    A area que conta e a do PROPRIO defensor, e o ponto e o do
+                    contacto — o meio entre ele e o portador, o mesmo criterio
+                    com que o arbitro julga a falta (ver Officials.marcarFalta).
+                    */
+                    let naPropriaArea = false;
+                    if (typeof CautelaNaArea !== 'undefined' && typeof Area !== 'undefined' &&
+                        typeof Area.contem === 'function') {
+                        const pd = ctx.p.model.position, pc = carrier.model.position;
+                        naPropriaArea = Area.contem(
+                            (pd.x + pc.x) / 2, (pd.z + pc.z) / 2, -ctx.p.dirZ);
+                    }
+
                     // Se muito perto e de frente, faz desarme em pé imediatamente.
-                    if (dist < 1.4 && dotAngle > 0.5) return true;
-                    
+                    if (dist < 1.4 && dotAngle > 0.5) {
+                        if (!naPropriaArea) return true;
+                        return Math.random() < CautelaNaArea.factorDesarme;
+                    }
+
+                    // Carrinho (1.4 a 3.0 m): na própria área não sai de todo.
+                    if (naPropriaArea && CautelaNaArea.semCarrinho) return false;
+
                     // Se estiver no alcance do carrinho (1.4 a 3.0m), tem uma chance por frame.
                     // A probabilidade escala com o atributo DEF e com a distância (quanto mais perto, mais provável).
                     const agressividade = ctx.p.skillFor('DEF') / 50.0;
-                    if (Math.random() < (0.015 * agressividade)) return true;
-                    
+                    let chance = 0.015 * agressividade;
+                    if (naPropriaArea) chance *= CautelaNaArea.factorDesarme;
+                    if (Math.random() < chance) return true;
+
                     return false;
                 }),
                 act('tentarDesarme', (ctx) => {

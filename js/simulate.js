@@ -435,6 +435,12 @@ function montarMediaPorJogo(fichas) {
         const media = vals.reduce((a, b) => a + b, 0) / vals.length;
         const casas = (typeof c.casas === 'number') ? c.casas : 2;
         linhas.push({
+            /*
+            `campo` alem do rotulo: o rotulo leva emoji, e o JSON exportado
+            passa por uma codificacao que os estraga ("â½ Golos"). O campo e
+            ASCII e serve para ler a tabela sem depender disso.
+            */
+            campo: c.campo,
             metrica: c.rotulo,
             medido: Number(media.toFixed(casas)),
             alvo: (typeof c.alvo === 'number') ? c.alvo : null,
@@ -739,6 +745,14 @@ const Sim = {
             `MatchStats.reset` zera as estatisticas, nao o marcador do Match.
             */
             Match.placarA = 0; Match.placarB = 0;
+            /*
+            E o RELOGIO, pelo mesmo motivo: ninguem o repunha, portanto ao 20.o
+            jogo ja levava ~97 000 s acumulados. O `porJogo` escala por
+            `5400 / segundosJogados`, logo o factor caia de 1.11 no primeiro
+            jogo para 0.055 no ultimo e a tabela `mediaPorJogo` dava 0.52 golos
+            por jogo quando as fichas mostravam 2 a 3.
+            */
+            Match.tempoDeJogo = 0;
             vigia.pos = null; vigia.parada = 0; vigia.jaRegistou = false;
 
             const totalPassos = Math.round(duracaoSeg / dt);

@@ -180,8 +180,24 @@ const RefereeModel = {
         corpo esta esticado, mas nao tanto que apanhe quem passou ao lado.
         */
         raioDuelo: 1.6,
+        /*
+        O carrinho esta no tecto: 0.15 x escala 4.3 = 0.645 de probabilidade
+        por carrinho falhado dentro do raio. Subir mais (ou subir a `escala`,
+        que o multiplica) leva-o para cima de 1 sem ganhar falta nenhuma — a
+        margem para mais faltas esta no desarme e no contacto, nao aqui.
+        */
         probCarrinhoFalhado: 0.15,
-        probDesarmeFalhado: 0.030,
+        /*
+        0.030 -> 0.075. Medido: 49 desarmes de pe tentados por jogo davam 2.6
+        faltas, quando o carrinho (35 tentados) dava 6.1. O desarme de pe
+        falhado tem de custar mais do que custava.
+
+        E e por AQUI que se sobe o resto do caminho para as 27.63, e nao pelo
+        contacto: o desarme tem gravidade base 0.14 contra os 0.10 do choque,
+        portanto rende falta E cartao, que e a metrica que fica para tras
+        quando o jogo se enche de contactos.
+        */
+        probDesarmeFalhado: 0.075,
 
         /*
         FONTE B — o contacto sem tentativa de desarme: empurrões e choques.
@@ -198,8 +214,32 @@ const RefereeModel = {
         */
         contacto: {
             raio: 1.0,
-            velRelMin: 4.5,
-            prob: 0.035,
+            /*
+            4.5 -> 3.2 m/s. Este limiar foi calibrado quando o piso da
+            velocidade de reposicionamento era 4.73 m/s e toda a gente andava
+            sempre a correr; com o `RepositionPace` (player_behavior.js) a
+            media por jogador passou de 4.3 para 3.1 m/s, e dois jogadores a
+            trote deixaram de chegar aos 4.5 de velocidade relativa. A fonte
+            secou por causa disso: 3.9 faltas de contacto por jogo.
+
+            3.2 e o trote contra o trote — um encontro a essa velocidade e um
+            choque, nao um rocar.
+            */
+            velRelMin: 3.2,
+            /*
+            0.035 -> 0.075, medido em passos de 207 min de relogio:
+
+                0.035   12.6 faltas por jogo, 3.05 cartoes
+                0.075   22.6 faltas por jogo, 3.05 cartoes
+                0.095   33.0 faltas por jogo, 1.73 cartoes  <- passou do alvo
+
+            O 0.095 nao foi rejeitado so por passar as 27.63: os CARTOES caem
+            quando se empurra tudo para esta fonte. O contacto tem gravidade
+            base 0.10 (ver `gravidade.base`) e quase nunca chega a amarelo, ao
+            contrario do carrinho (0.35). Encher o jogo de choques da muitas
+            faltas e um jogo sem cartoes — e os cartoes ja estao a 58% do alvo.
+            */
+            prob: 0.075,
             arrefecimento: 3.0,
             raioDisputa: 3.5
         },
@@ -1251,7 +1291,18 @@ const Officials = {
             this.expulsar(infractor);
         }
 
-        const pos = infractor.model.position;
+        /*
+        DENTRO DA AREA E PENALTI — e "dentro" mede-se no PONTO DA INFRACCAO,
+        nao onde calha estar o infractor.
+
+        Era `infractor.model.position`: um defensor com o corpo em cima da
+        linha da area a derrubar o atacante ja dentro dela dava livre, e um
+        carrinho que comeca fora e acerta no homem dentro tambem. O contacto e
+        entre os dois, portanto o ponto e o meio deles — que e o que o arbitro
+        marca.
+        */
+        const pi = infractor.model.position, pv = vitima.model.position;
+        const pos = { x: (pi.x + pv.x) / 2, z: (pi.z + pv.z) / 2 };
         if (this.ehPenalti(pos.x, pos.z, infractor.team)) {
             if (typeof MatchStats !== 'undefined') MatchStats[vitima.team].penaltis++;
             Match.triggerPenalty(vitima.team);
@@ -1385,7 +1436,26 @@ const Officials = {
                 const vrz = (a.velocity ? a.velocity.z : 0) - (b.velocity ? b.velocity.z : 0);
                 const vRel = Math.sqrt(vrx * vrx + vrz * vrz);
                 if (vRel < C.velRelMin) continue;
-                if (Math.random() >= prob) continue;
+
+                /*
+                CAUTELA NA AREA, tambem no corpo a corpo (ver CautelaNaArea em
+                config/defense.js). Quem vai mais depressa e o infractor (ver
+                mais abaixo), portanto a area que conta e a que ELE defende.
+                */
+                let probAqui = prob;
+                if (typeof CautelaNaArea !== 'undefined' &&
+                    typeof CautelaNaArea.factorContacto === 'number' &&
+                    typeof Area !== 'undefined' && typeof Area.contem === 'function') {
+                    const vA0 = a.velocity ? a.velocity.length() : 0;
+                    const vB0 = b.velocity ? b.velocity.length() : 0;
+                    const quemEntra = (vA0 >= vB0) ? a : b;
+                    const cx = (a.model.position.x + b.model.position.x) * 0.5;
+                    const cz = (a.model.position.z + b.model.position.z) * 0.5;
+                    if (Area.contem(cx, cz, -quemEntra.dirZ)) {
+                        probAqui *= CautelaNaArea.factorContacto;
+                    }
+                }
+                if (Math.random() >= probAqui) continue;
 
                 /*
                 Quem entra é quem vai mais depressa. Não é sempre verdade num

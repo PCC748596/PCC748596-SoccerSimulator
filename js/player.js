@@ -4510,6 +4510,14 @@ class FootballPlayer {
                             } else if (!maosProibidas) {
                                 this.gkEstado = 'apanhar';
                                 this.gkTempoMergulho = 0;
+                            } else if (this.adversarioAperta()) {
+                                /*
+                                RECUO COM O PE E ADVERSARIO EM CIMA: nao pode
+                                pegar (Lei 12) e nao ha tempo para dominar.
+                                Chuta para a frente, mesmo gesto e mesma
+                                balistica do tiro de meta. Ver GkRecuoModel.
+                                */
+                                this.chutarRecuoDeUrgencia();
                             }
                         }
                     }
@@ -4540,6 +4548,9 @@ class FootballPlayer {
                             if (distToBall < 1.2 && !maosProibidas) {
                                 this.gkEstado = 'apanhar';
                                 this.gkTempoMergulho = 0;
+                            } else if (maosProibidas && this.adversarioAperta()) {
+                                // Idem: recuo com o pé, adversário perto, chuta.
+                                this.chutarRecuoDeUrgencia();
                             }
                         } else {
                             let tempoAteMim = Match.ballVel.lengthSq() > 0 ? (gkCorpo.position.distanceTo(Match.ball.position) / Match.ballVel.length()) : 999;
@@ -5559,6 +5570,55 @@ class FootballPlayer {
     É aqui que o jogo volta a 'PLAY': até ao contacto pé-bola o estado é
     GOAL_KICK e ninguém decide nada.
     */
+    /*
+    Ha um adversario perto o suficiente para nao dar tempo de dominar a bola?
+    Ver GkRecuoModel.distPressao.
+    */
+    adversarioAperta() {
+        const R = (typeof GkRecuoModel !== 'undefined') ? GkRecuoModel : null;
+        if (!R) return false;
+        const advs = (this.team === 'TeamA') ? Match.opponents : Match.players;
+        if (!advs) return false;
+        const alvo = Match.ball ? Match.ball.position : this.model.position;
+        for (const o of advs) {
+            if (!o || !o.model || o.role === 'gk') continue;
+            const dx = o.model.position.x - alvo.x;
+            const dz = o.model.position.z - alvo.z;
+            if (dx * dx + dz * dz < R.distPressao * R.distPressao) return true;
+        }
+        return false;
+    }
+
+    /*
+    CHUTAO DE URGENCIA NUM RECUO COM O PE.
+
+    Mesmo gesto e mesma resolucao do tiro de meta (`gkPuntChao` +
+    `kickFromGround`): a bola sai para a frente, longe. O que muda e so o
+    gatilho — aqui nao ha bola parada nem tempo, ha um adversario a chegar e as
+    maos proibidas pela Lei 12.
+    */
+    chutarRecuoDeUrgencia() {
+        if (this.gkKickAction || this.gkEstado === 'chutando') return;
+        const R = (typeof GkRecuoModel !== 'undefined') ? GkRecuoModel : null;
+        if (!R || !Match.ball) return;
+        if (this.model.position.distanceTo(Match.ball.position) > R.distToque) return;
+
+        this.gkEstado = 'chutando';
+        this.gkKickTipo = 'chao';
+        this.gkTempoMergulho = 0;
+        this.gkKickNorm = 0;
+        this.gkKickAction = new ActionState('gkPuntChao', {
+            onContact: () => {
+                this.kickFromGround();
+                // O recuo acaba aqui: a bola saiu do pe dele.
+                Match.recuoParaGR = null;
+                if (typeof EventBus !== 'undefined') {
+                    EventBus.emit('GK_BACKPASS_CLEARED', { team: this.team, gk: this });
+                }
+            }
+        });
+    }
+
     kickFromGround() {
         const gGrav = BallPhysics.gravidade;
         // Ângulo ajustado entre 25 e 35 graus

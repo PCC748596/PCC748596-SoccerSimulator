@@ -338,7 +338,14 @@ const GoalkeeperDive = {
     atravessava o plano da baliza nos milissegundos seguintes, ainda dentro dos
     postes, antes da velocidade nova a tirar de lá.
     */
-    espalmarForaMargem: 1.1,   // a menos disto do poste, a espalmada sai
+    /*
+    A menos disto do poste, a espalmada pode sair pela linha de fundo.
+    1.1 -> 2.4: com 1.1 m era preciso a bola vir praticamente encostada ao
+    ferro para o guarda-redes ter a opcao de a mandar para canto, e por isso
+    quase tudo voltava ao campo. Os escanteios estao em 0.91 por jogo contra
+    9.92 (9% do alvo) — a defesa para canto e a fonte mais natural deles.
+    */
+    espalmarForaMargem: 2.4,   // a menos disto do poste, a espalmada sai
     espalmarAltaY: 1.70,       // acima disto sai por cima do travessão
     espalmarFolga: 0.35,       // quanto passa por fora do poste/travessão
     espalmarLateral: 5.0,      // m/s que leva para lá do poste
@@ -395,6 +402,33 @@ CALIBRAÇÃO: com um guarda-redes médio (GK 50, TEC 50) contra um remate médio
 Ver tests/gk_defesa.test.js, que mede isso e falha se sair da faixa.
 =============================================================================
 */
+/*
+=============================================================================
+RECUO COM O PE — o que o guarda-redes faz quando nao pode usar as maos
+=============================================================================
+A Lei 12 ja estava metade feita: um passe DELIBERADO com o pe de um companheiro
+marca `Match.recuoParaGR` (ver executePassGameplay, fsm.js) e o
+`maosProibidasNoRecuo` impede o guarda-redes de agarrar. A cabecada e a matada
+no peito nao passam por esse caminho — que e exactamente a distincao da regra.
+
+O que faltava era o DEPOIS: com as maos proibidas e a bola dentro da area, o
+ramo que o mandava agarrar tinha um `else if (!maosProibidas)` e mais nada, por
+isso ele chegava a bola e ficava parado em cima dela, com o adversario a chegar.
+
+`distPressao`: com um adversario a menos disto, nao ha tempo para dominar e sair
+a jogar — chuta-se para a frente, com o mesmo gesto e a mesma balistica do tiro
+de meta (`kickFromGround`). Mais longe do que isso ele tem tempo, e o resto do
+comportamento (sair a jogar, passe curto) continua a valer.
+=============================================================================
+*/
+const GkRecuoModel = {
+    distPressao: 5.0,
+    // A que distancia da bola o guarda-redes ja lhe pode bater.
+    distToque: 1.4
+};
+
+if (typeof window !== 'undefined') window.GkRecuoModel = GkRecuoModel;
+
 const GkCatchModel = {
     /*
     Probabilidade base por TIPO de defesa, a v = vRef e extensão 0. É a mesma
@@ -454,6 +488,15 @@ const GkCatchModel = {
 
     Era aleatória, e por isso não havia nem uma coisa nem outra de propósito.
     */
-    qualidadeBase: 0.50,
+    /*
+    Qualidade da espalmada: e ela que decide PARA ONDE a bola vai (ver
+    destinoDaEspalmada em utils.js) — canto e lateral com qualidade alta,
+    rebote curto ao meio com qualidade baixa.
+
+    0.50 -> 0.62: com 0.50 metade das espalmadas caia a frente da baliza,
+    disputavel. Um guarda-redes de tecnica media tira a bola do perigo bem
+    mais vezes do que isso, e e essa a diferenca entre um rebote e uma defesa.
+    */
+    qualidadeBase: 0.62,
     qualidadePorTEC: 0.45
 };

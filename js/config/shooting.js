@@ -7,8 +7,20 @@ Remates, livres directos, penáltis, cantos, cruzamentos, cabeceamentos e xG.
 */
 
 const ShootingModel = {
-    // alcance a skill 0 (reduzido para evitar remates do "meio da rua")
-    baseRange: 8.0,
+    /*
+    Alcance a skill 0. 8.0 -> 10.5: medido em lotes de 30 jogos, as
+    finalizacoes ficavam em 14.6 por jogo contra as 26.11 de um jogo a serio
+    (56%) — remata-se pouco, e nao e por falta de sitio: e por a entrada da
+    area cair fora do alcance de quem tem ataque medio (8 + 0.5x10 = 13 m no
+    eixo, e a area tem 16.5 de fundo).
+
+    AVISO, que fica escrito: o xG POR REMATE ja esta em 57% do alvo (0.062
+    contra 0.109), ou seja rematam-se bolas de pior qualidade do que num jogo
+    a serio. Alargar o alcance sobe a contagem e desce a qualidade media. A
+    correccao de fundo e criar mais ataque (os ataques totais estao em 36% do
+    alvo), nao rematar de mais longe.
+    */
+    baseRange: 10.5,
     // metros adicionais a skill 100
     skillRange: 10.0,
     maxOffsetX: 24.0,    // além disto o ângulo é mau demais para rematar
@@ -31,7 +43,14 @@ const ShootingModel = {
     */
     anguloMinimo: 14 * Math.PI / 180,
     distanciaSemAngulo: 6.0,   // metros a baliza: dai para dentro o angulo nao manda
-    angleFloor: 0.66,    // fracção do alcance que sobra no pior ângulo
+    /*
+    Fracção do alcance que sobra no pior ângulo. 0.66 -> 0.75: com 0.66, a
+    |x| 15 m sobrava pouco mais de metade do alcance, e o remate de fora da
+    zona central quase não existia. O `anguloMinimo` acima continua a cortar
+    o que é mesmo mau ângulo — este número é só o quanto o alcance encolhe
+    dentro do que já passou nesse crivo.
+    */
+    angleFloor: 0.75,
 
     // Um defesa que suba não remata como um avançado: só de muito perto.
     // Antes o central caía no ramo genérico e rematava em 10.4% das vezes

@@ -6,6 +6,51 @@ Desarmes (carrinhos), modelo de marcação, pressão defensiva e mola de coesão
 =============================================================================
 */
 
+/*
+=============================================================================
+CAUTELA NA PROPRIA AREA — nao se faz carrinho onde uma falta e penalti
+=============================================================================
+Medido em 3.7 jogos: 45 faltas, das quais **3 dentro da area** (6.7%), e 0.82
+penaltis por jogo contra os ~0.27 de um jogo a serio — o triplo. Num jogo de
+verdade um central sabe exactamente onde esta a linha da area: la dentro
+CONTEM, fica de pe, mostra o lado, e nao se atira.
+
+E o que estas duas regras fazem, aplicadas so quando o contacto seria na
+PROPRIA area (a do infractor, que e onde uma falta vale penalti):
+
+  `semCarrinho`     o carrinho — a fonte que mais faltas gera — deixa de ser
+                    uma opcao; o defensor cai no desarme de pe, mais perto e
+                    menos arriscado.
+  `factorDesarme`   e mesmo esse desarme sai menos vezes: multiplica a chance
+                    por frame, para o defensor esperar mais antes de ir a bola.
+
+A cautela e do DEFENSOR, nao do arbitro: quem decide isto e a arvore de
+decisao (`podeDesarmar`, player_bt.js). O `ehPenalti` do Officials continua a
+julgar o que acontecer na mesma.
+=============================================================================
+*/
+const CautelaNaArea = {
+    semCarrinho: true,
+    factorDesarme: 0.35,
+    /*
+    E O MESMO NO CORPO A CORPO.
+
+    As duas regras acima cobrem quem TENTA desarmar. Mas a fonte que mais
+    faltas gera e o contacto — choques e empurroes na disputa — e essa nao
+    passava por aqui: com as faltas subidas para as 26 por jogo, **10% delas
+    aconteciam dentro da area** (6 em 60 medidas) e os penaltis foram a 2.62
+    por jogo, dez vezes o real. Num jogo a serio, a fraccao de faltas que sao
+    penalti anda pelo 1%.
+
+    A razao e a mesma das outras duas: la dentro o defensor sabe o que custa
+    um empurrao, e mede o corpo. `factorContacto` multiplica a probabilidade
+    de o contacto virar falta quando o choque e na area do infractor.
+    */
+    factorContacto: 0.12
+};
+
+if (typeof window !== 'undefined') window.CautelaNaArea = CautelaNaArea;
+
 const SlideTackleModel = {
     lancamento: 0.15,
     deslize: 0.95,
@@ -566,9 +611,16 @@ const OffsideModel = {
     */
     erroMax: 2.4,
     erroMin: 0.40,
-    // Segundos até dar por si em fora-de-jogo e voltar atrás.
-    reaccaoLenta: 6.0,     // tacticknow 50 (ou abaixo)
-    reaccaoRapida: 0.2,    // tacticknow 100
+    /*
+    Segundos ate dar por si em fora-de-jogo e voltar atras.
+
+    6.0 / 0.2 -> 9.0 / 0.6, a pedido: com os primeiros valores o lote de 30
+    jogos deu 0.2 impedimentos por jogo contra os 3.2 de um jogo a serio (6%).
+    O atacante corrigia-se depressa demais para chegar a ser apanhado — e e no
+    tempo em que ele NAO sabe que esta em fora-de-jogo que o passe lhe chega.
+    */
+    reaccaoLenta: 9.0,     // tacticknow 50 (ou abaixo)
+    reaccaoRapida: 0.6,    // tacticknow 100
 
     // Interpola entre os 50 e os 100, com tecto abaixo de 50.
     _fraccao: function (tacticknow) {
