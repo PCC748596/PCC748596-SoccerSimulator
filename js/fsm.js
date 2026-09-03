@@ -655,7 +655,10 @@ function executeShotGameplay(p) {
             dist: distBaliza,
             tec: p.skillFor('TEC'),
             distAdversario: distBloqueio,
-            gkAdiantado: gkAdiantado
+            gkAdiantado: gkAdiantado,
+            // Posto pelo `podeRematar` no frame da decisão: chegou ao ponto do
+            // frente-a-frente, portanto toca ao canto em vez de bater.
+            frenteAFrente: !!p.frenteAFrente
         });
 
         const mira = miraDeRemate({

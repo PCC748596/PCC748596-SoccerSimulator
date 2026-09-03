@@ -5871,6 +5871,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Afinar marcação e largura da última linha | `config.js` → `MarkingModel` |
 | Afinar cruzamentos | `config.js` → `CrossModel` |
 | Mudar quando um jogador remata em vez de passar | `bt/player_bt.js` → a árvore |
+| Remata-se de longe com o guarda-redes isolado à frente | `config.js` → `ShootingModel.frenteAFrente`; `utils.js` → `frenteAFrenteComGk` |
 | Alcance de remate / drible / lançamento | `config.js` → `ShootingModel`, `PassModel` |
 | Facilidade de intercetar ou receber um passe | `config.js` → `BallControl` |
 | Quem recebe o passe (e o quanto a linha tapada conta) | `pass_types.js` → `escolher` / `qualidadeDaLinha`; pesos em `config.js` → `PassTypeModel.escolha` |
@@ -5884,6 +5885,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Força de um passe no espaço ou lançamento | `config.js` → `PassModel.encontro`; `passeDeEncontro` em `utils.js` |
 | Altura/ângulo dos passes pelo alto | `config.js` → `PassModel.passeArco` (`elevMin/elevMax`, `apexMax`) |
 | Para onde o destinatário corre quando o passe sai | `bt/player_bt.js` → `actReceivePass` e `actChaseBall`; `config.js` → `PassModel.recepcao` |
+| Destinatário a tremer à espera do passe | `config.js` → `PassModel.recepcao.desvioDirecto` / `.distIniciaMovimento` |
 | Passes no espaço para pontos que o adversário ganha | `pass_candidates.js` → `venceACorrida` e `margemCorrida` |
 | Parar ou recuar com a bola | `config.js` → `CarryModel.segurar` |
 | Tocar de primeira sem dominar | `config.js` → `FirstTouchModel` |
@@ -5943,6 +5945,8 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Jogador com a bola parado sem decidir nada | `fsm.js` → `changeState` limpa o `actionState` |
 | De onde vem a condução | `bt/player_bt.js` → `Dominar` → `act('proteger')` (não é o fallback) |
 | Conduz-se de mais / passa-se de menos | `config.js` → `CarryModel.conduzirSoAcimaDe` |
+| Atacante recebe livre e toca em vez de arrancar | `config/physics.js` → `PositionalTendencies.driveSpace`; `bt/player_bt.js` → `campoAberto` |
+| Todos os jogadores decidem igual | `config/physics.js` → `TendenciaPorAtributo` e `tendenciaDeAccao` |
 | O que é importante com/sem posse | `bt/player_bt.js` → `SemBolaAtacando` / `SemBolaDefendendo` |
 | Portador parado a não decidir nada | `bt/player_bt.js` → `PlayerAI.tick`, a guarda `comBola` |
 | Um estado da FSM que fica preso | relatório do lote → tabela `permanencia` (episódios, não frames) |
@@ -5950,6 +5954,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Recuo com o pé para o guarda-redes | `utils.js` → `maosProibidasNoRecuo`; marca em `fsm.js` |
 | Bola presa em cima da baliza | `match.js` → `destravarBolaEmCimaDaBaliza()` |
 | Gente na área numa falta ofensiva | `config.js` → `FreeKickModel.slotsArea` / `slotsMarcacao` |
+| Infractor parado na área numa falta de ataque | `config.js` → `FreeKickModel.recuoDoInfrator`; `utils.js` → `lugaresDoInfratorNaArea` |
 | Corpo do batedor de lateral virado para o alvo | `utils.js` → `giroDoCorpoNoLateral` |
 | Alcance do lançamento lateral por força | `config.js` → `ThrowInModel.alcanceMaxFraco/Forte` |
 | Companheiros longe do batedor do lateral | `config.js` → `ThrowInModel.apoio*` |

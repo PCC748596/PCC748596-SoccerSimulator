@@ -2106,7 +2106,10 @@ class FootballPlayer {
             // MULTIPLICADORES DE TENDÊNCIA POR POSIÇÃO
             if (typeof getPositionalTendency === 'function') {
                 const isForwardPass = progression > 2.0;
-                const tendMult = getPositionalTendency(this.pos, isForwardPass ? 'forwardPass' : 'pass');
+                const accao = isForwardPass ? 'forwardPass' : 'pass';
+                // Posição E jogador (ver tendenciaDeAccao em config/physics.js).
+                const tendMult = (typeof tendenciaDeAccao === 'function')
+                    ? tendenciaDeAccao(this, accao) : getPositionalTendency(this.pos, accao);
                 // Bónus/penalidade de mentalidade: 
                 // se tendMult > 1.0, o jogador 'vê' o passe como mais atraente
                 score += (tendMult - 1.0) * 200;

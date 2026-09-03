@@ -2599,6 +2599,44 @@ Funções puras, sem tocar no jogo, para poderem ser varridas em teste
 */
 
 /*
+FRENTE A FRENTE COM O GUARDA-REDES?
+
+Relato: "entram na área e já chutam de longe; podem chegar mais perto quando
+estiverem sozinhos frente-a-frente com o goleiro". A pergunta é sobre o
+CORREDOR até à baliza — não sobre um círculo à volta do rematador. Um marcador
+atrás dele, ou por fora, não impede o frente-a-frente; o que o impede é alguém
+no caminho.
+
+    `x`, `z`        onde está quem tem a bola
+    `dirZ`          direcção de ataque dele (+1 ou -1)
+    `golZ`          o z da linha de fundo que ele ataca
+    `adversarios`   `[{x, z}]`, JÁ SEM o guarda-redes — é dele que se está
+                    frente a frente, e contá-lo tornava isto sempre falso.
+
+Devolve `{ livre, dist }`: `dist` é a distância à linha de fundo (a que decide
+se já vale a pena rematar) e vem sempre, livre ou não.
+
+Geometria pura, para se poder varrer em teste sem montar um jogo.
+*/
+function frenteAFrenteComGk(o) {
+    const F = (typeof ShootingModel !== 'undefined') ? ShootingModel.frenteAFrente : null;
+    const dirZ = Math.sign(o.dirZ) || 1;
+    const dist = Math.abs(o.golZ - o.z);
+    if (!F) return { livre: false, dist: dist };
+
+    for (const a of (o.adversarios || [])) {
+        if (!a) continue;
+        const aoLongo = (a.z - o.z) * dirZ;
+        // Atrás dele conta só dentro do `recuoAtras`: vem a correr e apanha-o.
+        if (aoLongo < -F.recuoAtras) continue;
+        // Já atrás da linha de fundo não estorva nada.
+        if (aoLongo > dist) continue;
+        if (Math.abs(a.x - o.x) <= F.corredorMeiaLargura) return { livre: false, dist: dist };
+    }
+    return { livre: true, dist: dist };
+}
+
+/*
 TIPO DE REMATE. Testados por esta ordem — chapéu, rasteiro, colocado — e o que
 sobra é força. `rnd` injectável (uma amostra só; a ordem é que reparte).
 */
@@ -2625,6 +2663,17 @@ function tipoDeRemate(o) {
         dist >= E.chapeuDistMin && dist <= E.chapeuDistMax) {
         acc += E.chanceChapeu;
         if (r < acc) return 'chapeu';
+    }
+
+    /*
+    FRENTE A FRENTE: toca-se ao canto (pedido). O guarda-redes está perto e
+    tapa o corpo — bater com força é a pior escolha. Rasteiro ou colocado, e
+    nunca força; o chapéu, esse, já foi testado acima e ganha aos dois.
+    */
+    if (o.frenteAFrente) {
+        const chanceRas = (typeof E.chanceRasteiraFrenteAFrente === 'number')
+            ? E.chanceRasteiraFrenteAFrente : 0.60;
+        return (r < acc + chanceRas * (1 - acc)) ? 'rasteiro' : 'colocado';
     }
 
     // Rasteiro ao canto: mais provável de perto, onde levantar a bola é

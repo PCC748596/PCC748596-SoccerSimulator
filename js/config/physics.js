@@ -129,20 +129,72 @@ MULTIPLICADORES DE TENDÊNCIA POR POSIÇÃO
 Permite separar a "capacidade técnica" da "mentalidade". 
 Por exemplo, um CF com passe 80 prefere chutar do que passar, enquanto um CM com o mesmo atributo prefere o passe.
 */
+/*
+`driveSpace` (novo) é a CONDUÇÃO PARA O ESPAÇO VAZIO de frente para a baliza —
+não é o drible, que é passar por um homem. Relato: "não é possível que ele
+receba uma bola sem marcação à frente e não dispare para chutar para o gol".
+
+Um ponta-de-lança que recebe de frente com relva à frente arranca; um médio
+defensivo, na mesma posição, levanta a cabeça e passa. É esse o eixo. Entra no
+orçamento de condução, no espaço que ele exige para arrancar e na fronteira do
+`CarryModel.conduzirSoAcimaDe` — ver `campoAberto` (player_bt.js).
+*/
 window.PositionalTendencies = {
-    'CB': { shoot: 0.50, dribble: 0.40, pass: 1.00, forwardPass: 0.80, cross: 0.20, clearance: 1.30 },
-    'LB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
-    'RB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10 },
-    'DM': { shoot: 0.70, dribble: 0.70, pass: 1.30, forwardPass: 1.10, cross: 0.50, clearance: 1.10 },
-    'CM': { shoot: 0.80, dribble: 0.90, pass: 1.20, forwardPass: 1.20, cross: 0.80, clearance: 0.90 },
-    'LM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
-    'RM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80 },
-    'AM': { shoot: 1.00, dribble: 1.10, pass: 1.10, forwardPass: 1.40, cross: 0.90, clearance: 0.50 },
-    'LW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
-    'RW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40 },
-    'CF': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
-    'ST': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30 },
-    'GK': { shoot: 0.10, dribble: 0.10, pass: 1.00, forwardPass: 1.00, cross: 0.10, clearance: 1.50 }
+    'CB': { shoot: 0.50, dribble: 0.40, pass: 1.00, forwardPass: 0.80, cross: 0.20, clearance: 1.30, driveSpace: 0.45 },
+    'LB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10, driveSpace: 0.85 },
+    'RB': { shoot: 0.60, dribble: 0.80, pass: 1.00, forwardPass: 0.90, cross: 1.30, clearance: 1.10, driveSpace: 0.85 },
+    'DM': { shoot: 0.70, dribble: 0.70, pass: 1.30, forwardPass: 1.10, cross: 0.50, clearance: 1.10, driveSpace: 0.60 },
+    'CM': { shoot: 0.80, dribble: 0.90, pass: 1.20, forwardPass: 1.20, cross: 0.80, clearance: 0.90, driveSpace: 0.95 },
+    'LM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80, driveSpace: 1.20 },
+    'RM': { shoot: 0.80, dribble: 1.10, pass: 1.10, forwardPass: 1.10, cross: 1.30, clearance: 0.80, driveSpace: 1.20 },
+    'AM': { shoot: 1.00, dribble: 1.10, pass: 1.10, forwardPass: 1.40, cross: 0.90, clearance: 0.50, driveSpace: 1.35 },
+    'LW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40, driveSpace: 1.55 },
+    'RW': { shoot: 1.10, dribble: 1.30, pass: 0.90, forwardPass: 1.00, cross: 1.40, clearance: 0.40, driveSpace: 1.55 },
+    'CF': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30, driveSpace: 1.60 },
+    'ST': { shoot: 1.40, dribble: 1.10, pass: 0.70, forwardPass: 0.80, cross: 0.50, clearance: 0.30, driveSpace: 1.60 },
+    'GK': { shoot: 0.10, dribble: 0.10, pass: 1.00, forwardPass: 1.00, cross: 0.10, clearance: 1.50, driveSpace: 0.10 }
+};
+
+/*
+=============================================================================
+A POSIÇÃO DÁ A MENTALIDADE, O ATRIBUTO DÁ O JOGADOR
+=============================================================================
+Pedido: "cada posição tem que ter um multiplicador de acções específico,
+juntamente com as características dos jogadores; senão todos os jogadores vão
+fazer a mesma coisa nos jogos".
+
+A tabela acima é por POSIÇÃO, e só por posição: dois pontas-de-lança do mesmo
+plantel decidem exactamente igual. Isto acrescenta o segundo eixo — o atributo
+do jogador — sem tocar na tabela:
+
+    multiplicador = tendência da posição × (1 + (atributo - 50)/50 × peso)
+
+O atributo é escolhido por acção (rematar lê FIN, conduzir lê PAC, passar lê
+PASS...) e o `peso` diz quanto ele pesa. A 50 o atributo é neutro: a tabela
+por posição fica como está e nada muda para quem não tem skills carregadas.
+
+`min`/`max` são cortes duros: um extremo rápido não pode transformar um
+multiplicador de 1.55 num número que anule tudo o resto.
+*/
+/*
+Os atributos são os que o `data/player_skills.js` traz mesmo — gk, tec,
+marking, speed, strength, pass, intercept, tacticknow. Inventar aqui um 'FIN'
+ou um 'PAC' não dá erro nenhum: o `skillFor` cai no genérico da função (o mesmo
+valor para todos) e o segundo eixo desaparecia em silêncio, que é exactamente
+o que se está a corrigir.
+*/
+window.TendenciaPorAtributo = {
+    shoot:       { skill: 'tec', peso: 0.35 },
+    dribble:     { skill: 'tec', peso: 0.40 },
+    // Conduzir para o espaço é corrida com bola: quem é rápido arranca.
+    driveSpace:  { skill: 'speed', peso: 0.45 },
+    pass:        { skill: 'pass', peso: 0.25 },
+    // Passe para a frente é leitura de jogo, não é o pé.
+    forwardPass: { skill: 'tacticknow', peso: 0.35 },
+    cross:       { skill: 'pass', peso: 0.35 },
+    clearance:   { skill: 'strength', peso: 0.20 },
+    min: 0.15,
+    max: 2.20
 };
 
 window.getPositionalTendency = function (pos, action) {
@@ -152,6 +204,24 @@ window.getPositionalTendency = function (pos, action) {
         }
     }
     return 1.0;
+};
+
+/*
+O multiplicador COMPLETO: posição × atributo do jogador. Recebe o jogador, não
+a posição, porque é dele que sai a skill. Um jogador sem skills (ou uma acção
+sem atributo associado) devolve exactamente o `getPositionalTendency`, para
+nada mudar onde ainda não se ligou o segundo eixo.
+*/
+window.tendenciaDeAccao = function (p, action) {
+    const base = window.getPositionalTendency(p && p.pos, action);
+    const T = window.TendenciaPorAtributo;
+    if (!T || !T[action] || !p || typeof p.skillFor !== 'function') return base;
+
+    const skill = p.skillFor(T[action].skill);
+    if (typeof skill !== 'number' || !isFinite(skill)) return base;
+
+    const f = base * (1 + ((skill - 50) / 50) * T[action].peso);
+    return Math.max(T.min, Math.min(T.max, f));
 };
 
 

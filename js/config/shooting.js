@@ -86,6 +86,45 @@ const ShootingModel = {
         táctica — e era mais um sítio onde o remate se perdia em silêncio.
         */
         ignoraGrid: true
+    },
+
+    /*
+    =====================================================================
+    FRENTE A FRENTE COM O GUARDA-REDES — não se remata, chega-se mais perto
+    =====================================================================
+    Relato: "os jogadores de ataque entram na área e já chutam no gol, de
+    longe; podem chegar mais perto para chutar quando estiverem sozinhos
+    frente-a-frente com o goleiro e tocar no canto".
+
+    A regra `dentroDaArea` acima manda rematar assim que se pisa a área, e ela
+    não olha para mais nada — é exactamente o que produz o remate de 16 m com
+    o caminho todo livre à frente. Num frente-a-frente o certo é conduzir até
+    ao guarda-redes e tocar ao canto: a baliza cresce a cada metro e o ângulo
+    do guarda-redes fecha-se ao mesmo tempo.
+
+    O que conta é o CORREDOR até à baliza, e não um círculo à volta dele — a
+    mesma leitura do `CrossModel.corredor`: um marcador atrás, ou por fora,
+    não o impede de continuar. Só se espera enquanto o corredor estiver limpo;
+    assim que alguém entra nele, a regra cai e remata-se com as regras de
+    sempre.
+
+    `corredorMeiaLargura`  meia-largura do corredor até à baliza, em metros.
+    `recuoAtras`           quanto atrás dele um adversário ainda conta (vem a
+                           correr e apanha-o).
+    `distanciaIdeal`       a partir daqui remata: é o ponto do frente-a-frente.
+                           11 m é pouco mais do que a marca de grande
+                           penalidade (11.0), que é a distância a que este
+                           lance se resolve.
+    `distanciaMax`         tecto: mais longe do que isto a jogada ainda não é
+                           um frente-a-frente, é uma corrida — e vale a leitura
+                           normal, senão um avançado a 40 m com o campo aberto
+                           deixava de rematar de vez.
+    */
+    frenteAFrente: {
+        corredorMeiaLargura: 4.0,
+        recuoAtras: 2.0,
+        distanciaIdeal: 11.0,
+        distanciaMax: 30.0
     }
 };
 
@@ -207,7 +246,16 @@ const ShotModel = {
         // distância — de 25 m ninguém coloca, bate.
         chanceColocado: 0.40,
         colocadoDistMax: 20.0,
-        colocadoPressao: 3.0      // adversário a menos disto tira a colocação
+        colocadoPressao: 3.0,     // adversário a menos disto tira a colocação
+
+        /*
+        FRENTE A FRENTE: toca-se ao canto, não se bate (pedido). Chegado a
+        `ShootingModel.frenteAFrente.distanciaIdeal` com o corredor livre, o
+        remate de força é a pior escolha que há — o guarda-redes está perto e
+        tapa o corpo. Esta fatia é a do RASTEIRO ao canto; o resto é COLOCADO.
+        O chapéu continua a ganhar aos dois quando o guarda-redes sai.
+        */
+        chanceRasteiraFrenteAFrente: 0.60
     },
 
     /*

@@ -153,13 +153,38 @@ class PlayerContext {
     get campoAberto() {
         if (this.underPressure) return false;
         const naDefesa = (this.p.model.position.z * this.p.dirZ < 0) || this.p.role === 'def';
-        const espacoReq = naDefesa ? (CarryModel.espacoLivreDefesa || 24.0) : CarryModel.espacoLivre;
+
+        /*
+        A POSIÇÃO E O JOGADOR DECIDEM QUANTO SE CONDUZ (pedido).
+
+        Relato: "o atacante tem que ter um multiplicador de condução para o
+        espaço vazio de frente para o gol maior; não é possível que ele receba
+        uma bola sem marcação à frente e não dispare para chutar".
+
+        Era tudo igual para toda a gente: o mesmo espaço exigido e o mesmo
+        orçamento para um ponta-de-lança e para um trinco. `tendenciaDeAccao`
+        traz os dois eixos — a mentalidade da POSIÇÃO (`driveSpace` em
+        PositionalTendencies) e o ATRIBUTO do jogador (`speed`) — e entra aqui
+        nos dois sítios que decidem se se conduz:
+
+            espaço exigido   DIVIDE-se por ela: um avançado arranca com menos
+                             relva à frente do que um médio defensivo.
+            orçamento        MULTIPLICA-se: e ele leva a bola mais metros.
+
+        A 50 de atributo e sem `driveSpace` na tabela, isto vale 1.0 e nada
+        muda — a regra continua a ser a de sempre para quem não a define.
+        */
+        const tendCond = (typeof tendenciaDeAccao === 'function')
+            ? tendenciaDeAccao(this.p, 'driveSpace') : 1.0;
+
+        const espacoBase = naDefesa ? (CarryModel.espacoLivreDefesa || 24.0) : CarryModel.espacoLivre;
+        const espacoReq = espacoBase / Math.max(0.25, tendCond);
         if (this.espacoAFrente < espacoReq && !this.livreAFrente10m20g) return false;
 
         // O orçamento escala com o Estilo Ofensivo da equipa: correr com a
         // bola é o plano do contra-ataque, não do jogo de posse.
         const maxDist = (naDefesa ? (CarryModel.distanciaMaxDefesa || 6.0) : CarryModel.distanciaMax)
-            * multiplicadorConducao();
+            * multiplicadorConducao() * tendCond;
         if ((this.p.carryDist || 0) < maxDist) return true;
 
         /*
@@ -1346,7 +1371,10 @@ function podeDriblar(ctx) {
     const p = ctx.p;
     if (p.role === 'gk') return false;
 
-    const mult = typeof getPositionalTendency === 'function' ? getPositionalTendency(p.pos, 'dribble') : 1.0;
+    // Posição E jogador: dois extremos do mesmo plantel não driblam igual
+    // (ver tendenciaDeAccao em config/physics.js).
+    const mult = (typeof tendenciaDeAccao === 'function') ? tendenciaDeAccao(p, 'dribble')
+        : (typeof getPositionalTendency === 'function' ? getPositionalTendency(p.pos, 'dribble') : 1.0);
 
     // Se a tendência for menor que 1.0, o jogador pode "desistir" da ideia do drible por mentalidade
     if (mult < 1.0 && Math.random() > mult) return false;
@@ -2094,7 +2122,8 @@ const ehGK = (ctx) => ctx.p.role === 'gk';
 function emZonaDeRemate(ctx) {
     const p = ctx.p;
 
-    const mult = typeof getPositionalTendency === 'function' ? getPositionalTendency(p.pos, 'shoot') : 1.0;
+    const mult = (typeof tendenciaDeAccao === 'function') ? tendenciaDeAccao(p, 'shoot')
+        : (typeof getPositionalTendency === 'function' ? getPositionalTendency(p.pos, 'shoot') : 1.0);
     
     // Se a tendência for menor que 1.0 (ex: Zagueiro ou Meia armador), pode preferir não finalizar logo de cara
     if (mult < 1.0 && Math.random() > mult) return false;
@@ -2115,6 +2144,36 @@ function emZonaDeRemate(ctx) {
     O `zoneAhead` fica de fora pela mesma razão — quem está dentro da área do
     adversário está, por definição, à frente no campo.
     */
+    /*
+    FRENTE A FRENTE: NÃO se remata ainda, chega-se mais perto (pedido).
+
+    Vem ANTES da regra da área, e tem de vir: é essa regra que manda rematar
+    assim que se pisa a área, e é dela que sai o remate de 16 m com o caminho
+    todo livre. Com o corredor até à baliza limpo e ainda longe da
+    `distanciaIdeal`, o certo é conduzir — a baliza cresce a cada metro e o
+    ângulo do guarda-redes fecha-se.
+
+    Assim que alguém entra no corredor, a regra cai sozinha e remata-se com as
+    regras de sempre. O tecto da `distanciaMax` existe para um avançado com o
+    campo aberto a 40 m não deixar de rematar de vez.
+    */
+    const FF = ShootingModel.frenteAFrente;
+    if (FF && typeof frenteAFrenteComGk === 'function') {
+        const ff = frenteAFrenteComGk({
+            x: p.model.position.x, z: p.model.position.z,
+            dirZ: p.dirZ, golZ: p.targetGoalZ,
+            adversarios: ctx.opponents.filter(o => o.role !== 'gk' && o.model)
+                .map(o => ({ x: o.model.position.x, z: o.model.position.z }))
+        });
+        if (ff.livre && ff.dist > FF.distanciaIdeal && ff.dist <= FF.distanciaMax) {
+            p.frenteAFrente = false;
+            return false;
+        }
+        // Guardado para o remate saber que é um frente-a-frente e tocar ao
+        // canto em vez de bater (ver initiateShoot/tipoDeRemate).
+        p.frenteAFrente = ff.livre && ff.dist <= FF.distanciaIdeal;
+    }
+
     const A = ShootingModel.dentroDaArea;
     if (A) {
         const distFundo = Math.abs(p.targetGoalZ - p.model.position.z);
@@ -2479,6 +2538,27 @@ const PlayerBT = sel('PlayerRoot',
                     // isto o jogador entrava na área de frente pro gol e ainda
                     // esperava a janela de cadência inteira antes de chutar.
                     if (emZonaDeRemate(ctx)) return false;
+
+                    /*
+                    CORREDOR LIVRE ATE A BALIZA: tambem nao pensa — arranca.
+
+                    Este ramo esta acima de tudo e e de longe o mais visitado
+                    (ver "a conducao vem toda do Dominar -> proteger" nos
+                    problemas conhecidos). Sem esta saida, a regra nova do
+                    frente-a-frente — que manda NAO rematar de longe e chegar
+                    mais perto — deixava o avancado a proteger a bola de costas
+                    durante a cadencia inteira com a baliza aberta a frente.
+                    */
+                    if (ctx.p.role !== 'def' && ctx.zoneAhead > 0 &&
+                        typeof frenteAFrenteComGk === 'function') {
+                        const livre = frenteAFrenteComGk({
+                            x: ctx.p.model.position.x, z: ctx.p.model.position.z,
+                            dirZ: ctx.p.dirZ, golZ: ctx.p.targetGoalZ,
+                            adversarios: ctx.opponents.filter(o => o.role !== 'gk' && o.model)
+                                .map(o => ({ x: o.model.position.x, z: o.model.position.z }))
+                        });
+                        if (livre.livre) return false;
+                    }
                     /*
                     De primeira: a bola nem chegou a ser dominada (ver
                     FirstTouchModel e o `resolveBallContact`). Esperar aqui era
@@ -2548,8 +2628,8 @@ const PlayerBT = sel('PlayerRoot',
                     ctx.cross = findCross(ctx);
                     if (!ctx.cross) return false;
                     let mult = estiloAtivoDe(ctx.p).cruzar;
-                    if (typeof getPositionalTendency === 'function') {
-                        mult *= getPositionalTendency(ctx.p.pos, 'cross');
+                    if (typeof tendenciaDeAccao === 'function') {
+                        mult *= tendenciaDeAccao(ctx.p, 'cross');
                     }
                     return Math.random() < Math.min(CrossModel.chanceMax, ctx.cross.chance * mult);
                 }),
@@ -2577,6 +2657,29 @@ const PlayerBT = sel('PlayerRoot',
                     if (alaLivreParaOFundo(ctx)) return true;
 
                     /*
+                    CORREDOR LIVRE ATE A BALIZA: dispara, nao toca.
+
+                    Relato: "nao e possivel que ele receba uma bola sem
+                    marcacao a frente e nao dispare para chutar para o gol".
+                    Era o que acontecia — sem ninguem no caminho, o portador
+                    caia no `conduzirSoAcimaDe` (havendo passe bom, so se
+                    conduz do ultimo terco para a frente) e tocava para o lado.
+
+                    E o mesmo corredor do frente-a-frente (utils.js), e por
+                    isso a leitura e a mesma: quem estorva e quem esta NO
+                    CAMINHO, nao quem esta ao lado ou atras.
+                    */
+                    if (typeof frenteAFrenteComGk === 'function' && ctx.zoneAhead > 0) {
+                        const livre = frenteAFrenteComGk({
+                            x: p.model.position.x, z: p.model.position.z,
+                            dirZ: p.dirZ, golZ: p.targetGoalZ,
+                            adversarios: ctx.opponents.filter(o => o.role !== 'gk' && o.model)
+                                .map(o => ({ x: o.model.position.x, z: o.model.position.z }))
+                        });
+                        if (livre.livre && p.role !== 'def') return true;
+                    }
+
+                    /*
                     O PASSE VEM PRIMEIRO — ver CarryModel.conduzirSoAcimaDe.
 
                     Este ramo estava ACIMA do ProcurarPasse e o fallback da
@@ -2592,8 +2695,15 @@ const PlayerBT = sel('PlayerRoot',
                     Sem passe disponivel isto nao faz nada: o `haPasse` da
                     falso e o ramo segue como sempre.
                     */
+                    /*
+                    A fronteira tambem e da POSICAO e do JOGADOR: um avancado
+                    rapido comeca a conduzir mais atras do que um trinco. Ver
+                    `tendenciaDeAccao` e `driveSpace` (config/physics.js).
+                    */
+                    const tendCond = (typeof tendenciaDeAccao === 'function')
+                        ? tendenciaDeAccao(p, 'driveSpace') : 1.0;
                     const limite = (typeof CarryModel.conduzirSoAcimaDe === 'number')
-                        ? CarryModel.conduzirSoAcimaDe : -Infinity;
+                        ? CarryModel.conduzirSoAcimaDe / Math.max(0.25, tendCond) : -Infinity;
                     if (ctx.zoneAhead < limite) {
                         const passe = findBestPassAnywhere(ctx);
                         if (passe) {
@@ -2714,7 +2824,9 @@ const PlayerBT = sel('PlayerRoot',
                     let isUnderPressure = ctx.underPressure;
                     
                     if (typeof getPositionalTendency === 'function') {
-                        const tendMult = getPositionalTendency(ctx.p.pos, 'clearance');
+                        const tendMult = (typeof tendenciaDeAccao === 'function')
+                            ? tendenciaDeAccao(ctx.p, 'clearance')
+                            : getPositionalTendency(ctx.p.pos, 'clearance');
                         timeThreshold /= Math.max(0.5, tendMult);
                         
                         // Zagueiros (tendência > 1.0) dão chutão sem pestanejar se pressionados
