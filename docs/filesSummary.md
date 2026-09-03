@@ -5,6 +5,206 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 2 de Setembro de 2026 (tarde) — arbitragem, calibração e o fora-de-jogo
+
+Sessão de leitura de lotes: o relatório de 20 jogos na mão, a perguntar o que
+está errado. Metade do que se corrigiu foram **contadores**, não jogo — e isso
+é o mais importante da sessão, porque com contadores errados calibra-se para o
+sítio errado.
+
+#### A escala do relógio, que envenenava toda a leitura
+
+`MatchDuration`: 45 minutos de jogo em 10 minutos reais. Um lote de 1080 s por
+jogo são **81 minutos de relógio**, não 18 — e a primeira leitura desta sessão
+dividiu pela escala errada, concluindo que passes, faltas e remates estavam
+todos **acima** do real quando estão a metade. Fica escrito porque é o erro
+mais fácil de repetir: qualquer número por "jogo" tem de ser escalado por
+`5400 / Match.tempoDeJogo`, e o `tempoDeJogo` já traz o `timeScale` dentro.
+
+Consequência de desenho, que continua de pé: 90 minutos de relógio acontecem em
+~20 minutos de física, portanto o jogo tem **~40% dos eventos** de um jogo a
+sério (ataques 43% do alvo, faltas 49%). Não é um defeito a corrigir com
+afinações; é o preço do relógio acelerado.
+
+#### Contadores que mediam outra coisa
+
+- **`placar` era acumulado** (`simulate.js`): o `resumo()` lê `Match.placarA/B`
+  e ninguém os repunha entre jogos — o jogo 20 dizia "17-25" com 0 e 3 golos
+  marcados nessa partida. O `MatchStats.reset()` zera as estatísticas, não o
+  marcador do Match.
+- **`defesas` contava qualquer toque do guarda-redes** — cruzamentos e passes
+  atrasados incluídos. Dava 6 a 9 defesas por jogo com 2 remates enquadrados, o
+  que é impossível numa ficha. Passou a exigir um remate da outra equipa a
+  caminho (`_remateEmVoo`, consumido no primeiro toque); livre directo, penálti
+  e cabeceamento marcam-no à parte com `marcarRemateEmVoo`.
+- **`conversaoDeChances` era `golos / grandesChances`** — todos os golos a
+  dividir pelas grandes chances, e por isso 200% com dois golos e uma chance.
+  Agora há `grandesChancesConvertidas`, confirmada no golo como a assistência:
+  no instante do remate ainda não se sabe se entra.
+- **`trocasSupportMid` dava sempre 0** por duas razões em série. A memória da
+  histerese era o próprio `bb.supportMid`, que os dois `return` do
+  `pickSupportMid` põem a null — e depois a regra era "manter o anterior se
+  ainda estiver entre os 3 mais perto", com **dois** candidatos (os médios
+  centrais), portanto o anterior estava sempre no top-3 e a escolha congelava
+  no primeiro médio para o jogo inteiro. Passou a histerese por DISTÂNCIA
+  (`TeamShape.supportMidHisterese`, 6 m). Medido: de 1 médio e 0 trocas para 2
+  médios e 7-10 trocas em 300 s.
+
+Fica **por corrigir e identificado**: `rematesBloqueados` e `bloqueios` são o
+mesmo contador (o `registarRemateBloqueado` credita quem bloqueou, e o resumo
+publica-o nos dois campos — daí uma equipa com 6 remates e 7 bloqueados).
+
+#### O que estava certo e parecia errado
+
+Duas coisas foram investigadas e **não** eram defeito:
+
+- **`CARRY` com 30.9 m de desvio médio**: o `registarDesvios` mede
+  `dynamicTarget - slotTarget`, não a posição do jogador — em condução o alvo é
+  o ponto à frente, e 30 m é o esperado. Medido a sério: **mediana de 2.6 m
+  conduzidos por episódio**, p90 de 4.3. O orçamento de condução funciona.
+- **`extra_frontman` e `target_man` sem deslocamento**: não têm campos
+  posicionais nenhuns (o Extra Frontman só sobe na bola parada, e a config
+  di-lo). O relatório rotulava-os como defeito; agora saem em
+  `semDeslocacaoPorDesenho`, separados do `semEfeito`.
+
+#### Ritmo de reposicionamento: ninguém andava, nunca
+
+`actHoldPosition` (ocupar posição + marcar = 66% do tempo de jogo) tinha dois
+escalões, com o piso em **4.73 m/s** a 2 m do alvo. O piso era corrida: cada
+jogador fazia 4.3 m/s de média contra os 1.94 de um jogo a sério.
+`RepositionPace` (player_behavior.js) põe quatro escalões, do sprint de
+recuperação (>25 m) ao **andar** (<3 m). Medido: 4.3 -> 3.1 m/s, e a distância
+por equipa no lote caiu de 50 km para 34 km.
+
+#### Domínio de bola alta
+
+Um passe alto de 20 m chega a **16.3 m/s por balística pura** — não por estar a
+ser chutado com força — e o domínio media a velocidade 3D como se fosse um tiro
+rasteiro: 30% de domínios falhados nos passes de 15-25 m pelo alto, contra 7%
+nos rasteiros da mesma faixa. `BallControl.easySpeedQueda` (16.0) sobe o limiar
+do domínio fácil quando a bola vem **a descer** e acima de `alturaQueda` — matar
+uma bola que cai é amortecer, não travar. Domínio falhado 30% -> 10%; a faixa
+de 25 m+ passou de 39% para 53% de passes certos.
+
+#### A metade defensiva dos Playing Styles não existia
+
+`aplicarEstiloPosicional` só aplica a metade ofensiva a atacar; sem posse lê
+`estiloDefensivoDe`, que exige um bloco `defensivo` no estilo — e **nenhum
+estilo o tinha**. O `distanciaComEstilo`, que aperta a marcação, lia
+`defensivo.pressao`, que também não existia. O `the_destroyer`, cujo gatilho só
+liga a defender, tinha 6995 activações e 0.2 m de deslocamento: estava activo
+exactamente na fase em que nada do estilo se aplicava. Bloco `defensivo` dado ao
+Destroyer, Anchor Man, Box-to-Box e Defensive Full-back, mais
+`MarkingModel.distanciaMinimaEstilo` (1.5 m) — sem piso, uma pressão de 1.6
+punha o marcador a 1.25 m do homem, que não é marcar, é falta. Medido:
+`the_destroyer` de 0.2 para 1.99 m de deslocamento.
+
+#### O gesto do árbitro
+
+- **O braço apontava sempre perpendicular ao tronco** (`rotation.y` fixo em
+  ±90°): como o corpo está virado para a bola, o gesto saía cruzado sempre que
+  a baliza não estivesse mesmo de lado. Agora `rotation.y = guinada`, o ângulo
+  real corpo->baliza, com uma margem de 0.35 rad que impede o braço de encostar
+  ao tronco (ou de o atravessar por trás quando o alvo fica atrás — o lado do
+  braço já era escolhido para isso).
+- **No penálti o gesto morria a meio do caminho**: dura 2.5 s e o árbitro leva
+  ~7 s a ir da marcação até ao lugar de onde vê a cobrança. A bandeira
+  `ateChegar` renova o gesto enquanto ele caminha, e larga-o quando chega a
+  `RefereeModel.raioNoLugar` (1.5 m) do ponto ou quando o lance sai do estado
+  PENALTY.
+
+#### Cruzamentos
+
+Autópsia de 8 e depois de 13 cruzamentos (origem, alvo, altura na chegada, quem
+fica com a bola). A balística estava certa — a bola passa pelo alvo a 1.6 m, à
+altura da cabeça. O que estava errado era a **escolha do alvo** e o **ponto de
+mira**:
+
+- `findCross` escolhia o companheiro **mais central** e mais nada: um ponta com
+  um central colado ganhava sempre a um extremo livre. Agora é uma nota — folga
+  ao marcador (o que mais pesa), centralidade, jogo aéreo.
+- O ponto de mira vinha do `alvoDePasse`, que projecta o receptor à velocidade
+  máxima dele durante o voo inteiro: dois cruzamentos foram mirados a **15 e a
+  24 m** à frente do homem. O `actCross` passou a calcular o seu lead, com
+  tecto de `CrossModel.leadMax` (4 m) — quem ataca a área faz dois ou três
+  metros e trava.
+- Rasteiro só até `distRasoMax` (18 m): um cruzamento rasteiro de 27.8 m foi
+  medido a acabar nas mãos do guarda-redes sem ninguém lhe tocar.
+- Alvos a menos de `fundoMinAlvo` (5.5 m, a profundidade da pequena área) da
+  linha de fundo ficam de fora: é território do guarda-redes.
+
+**Três tentativas falhadas, anotadas na config para não se repetirem**: um tecto
+duro de 28 m na distância, e um corte quando a saída está tapada (5.0 x 1.8 m, e
+depois 2.5 x 1.0 m com penalização). Todas derrubaram a frequência de 13
+cruzamentos por hora simulada para 1 ou 2 — o marcador do ala está quase sempre
+nessa zona, e o ala raramente chega à linha de fundo, portanto o que se ganhava
+em qualidade perdia-se em jogadas que deixavam de existir. Ficou o corte mínimo
+(2.0 x 0.8 m) e a distância a pesar na chance (`penalDistancia` 0.035 -> 0.090).
+
+#### Fora-de-jogo (Lei 11) — regra nova
+
+Não havia impedimento no jogo. Agora há, com os dois tempos da regra:
+
+1. **No instante em que a bola sai do pé** (`marcarPosicoesDeImpedimento`,
+   chamada do `executePassGameplay`): congela-se quem está à frente da bola, à
+   frente do penúltimo adversário e na metade adversária.
+2. **No primeiro toque** (`verificarImpedimento`, no `resolveBallContact`): se
+   quem chegou à bola estava marcado, é infracção. Estar em posição não é falta;
+   o envolvimento é que é.
+
+A linha é a `Officials.linhaDeImpedimento` que já existia para posicionar o
+assistente — o segundo adversário mais recuado, com o guarda-redes a contar, que
+é a definição da regra. Livre **indirecto** (`Match.faltaIndirecta` faz a
+cobrança cair no passe), a bola vai para **onde o jogador estava quando o passe
+saiu**, e em linha com a bola ou com a defesa é onside
+(`OffsideModel.tolerancia`, 0.35 m). Não se aplica em canto, lateral nem
+pontapé de baliza — a bola parada apaga as marcas. Fora do envolvimento por
+TOQUE, a regra não cobre "interferir com um adversário" nem "ganhar vantagem de
+um ressalto": exigem julgar intenção.
+
+**O erro que quase passou**: a `linhaDeImpedimento` ordena por `z * dirZ` e
+devolve o segundo mais recuado *no referencial de quem defende*; foi chamada com
+o `dirZ` de quem passa. Com o sinal trocado devolvia o segundo mais ADIANTADO —
+uma linha lá atrás — e quase toda a gente ficava em fora-de-jogo: **97
+impedimentos por jogo**, com a percentagem de passes certos a cair de 84% para
+54%. O teste unitário não o apanhou porque tinha três adversários em campo, e
+com três os dois cálculos coincidem; o cenário passou a ter defesa completa.
+
+**O erro de leitura do atacante.** Com a regra e mais nada, davam 1.2
+impedimentos por jogo (alvo 3.20) — porque o `offsideLimitDir` punha toda a
+gente meio metro atrás da linha, sempre: ninguém arriscava, ninguém se enganava.
+`OffsideModel.erroDeLeitura` dá a cada atacante um erro na estimativa da linha,
+sorteado uma vez por fase de ataque a partir da `tacticknow`, e `tempoDeReaccao`
+é o que ele leva a dar por si em fora-de-jogo e voltar atrás: **6 s a tacticknow
+50, 0.2 s a 100**. O mesmo `offsideBias` é usado pelo passador ao filtrar o
+destino do passe — sem isso o ciclo não fecha, porque o passe nunca ia para quem
+estava em posição.
+
+Nota de calibração: a amplitude do erro tem de vencer a margem de 0.5 m do
+TeamBT **mais** a tolerância de 0.35 do árbitro, ou seja ~0.85 m. Com a primeira
+calibração (1.4 m a nível 50) os plantéis actuais, de tacticknow 85, erravam no
+máximo 0.52 m e nunca lá chegavam: zero impedimentos. Está em 2.4 m a nível 50 e
+0.40 a 100, à espera de regulação com lotes.
+
+Testes: `tests/impedimento.test.js` (novo, sete cenários) e
+`tests/estatistica_por_jogo.test.js`, que fixava o contrário — que o contador
+tinha de ser 0 e o painel tinha de dizer `semRegra` — e passou a verificar que
+os impedimentos são medidos e escalados como o resto.
+
+#### O painel de alvos no lote
+
+O `ALVOS_ESTATISTICA` (main.js) já comparava a ficha com os alvos de um jogo a
+sério, mas só no browser e ao vivo; o lote de 20 jogos trazia as fichas cruas e
+mais nada. O JSON do lote passou a ter `mediaPorJogo` — uma linha por métrica
+com `medido`, `alvo` e `pctDoAlvo`, tirada da média das partidas, com os alvos
+lidos do `ALVOS_ESTATISTICA` para não haver duas listas a divergir.
+
+Medido num jogo completo depois destas alterações: golos 108% do alvo,
+finalizações 83%, cartões 87%, faltas 49%, ataques totais 43%, xG 52% — e
+**escanteios a 0%**, que é o buraco isolado maior do simulador: ninguém alivia
+pela linha de fundo (`afastamentos` é 0 em todos os registos do lote), e por
+isso há três pontapés de baliza por cada canto.
+
 ### Sessão de 2 de Setembro de 2026 — a falta directa volta a ser um lance
 
 Relato, em duas partes: *"a batida da falta directa é directa para o golo; o

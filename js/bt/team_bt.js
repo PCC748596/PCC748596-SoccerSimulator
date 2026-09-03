@@ -2407,9 +2407,17 @@ const PosicionamentoAI = {
             finalZ = puxado.z;
         }
 
-        // Respeito ao limite legal de fora-de-jogo (offside) mesmo com inércia
+        /*
+        Respeito ao limite legal de fora-de-jogo (offside) mesmo com inércia.
+
+        O limite é o que ELE julga que é: `offsideBias` é o erro de leitura da
+        linha, sorteado por fase de ataque a partir da `tacticknow` (ver
+        OffsideModel e publicarLinhaDeForaDeJogo). Sem isso, toda a gente
+        ficava exactamente meio metro atrás e não havia fora-de-jogo nenhum —
+        1.2 por jogo, contra os 3.2 de um jogo a sério.
+        */
         if (bb && bb.isAttacking && bb.offsideLimitDir !== undefined && bb.offsideLimitDir !== null) {
-            const maxLegalZDir = bb.offsideLimitDir - 0.5;
+            const maxLegalZDir = bb.offsideLimitDir - 0.5 + (p.offsideBias || 0);
             if (finalZ * p.dirZ > maxLegalZDir) {
                 finalZ = maxLegalZDir * p.dirZ;
             }

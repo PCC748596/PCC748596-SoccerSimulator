@@ -91,6 +91,10 @@ class FootballPlayer {
         this.passAimPoint = null;
         this.passTipo = 'direct';
         this.overlapTimer = 0;
+        // Erro de leitura da linha de fora-de-jogo e tempo que leva a dar por
+        // ele. Ver OffsideModel e Match.publicarLinhaDeForaDeJogo.
+        this.offsideBias = 0;
+        this.offsideAviso = 0;
         this.passInertiaTimer = 0;
         this.passInertiaZDir = null;
         // Saída de bola sorteada para esta posse (ver decidirSaidaGK).

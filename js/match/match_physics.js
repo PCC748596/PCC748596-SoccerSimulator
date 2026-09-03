@@ -747,6 +747,13 @@ Object.assign(Match, {
         const bb = TeamAI.get(teamPlayers[0].team);
         if (this.possessionTeam !== teamPlayers[0].team) {
             bb.offsideLimitDir = null;
+            /*
+            Perdeu-se a posse: a fase de ataque acabou e as leituras da linha
+            deixam de valer. O proximo ataque sorteia-as de novo (ver
+            OffsideModel.erroDeLeitura).
+            */
+            for (const p of teamPlayers) { p.offsideBias = 0; p.offsideAviso = 0; }
+            bb._offsideSorteado = false;
             return;
         }
 
@@ -761,6 +768,47 @@ Object.assign(Match, {
             limiteZ = Math.min(0, minOppZ, Match.ball.position.z) + 0.2;
         }
         bb.offsideLimitDir = limiteZ * teamPlayers[0].dirZ;
+
+        /*
+        A LEITURA DA LINHA, um erro por jogador e por fase de ataque.
+
+        Sorteia-se uma vez (quando a equipa ganha a posse) e nao a cada frame:
+        por frame, o atacante tremia para a frente e para tras dentro da mesma
+        jogada em vez de se comprometer com uma leitura.
+
+        Depois, quem estiver mesmo a frente da linha comeca a contar o tempo
+        que leva a dar por isso — `tempoDeReaccao`, dos 6 s de quem le mal aos
+        0.2 s de quem le bem. Esgotado, a leitura corrige-se (bias a zero) e o
+        clamp do TeamBT volta a puxa-lo para tras.
+        */
+        const M = (typeof OffsideModel !== 'undefined') ? OffsideModel : null;
+        if (!M || !M.activo) return;
+
+        if (!bb._offsideSorteado) {
+            bb._offsideSorteado = true;
+            for (const p of teamPlayers) {
+                if (p.role === 'gk') { p.offsideBias = 0; p.offsideAviso = 0; continue; }
+                const leitura = p.skillFor ? p.skillFor('tacticknow') : 50;
+                p.offsideBias = M.erroDeLeitura(leitura);
+                p.offsideAviso = 0;
+            }
+        }
+
+        const dt = this.delta || 0;
+        const linhaDir = bb.offsideLimitDir;
+        for (const p of teamPlayers) {
+            if (p.role === 'gk' || !p.model) continue;
+            if (!(p.offsideBias > 0)) continue;      // leitura conservadora: nada a corrigir
+            const zDir = p.model.position.z * p.dirZ;
+            if (zDir <= linhaDir) { p.offsideAviso = 0; continue; }
+
+            const leitura = p.skillFor ? p.skillFor('tacticknow') : 50;
+            p.offsideAviso = (p.offsideAviso || 0) + dt;
+            if (p.offsideAviso >= M.tempoDeReaccao(leitura)) {
+                p.offsideBias = 0;
+                p.offsideAviso = 0;
+            }
+        }
     },
 
     destravarBolaEmCimaDaBaliza: function () {

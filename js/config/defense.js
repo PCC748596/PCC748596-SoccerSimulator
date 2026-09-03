@@ -529,7 +529,68 @@ precisão que isso exigiria.
 */
 const OffsideModel = {
     activo: true,
-    tolerancia: 0.35
+    tolerancia: 0.35,
+
+    /*
+    =====================================================================
+    O ATACANTE LÊ A LINHA, E LÊ-A MAL
+    =====================================================================
+    Com a regra ligada e mais nada, o simulador dava 1.2 impedimentos por
+    jogo contra os 3.2 de um jogo a sério — e a razão não era a arbitragem:
+    o `offsideLimitDir` do TeamBT punha TODA a gente meio metro atrás da
+    linha, sempre. Ninguém arriscava, ninguém se enganava.
+
+    Um atacante a sério não vê uma linha; estima-a, e a estimativa é a
+    `tacticknow` (leitura de jogo) dele. `erroDeLeitura` devolve os metros
+    dessa estimativa — positivo é ficar à FRENTE do sítio legal, que é como
+    se cai em fora-de-jogo.
+
+    E depois de lá estar, ainda leva tempo a dar por isso: `tempoDeReaccao`.
+    Um jogador de leitura 100 percebe quase de imediato (0.2 s); um de 50
+    leva os 6 s inteiros a perceber que tem de recuar. Abaixo de 50 não
+    piora mais — o tecto é o tecto.
+
+    Sorteia-se UMA vez por fase de ataque (não por frame, senão o atacante
+    tremia para a frente e para trás dentro da mesma jogada).
+    =====================================================================
+    */
+    /*
+    Metros de erro na leitura da linha, a nível 50 de tacticknow (e a 100).
+
+    A amplitude tem de ser lida contra o que a separa do fora-de-jogo: o
+    atacante posiciona-se `0.5 m` atrás da linha (margem do TeamBT) e o árbitro
+    ainda perdoa a `tolerancia` (0.35 m). Ou seja, só há impedimento com um erro
+    acima de ~0.85 m — com a primeira calibração (1.4 a nível 50, 0.15 a 100) os
+    jogadores destes plantéis, que têm tacticknow 85, erravam no máximo 0.52 m e
+    nunca chegavam lá: zero impedimentos em 74 minutos.
+    */
+    erroMax: 2.4,
+    erroMin: 0.40,
+    // Segundos até dar por si em fora-de-jogo e voltar atrás.
+    reaccaoLenta: 6.0,     // tacticknow 50 (ou abaixo)
+    reaccaoRapida: 0.2,    // tacticknow 100
+
+    // Interpola entre os 50 e os 100, com tecto abaixo de 50.
+    _fraccao: function (tacticknow) {
+        const t = (typeof tacticknow === 'number') ? tacticknow : 50;
+        return Math.max(0, Math.min(1, (t - 50) / 50));
+    },
+
+    /*
+    Erro com SINAL: metade das vezes ele fica aquém (seguro), metade além
+    (arriscado). É a amplitude que a leitura de jogo encolhe.
+    */
+    erroDeLeitura: function (tacticknow, sorteio) {
+        const f = this._fraccao(tacticknow);
+        const amplitude = this.erroMax + (this.erroMin - this.erroMax) * f;
+        const r = (typeof sorteio === 'number') ? sorteio : Math.random();
+        return (r * 2 - 1) * amplitude;
+    },
+
+    tempoDeReaccao: function (tacticknow) {
+        const f = this._fraccao(tacticknow);
+        return this.reaccaoLenta + (this.reaccaoRapida - this.reaccaoLenta) * f;
+    }
 };
 
 if (typeof window !== 'undefined') window.OffsideModel = OffsideModel;

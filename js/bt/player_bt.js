@@ -1047,9 +1047,19 @@ function procurarCaraACara(p) {
         const distBaliza = Math.hypot(0 - ponto.x, golZ - ponto.z);
         if (distBaliza > C.distBalizaMax) continue;
 
-        // Fora-de-jogo: o ponto não pode estar além da linha.
+        /*
+        Fora-de-jogo: o ponto não pode estar além da linha — da linha que o
+        PASSADOR julga que existe.
+
+        Com a linha exacta, o ciclo nunca fechava: o colega podia estar em
+        posição de impedimento (por erro de leitura dele, ver OffsideModel) que
+        o passe simplesmente não ia lá, e não havia infracção nenhuma. Também é
+        o que se vê num jogo — o passe para o fora-de-jogo acontece porque
+        quem passa também lê a linha mal, e é a mesma leitura que aqui se usa
+        (`p.offsideBias`).
+        */
         if (bb && bb.offsideLimitDir !== null && bb.offsideLimitDir !== undefined &&
-            ponto.z * p.dirZ > bb.offsideLimitDir - 0.5) continue;
+            ponto.z * p.dirZ > bb.offsideLimitDir - 0.5 + (p.offsideBias || 0)) continue;
 
         /*
         Do ponto à baliza sem defensores. O guarda-redes NÃO conta: é
