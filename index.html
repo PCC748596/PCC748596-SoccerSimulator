@@ -16,7 +16,7 @@
                 <h2 id="app-title" style="font-size: 0.85em; font-weight: bold; margin: 0; padding: 0;">SOCCER SIM |
                     FPS: --
                 </h2>
-                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0632</div>
+                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0633</div>
             </div>
             <button type="button" id="btn-painel" title="Minimizar / maximizar (X) — Shift: todos"
                 onclick="togglePainel(undefined, event)">&minus;</button>
@@ -149,9 +149,10 @@
                     onclick="Match.setSpeed(1.0)">1.0x</button>
                 <button type="button" class="btn-sector btn-speed" id="spd-1.2"
                     onclick="Match.setSpeed(1.2)">1.2x</button>
-                <!-- 10x corre em passos partidos (ver o animate em main.js):
-                     são ~7 updates normais por frame, não um update gigante. -->
-                <button type="button" class="btn-sector btn-speed" id="spd-10" onclick="Match.setSpeed(10)">10x</button>
+                <!-- 2x corre em passos partidos (ver o animate em main.js):
+                     são updates normais repetidos por frame, não um update
+                     gigante. Era 10x, que dava ~7 passos por frame. -->
+                <button type="button" class="btn-sector btn-speed" id="spd-2" onclick="Match.setSpeed(2)">2x</button>
             </div>
 
 

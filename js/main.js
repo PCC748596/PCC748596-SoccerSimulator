@@ -816,11 +816,13 @@ function animate(time) {
             /*
             PASSOS PARTIDOS, e não um passo grande.
 
-            `Match.update(dt * 10)` não é o mesmo jogo dez vezes mais depressa:
-            é o mesmo jogo com a física a saltar buracos. A 10x o passo seria
-            ~0.15 s (7 Hz), e a essa cadência a bola anda 1,5 m entre frames —
-            atravessa a rede (testada por bandas de 0.22 m), passa ao lado dos
-            contactos, e os temporizadores da FSM saltam gestos inteiros.
+            `Match.update(dt * N)` não é o mesmo jogo N vezes mais depressa:
+            é o mesmo jogo com a física a saltar buracos. Ao 10x que este botão
+            era, o passo seria ~0.15 s (7 Hz), e a essa cadência a bola anda
+            1,5 m entre frames — atravessa a rede (testada por bandas de
+            0.22 m), passa ao lado dos contactos, e os temporizadores da FSM
+            saltam gestos inteiros. O botão está hoje em 2x, mas a partição
+            fica: é ela que torna a escolha do multiplicador inofensiva.
 
             Correr N passos do tamanho normal dá exactamente o mesmo jogo, só
             mais vezes por frame. Abaixo de `PASSO_MAX` isto é um passo só, ou

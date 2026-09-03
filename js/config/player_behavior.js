@@ -786,6 +786,25 @@ const ThrowInModel = {
     afastaAdversarios: 2.5,  // ninguém do outro lado a menos disto da bola
 
     /*
+    QUANTO A EQUIPA QUE MARCA SOBE NO LATERAL (pedido: "para o time marcador
+    pode avançar um pouco mais, está recuando muito").
+
+    Sem isto ela usa o bloco defensivo de sempre, com o centro
+    `BlockShape.recuoDoCentroSemBola` (5 m) atrás da linha da bola: o batedor
+    ficava com toda a gente longe. A bola está PARADA na linha e há tempo de
+    subir, portanto o rectângulo inteiro avança isto enquanto o estado for
+    THROW_IN.
+
+    Metros, no referencial de ataque da equipa que marca. Some-se ao
+    `avancoNoMeioCampo` em computeBlock (team_bt.js) — é o mesmo mecanismo, um
+    avanço rígido do bloco, e sobe também o tecto da última linha.
+
+    A equipa que repõe não é tocada: o lugar do batedor é escrito à mão no
+    setupSetPiece e os companheiros dela já são puxados pelo `apoio*`.
+    */
+    avancoDosMarcadores: 6.0,
+
+    /*
     ALVO EM ALTURA. O lateral é cobrado nos PÉS do receptor ou no PEITO dele, e
     a escolha é a distância: curto põe-se no pé, para ele sair a jogar já; mais
     longo procura o peito, que é o alvo grande e o que se protege de costas.
@@ -939,17 +958,28 @@ de cruzeiro em m/s — o `steerArrive` trava sozinho à chegada.
 */
 const RepositionPace = {
     // [distância mínima ao alvo, m/s de cruzeiro], da mais longe para a mais perto.
+    /*
+    +30% em toda a tabela (pedido). A calibração original punha a média em
+    3.1 m/s e a quilometragem em 34 km por equipa; com este aumento a média
+    volta para perto dos 4.0 m/s e a quilometragem para os ~44 km, ou seja
+    entre a versão antiga (4.3 m/s, 50 km) e a calibrada. Fica anotado porque
+    o número de referência de um jogo a sério é 1.94 m/s: isto é uma escolha
+    de sensação de jogo, não de realismo de quilometragem, e é aqui que se
+    desfaz se a leitura do lote pedir.
+
+    Valores antes do aumento: 6.8 / 4.4 / 2.6 / 1.5 e um GK a 2.6.
+    */
     escaloes: [
-        [25.0, 6.8],   // fora de posição: sprint de recuperação
-        [10.0, 4.4],   // trote
-        [3.0, 2.6],    // trote curto
-        [0.0, 1.5]     // já posicionado: andar
+        [25.0, 8.84],  // fora de posição: sprint de recuperação
+        [10.0, 5.72],  // trote
+        [3.0, 3.38],   // trote curto
+        [0.0, 1.95]    // já posicionado: andar
     ],
     ganhoSkill: 0.20,
     // Contra-ataque: a transição é a rajada, aqui sim.
     bonusContraAtaque: 1.25,
     // O guarda-redes anda quase sempre — reposiciona-se, não corre o campo.
-    velocidadeGK: 2.6,
+    velocidadeGK: 3.38,
 
     cruzeiro: function (dist, skillSpeed) {
         let base = this.escaloes[this.escaloes.length - 1][1];

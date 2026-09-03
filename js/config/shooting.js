@@ -479,6 +479,39 @@ const FreeKickModel = {
 
     /*
     =====================================================================
+    FALTA DE ATAQUE DENTRO DA ÁREA ADVERSÁRIA — quem cometeu a falta RECUA
+    =====================================================================
+    Relato: "quando tem uma falta de ataque dentro da área adversária, o time
+    infrator também tem que recuar para marcar os adversários; os jogadores
+    estão ficando dentro da área e não estão marcando ninguém".
+
+    Era mesmo assim. Neste lance o batedor é a equipa que defendia, e a bola
+    fica no fundo do campo dela — sector `defesa`, que não tem `slotsMarcacao`
+    (esses são para a falta ofensiva). Os infractores ficavam onde a jogada de
+    ataque os tinha deixado, ou seja dentro da área, e o único ajuste era o
+    empurrão dos 9.15 m — que os afasta da bola sem os pôr a marcar ninguém.
+
+    Agora cada um pega no adversário mais perto e coloca-se do lado da PRÓPRIA
+    baliza em relação a ele, que é o lado por onde a jogada vai sair. E sai da
+    área: a regra manda-os para fora dela até a bola estar em jogo.
+
+    `distanciaMarcacao`  metros entre o marcador e o homem dele.
+    `margemForaDaArea`   a que distância da linha da área ficam quem lá estava
+                         dentro — não é encostado à linha, senão voltam lá para
+                         dentro no primeiro passo.
+    `linhaDeRecuo`       para quem sobra sem homem: metros à frente da linha da
+                         área, onde formam uma linha de espera.
+    `espacamentoRecuo`   entre os que sobram, para não ficarem colados.
+    */
+    recuoDoInfrator: {
+        distanciaMarcacao: 1.8,
+        margemForaDaArea: 1.5,
+        linhaDeRecuo: 8.0,
+        espacamentoRecuo: 5.0
+    },
+
+    /*
+    =====================================================================
     ONDE SE PÕE A EQUIPA QUE COBRA, POR SECTOR DO CAMPO
     =====================================================================
     Até aqui só o batedor e cinco homens na área eram colocados; os outros

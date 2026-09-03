@@ -383,9 +383,36 @@ const PassModel = {
     `folgaTempo`: quanto pode chegar depois da bola e ainda valer a pena (ela
     continua a rolar).
     */
+    /*
+    PASSE DIRECTO AOS PÉS: espera-se QUIETO, virado para a bola.
+
+    Relato: "os jogadores estão a tremer na posição quando estão a aguardar o
+    passe chegar". Não era animação — era o alvo a mexer-se. O destinatário
+    seguia o `interceptionPoint`, que a percepção recalcula a cada frame e que
+    ANDA na direcção dele à medida que a bola rola; a histerese de 0.8 m não
+    chegava, porque o alvo vinha ao encontro dele e voltava a passar o limite
+    frame sim frame não. Resultado: micro-arranques em ping-pong, com o corpo a
+    rodar para o alvo novo de cada vez.
+
+    Num passe que vem MESMO na direcção dele não há nada a corrigir: espera-se
+    parado, de frente para a bola, e só se inicia o movimento quando ela já
+    está perto — que é quando se dá o passo para a dominar.
+
+    `desvioDirecto`         meia-largura do corredor, em metros: a que distância
+                            da linha da bola ele ainda está "no caminho dela".
+                            Uma passada lateral — mais do que isto e há mesmo
+                            que ir buscá-la.
+    `distIniciaMovimento`   a que distância da bola ele deixa de esperar e
+                            começa a mexer-se.
+    `velMinDirecto`         abaixo desta velocidade a bola já não vem a
+                            caminho de ninguém: é bola morta, vai-se buscá-la.
+    */
     recepcao: {
         distEspaco: 2.5,
-        folgaTempo: 0.35
+        folgaTempo: 0.35,
+        desvioDirecto: 1.0,
+        distIniciaMovimento: 2.5,
+        velMinDirecto: 1.5
     },
 
     /*

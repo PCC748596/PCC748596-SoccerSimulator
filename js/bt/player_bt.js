@@ -1764,6 +1764,39 @@ function actReceivePass(ctx) {
         const bb = p.blackboard && p.blackboard.ball;
 
         /*
+        PASSE DIRECTO: espera QUIETO, virado para a bola.
+
+        O tremor na espera vinha daqui. O alvo era o `interceptionPoint`, que a
+        percepção recalcula a cada frame e que ANDA ao encontro dele enquanto a
+        bola rola: a histerese de 0.8 m era atravessada frame sim frame não, e
+        o resultado eram micro-arranques com o corpo a rodar de cada vez.
+
+        Se a bola vem dentro do corredor `desvioDirecto` dele, não há nada a
+        corrigir — o passe é para os pés e o certo é esperar de frente para ela.
+        Só quando ela chega a `distIniciaMovimento` é que ele se mexe, que é o
+        passo para dominar. Fora do corredor (passe torto, ou passe para o
+        espaço) segue a lógica de sempre, aqui em baixo.
+        */
+        const R0 = (typeof PassModel !== 'undefined') ? PassModel.recepcao : null;
+        if (R0 && typeof R0.desvioDirecto === 'number') {
+            const vx = Match.ballVel.x, vz = Match.ballVel.z;
+            const vel = Math.hypot(vx, vz);
+            if (vel >= (R0.velMinDirecto || 1.5)) {
+                const ux = vx / vel, uz = vz / vel;
+                const dx = p.model.position.x - bola.x, dz = p.model.position.z - bola.z;
+                const aoLongo = dx * ux + dz * uz;         // > 0: ele está à frente da bola
+                const lateral = Math.abs(dx * uz - dz * ux);
+                if (aoLongo > (R0.distIniciaMovimento || 2.5) &&
+                    lateral <= R0.desvioDirecto) {
+                    p.velocity.set(0, 0, 0);
+                    p.fsm.changeState('IDLE');
+                    lookAtBola(p.model, bola);
+                    return;
+                }
+            }
+        }
+
+        /*
         O PONTO DO PASSE GANHA AO PONTO DE INTERCEPÇÃO — quando ele lá chega.
 
         O `interceptionPoint` (perception.js) é o PRIMEIRO instante da

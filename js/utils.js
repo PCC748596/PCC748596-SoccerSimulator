@@ -660,6 +660,92 @@ function lugaresDaFalta(bolaX, bolaZ, attDir, jogadores, setor) {
 }
 
 /*
+QUEM COMETEU A FALTA DENTRO DA ÁREA ADVERSÁRIA RECUA E PEGA UM HOMEM.
+
+Relato: "os jogadores estão ficando dentro da área e não estão marcando
+ninguém". A falta de ataque dentro da área do adversário dá um livre batido do
+fundo do campo dele — sector `defesa`, sem `slotsMarcacao` (esses são o desenho
+da falta OFENSIVA) — e os infractores ficavam onde a jogada de ataque os tinha
+deixado: dentro da área, sem homem.
+
+Geometria pura, para se poder medir sem montar um jogo:
+
+    `infratores`   quem cometeu a falta e vai marcar (sem guarda-redes e sem
+                   quem já está preso à barreira: o chamador filtra).
+    `adversarios`  a equipa que cobra, sem o batedor e sem o guarda-redes.
+    `attDir`       direcção de ataque de QUEM COBRA. A baliza dos infractores
+                   fica em +attDir, e é para esse lado que eles se colocam em
+                   relação ao homem — é por lá que a jogada vai sair.
+
+Emparelhamento guloso pelo mais perto: o par mais próximo de todos fecha
+primeiro, depois o seguinte, e assim por diante. Não é o óptimo global, mas é
+estável e não deixa dois marcadores no mesmo homem, que é o que interessa.
+
+Quem sobra sem homem forma uma linha à frente da área (`linhaDeRecuo`), porque
+ficar na área a olhar é exactamente o que se está a corrigir.
+
+Devolve `[{ p, x, z }]`. Os 9.15 m são impostos DEPOIS pelo chamador — aqui não
+se sabe o que a barreira fez às posições.
+*/
+function lugaresDoInfratorNaArea(bolaX, bolaZ, attDir, infratores, adversarios) {
+    const R = (typeof FreeKickModel !== 'undefined') ? FreeKickModel.recuoDoInfrator : null;
+    if (!R || !infratores || !infratores.length) return [];
+
+    const dir = Math.sign(attDir) || 1;
+    // A área de onde a bola é batida: a de quem cobra, atrás dele.
+    const linhaFundoCobra = -dir * (CAMPO_COMP / 2);
+    const limiteArea = linhaFundoCobra + dir * Area.profundidade;   // borda da área
+    const limX = CAMPO_LARG / 2 - 2.0;
+
+    // Fora da área, com margem — e nunca à frente de quem já está no campo.
+    const foraDaArea = (x, z) => {
+        let zz = z;
+        if (Area.contem(x, z, linhaFundoCobra)) {
+            zz = limiteArea + dir * R.margemForaDaArea;
+        }
+        return {
+            x: Math.max(-limX, Math.min(limX, x)),
+            z: Math.max(-(CAMPO_COMP / 2 - 2), Math.min(CAMPO_COMP / 2 - 2, zz))
+        };
+    };
+
+    const livres = infratores.slice();
+    const homens = (adversarios || []).slice();
+    const saida = [];
+
+    while (livres.length && homens.length) {
+        let melhor = null;
+        for (let i = 0; i < livres.length; i++) {
+            for (let j = 0; j < homens.length; j++) {
+                const d = Math.hypot(
+                    livres[i].model.position.x - homens[j].model.position.x,
+                    livres[i].model.position.z - homens[j].model.position.z);
+                if (!melhor || d < melhor.d) melhor = { d: d, i: i, j: j };
+            }
+        }
+        const marcador = livres.splice(melhor.i, 1)[0];
+        const homem = homens.splice(melhor.j, 1)[0];
+
+        // Do lado da própria baliza em relação ao homem dele.
+        const ponto = foraDaArea(
+            homem.model.position.x,
+            homem.model.position.z + dir * R.distanciaMarcacao);
+        saida.push({ p: marcador, x: ponto.x, z: ponto.z, homem: homem });
+    }
+
+    // Os que sobram: linha de espera à frente da área, centrada no eixo.
+    livres.forEach((p, i) => {
+        const lado = (i % 2 === 0) ? -1 : 1;
+        const ponto = foraDaArea(
+            lado * Math.ceil((i + 1) / 2) * R.espacamentoRecuo,
+            limiteArea + dir * R.linhaDeRecuo);
+        saida.push({ p: p, x: ponto.x, z: ponto.z, homem: null });
+    });
+
+    return saida;
+}
+
+/*
 O QUE SE FAZ COM UMA FALTA, a partir de onde a bola está.
 
 Três casos, e a ordem entre eles importa — o trapézio de remate ganha sempre:

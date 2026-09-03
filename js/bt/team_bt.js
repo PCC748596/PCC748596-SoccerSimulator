@@ -903,7 +903,30 @@ function computeBlock(bb) {
     */
     const faixaMeio = (typeof B.faixaMeioCampo === 'number') ? B.faixaMeioCampo : 20.0;
     const bolaNoMeioCampo = Math.abs(bZ) <= faixaMeio;
-    const avancoMeio = bolaNoMeioCampo ? profundidade * (B.avancoNoMeioCampo || 0) : 0;
+    let avancoMeio = bolaNoMeioCampo ? profundidade * (B.avancoNoMeioCampo || 0) : 0;
+
+    /*
+    NO LATERAL, QUEM MARCA NAO RECUA TANTO (pedido).
+
+    A equipa que nao repoe fica com o bloco no sitio de sempre — centro
+    `recuoDoCentroSemBola` (5 m) atras da linha da bola — e num lateral isso
+    deixa o batedor com toda a gente longe: o lance nao e uma jogada em curso,
+    e a bola esta parada na linha, portanto ha tempo para subir e apertar.
+
+    Somado ao `avancoMeio` de proposito: sao a mesma coisa, um avanco RIGIDO do
+    rectangulo inteiro, e por isso entra na mesma variavel — que e tambem o
+    que sobe o tecto da ultima linha mais abaixo. Sem isso o
+    `recuoDaUltimaLinha` voltaria a ancorar o bloco no tecto do painel e o
+    avanco nao chegava ao terreno.
+
+    O lugar do batedor e escrito a mao no setupSetPiece e nao passa por aqui:
+    a equipa que repoe fica como estava.
+    */
+    if (!bb.isAttacking && typeof Match !== 'undefined' && Match.state === 'THROW_IN' &&
+        typeof ThrowInModel !== 'undefined' && ThrowInModel.avancoDosMarcadores) {
+        avancoMeio += ThrowInModel.avancoDosMarcadores;
+    }
+
     targetOffsetZ += avancoMeio;
 
     if (bb.blocoZSuave === undefined) {
@@ -926,7 +949,24 @@ function computeBlock(bb) {
     /* --- limites em Z (Regra 2 e Regra 3) ------------------------------- */
     const fundo = typeof LINHA_FUNDO !== 'undefined' ? LINHA_FUNDO : CAMPO_COMP / 2;
     const profArea = typeof Area !== 'undefined' ? Area.profundidade : 16.5;
-    const minZ = -(fundo - profArea);
+
+    /*
+    O PISO DA TRASEIRA SEGUE A BOLA DENTRO DA AREA.
+
+    O piso era a linha da grande area, fixo. Com a bola entre essa linha e a
+    baliza o bloco nao podia recuar mais: ficava um buraco no meio da area,
+    com a bola atras da traseira do rectangulo e toda a gente a frente dela.
+
+    Com a bola a frente da linha da area o piso e o de sempre. Assim que ela
+    passa, o piso passa a ser a bola recuada de `folgaAtrasDaBola`, com um
+    limite de `margemFundoDoBloco` da linha de fundo. O rectangulo desloca-se
+    inteiro, como em qualquer outro limite — nunca encolhe.
+    */
+    const minZArea = -(fundo - profArea);
+    const folgaBola = (typeof B.folgaAtrasDaBola === 'number') ? B.folgaAtrasDaBola : 1.0;
+    const margemFundo = (typeof B.margemFundoDoBloco === 'number') ? B.margemFundoDoBloco : 3.0;
+    const pisoFundo = -(fundo - margemFundo);
+    const minZ = Math.max(pisoFundo, Math.min(minZArea, bolaZDir - folgaBola));
     
     // No tiro de meta, ninguem pode invadir a area (quem defende o tiro de meta tem o maxZ capado)
     const isGoalKick = typeof Match !== 'undefined' && Match.state === 'GOAL_KICK';

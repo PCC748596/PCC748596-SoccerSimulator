@@ -5843,6 +5843,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Mudar uma formação ou dimensão do campo | `config.js` |
 | Mudar quando a equipa pressiona / recua / bascula | `bt/team_bt.js` → a árvore |
 | Equipa compacta demais / esticada demais | `config.js` → `TeamShape.blockDepth*` |
+| Buraco no meio da área com a bola atrás da linha da grande área | `bt/team_bt.js` → `computeBlock`, o `minZ`; `config.js` → `BlockShape.folgaAtrasDaBola` / `.margemFundoDoBloco` |
 | Defesas e médio a subirem de mais no ataque | `config.js` → `BlockShape.restDefense` |
 | Lateral e extremo do mesmo lado embolados | `config.js` → `BlockShape.separacaoLateral` |
 | Jogador em fora-de-jogo apesar do bloco o cortar | `bt/player_bt.js` → `cortarForaDeJogo`; `config.js` → `BlockShape.cortarForaDeJogoNoAlvo` |
@@ -5952,6 +5953,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Corpo do batedor de lateral virado para o alvo | `utils.js` → `giroDoCorpoNoLateral` |
 | Alcance do lançamento lateral por força | `config.js` → `ThrowInModel.alcanceMaxFraco/Forte` |
 | Companheiros longe do batedor do lateral | `config.js` → `ThrowInModel.apoio*` |
+| Equipa que MARCA o lateral recuada demais | `config.js` → `ThrowInModel.avancoDosMarcadores` |
 | Árbitro a tremer ou aos solavancos | `officials.js` → `paragemMax`/`arranqueMin`/`suavizacaoVel` |
 | Ligar/desligar sombras | painel direito → Sombras; `main.js` → `toggleSombras()` |
 | Nitidez das sombras | `main.js` → `dirLight.shadow.mapSize` e o `d` da shadow camera |

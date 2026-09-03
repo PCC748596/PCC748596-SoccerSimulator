@@ -12,7 +12,7 @@ Object.assign(Match, {
             if (e.key === '1') this.setSpeed(0.9);
             if (e.key === '2') this.setSpeed(1.0);
             if (e.key === '3') this.setSpeed(1.2);
-            if (e.key === '4') this.setSpeed(10);
+            if (e.key === '4') this.setSpeed(2);
             if (e.key === '4') this.setCameraMode('center');
             if (e.key === '5') this.setCameraMode('sideline');
             if (e.key === '6') this.setCameraMode('topdown');

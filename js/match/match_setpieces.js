@@ -662,6 +662,42 @@ Object.assign(Match, {
             }
 
             /*
+            FALTA DE ATAQUE DENTRO DA ÁREA ADVERSÁRIA: OS INFRACTORES RECUAM.
+
+            Relato: "os jogadores estão ficando dentro da área e não estão
+            marcando ninguém". Neste lance quem cobra é a equipa que defendia e
+            a bola está no fundo do campo dela — sector `defesa`, que não tem
+            `slotsMarcacao` — portanto os infractores ficavam onde a jogada de
+            ataque os tinha deixado: dentro da área, sem homem. O único ajuste
+            era o empurrão dos 9.15 m, que afasta da bola e mais nada.
+
+            Os lugares são geometria pura (`lugaresDoInfratorNaArea`, utils.js):
+            cada um pega no adversário mais perto, coloca-se do lado da própria
+            baliza em relação a ele, e sai da área. A barreira não entra — ela é
+            obrigação e já está posta.
+
+            O `dynamicTarget` vai a par da posição: sem ele o nível 1 reescreve
+            o alvo no frame seguinte e eles voltam para dentro da área.
+            */
+            if (Area.contem(bolaFK.x, bolaFK.z, -attDir * LINHA_FUNDO) &&
+                typeof lugaresDoInfratorNaArea === 'function') {
+                const infratores = defendingPlayers.filter(
+                    p => p.role !== 'gk' && !p.naBarreiraFalta);
+                const homens = attackingPlayers.filter(
+                    p => p.role !== 'gk' && p !== takerFK);
+                lugaresDoInfratorNaArea(bolaFK.x, bolaFK.z, attDir, infratores, homens)
+                    .forEach(l => {
+                        l.p.model.position.set(l.x, ALTURA_BASE_Y, l.z);
+                        l.p.dynamicTarget.set(l.x, ALTURA_BASE_Y, l.z);
+                        l.p.setPieceTarget = new THREE.Vector3(l.x, ALTURA_BASE_Y, l.z);
+                        l.p.velocity.set(0, 0, 0);
+                        l.p.jostleAncora = null;
+                        lookAtBola(l.p.model, bolaFK);
+                        l.p.fsm.changeState('SET_PIECE_WAIT');
+                    });
+            }
+
+            /*
             OS 9.15 m, DEPOIS DE TODA A GENTE COLOCADA.
 
             O afastamento existia, mas corria no meio do posicionamento — só

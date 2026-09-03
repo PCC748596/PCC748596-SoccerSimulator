@@ -403,6 +403,26 @@ const BlockShape = {
     avancoNoMeioCampo: 0.10,    // fraccao do comprimento do bloco
 
     /*
+    A TRASEIRA DO BLOCO ACOMPANHA A BOLA DENTRO DA AREA.
+
+    O piso do rectangulo era a linha da grande area e mais nada: com a bola
+    entre essa linha e a baliza, o bloco nao podia recuar mais e ficava um
+    buraco no meio da area — a bola atras da traseira do bloco, com toda a
+    gente colocada a frente dela.
+
+    Passa a haver dois pisos. Enquanto a bola estiver a frente da linha da
+    area, o piso e a linha da area, como antes. Assim que a bola a
+    ultrapassa, o piso passa a ser a propria bola, recuada de
+    `folgaAtrasDaBola` (a traseira fica ligeiramente atras dela, para se
+    poder disputar de tras), ate ao limite de `margemFundoDoBloco` da linha
+    de fundo — o guarda-redes e que manda no que fica atras disso.
+
+    Continua a ser o rectangulo INTEIRO a deslocar-se: ele nunca se deforma.
+    */
+    folgaAtrasDaBola: 1.0,      // metros que a traseira fica atras da bola
+    margemFundoDoBloco: 3.0,    // piso absoluto, medido da linha de fundo
+
+    /*
     O PENDULO NAO PODE EMBOLAR O LATERAL COM O EXTREMO.
 
     Medido depois de o ligar: o par lateral/extremo do mesmo lado passou a
