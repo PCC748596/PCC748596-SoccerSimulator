@@ -632,16 +632,58 @@ const OffsideModel = {
     Erro com SINAL: metade das vezes ele fica aquém (seguro), metade além
     (arriscado). É a amplitude que a leitura de jogo encolhe.
     */
+    /*
+    `vies` desloca a media do erro para o lado ARRISCADO (ficar a frente da
+    linha). Sem ele o sorteio e simetrico — tantas leituras conservadoras como
+    arriscadas — e o resultado medido foi 15 jogadores apanhados em posicao por
+    3.3 jogos, nenhum deles a receber a bola.
+
+    A razao de ser assimetrico e futebolistica: quem ataca a profundidade esta
+    a olhar para o espaco e para a bola, nao para a linha, e o erro dele tem
+    um lado preferido — arrancar cedo. O defensor e que tem a linha toda no
+    campo de visao.
+    */
+    vies: 0.45,
+
     erroDeLeitura: function (tacticknow, sorteio) {
         const f = this._fraccao(tacticknow);
         const amplitude = this.erroMax + (this.erroMin - this.erroMax) * f;
         const r = (typeof sorteio === 'number') ? sorteio : Math.random();
-        return (r * 2 - 1) * amplitude;
+        return ((r - 0.5) * 2 + this.vies) * amplitude;
     },
 
     tempoDeReaccao: function (tacticknow) {
         const f = this._fraccao(tacticknow);
         return this.reaccaoLenta + (this.reaccaoRapida - this.reaccaoLenta) * f;
+    },
+
+    /*
+    =====================================================================
+    QUEM PASSA TAMBEM DEMORA A VER
+    =====================================================================
+    O atacante leva o seu tempo a perceber que esta em fora-de-jogo
+    (`tempoDeReaccao` acima). Quem tem a bola leva o dele a perceber que o
+    COLEGA esta — e e por isso que o passe para o fora-de-jogo existe: nao e
+    um erro de execucao, e o passador a ver a linha um instante atrasado.
+
+    `penalNota` multiplica a nota desse colega na escolha do passe DEPOIS de o
+    passador ja ter tido tempo de o ver. Nao e zero de proposito: mesmo vendo,
+    as vezes arrisca-se — e um passe arriscado, nao uma impossibilidade.
+
+    O tempo que o passador leva a ver e o `tempoDeReaccao` DELE, com a
+    `tacticknow` dele: um medio que le bem o jogo levanta a cabeca e ve; um que
+    le mal poe la a bola.
+    =====================================================================
+    */
+    penalNota: 0.12,
+
+    /*
+    O colega esta em posicao ha tempo suficiente para o passador dar por isso?
+    `tempoEmPosicao` vem de `p.offsideTempoEmPosicao` (match_physics.js).
+    */
+    passadorJaViu: function (tempoEmPosicao, tacticknowDoPassador) {
+        if (!(tempoEmPosicao > 0)) return false;
+        return tempoEmPosicao >= this.tempoDeReaccao(tacticknowDoPassador);
     }
 };
 

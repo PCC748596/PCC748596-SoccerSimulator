@@ -547,7 +547,7 @@ const Officials = {
     contar, que e exactamente a definicao da regra.
     =====================================================================
     */
-    marcarPosicoesDeImpedimento: function (passador) {
+    marcarPosicoesDeImpedimento: function (passador, destinatario) {
         const M = (typeof OffsideModel !== 'undefined') ? OffsideModel : null;
         if (!M || !M.activo || !passador || typeof Match === 'undefined') return;
         // So em jogo corrido: canto, lateral e pontape de baliza nao tem
@@ -575,6 +575,7 @@ const Officials = {
         const tol = M.tolerancia;
 
         this._impedidos = [];
+        this._passeParaImpedido = null;
         for (const p of colegas) {
             if (p === passador || !p.model) continue;
             const zDir = p.model.position.z * dir;
@@ -583,17 +584,49 @@ const Officials = {
             if (zDir <= 0) continue;
             if (zDir <= bolaDir + tol) continue;
             if (zDir <= linhaDir + tol) continue;
-            this._impedidos.push({
+            const marca = {
                 jogador: p,
                 x: p.model.position.x,
                 z: p.model.position.z,
                 team: p.team
-            });
+            };
+            this._impedidos.push(marca);
+
+            /*
+            O PASSE DIRIGIDO A QUEM ESTA EM POSICAO JA E A INFRACCAO.
+
+            A posicao fixa-se no lancamento, e o que acontece a seguir nao a
+            desfaz: se um central corta, se o guarda-redes agarra, se a bola sai
+            pela linha — foi impedimento na mesma, e a cobranca e no sitio onde
+            ele estava quando o passe saiu.
+
+            Sem isto era preciso ele TOCAR na bola, e media-se o resultado:
+            16 jogadores apanhados em posicao ao longo de 3.3 jogos, e apenas
+            **1** chegou a tocar — porque um atacante em fora-de-jogo e, por
+            construcao, um mau alvo de passe e quase sempre alguem lhe chega
+            primeiro. Contando so os toques, a regra existia e nao se via.
+            */
+            if (destinatario && p === destinatario) this._passeParaImpedido = marca;
         }
     },
 
     limparImpedimento: function () {
         this._impedidos = null;
+        this._passeParaImpedido = null;
+    },
+
+    /*
+    O passe ia para alguem em posicao de impedimento? Entao a infraccao esta
+    determinada, e quem toca a seguir e irrelevante. Chamado no primeiro toque
+    (resolveBallContact) e quando a bola sai de campo.
+
+    Devolve true se marcou.
+    */
+    resolverPasseParaImpedido: function () {
+        const marca = this._passeParaImpedido;
+        if (!marca) return false;
+        this._passeParaImpedido = null;
+        return this.assinalarImpedimento(marca);
     },
 
     /*
@@ -601,6 +634,13 @@ const Officials = {
     abortar o toque nesse caso: a bola passa a ser da outra equipa.
     */
     verificarImpedimento: function (jogador) {
+        /*
+        O passe ia para um impedido: a infraccao esta decidida desde o
+        lancamento, e nao interessa quem chegou primeiro a bola — um central a
+        cortar, o guarda-redes a agarrar, ou a bola a sair.
+        */
+        if (this._passeParaImpedido) return this.resolverPasseParaImpedido();
+
         const marcas = this._impedidos;
         if (!marcas || !marcas.length || !jogador) return false;
 
@@ -613,23 +653,28 @@ const Officials = {
         if (!marca) { this.limparImpedimento(); return false; }
 
         this.limparImpedimento();
+        return this.assinalarImpedimento(marca);
+    },
+
+    /*
+    Marca a infraccao: conta na ficha, poe a bola ONDE ELE ESTAVA no instante
+    do passe e monta o livre INDIRECTO para a defesa.
+    */
+    assinalarImpedimento: function (marca) {
+        if (!marca || typeof Match === 'undefined') return false;
+        this.limparImpedimento();
 
         if (typeof MatchStats !== 'undefined' && MatchStats.registarImpedimento) {
-            MatchStats.registarImpedimento(jogador.team);
+            MatchStats.registarImpedimento(marca.team);
         }
 
-        /*
-        O livre e no SITIO onde ele estava quando o passe saiu, e e INDIRECTO
-        — dai a bandeira `faltaIndirecta`, que o setupSetPiece le para nao
-        deixar rematar directamente a baliza.
-        */
         Match.ball.position.set(marca.x, BallPhysics.raio, marca.z);
         Match.ballVel.set(0, 0, 0);
         Match.ballCarrier = null;
         Match.intendedReceiver = null;
         Match.faltaIndirecta = true;
 
-        const contra = (jogador.team === 'TeamA') ? 'TeamB' : 'TeamA';
+        const contra = (marca.team === 'TeamA') ? 'TeamB' : 'TeamA';
         Match.setupSetPiece('FREE_KICK', contra);
         if (this.anunciar) this.anunciar('OFFSIDE');
         if (typeof EfeitosSonoros !== 'undefined') EfeitosSonoros.apito(1.0);

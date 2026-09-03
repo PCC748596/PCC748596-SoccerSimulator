@@ -95,6 +95,8 @@ class FootballPlayer {
         // ele. Ver OffsideModel e Match.publicarLinhaDeForaDeJogo.
         this.offsideBias = 0;
         this.offsideAviso = 0;
+        // Ha quanto tempo esta a frente da linha de fora-de-jogo (segundos).
+        this.offsideTempoEmPosicao = 0;
         this.passInertiaTimer = 0;
         this.passInertiaZDir = null;
         // Saída de bola sorteada para esta posse (ver decidirSaidaGK).
@@ -2262,6 +2264,26 @@ class FootballPlayer {
                 if (secDoAlvo && Tatics.setores.indexOf(secDoAlvo) >= 0) {
                     score *= 1 + PassModel.bonusSectorActivo;
                 }
+            }
+
+            /*
+            FORA-DE-JOGO NA NOTA DO PASSE.
+
+            Um colega em posicao de impedimento nao vale o que valia — mas so
+            depois de o PASSADOR ter tido tempo de dar por isso. Ate la ele
+            pontua como qualquer outro, e e assim que o passe para o
+            fora-de-jogo acontece num jogo a serio: nao e um erro de execucao,
+            e a linha lida um instante atrasado (ver OffsideModel.passadorJaViu
+            e `offsideTempoEmPosicao` em match_physics.js).
+
+            Depois de ver, a nota cai para `penalNota` — nao a zero: mesmo a
+            ver, as vezes arrisca-se.
+            */
+            if (typeof OffsideModel !== 'undefined' && OffsideModel.activo &&
+                OffsideModel.passadorJaViu &&
+                OffsideModel.passadorJaViu(opt.offsideTempoEmPosicao,
+                    this.skillFor ? this.skillFor('tacticknow') : 50)) {
+                score *= OffsideModel.penalNota;
             }
 
             if (window.showPlayerPoints) { opt.debugPoints = opt.debugPoints || {}; opt.debugPoints['Pass'] = Math.round(score); }

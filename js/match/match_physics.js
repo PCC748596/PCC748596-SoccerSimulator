@@ -246,6 +246,16 @@ Object.assign(Match, {
 
                 } else {
                 if (this.state === 'PLAY') {
+                    /*
+                    A bola saiu, mas se o passe ia para alguem em fora-de-jogo a
+                    infraccao ja estava decidida no lancamento — vale mais do
+                    que o canto ou o pontape de baliza que isto daria. Tem de
+                    ser resolvida ANTES do setupSetPiece, que apaga as marcas.
+                    */
+                    if (typeof Officials !== 'undefined' &&
+                        Officials.resolverPasseParaImpedido &&
+                        Officials.resolverPasseParaImpedido()) return;
+
                     let lastTeam = this.lastTouchedTeam || 'TeamA';
                     /*
                     Bola fora pela linha de fundo:
@@ -752,7 +762,9 @@ Object.assign(Match, {
             deixam de valer. O proximo ataque sorteia-as de novo (ver
             OffsideModel.erroDeLeitura).
             */
-            for (const p of teamPlayers) { p.offsideBias = 0; p.offsideAviso = 0; }
+            for (const p of teamPlayers) {
+                p.offsideBias = 0; p.offsideAviso = 0; p.offsideTempoEmPosicao = 0;
+            }
             bb._offsideSorteado = false;
             return;
         }
@@ -798,8 +810,21 @@ Object.assign(Match, {
         const linhaDir = bb.offsideLimitDir;
         for (const p of teamPlayers) {
             if (p.role === 'gk' || !p.model) continue;
+
+            /*
+            HA QUANTO TEMPO ESTE COLEGA ESTA EM POSICAO DE IMPEDIMENTO.
+
+            Conta-se para TODA a gente (nao so para quem leu a linha mal),
+            porque quem o le e o PASSADOR: e este relogio que diz se ele ja
+            teve tempo de dar por isso antes de lhe passar a bola. Ver
+            OffsideModel.passadorJaViu e a nota do passe em player.js.
+            */
+            const zDirTodos = p.model.position.z * p.dirZ;
+            if (zDirTodos > linhaDir) p.offsideTempoEmPosicao = (p.offsideTempoEmPosicao || 0) + dt;
+            else p.offsideTempoEmPosicao = 0;
+
             if (!(p.offsideBias > 0)) continue;      // leitura conservadora: nada a corrigir
-            const zDir = p.model.position.z * p.dirZ;
+            const zDir = zDirTodos;
             if (zDir <= linhaDir) { p.offsideAviso = 0; continue; }
 
             const leitura = p.skillFor ? p.skillFor('tacticknow') : 50;

@@ -32,7 +32,7 @@ function executePassGameplay(p) {
     sai do pe, que e esta funcao. Ver Officials.marcarPosicoesDeImpedimento.
     */
     if (typeof Officials !== 'undefined' && Officials.marcarPosicoesDeImpedimento) {
-        Officials.marcarPosicoesDeImpedimento(p);
+        Officials.marcarPosicoesDeImpedimento(p, p.passTarget);
     }
 
     const ehCruzamento = !!p.isCross;

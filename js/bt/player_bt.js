@@ -252,8 +252,23 @@ function findThroughBall(ctx) {
         // Alvo do PositionBT, não a posição actual — ver alvoDePasse().
         const mateAlvo = alvoDePasse(mate);
         const mateZ = mateAlvo.z * p.dirZ;
-        // Tem de estar aquém da linha (senão já está em fora-de-jogo) mas perto dela.
-        if (mateZ > linhaNoNosso) continue;
+        /*
+        A LINHA E A QUE O PASSADOR JULGA QUE E.
+
+        Era a linha exacta: quem estivesse um palmo a frente dela ficava de
+        fora, e por isso o lancamento NUNCA ia para um fora-de-jogo — o passe
+        em profundidade, que e de onde a maioria dos impedimentos nasce, era o
+        unico ramo com a leitura perfeita. Aqui vale o `offsideBias` do
+        passador (o erro de leitura dele, ver OffsideModel).
+
+        E quem esta em posicao ha tempo suficiente para ele DAR POR ISSO fica
+        de fora na mesma: passado o `tempoDeReaccao` dele, ja o viu.
+        */
+        const linhaPercebida = linhaNoNosso + (p.offsideBias || 0);
+        if (mateZ > linhaPercebida) continue;
+        if (typeof OffsideModel !== 'undefined' && OffsideModel.passadorJaViu &&
+            OffsideModel.passadorJaViu(mate.offsideTempoEmPosicao,
+                p.skillFor ? p.skillFor('tacticknow') : 50)) continue;
         if (mateZ < linhaNoNosso - PassModel.throughBallGap) continue;
 
         const dist = p.model.position.distanceTo(mateAlvo);
@@ -313,7 +328,18 @@ function findThroughBall(ctx) {
         // A camada `lancamento` da SpatialGrid somava-se aqui com peso 0.5, mas
         // a função devolvia 0 em toda a parte — nunca chegou a ser autorada.
         // Saiu com a camada; a nota é a distância e o ganho de profundidade.
-        let nota = 100 - dist * 0.5 + (linhaNoNosso - mateZ) * 2.0;
+        /*
+        A NOTA PREMEIA QUEM ARRANCA NAS COSTAS DA DEFESA.
+
+        Era `+ (linhaNoNosso - mateZ) * 2.0`, ou seja quanto MAIS ATRAS da
+        linha ele estivesse, melhor — o contrario do lance que se procura. Quem
+        ataca a profundidade parte colado a linha e vai buscar o espaco atras
+        dela; e essa proximidade que faz o passe valer a pena, e e ela que
+        produz tanto o golo como o fora-de-jogo.
+        */
+        const distanciaALinha = Math.max(0, linhaNoNosso - mateZ);
+        let nota = 100 - dist * 0.5 +
+            (PassModel.throughBallGap - Math.min(distanciaALinha, PassModel.throughBallGap)) * 2.0;
 
         /*
         NAS LATERAIS DA ÁREA, o lançamento RASTEIRO cede ao cruzamento — a

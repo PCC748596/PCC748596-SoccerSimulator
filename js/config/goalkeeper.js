@@ -310,8 +310,14 @@ const GoalkeeperDive = {
     velLateralSkill: 4.0,  // ± conforme a skill de GK
     vySubidaMax: 4.5,      // velocidade vertical máxima do impulso (m/s)
 
-    alcanceBraco: 0.75,    // quanto a mão chega além do corpo — o corpo não
-    // precisa de percorrer a distância toda
+    /*
+    Quanto a mão chega além do corpo — o corpo não precisa de percorrer a
+    distância toda. 0.75 -> 0.92: e o outro lado do mesmo pedido, a bola na
+    DEFESA. Alarga o que ele alcanca sem lhe mexer na velocidade nem na
+    reaccao, portanto o que muda sao as bolas que passavam a um palmo da mao —
+    que e onde estao as defesas que faltavam.
+    */
+    alcanceBraco: 0.92,
     alturaDeitado: 0.42,   // y da origem do modelo com ele deitado de lado
     atritoChao: 3.5,       // desaceleração do deslize no relvado (m/s²)
 

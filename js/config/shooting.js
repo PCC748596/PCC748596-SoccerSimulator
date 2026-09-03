@@ -256,8 +256,21 @@ const ShotModel = {
         1 saem mais remates para fora, abaixo de 1 mais no alvo. Existe para
         acertar a taxa de conversão SEM voltar a impor desfechos — o
         resultado continua a sair da bola, do guarda-redes e da madeira.
+
+        A pedido ("aumenta um pouco a chance de bola na defesa e fora"), com o
+        passo medido em 248 min de relogio cada:
+
+            1.00   26.9% dos remates no alvo
+            1.15   15.5% no alvo  <- de mais: o real anda pelos 33%
+            1.07   ver abaixo
+
+        O motivo do pedido: 2.90 golos por jogo (115% do alvo) com 1.12 de xG
+        (39%) — converte-se muito acima do que a qualidade das chances
+        justifica, e parte disso e a mira ser boa demais para remates que sao
+        maus. Mas a correccao tem um tecto: passado esse ponto o jogo deixa de
+        ter golos a menos e passa a ter remates para as bancadas.
         */
-        escalaGlobal: 1.0
+        escalaGlobal: 1.07
     }
 };
 
