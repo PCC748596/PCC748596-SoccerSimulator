@@ -5867,6 +5867,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Afinar o fora-de-jogo | `match.js` → `relaxConstraints()` |
 | Impedir jogadores sobrepostos | `match.js` → `separarAlvos()` |
 | Afinar andar / trotar / correr | `config.js` → `GaitModel` |
+| Defesa a recuar devagar / embolada com o meio-campo | `config.js` → `RepositionPace.bonusRecuo` / `.recuoMinimo`; `bt/player_bt.js` → `actHoldPosition` |
 | Afinar quanto se conduz vs. passa | `config.js` → `CarryModel.espacoLivre` e `.distanciaMax` |
 | Afinar marcação e largura da última linha | `config.js` → `MarkingModel` |
 | Afinar cruzamentos | `config.js` → `CrossModel` |

@@ -7,20 +7,22 @@ Formações, blocos, linhas defensivas, estilos de jogo, mentalidade e controlos
 */
 
 /*
-RITMO BASE DA PARTIDA. +15% a pedido (era 0.9).
+RITMO BASE DA PARTIDA. Esteve em 1.035 (+15%, pedido) e VOLTOU a 0.9.
 
-ATENÇÃO À OUTRA PONTA: o `MatchDuration.timeScale` é `4.5 / GAME_SPEED`,
-portanto acelerar o jogo DESACELERA o relógio — 5.00 s de relógio por segundo
-real passam a 4.35. Um lote de 1080 s deixa de dar 90 minutos de relógio e
-passa a dar ~78; para continuar a dar 90 são precisos 1242 s
-(`90*60 / MatchDuration.timeScale`, a conta que está no "Onde vou quando
-quero..." do docs/filesSummary.md).
+O aumento andou junto com o +30% do `RepositionPace` e o resultado medido foi
+o jogo a trocar de dono a cada 2.7 passes — o relato "meio sem objetivo, os
+times ficam trocando bola". Os números estão na nota do `RepositionPace`
+(config/player_behavior.js), que é onde a decisão de ritmo vive hoje.
 
-Qualquer estatística POR JOGO tirada de um lote tem de ser escalada por
-`5400 / Match.tempoDeJogo`, que já lê o timeScale novo — mas as leituras
-antigas, feitas a 0.9, não são comparáveis com as novas sem refazer a conta.
+ATENÇÃO À OUTRA PONTA, se alguém lhe voltar a mexer: o
+`MatchDuration.timeScale` é `4.5 / GAME_SPEED`, portanto acelerar o jogo
+DESACELERA o relógio. A 0.9 são 5.00 s de relógio por segundo real e um lote
+de 1080 s dá 90 minutos; a 1.035 seriam 4.35 e o mesmo lote daria ~78. A conta
+é `90*60 / MatchDuration.timeScale` (ver o "Onde vou quando quero..." do
+docs/filesSummary.md), e leituras feitas a ritmos diferentes não se comparam
+sem a refazer.
 */
-const GAME_SPEED = 1.035;
+const GAME_SPEED = 0.9;
 
 /*
 Pausa (segundos reais) entre o fim de uma reposição e o recomeço do jogo:

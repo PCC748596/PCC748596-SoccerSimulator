@@ -959,27 +959,61 @@ de cruzeiro em m/s — o `steerArrive` trava sozinho à chegada.
 const RepositionPace = {
     // [distância mínima ao alvo, m/s de cruzeiro], da mais longe para a mais perto.
     /*
-    +30% em toda a tabela (pedido). A calibração original punha a média em
-    3.1 m/s e a quilometragem em 34 km por equipa; com este aumento a média
-    volta para perto dos 4.0 m/s e a quilometragem para os ~44 km, ou seja
-    entre a versão antiga (4.3 m/s, 50 km) e a calibrada. Fica anotado porque
-    o número de referência de um jogo a sério é 1.94 m/s: isto é uma escolha
-    de sensação de jogo, não de realismo de quilometragem, e é aqui que se
-    desfaz se a leitura do lote pedir.
+    +15% sobre a tabela calibrada — foi +30% e MEDIU-SE MAL.
 
-    Valores antes do aumento: 6.8 / 4.4 / 2.6 / 1.5 e um GK a 2.6.
+    O +30% (com o GAME_SPEED a 1.035 ao mesmo tempo) deu o relato "o jogo tá
+    estranho, meio sem objetivo, os times ficam trocando bola sem saber o que
+    querem fazer". Medido em lotes de 300 s, 4 corridas por versão:
+
+        versão                        trocas de posse/90   passes por posse
+        antes da sessão                       101                3.27
+        +30% e GAME_SPEED 1.035               141                2.70
+        +15% e GAME_SPEED 0.9                 101                3.14
+
+    Toda a gente a chegar 30% mais depressa é o defensor a chegar 30% mais
+    depressa: mais interceptações, posses de 2.7 passes, e a bola a saltar de
+    equipa para equipa sem jogada nenhuma. Não é um defeito de decisão — as
+    árvores estão iguais — é ritmo a mais para as distâncias do campo.
+
+    Valores da calibração original: 6.8 / 4.4 / 2.6 / 1.5 e um GK a 2.6.
+    */
+    /*
+    [distância mínima ao alvo, m/s de cruzeiro], da mais longe para a mais perto.
+
+    O escalão do ANDAR era o de baixo dos 3 m e passou a ser o de baixo dos
+    2 m (pedido: "velocidade de andar só a <= 2 metros"). O metro que sobrou
+    ficou para o trote curto — a faixa dos 2 aos 10 m é onde se acerta a
+    posição dentro do bloco, e a andar isso levava 1.7 s por metro.
     */
     escaloes: [
-        [25.0, 8.84],  // fora de posição: sprint de recuperação
-        [10.0, 5.72],  // trote
-        [3.0, 3.38],   // trote curto
-        [0.0, 1.95]    // já posicionado: andar
+        [25.0, 7.82],  // fora de posição: sprint de recuperação
+        [10.0, 5.06],  // trote
+        [2.0, 2.99],   // trote curto
+        [0.0, 1.73]    // já posicionado: andar
     ],
     ganhoSkill: 0.20,
     // Contra-ataque: a transição é a rajada, aqui sim.
     bonusContraAtaque: 1.25,
+
+    /*
+    RECUAR É UMA RAJADA TAMBÉM — o contrário do contra-ataque, e faltava.
+
+    Relato: "a defesa está recuando muito devagar e está se embolando com o
+    meio campo". O ritmo saía só da distância ao alvo, sem olhar para o
+    SENTIDO: um central com o alvo 12 m atrás dele ia a 5.06 m/s, o mesmo
+    trote com que um médio faz um ajuste lateral de 12 m. Só que o médio tem
+    tempo e ele não — enquanto ele trota, o bloco já passou por cima dele, e é
+    isso que o embola com a linha da frente.
+
+    `bonusRecuo` só se aplica quando o alvo está atrás dele NO SEU
+    REFERENCIAL DE ATAQUE (ou seja, na direcção da própria baliza) e a mais
+    de `recuoMinimo` — perto do alvo o `steerArrive` trava sozinho e acelerar
+    ali só produz o vaivém que já se corrigiu noutros sítios.
+    */
+    bonusRecuo: 1.35,
+    recuoMinimo: 4.0,
     // O guarda-redes anda quase sempre — reposiciona-se, não corre o campo.
-    velocidadeGK: 3.38,
+    velocidadeGK: 2.99,
 
     cruzeiro: function (dist, skillSpeed) {
         let base = this.escaloes[this.escaloes.length - 1][1];

@@ -1945,6 +1945,22 @@ function actHoldPosition(ctx) {
         if (Match.counterAttackTeam === p.team) {
             p.speedMult *= RepositionPace.bonusContraAtaque;
         }
+
+        /*
+        A RECUPERAÇÃO PARA TRÁS É SPRINT, não trote (pedido: "a defesa está
+        recuando muito devagar e está se embolando com o meio campo").
+
+        O ritmo saía só da DISTÂNCIA, e ignorava o sentido: recuar 12 m e
+        ajustar 12 m de lado davam o mesmo trote. Só que quem recua está a
+        perder a posição enquanto o faz.
+
+        `recuoDir` é quanto o alvo está atrás dele no referencial de ataque —
+        positivo quer dizer na direcção da própria baliza.
+        */
+        const recuoDir = (p.model.position.z - p.dynamicTarget.z) * p.dirZ;
+        if (recuoDir > (RepositionPace.recuoMinimo || 4.0)) {
+            p.speedMult *= (RepositionPace.bonusRecuo || 1.0);
+        }
     } else {
         p.speedMult = (dist > 2.0 ? 6.6 : 4.2) + ((ctx.skillSpeed - 50) / 50) * 1.2;
         if (Match.counterAttackTeam === p.team) p.speedMult *= 1.25;
