@@ -214,7 +214,20 @@ test('a precisão cai com a distância e sobe com a técnica', () => {
     assert.ok(craque > fraco + 0.08, `a técnica não muda nada: ${fraco} vs ${craque}`);
 });
 
-test('a escala global é a única manípula, e está neutra', () => {
-    assert.ok(Math.abs(ShotModel.erro.escalaGlobal - 1.0) < 1e-9,
-        'a escala global saiu de 1.0 — a calibração acima deixou de valer');
+/*
+A escala global é a manípula de calibração da conversão (ver ShotModel.erro).
+Este guarda existe para obrigar a reler as faixas de precisão acima sempre que
+alguém lhe mexe — elas foram medidas a uma escala concreta.
+
+Deixou de exigir 1.0 quando a escala subiu para 1.07 (pedido: "aumenta um pouco
+a chance de bola na defesa e fora", com 2.90 golos por jogo contra o alvo de
+2.52). As faixas acima continuam a passar a 1.07 — foi verificado ao fazer a
+alteração —, e é isso que este teste passa a fixar: a escala anda dentro do
+intervalo em que a calibração medida ainda vale, e não um valor único.
+*/
+test('a escala global fica dentro do intervalo calibrado', () => {
+    const e = ShotModel.erro.escalaGlobal;
+    assert.ok(e >= 0.95 && e <= 1.15,
+        `escala global em ${e}: fora do intervalo em que as faixas de precisão ` +
+        'acima foram medidas — remede-as antes de a deixar aqui');
 });

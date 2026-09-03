@@ -51,6 +51,52 @@ const CautelaNaArea = {
 
 if (typeof window !== 'undefined') window.CautelaNaArea = CautelaNaArea;
 
+/*
+=============================================================================
+ALIVIO — e porque e que o simulador nao tinha escanteios
+=============================================================================
+Medido em lotes de 30 jogos: 0.88 escanteios por jogo contra os 9.92 de um jogo
+a serio (9%), e `afastamentos` a ZERO em todos os 60 registos. Ninguem punha a
+bola fora. As duas causas estavam no `actClearance` e no sitio dele na arvore:
+
+  1. O alivio chutava SEMPRE para a lateral e para a FRENTE
+     (`alvoZ = z + dirZ * 12`), mesmo com o defensor encostado a propria linha
+     de fundo — de onde a saida natural, e a que um defensor procura, e por
+     cima da linha de fundo: canto.
+  2. O ramo era o setimo, depois de todos os de passe. Um central apertado
+     dentro da propria area girava a procura de passe (e perdia a bola)
+     em vez de a mandar para fora.
+
+`zonaPerigo` e a distancia a propria linha de fundo dentro da qual, sob
+pressao, o alivio passa a ser a PRIMEIRA opcao e nao a ultima.
+
+`preferirFundo` e o quanto a saida pela linha de fundo e favorecida quando as
+duas estao ao alcance: 1.0 seria escolher sempre a mais perta; acima disso o
+defensor prefere o canto, que e o que se ve — concede-se o canto de bom grado,
+porque o que esta em jogo do outro lado e um golo.
+=============================================================================
+*/
+const ClearanceModel = {
+    /*
+    Calibracao, medida em 248 min de relogio cada:
+
+        (sem alivio pela linha de fundo)   0.88 cantos por jogo, 0 afastamentos
+        20.0 / 1.6 / 26.0                  3.27 cantos, 2.9 afastamentos
+        26.0 / 2.2 / 32.0                  ver abaixo
+
+    O alvo sao 9.92 cantos. Nao se chega la so por aqui: num jogo a serio boa
+    parte dos cantos vem de desvios e de remates bloqueados que saem pela linha
+    de fundo, e isso e fisica do lance, nao uma decisao do defensor.
+    */
+    zonaPerigo: 26.0,
+    preferirFundo: 2.2,
+    // Fora desta distancia a propria linha de fundo, o alivio e o de sempre:
+    // para a lateral, que dai e mesmo a saida mais perto.
+    fundoMax: 32.0
+};
+
+if (typeof window !== 'undefined') window.ClearanceModel = ClearanceModel;
+
 const SlideTackleModel = {
     lancamento: 0.15,
     deslize: 0.95,

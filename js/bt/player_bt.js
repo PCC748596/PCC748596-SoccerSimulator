@@ -1477,15 +1477,48 @@ function findPassBack(ctx) {
     return ctx._backPass;
 }
 
+/*
+A que distancia esta o jogador da PROPRIA linha de fundo. Positiva sempre: a
+propria baliza esta em `-dirZ * (CAMPO_COMP/2)`.
+*/
+function distanciaAoProprioFundo(p) {
+    return (CAMPO_COMP / 2) + p.model.position.z * p.dirZ;
+}
+
 function actClearance(ctx) {
     const p = ctx.p;
     if (p.aguardarPassada()) return true;
     if (typeof MatchStats !== 'undefined') MatchStats[p.team].passes.tentados++;
 
     const meiaLarg = CAMPO_LARG / 2;
-    // Chuta em direção à lateral mais próxima para aliviar o perigo
-    const ladoX = (p.model.position.x >= 0) ? (meiaLarg + 2.0) : (-meiaLarg - 2.0);
-    const alvoZ = p.model.position.z + p.dirZ * 12.0;
+    const C = (typeof ClearanceModel !== 'undefined') ? ClearanceModel : null;
+
+    /*
+    PARA ONDE SE ALIVIA: pela saida mais PERTO, e nao sempre para a lateral e
+    para a frente. Encostado a propria linha de fundo, a saida e por cima dela
+    — e isso e um canto, que e como os cantos nascem num jogo a serio.
+
+    O `preferirFundo` inclina a escolha: concede-se o canto de bom grado,
+    porque a alternativa, ali, e um golo.
+    */
+    const distFundo = distanciaAoProprioFundo(p);
+    const distLateral = meiaLarg - Math.abs(p.model.position.x);
+    const podeFundo = C && distFundo <= C.fundoMax;
+    const paraFundo = podeFundo && (distFundo / C.preferirFundo) < distLateral;
+
+    let ladoX, alvoZ;
+    if (paraFundo) {
+        // Por cima da propria linha de fundo, ao lado do poste: canto.
+        ladoX = p.model.position.x + Math.sign(p.model.position.x || 1) * 6.0;
+        alvoZ = -p.dirZ * (CAMPO_COMP / 2 + 4.0);
+        if (typeof MatchStats !== 'undefined' && MatchStats.registarAfastamento) {
+            MatchStats.registarAfastamento(p.team);
+        }
+    } else {
+        // Chuta em direção à lateral mais próxima para aliviar o perigo
+        ladoX = (p.model.position.x >= 0) ? (meiaLarg + 2.0) : (-meiaLarg - 2.0);
+        alvoZ = p.model.position.z + p.dirZ * 12.0;
+    }
 
     _v1.set(ladoX - p.model.position.x, 0, alvoZ - p.model.position.z).normalize();
     const forca = 16.0 + Math.random() * 6.0;
@@ -2448,6 +2481,26 @@ const PlayerBT = sel('PlayerRoot',
             seq('GuardaRedesJoga',
                 cond('souGR', ehGK),
                 act('sairAJogar', tratarGuardaRedes)
+            ),
+
+            /*
+            ALIVIO PRIMEIRO, quando o perigo e imediato: defensor apertado
+            dentro da propria zona de perigo (ver ClearanceModel.zonaPerigo).
+
+            Este ramo estava em SETIMO, depois de todos os de passe, e por isso
+            um central pressionado dentro da propria area girava a procura de
+            um passe em vez de mandar a bola fora — que e o que o pedido
+            descreve e o que custava golos. Aqui em cima, so dispara no caso
+            estreito: perto da propria baliza, sob pressao e sendo defesa.
+            */
+            seq('AlivioDePerigo',
+                cond('perigoImediato', (ctx) => {
+                    const C = (typeof ClearanceModel !== 'undefined') ? ClearanceModel : null;
+                    if (!C || !ctx.underPressure) return false;
+                    if (ctx.p.role !== 'def' && ctx.p.role !== 'gk') return false;
+                    return distanciaAoProprioFundo(ctx.p) <= C.zonaPerigo;
+                }),
+                act('chutarParaLateral', actClearance)
             ),
 
             // 1. Verificar chute - chutar
