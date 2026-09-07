@@ -1517,17 +1517,39 @@ function findPassBack(ctx) {
     return ctx._backPass;
 }
 
+/*
+Distancia de um jogador a PROPRIA linha de fundo, em metros.
+*/
+function distanciaAoProprioFundo(p) {
+    const fundoProprio = -p.dirZ * (CAMPO_COMP / 2);
+    return Math.abs(fundoProprio - p.model.position.z);
+}
+
 function actClearance(ctx) {
     const p = ctx.p;
     if (p.aguardarPassada()) return true;
     if (typeof MatchStats !== 'undefined') MatchStats[p.team].passes.tentados++;
 
-    const meiaLarg = CAMPO_LARG / 2;
-    // Chuta em direção à lateral mais próxima para aliviar o perigo
-    const ladoX = (p.model.position.x >= 0) ? (meiaLarg + 2.0) : (-meiaLarg - 2.0);
-    const alvoZ = p.model.position.z + p.dirZ * 12.0;
+    /*
+    LATERAL OU LINHA DE FUNDO — ver `alvoDeAlivio` (utils.js) e o ClearanceModel.
 
-    _v1.set(ladoX - p.model.position.x, 0, alvoZ - p.model.position.z).normalize();
+    Isto chutava SEMPRE para a lateral e para a FRENTE (`z + dirZ * 12`), mesmo
+    com o defensor encostado à própria linha de fundo. Medido em 30 jogos:
+    `afastamentos` a ZERO nos 60 registos e 0.84 escanteios por jogo contra os
+    9.92 de um jogo a sério. Um defensor apertado dentro da própria área manda
+    a bola por cima da linha de fundo e concede o canto — é o que falta aqui.
+    */
+    const C = (typeof ClearanceModel !== 'undefined') ? ClearanceModel : null;
+    const alvo = (typeof alvoDeAlivio === 'function')
+        ? alvoDeAlivio(p.model.position.x, p.model.position.z, p.dirZ, C)
+        : { x: (p.model.position.x >= 0) ? (CAMPO_LARG / 2 + 2.0) : (-CAMPO_LARG / 2 - 2.0),
+            z: p.model.position.z + p.dirZ * 12.0, fundo: false };
+
+    if (alvo.fundo && typeof MatchStats !== 'undefined' && MatchStats.registarAfastamento) {
+        MatchStats.registarAfastamento(p.team);
+    }
+
+    _v1.set(alvo.x - p.model.position.x, 0, alvo.z - p.model.position.z).normalize();
     const forca = 16.0 + Math.random() * 6.0;
     const elev = THREE.MathUtils.degToRad(18 + Math.random() * 14);
     const vh = forca * Math.cos(elev);
@@ -2799,6 +2821,30 @@ const PlayerBT = sel('PlayerRoot',
             seq('GuardaRedesJoga',
                 cond('souGR', ehGK),
                 act('sairAJogar', tratarGuardaRedes)
+            ),
+
+            /*
+            ALIVIO PRIMEIRO, quando o perigo é imediato: defensor apertado
+            dentro da própria zona de perigo (ClearanceModel.zonaPerigo).
+
+            Este ramo existia, foi apagado, e sem ele o único caminho para o
+            alívio é o `ChuteLateral` — que está em SÉTIMO, depois de todos os
+            ramos de passe. Medido num lote de 30 jogos: 178 alívios em 30
+            jogos, `afastamentos` a ZERO e 0.84 escanteios por jogo (alvo 9.92).
+            Um central pressionado dentro da própria área girava à procura de
+            passe em vez de mandar a bola fora — e é isso que custa golos.
+
+            Dispara só no caso estreito: perto da própria baliza, sob pressão,
+            e sendo defesa ou guarda-redes.
+            */
+            seq('AlivioDePerigo',
+                cond('perigoImediato', (ctx) => {
+                    const C = (typeof ClearanceModel !== 'undefined') ? ClearanceModel : null;
+                    if (!C || !ctx.underPressure) return false;
+                    if (ctx.p.role !== 'def' && ctx.p.role !== 'gk') return false;
+                    return distanciaAoProprioFundo(ctx.p) <= C.zonaPerigo;
+                }),
+                act('aliviarDoPerigo', actClearance)
             ),
 
             // 1. Verificar chute - chutar

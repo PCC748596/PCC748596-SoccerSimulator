@@ -2064,6 +2064,59 @@ function avancoLegalDeCorrida(avanco, offsideLimitDir) {
 }
 
 /*
+PARA ONDE VAI O ALIVIO — lateral ou linha de fundo.
+
+Medido em lotes de 30 jogos: 0.84 escanteios por jogo contra os 9.92 de um jogo
+a serio, e `afastamentos` a ZERO em todos os 60 registos. Ninguem punha a bola
+fora. O `actClearance` chutava SEMPRE para a lateral e para a FRENTE
+(`alvoZ = z + dirZ * 12`), mesmo com o defensor encostado a propria linha de
+fundo — de onde a saida natural, e a que um defensor procura, e por cima da
+linha de fundo: canto.
+
+Dentro de `zonaPerigo` da propria linha de fundo comparam-se as duas saidas: a
+distancia a lateral mais perta e a distancia a linha de fundo, esta dividida
+por `preferirFundo` (concede-se o canto de bom grado — o que esta em jogo do
+outro lado e um golo). Fora de `fundoMax` e sempre a lateral, que dai e mesmo
+a saida mais perto.
+
+    `x`, `z`      onde esta quem alivia
+    `dirZ`        direccao de ataque dele (a propria linha de fundo e -dirZ)
+    `C`           ClearanceModel
+
+Devolve `{ x, z, fundo }` — o ponto de mira e se a saida escolhida foi pela
+linha de fundo (o chamador conta o afastamento e a estatistica).
+
+Pura: sem Match, sem THREE.
+*/
+function alvoDeAlivio(x, z, dirZ, C) {
+    const meiaLarg = CAMPO_LARG / 2;
+    const dir = Math.sign(dirZ) || 1;
+    const fundoProprio = -dir * (CAMPO_COMP / 2);
+
+    const ladoX = (x >= 0) ? (meiaLarg + 2.0) : (-meiaLarg - 2.0);
+    const lateral = { x: ladoX, z: z + dir * 12.0, fundo: false };
+    if (!C) return lateral;
+
+    const distFundo = Math.abs(fundoProprio - z);
+    if (distFundo > (C.fundoMax || 32.0)) return lateral;
+
+    const distLateral = meiaLarg - Math.abs(x);
+    const notaFundo = distFundo / Math.max(0.1, C.preferirFundo || 1.0);
+    if (notaFundo >= distLateral) return lateral;
+
+    /*
+    Pela linha de fundo, e para o LADO em que ele esta: mandar a bola por cima
+    da linha atras da propria baliza, pelo meio, e passa-la a frente do golo.
+    */
+    const lado = Math.sign(x) || 1;
+    return {
+        x: x + lado * Math.min(8.0, distLateral),
+        z: fundoProprio - dir * 3.0,
+        fundo: true
+    };
+}
+
+/*
 AVANCO DE UMA INFILTRACAO — ou null, se nao for para a frente.
 
 Infiltrar e ir para a frente, em direccao a baliza adversaria. O
