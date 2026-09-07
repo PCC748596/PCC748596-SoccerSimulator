@@ -631,16 +631,16 @@ const FreeKickModel = {
 
     formacaoPorSetor: {
         /*
-        FALTA NA PRÓPRIA DEFESA. Batem os centrais; o meio-campo à frente e
-        o ataque mais à frente ainda — é a bola posta para a frente, e o
-        desenho é uma escada de linhas para haver a quem jogar.
+        FALTA NA PRÓPRIA DEFESA (DEEP FREE KICK).
+        A equipa sobe em bloco para a entrada da área adversária para tentar ganhar a 
+        primeira bola (flick-on) ou o ressalto, com os alvos na meia-lua e apoios a fechar.
         */
         defesa: {
-            cb: { modo: 'bola', avanco: 2.0, xs: [-10, 10] },
-            lat: { modo: 'bola', avanco: 10.0, xs: [-26, 26] },
-            mc: { modo: 'bola', avanco: 20.0, xs: [-8, 0, 8] },
-            ml: { modo: 'bola', avanco: 22.0, xs: [-23, 23] },
-            ata: { modo: 'bola', avanco: 34.0, xs: [-7, 7] }
+            ata: { modo: 'baliza', slots: [{ relX: 4.0, dist: 18.0 }, { relX: -4.0, dist: 18.0 }] },
+            ml: { modo: 'baliza', slots: [{ relX: 14.0, dist: 18.0 }, { relX: -14.0, dist: 18.0 }] },
+            mc: { modo: 'baliza', slots: [{ relX: 0.0, dist: 26.0 }, { relX: 8.0, dist: 18.0 }, { relX: -8.0, dist: 18.0 }] },
+            lat: { modo: 'bola', avanco: -5.0, xs: [-22, 22] },
+            cb: { modo: 'bola', avanco: -10.0, xs: [-10, 10] }
         },
 
         // MEIO-CAMPO AINDA NO CAMPO PRÓPRIO: mesma ideia, escada mais curta.

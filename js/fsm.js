@@ -810,7 +810,7 @@ class PlayerFSM {
         }
         if (newState === 'BLOCKING') this.p.showActionBanner('BLOCK');
         if (newState === 'CHEST_CONTROL') this.p.showActionBanner('CHEST');
-        if (newState === 'RUN_INTO_SPACE') this.p.showActionBanner('RUN');
+        if (newState === 'RUN_INTO_SPACE') this.p.showActionBanner('INFILTRA 🏃');
 
         // A bola de cada canto começa no chão: ver o case WATCH_CORNER.
         if (newState === 'WATCH_CORNER') this.cornerBolaSubiu = false;
@@ -1237,7 +1237,7 @@ class PlayerFSM {
                 p.runTimer = (p.runTimer || 0) - dt;
 
                 const perdemosABola = (Match.possessionTeam !== p.team);
-                const houvePasse = (Match.ballCarrier && Match.ballCarrier !== p.runCarrier);
+                const houvePasse = false; // Removido para nao abortar durante dribles intermitentes
                 const passeParaOutro = (Match.intendedReceiver && Match.intendedReceiver !== p);
                 const chegou = p.dynamicTarget &&
                     p.model.position.distanceTo(p.dynamicTarget) < 1.5;

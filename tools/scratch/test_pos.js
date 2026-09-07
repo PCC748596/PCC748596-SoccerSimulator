@@ -1,0 +1,16 @@
+const { Vector3, Euler } = require('three');
+let v = new Vector3(0, 1.8, 0);
+v.applyEuler(new Euler(Math.PI / 2, 0, 0));
+console.log("Rot X 90:", v);
+v = new Vector3(0, 1.8, 0);
+v.applyEuler(new Euler(-Math.PI / 2, 0, 0));
+console.log("Rot X -90:", v);
+v = new Vector3(0, 1.8, 0);
+v.applyEuler(new Euler(0, 0, Math.PI / 2));
+console.log("Rot Z 90:", v);
+v = new Vector3(0, 1.8, 0);
+v.applyEuler(new Euler(0, 0, -Math.PI / 2));
+console.log("Rot Z -90:", v);
+v = new Vector3(0, 1.8, 0);
+v.applyEuler(new Euler(Math.PI / 2, Math.PI / 2, 0, "YXZ"));
+console.log("Rot YXZ:", v);

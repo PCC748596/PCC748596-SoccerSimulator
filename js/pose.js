@@ -157,7 +157,7 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     const pernaEsq = criarPerna(0.4); rig.lLeg = pernaEsq.raiz; rig.lKnee = pernaEsq.joelho; rig.lFoot = pernaEsq.pe;
     const pernaDir = criarPerna(-0.4); rig.rLeg = pernaDir.raiz; rig.rKnee = pernaDir.joelho; rig.rFoot = pernaDir.pe;
 
-    corpo.scale.set((1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9, (1.8 / 5.5) * 0.9); return { corpo, rig, backMat };
+    corpo.scale.set(1.8 / 5.5, 1.8 / 5.5, 1.8 / 5.5); return { corpo, rig, backMat };
 }
 
 

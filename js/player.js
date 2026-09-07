@@ -2060,6 +2060,10 @@ class FootballPlayer {
 
             // Bónus de prioridade de passes (Triangulações)
             let priorityBonus = 0;
+            // Bónus MASSIVO para jogadores a infiltrar (desmarcação / corridas)
+            if (opt.fsm && opt.fsm.currentState === 'RUN_INTO_SPACE') {
+                priorityBonus += 400; 
+            }
             const pRole = this.pos;
             const oRole = opt.pos;
             const pSideAtk = ownX * dirZ;

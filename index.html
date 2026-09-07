@@ -16,7 +16,7 @@
                 <h2 id="app-title" style="font-size: 0.85em; font-weight: bold; margin: 0; padding: 0;">SOCCER SIM |
                     FPS: --
                 </h2>
-                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0633</div>
+                <div id="app-version" style="font-size: 0.70em; font-weight: normal; color: #aaa;">v 0.0634</div>
             </div>
             <button type="button" id="btn-painel" title="Minimizar / maximizar (X) — Shift: todos"
                 onclick="togglePainel(undefined, event)">&minus;</button>
@@ -26,6 +26,7 @@
             <div style="display: flex; gap: 4px; margin-bottom: 4px;">
                 <button class="btn-action" style="flex: 1; margin-top: 0;" onclick="Match.resetPlay()">Reset
                     KickOff</button>
+                <button class="btn-action" style="flex: 1; margin-top: 0;" id="btn-replay" onclick="if(window.MatchReplay) window.MatchReplay.toggleReplay()">Replay (20s)</button>
                 <button class="btn-action" style="flex: 1; margin-top: 0;" id="btn-pause"
                     onclick="Match.togglePause()">Continue</button>
             </div>
@@ -468,6 +469,7 @@
     <!-- Depende de FootballPlayer (player.js) e Sim (simulate.js) já existirem -->
     <script src="js/bt/btDebug.js"></script>
 
+    <script src="js/match/match_replay.js"></script>
     <script src="js/main.js"></script>
     <script src="js/touch_controls.js"></script>
 

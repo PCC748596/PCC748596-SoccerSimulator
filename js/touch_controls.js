@@ -81,6 +81,15 @@ const TouchControls = {
                     <span class="touch-label">Corner</span>
                 </button>
 
+                <button type="button" id="btn-touch-freekick" class="touch-btn" title="Falta Direta">
+                    <span class="touch-icon">🛑</span>
+                    <span class="touch-label">Falta</span>
+                </button>
+
+                <button type="button" id="btn-touch-replay" class="touch-btn touch-btn-primary" title="Replay (20s)" style="background-color: #d35400;">
+                    <span class="touch-icon" id="touch-replay-icon">⏪</span>
+                    <span class="touch-label" id="touch-replay-label">Replay</span>
+                </button>
                 <button type="button" id="btn-touch-panels" class="touch-btn" title="Ocultar / Exibir Painéis">
                     <span class="touch-icon">👁️</span>
                     <span class="touch-label">Painéis</span>
@@ -121,6 +130,16 @@ const TouchControls = {
     },
 
     bindEvents: function () {
+        // Botão Replay
+        const btnReplay = document.getElementById('btn-touch-replay');
+        if (btnReplay) {
+            btnReplay.addEventListener('click', () => {
+                if (window.MatchReplay) {
+                    window.MatchReplay.toggleReplay();
+                    this.updateButtonsState();
+                }
+            });
+        }
         // Botão Pause
         const btnPause = document.getElementById('btn-touch-pause');
         if (btnPause) {
@@ -236,6 +255,16 @@ const TouchControls = {
             });
         }
 
+        // Falta Direta
+        const btnFreekick = document.getElementById('btn-touch-freekick');
+        if (btnFreekick) {
+            btnFreekick.addEventListener('click', () => {
+                if (typeof Match !== 'undefined') {
+                    Match.triggerDirectFreeKick();
+                }
+            });
+        }
+
         // Toggle Painéis / Cinema View
         const btnPanels = document.getElementById('btn-touch-panels');
         if (btnPanels) {
@@ -330,6 +359,15 @@ const TouchControls = {
     },
 
     updateButtonsState: function () {
+        // Atualiza botão de Replay
+        const btnReplay = document.getElementById('btn-touch-replay');
+        if (btnReplay && window.MatchReplay) {
+            const isReplaying = window.MatchReplay.isReplaying;
+            btnReplay.querySelector('.touch-label').textContent = isReplaying ? 'Stop' : 'Replay';
+            btnReplay.style.backgroundColor = isReplaying ? '#c0392b' : '#d35400';
+            btnReplay.classList.toggle('touch-btn-paused', isReplaying);
+        }
+
         // Atualiza botão de Pause
         const btnPause = document.getElementById('btn-touch-pause');
         if (btnPause) {

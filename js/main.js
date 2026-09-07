@@ -881,6 +881,11 @@ function animate(time) {
     // qualquer um dos overlays do debug que desenhavam texto por célula.
     if (typeof Minimap !== 'undefined') Minimap.update();
 
+    if (window.MatchReplay && window.MatchReplay.isReplaying) {
+        window.MatchReplay.playFrame();
+    } else if (window.MatchReplay && !window.isPaused) {
+        window.MatchReplay.recordFrame();
+    }
     rendererCore.render(scene, cameraCore);
 }
 
