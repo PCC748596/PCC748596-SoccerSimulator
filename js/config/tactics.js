@@ -284,6 +284,38 @@ const BlockShape = {
     },
 
     /*
+    AS TRÊS LINHAS DO BLOCO, em fracção da profundidade (0 = traseira,
+    1 = frente). O `computeBlock` lê-as para pôr `zDef`/`zMid`/`zAtk`.
+
+    Desapareceram do config numa reorganização e o `computeBlock` ficou a usar
+    o fallback dele — `{0.0, 0.5, 1.0}` — que é justamente o valor que produziu
+    o defeito medido: o `v` da 442 salta de 0.545 (médios de ala) para 1.000
+    (avançados) sem nada pelo meio, e o avançado fica sozinho na borda da
+    frente. Num bloco de 40 m: CF a +18.3 m do meio-campo com o CM a -3.6, ou
+    seja 21.8 m de buraco entre o meio-campo e o ataque.
+
+    `ataque` a 0.85 é a faixa útil: à frente do meio e sem ir à borda. O
+    caminho contrário (2/3) também já foi tentado e comprime a formação toda
+    para trás — ver tests/bloco_tres_linhas.test.js, que guarda os dois erros.
+    */
+    linhas: {
+        defesa: 0.0,
+        meio: 0.5,
+        ataque: 0.85
+    },
+
+    /*
+    TECTO DE DESVIO AO SLOT, por função e em metros.
+
+    O slot é a formação; tudo o que vem depois (estilo, marcação, mola de
+    coesão, inquietação) desloca-o. Sem tecto, um central acabava a 20 m do
+    posto dele e a formação deixava de existir em campo. Um defesa tem menos
+    corda do que um avançado — é a diferença entre segurar a linha e atacar o
+    espaço.
+    */
+    desvioMaxDoSlot: { def: 9.0, mid: 15.0, ata: 22.0 },
+
+    /*
     Profundidade MÍNIMA do bloco, em metros. Só entra quando o tecto da Linha
     Defensiva e a marca de penálti adversária não deixam espaço para a
     profundidade pedida (linha alta + bloco longo): aí a frente do bloco cede,
@@ -311,6 +343,45 @@ const BlockShape = {
     */
     avancoDoCentroComBola: 8.0,
     recuoDoCentroSemBola: 5.0,
+
+    /*
+    O CENTRO DO BLOCO POR TERÇO — os números que estavam à mão no computeBlock.
+
+    Os dois valores acima descrevem um centro só, o mesmo em todo o campo. O
+    `computeBlock` passou entretanto a ter TRÊS centros com bola, conforme a
+    bola está no terço defensivo, no meio ou no terço ofensivo — a equipa
+    esticava-se num rectângulo só e a ideia foi essa. Só que os números
+    voltaram a ficar escritos à mão lá dentro (`10.0`, `5.0`, `-5.0`, `20.0`,
+    `-20.0`), que é exactamente o que esta secção existe para evitar.
+
+    Todos em metros e no referencial de ataque da equipa:
+
+    `meio`              com a bola no miolo, o centro fica isto à FRENTE dela.
+    `ataqueBase`        base do centro com a bola no terço ofensivo; a
+                        `fraccaoProfundidade` do comprimento do bloco é
+                        SUBTRAÍDA daqui — quanto mais longo o bloco, mais atrás
+                        fica o centro, senão a defesa acabava dentro da área
+                        adversária.
+    `defesaBase`        o mesmo no terço defensivo, mas SOMADA: com a bola lá
+                        atrás, o centro sobe para o bloco não colar à baliza.
+    `bonusOfensivo`     mentalidade `ataque`/`muito_ofensiva` puxa o centro
+                        mais para a frente no terço defensivo.
+    `faixaMeio`         meia-largura da faixa central, em avanço.
+    `rampa`             metros ao longo dos quais se passa do centro do meio
+                        para o do terço, para a mudança não ser um salto.
+    `semBola`           sem posse, o centro fica isto ATRÁS da linha da bola.
+                        É o `recuoDoCentroSemBola` com o sinal já dado.
+    */
+    centro: {
+        meio: 10.0,
+        ataqueBase: 5.0,
+        defesaBase: 0.0,
+        bonusOfensivo: 5.0,
+        fraccaoProfundidade: 1 / 3,
+        faixaMeio: 20.0,
+        rampa: 10.0,
+        semBola: -5.0
+    },
 
     /*
     NA TRANSICAO DEFENSIVA NINGUEM SOBE.

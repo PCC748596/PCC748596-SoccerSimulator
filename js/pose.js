@@ -157,9 +157,24 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     const pernaEsq = criarPerna(0.4); rig.lLeg = pernaEsq.raiz; rig.lKnee = pernaEsq.joelho; rig.lFoot = pernaEsq.pe;
     const pernaDir = criarPerna(-0.4); rig.rLeg = pernaDir.raiz; rig.rKnee = pernaDir.joelho; rig.rFoot = pernaDir.pe;
 
-    corpo.scale.set(1.8 / 5.5, 1.8 / 5.5, 1.8 / 5.5); return { corpo, rig, backMat };
+    corpo.scale.set(ESCALA_CORPO, ESCALA_CORPO, ESCALA_CORPO); return { corpo, rig, backMat };
 }
 
+
+/*
+A ESCALA DO CORPO — uma só, e é esta.
+
+O rig é construído numa escala de trabalho (~5.5 unidades de altura) e reduzido
+aqui para os 1.8 m de um jogador. O `crowd.js` tem de usar EXACTAMENTE a mesma
+para o adepto ter o tamanho de uma pessoa ao lado dos jogadores — e teve-a
+escrita à mão, com o valor antigo: quando esta mudou de `(1.8/5.5) * 0.9` para
+`1.8/5.5`, os adeptos ficaram 10% mais pequenos que toda a gente e nada avisou.
+
+Agora é uma constante partilhada (`pose.js` carrega antes do `crowd.js`, ver a
+ordem no index.html) e mexer nela mexe nos dois.
+*/
+const ESCALA_CORPO = 1.8 / 5.5;
+if (typeof window !== 'undefined') window.ESCALA_CORPO = ESCALA_CORPO;
 
 /*
 PÉS E CABEÇA — canais OPCIONAIS, comuns a todos os clips.

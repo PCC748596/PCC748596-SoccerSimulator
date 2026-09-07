@@ -863,25 +863,34 @@ function computeBlock(bb) {
         (Tatics.estilo === 'ataque' || Tatics.estilo === 'muito_ofensiva');
     let bZ = (typeof bb.bolaZSuave === 'number' ? bb.bolaZSuave : (bb.ballZ || 0)) * bb.dir;
     
+    /*
+    Os números deste bloco vivem no `BlockShape.centro` (config/tactics.js).
+    Estiveram escritos à mão aqui — o centro do bloco é o valor que mais se
+    afina do bloco todo, e era o único sem manípula.
+    */
+    const C = B.centro || {};
+    const fracProf = (typeof C.fraccaoProfundidade === 'number') ? C.fraccaoProfundidade : 1 / 3;
+    const faixaCentro = (typeof C.faixaMeio === 'number') ? C.faixaMeio : 20.0;
+    const rampa = (typeof C.rampa === 'number') ? C.rampa : 10.0;
+
     let targetOffsetZ = 0;
-    let offsetDefesa = (isOffensive ? 5.0 : 0.0) + (profundidade / 3);
-    let offsetMeio = 10.0;
-    let offsetAtaque = 5.0 - (profundidade / 3);
+    let offsetDefesa = (isOffensive ? (C.bonusOfensivo || 0) : 0.0) + (C.defesaBase || 0)
+        + profundidade * fracProf;
+    let offsetMeio = (typeof C.meio === 'number') ? C.meio : 10.0;
+    let offsetAtaque = (C.ataqueBase || 0) - profundidade * fracProf;
 
     if (bb.isAttacking) {
-        if (bZ < -20.0) {
-            let dist = Math.min(10.0, -20.0 - bZ);
-            let f = dist / 10.0;
+        if (bZ < -faixaCentro) {
+            let f = Math.min(rampa, -faixaCentro - bZ) / rampa;
             targetOffsetZ = offsetMeio * (1 - f) + offsetDefesa * f;
-        } else if (bZ > 20.0) {
-            let dist = Math.min(10.0, bZ - 20.0);
-            let f = dist / 10.0;
+        } else if (bZ > faixaCentro) {
+            let f = Math.min(rampa, bZ - faixaCentro) / rampa;
             targetOffsetZ = offsetMeio * (1 - f) + offsetAtaque * f;
         } else {
             targetOffsetZ = offsetMeio;
         }
     } else {
-        targetOffsetZ = -5.0;
+        targetOffsetZ = (typeof C.semBola === 'number') ? C.semBola : -B.recuoDoCentroSemBola;
         // Pedido: Na T.ofensive e Offensive no setor defensivo, o centro do retângulo de defesa 
         // tem que se manter uns 5 metros a frente da bola para puxar o time a frente.
         if (isOffensive && bZ < 0) {
@@ -2448,6 +2457,154 @@ const PosicionamentoAI = {
         }
 
         /*
+        OS LIMITES SEM BOLA, E O REST DEFENSE.
+
+        Quatro regras que viviam na camada de prioridades (`js/bt/alvo.js`,
+        hoje sem chamadores) e cujos números continuaram no config sem ninguém
+        os ler. Voltam aqui, no `tickFinal`, que é por onde TODOS os alvos
+        passam — e depois da mola de coesão, que é quem os puxava para lá.
+
+        Todas cedem a quem tem tarefa de bola: chaser, intercetor, bloqueador.
+        Um limite que prende quem vai à bola é uma equipa que não pressiona.
+        */
+        const temTarefaDeBola = bb && (bb.chaser === p || bb.intercetor === p || bb.bloqueador === p);
+        const B_LIM = (typeof BlockShape !== 'undefined') ? BlockShape : null;
+        const bolaAvanco = (typeof Match !== 'undefined' && Match.ball)
+            ? Match.ball.position.z * p.dirZ : 0;
+
+        if (B_LIM && !temTarefaDeBola && bb && !bb.isAttacking) {
+            /*
+            SEM BOLA, NINGUÉM PASSA À FRENTE DO BLOCO ('frente do bloco').
+
+            Medido antes: pior caso seis jogadores com o alvo à frente de si a
+            defender, e a fonte era a marcação (34%) e o próprio bloco (31%).
+            */
+            if (B_LIM.limiteFrenteDoBlocoSemBola && bb.bloco &&
+                typeof bb.bloco.z1 === 'number') {
+                // `bloco.z0/z1` estão no referencial de ataque da EQUIPA (bb.dir),
+                // que é o mesmo do jogador — a frente do bloco é o z1.
+                const tecto = bb.bloco.z1 + (B_LIM.folgaFrenteDoBloco || 0);
+                if (finalZ * p.dirZ > tecto) finalZ = tecto * p.dirZ;
+            }
+
+            /*
+            E, SEM BOLA, DEFESAS E MÉDIOS FICAM 'do lado de ca da bola'.
+
+            Os AVANÇADOS não entram: são a saída da equipa, e prendê-los é
+            recuperar a bola sem ninguém à frente.
+            */
+            if (B_LIM.limiteAlemDaBolaSemBola &&
+                (B_LIM.recuamAlemDaBola || []).indexOf(p.role) >= 0) {
+                const tecto = bolaAvanco + (B_LIM.folgaAlemDaBola || 0);
+                if (finalZ * p.dirZ > tecto) finalZ = tecto * p.dirZ;
+            }
+        }
+
+        /*
+        REST DEFENSE: com bola, os mais recuados não passam a linha dela.
+
+        Sem isto media-se 0,76 adversários sem ninguém entre eles e a própria
+        baliza, e três ou mais em 12% do tempo.
+
+        Quem fica em casa é escolhido pelo POSTO (`baseTarget`) e não pela
+        posição do momento: pela posição havia porta giratória — o defesa que
+        sobe deixa de ser dos mais recuados, perde o limite e sobe mais.
+        Medido: centrais a -12,0 m de avanço médio contra -15,9 m com a escolha
+        pelo posto.
+        */
+        if (B_LIM && B_LIM.restDefense && !temTarefaDeBola && bb && bb.isAttacking &&
+            p.baseTarget && typeof Match !== 'undefined') {
+            const R = B_LIM.restDefense;
+            const meus = ((p.team === 'TeamA') ? Match.players : Match.opponents)
+                .filter(o => o && o.role !== 'gk' && o.baseTarget);
+
+            const maisRecuados = (papel, quantos) => meus
+                .filter(o => o.role === papel)
+                .sort((a, b) => (a.baseTarget.z * a.dirZ) - (b.baseTarget.z * b.dirZ))
+                .slice(0, quantos);
+
+            const ficamEmCasa = maisRecuados('def', R.defesasAtrasDaBola)
+                .concat(maisRecuados('mid', R.medioAtrasDaBola));
+
+            if (ficamEmCasa.indexOf(p) >= 0) {
+                const tecto = bolaAvanco - (R.recuoDaBola || 0);
+                if (finalZ * p.dirZ > tecto) finalZ = tecto * p.dirZ;
+            }
+        }
+
+        /*
+        NA TRANSIÇÃO DEFENSIVA, NINGUÉM SOBE.
+
+        `TeamState.TRANSITION_DEFENSIVE` são os primeiros 3 s depois de perder
+        a bola. O bloco continua a ser desenhado à volta da BOLA, e se ela ficou
+        no meio-campo adversário o slot de quem estava recuado fica À FRENTE
+        dele: o jogador sobe enquanto a equipa devia estar a recuperar. Medido:
+        0,8 jogadores em média com o alvo mais de 3 m à frente, até 8 no pior
+        caso, sempre em T.Defensive.
+
+        O que muda é só o SENTIDO permitido do movimento — ele fica ou recua,
+        nunca sobe. `folgaTransicao` é o que se tolera antes de cortar: nem toda
+        a subida de meio metro é uma subida.
+        */
+        if (B_LIM && B_LIM.transicaoDefensivaRecuaSo && !temTarefaDeBola &&
+            bb && bb.state === TeamState.TRANSITION_DEFENSIVE && p.model) {
+            const tecto = p.model.position.z * p.dirZ + (B_LIM.folgaTransicao || 0);
+            if (finalZ * p.dirZ > tecto) finalZ = tecto * p.dirZ;
+        }
+
+        /*
+        TECTO DE DESVIO AO SLOT — a formação tem de continuar a existir.
+
+        O slot é a formação; tudo o que vem depois (estilo, marcação, mola de
+        coesão, inquietação) desloca-o, e sem tecto um central acabava a 20 m
+        do posto dele. `BlockShape.desvioMaxDoSlot` dá corda diferente por
+        função: um defesa segura a linha, um avançado ataca o espaço.
+
+        Aplica-se ao fim de tudo e cede, como os outros, a quem vai à bola.
+        */
+        if (B_LIM && B_LIM.desvioMaxDoSlot && !temTarefaDeBola && p.postoBase) {
+            const tecto = B_LIM.desvioMaxDoSlot[p.role];
+            if (typeof tecto === 'number' && tecto > 0) {
+                const dx = molaX - p.postoBase.x;
+                const dz = finalZ - p.postoBase.z;
+                const d = Math.hypot(dx, dz);
+                if (d > tecto) {
+                    const k = tecto / d;
+                    molaX = p.postoBase.x + dx * k;
+                    finalZ = p.postoBase.z + dz * k;
+                }
+            }
+        }
+
+        /*
+        O PÊNDULO — ninguém fica na outra ponta do campo.
+
+        O rectângulo tem 47.6 m de largura e o centro dele acompanha a bola em
+        X, portanto os slots espalham-se até 23.8 m para cada lado dela: com a
+        bola numa ala, o homem do lado contrário fica na linha lateral oposta.
+        Medido com a bola a mais de 12 m do eixo: o alvo mais afastado estava a
+        27.5 m da bola em X (pior caso 45.6 m). Dali não há linha de passe.
+
+        `BlockShape.distanciaMaxX` é o tecto de afastamento LATERAL à bola: quem
+        passa dele é puxado só em X — a profundidade continua a ser do bloco, e
+        a largura do rectângulo não muda. Não é encolher o bloco; é não deixar
+        um jogador ficar fora do jogo pelo lado.
+
+        Só COM POSSE: sem bola, fechar o lado contrário entrega a ala ao
+        adversário. E cede a quem tem tarefa de bola — chaser, intercetor,
+        bloqueador — que vai onde tem de ir.
+        */
+        if (typeof BlockShape !== 'undefined' && BlockShape.penduloParaABola && p.role !== 'gk' &&
+            bb && bb.isAttacking && typeof Match !== 'undefined' && Match.ball &&
+            bb.chaser !== p && bb.intercetor !== p && bb.bloqueador !== p) {
+            const tectoX = BlockShape.distanciaMaxX || 22.0;
+            const dxBola = molaX - Match.ball.position.x;
+            if (Math.abs(dxBola) > tectoX) {
+                molaX = Match.ball.position.x + Math.sign(dxBola) * tectoX;
+            }
+        }
+
+        /*
         Respeito ao limite legal de fora-de-jogo (offside) mesmo com inércia.
 
         O limite é o que ELE julga que é: `offsideBias` é o erro de leitura da
@@ -2755,5 +2912,22 @@ const PosicionamentoAI = {
         p.dynamicTarget.x = lerp(p.dynamicTarget.x, tx, k);
         p.dynamicTarget.z = lerp(p.dynamicTarget.z, tz, k);
         p.dynamicTarget.y = ALTURA_BASE_Y;
+
+        /*
+        E O CORTE DA TRANSIÇÃO OUTRA VEZ, DEPOIS DO ALISAMENTO.
+
+        O alisamento é um lerp com o alvo ANTERIOR: no instante em que a equipa
+        perde a bola, o alvo alisado ainda traz o valor da fase ofensiva e
+        arrasta-o durante mais de um segundo — que é toda a transição. Cortar só
+        o alvo cru deixava passar exactamente o caso que a regra existe para
+        apanhar.
+        */
+        const B_TR = (typeof BlockShape !== 'undefined') ? BlockShape : null;
+        if (B_TR && B_TR.transicaoDefensivaRecuaSo && bb &&
+            bb.state === TeamState.TRANSITION_DEFENSIVE &&
+            bb.chaser !== p && bb.intercetor !== p && p.role !== 'gk' && p.model) {
+            const tecto = p.model.position.z * p.dirZ + (B_TR.folgaTransicao || 0);
+            if (p.dynamicTarget.z * p.dirZ > tecto) p.dynamicTarget.z = tecto * p.dirZ;
+        }
     }
 };

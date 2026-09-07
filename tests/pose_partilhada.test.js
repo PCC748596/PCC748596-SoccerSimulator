@@ -45,8 +45,9 @@ const mod = new Function(...Object.keys(amb),
               aplicarPoseRemate, aplicarPoseLateral, aplicarPoseChutaoGR,
               aplicarPoseChuteChaoGR, aplicarPoseLancamentoGR, aplicarPoseDominioDireito,
               ShotClip, ThrowInClip, GoalkeeperKickClip,
-              GoalkeeperGroundKickClip, GoalkeeperThrowClip, BallControlRightClip };`)(...Object.values(amb));
-const { construirCorpo, escolherAparencia } = mod;
+              GoalkeeperGroundKickClip, GoalkeeperThrowClip, BallControlRightClip,
+              ESCALA_CORPO };`)(...Object.values(amb));
+const { construirCorpo, escolherAparencia, ESCALA_CORPO } = mod;
 
 let falhas = 0;
 const erro = m => { falhas++; console.error('  X ' + m); };
@@ -166,12 +167,24 @@ console.log(String.fromCharCode(10) + '4 — a escala');
         erro(`altura de ${altura.toFixed(2)} m — um jogador anda pelo 1.8`);
     } else ok('a altura do modelo é a de um jogador');
 
+    /*
+    A escala já não é um número repetido em dois ficheiros: é a constante
+    `ESCALA_CORPO` (pose.js), que o crowd.js lê. O teste fixava o valor antigo
+    e queixava-se quando o corpo mudou de tamanho — o que estava mal não era o
+    tamanho novo, era haver duas cópias do número.
+    */
     const esc = feito.corpo.scale.x;
-    const escEsperada = (1.8 / 5.5) * 0.9;
-    if (Math.abs(esc - escEsperada) > 1e-6) {
-        erro(`escala ${esc} em vez de ${escEsperada} — o crowd.js usa a mesma ` +
-            'e os adeptos passavam a ter outro tamanho que os jogadores');
-    } else ok('a escala é a mesma que o js/crowd.js usa nos adeptos');
+    if (Math.abs(esc - ESCALA_CORPO) > 1e-6) {
+        erro(`escala ${esc} em vez de ESCALA_CORPO (${ESCALA_CORPO})`);
+    } else ok('o corpo usa a constante ESCALA_CORPO');
+
+    const srcCrowd = fs.readFileSync(path.join(raiz, 'js', 'crowd.js'), 'utf8');
+    if (/const escala = \(1\.8 \/ 5\.5\)/.test(srcCrowd)) {
+        erro('o crowd.js voltou a ter a escala escrita à mão — os adeptos ' +
+            'ficam de outro tamanho na próxima vez que o corpo mudar');
+    } else if (!srcCrowd.includes('ESCALA_CORPO')) {
+        erro('o crowd.js já não lê a ESCALA_CORPO');
+    } else ok('o crowd.js lê a mesma constante do corpo');
 }
 
 /*

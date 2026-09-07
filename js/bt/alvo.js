@@ -22,6 +22,18 @@ docs/auditoria_nivel2.md):
 Ou seja: o slot era a coisa que menos mandava no sítio onde o jogador acabava,
 e um corte só valia enquanto ninguém escrevesse a seguir.
 
+ESTADO (Setembro de 2026): ESTE MÓDULO NÃO ESTÁ LIGADO.
+
+Nada chama `resolverAlvo`, `proporAlvo` ou `proporLimiteAvanco` — o
+posicionamento voltou a ser escrito em sequência no `tickFinal` do team_bt.js,
+e é lá que vivem hoje os limites que esta cabeça descreve (rest defense, frente
+do bloco, lado da bola, fora-de-jogo, pêndulo). O ficheiro fica no repositório
+porque a IDEIA continua a valer e a medição que a motivou está aqui escrita,
+mas ler isto como se fosse o que o jogo faz é enganar-se.
+
+Se voltar a ser ligado, os limites do `tickFinal` passam a ser propostas e essa
+duplicação tem de desaparecer no mesmo passo.
+
 O QUE MUDA
 
 Ninguém escreve o alvo. Cada camada PROPÕE, com uma prioridade, e o alvo é

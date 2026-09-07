@@ -1242,7 +1242,22 @@ class PlayerFSM {
                 const chegou = p.dynamicTarget &&
                     p.model.position.distanceTo(p.dynamicTarget) < 1.5;
 
-                if (p.runTimer <= 0 || perdemosABola || houvePasse || passeParaOutro || chegou) {
+                /*
+                REDE DE SEGURANÇA: uma corrida ao espaço é para a FRENTE.
+
+                Quem produz o alvo já o garante (destinoDeCorrida e
+                avancoDeInfiltracao, utils.js), mas este estado tem cinco
+                folhas a pedi-lo — infiltração, overlap, tabelinha, corrida ao
+                espaço, devolução — e basta uma a calcular o alvo à mão para
+                aparecer outra vez um jogador a "infiltrar" na direcção da
+                própria baliza. Aqui a corrida acaba, e o posicionamento normal
+                pega nele.
+                */
+                const alvoAtras = p.dynamicTarget &&
+                    ((p.dynamicTarget.z - p.model.position.z) * p.dirZ) < -1.0;
+
+                if (p.runTimer <= 0 || perdemosABola || houvePasse || passeParaOutro ||
+                    chegou || alvoAtras) {
                     p.runTimer = 0;
                     p.runCarrier = null;
                     // Arrefecimento: sem isto ele reavalia no frame seguinte,

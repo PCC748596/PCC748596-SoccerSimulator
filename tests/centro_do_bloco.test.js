@@ -80,29 +80,70 @@ function centroMenosBola(bolaZDir, atacando) {
     return (b.z0 + b.z1) / 2 - bolaZDir;
 }
 
-test('com bola o centro fica avancoDoCentroComBola à frente da bola', () => {
-    assert.strictEqual(BlockShape.avancoDoCentroComBola, 8.0,
-        'o avanço do centro com bola devia ser 8 m');
-    // No meio-campo não há clamp nenhum a morder: o valor sai limpo.
+/*
+O CENTRO COM BOLA TEM TRÊS VALORES, UM POR TERÇO.
+
+Era um só (`avancoDoCentroComBola`, 8 m em todo o campo). Passou a três, para a
+equipa não se esticar num rectângulo único: com a bola no miolo o centro fica
+`centro.meio` à frente dela; nos terços, o comprimento do bloco entra na conta
+(`fraccaoProfundidade`) para a defesa não acabar dentro da área adversária nem
+colada à própria baliza. A passagem entre eles é uma rampa de `centro.rampa`
+metros — sem ela o bloco saltava ao cruzar a fronteira do terço.
+*/
+// O avanço do meio-campo (BlockShape.avancoNoMeioCampo) soma-se ao centro
+// enquanto a bola estiver na faixa central — vale com e sem bola.
+function avancoDoMeioCampo(atacando) {
+    const prof = CAMPO_COMP * BlockShape.profundidade[
+        atacando ? (Tatics.lengthCompactness || 'median') : 'short'];
+    return prof * (BlockShape.avancoNoMeioCampo || 0);
+}
+
+test('com a bola no miolo o centro fica centro.meio à frente dela', () => {
+    const C = BlockShape.centro;
+    assert.strictEqual(typeof C.meio, 'number');
+    const extra = avancoDoMeioCampo(true);
     for (const bolaZ of [-10, -5, 0, 5]) {
+        assert.ok(Math.abs(bolaZ) <= C.faixaMeio, 'o cenário tem de estar na faixa central');
         const d = centroMenosBola(bolaZ, true);
-        assert.ok(Math.abs(d - BlockShape.avancoDoCentroComBola) < 0.01,
-            `bola em ${bolaZ}: centro a ${d.toFixed(2)} m, esperado ${BlockShape.avancoDoCentroComBola}`);
+        assert.ok(Math.abs(d - (C.meio + extra)) < 0.01,
+            `bola em ${bolaZ}: centro a ${d.toFixed(2)} m, esperado ${(C.meio + extra).toFixed(2)}`);
     }
 });
 
-/*
-Sem bola o centro fica `recuoDoCentroSemBola` atrás dela — MAIS o avanço do
-meio-campo: com a bola na faixa central o bloco inteiro sobe
-`avancoNoMeioCampo` do próprio comprimento (pedido: 'quando a bola estiver no
-meio campo vamos adiantar a linha da zaga em 10% do Length Compactness').
-*/
-test('sem bola o centro fica recuoDoCentroSemBola atrás da bola', () => {
-    const profundidade = CAMPO_COMP * BlockShape.profundidade.short;   // a defender é sempre short
-    const avancoMeio = profundidade * (BlockShape.avancoNoMeioCampo || 0);
+test('no terço ofensivo o centro recua ao longo da rampa', () => {
+    const C = BlockShape.centro;
+    /*
+    Todos os pontos fora da faixa do `avancoNoMeioCampo` (20 m), para o avanço
+    do meio-campo não entrar em uns e não noutros — o que aqui se mede é a
+    rampa do centro, e mais nada.
+    */
+    const inicio = centroMenosBola(C.faixaMeio + 1, true);
+    const meio = centroMenosBola(C.faixaMeio + C.rampa / 2, true);
+    const fim = centroMenosBola(C.faixaMeio + C.rampa, true);
+
+    assert.ok(meio < inicio, 'ao entrar no terço ofensivo o centro tem de recuar');
+    assert.ok(fim < meio, 'e continua a recuar ao longo da rampa');
+
+    /*
+    A rampa é linear no cálculo, mas aqui não se mede assim: com a bola a 21 m
+    do meio-campo a frente do bloco já bate na linha de fundo adversária, e o
+    clamp do campo desloca o rectângulo inteiro. O que se pode afirmar é a
+    ordem — e é essa que interessa: entre a faixa e o fim da rampa o centro só
+    anda para trás, sem saltos de sinal.
+    */
+
+    // Depois da rampa estabiliza: não continua a recuar para sempre.
+    const alem = centroMenosBola(C.faixaMeio + C.rampa + 6, true);
+    assert.ok(Math.abs(alem - fim) < 0.3, 'o recuo do centro não pode crescer sem fim');
+});
+
+test('sem bola o centro fica centro.semBola atrás da bola', () => {
+    const C = BlockShape.centro;
+    assert.ok(C.semBola < 0, 'sem posse o centro fica ATRÁS da linha da bola');
+    const avancoMeio = avancoDoMeioCampo(false);   // a defender o bloco é sempre short
     for (const bolaZ of [-10, -5, 0]) {
         const naFaixa = Math.abs(bolaZ) <= (BlockShape.faixaMeioCampo || 20);
-        const esperado = -BlockShape.recuoDoCentroSemBola + (naFaixa ? avancoMeio : 0);
+        const esperado = C.semBola + (naFaixa ? avancoMeio : 0);
         const d = centroMenosBola(bolaZ, false);
         assert.ok(Math.abs(d - esperado) < 0.01,
             `bola em ${bolaZ}: centro a ${d.toFixed(2)} m, esperado ${esperado.toFixed(2)}`);
@@ -118,30 +159,26 @@ test('o avanço do meio-campo sai do config e vale só na faixa central', () => 
         'o computeBlock já não adianta o bloco com a bola no meio-campo');
     assert.ok(corpo.includes('faixaMeioCampo'),
         'a faixa do meio-campo voltou a estar escrita à mão');
-
-    // E o tecto da última linha sobe com ele: sem isso o `recuoDaUltimaLinha`
-    // voltava a ancorar o bloco no tecto do painel e o avanço não chegava ao
-    // terreno (medido: 1.75 m dos 3 m pedidos).
     assert.ok(corpo.includes('+ avancoMeio'),
         'o tecto da última linha já não acompanha o avanço do meio-campo');
 });
 
 test('junto às linhas de fundo o campo morde, e é a única coisa que morde', () => {
-    // Perto da própria baliza o bloco não pode recuar mais (minZ), perto da
-    // adversária não pode avançar mais (maxZ): o centro afasta-se do valor
-    // nominal, e é isso que se quer.
     const perto = centroMenosBola(20, true);
-    assert.ok(perto < BlockShape.avancoDoCentroComBola,
-        'junto à baliza adversária o centro tinha de ficar aquém dos 8 m');
+    assert.ok(perto < BlockShape.centro.meio + avancoDoMeioCampo(true),
+        'junto à baliza adversária o centro tinha de ficar aquém do valor do miolo');
     assert.ok(perto > 0, 'mesmo com o clamp o centro fica à frente da bola');
 });
 
-test('o computeBlock lê os dois números do config, não os tem escritos', () => {
+test('o computeBlock lê os números do config, não os tem escritos', () => {
     const ini = srcTeam.indexOf('function computeBlock(');
     const corpo = srcTeam.slice(ini, srcTeam.indexOf(LF + '}' + LF, ini));
-    assert.ok(corpo.includes('BlockShape.avancoDoCentroComBola') &&
-        corpo.includes('BlockShape.recuoDoCentroSemBola'),
-        'o avanço do centro voltou a estar escrito à mão no computeBlock');
+    assert.ok(corpo.includes('B.centro'),
+        'os três centros do bloco voltaram a estar escritos à mão no computeBlock');
+    for (const numero of ['offsetMeio = 10.0;', 'bZ < -20.0', '(profundidade / 3)']) {
+        assert.ok(!corpo.includes(numero),
+            `'${numero}' voltou para dentro do computeBlock — pertence ao BlockShape.centro`);
+    }
     assert.ok(!/isAttacking\s*\?\s*5\.0\s*:\s*-5\.0/.test(corpo),
         'ainda lá está o `bb.isAttacking ? 5.0 : -5.0`');
 });

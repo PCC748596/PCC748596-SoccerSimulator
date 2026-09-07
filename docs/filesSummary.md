@@ -6007,6 +6007,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Força de uma bola que tem de CHEGAR a uma altura | `utils.js` → `velocidadeParaAlturaNoAlvo` (não confundir com `velocidadeParaChegarA`, que é o passe rasteiro) |
 | Jogador a vibrar parado / passada a baixa velocidade | `config.js` → `GaitModel.parado`; `pose.js` → `aplicarPosePassada` (`suavizacao`) |
 | Jogador a sair do campo em linha recta | `fsm.js` → o aborto do `case 'RUN_INTO_SPACE'`; medir com `tools/headless/fora_do_campo.js` |
+| Jogador a "infiltrar" na direcção da própria baliza | `utils.js` → `avancoDeInfiltracao`; `config.js` → `RunIntoSpaceModel.ganhoMinimo` |
 | Guarda-redes a relançar uma bola que já não é dele | `player.js` → guardas no topo do `puntBall`/`releaseFromHands` |
 
 ### Sessão de 26 de Agosto de 2026 (continuação 7) — afinações nos penáltis

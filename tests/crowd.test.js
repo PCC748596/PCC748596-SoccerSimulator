@@ -93,7 +93,14 @@ if (lugares.length < CrowdModel.total) {
     Sentado, a altura cai e a profundidade cresce, porque as coxas passam a
     apontar para a frente. É essa a assinatura da pose.
     */
-    if (t.y > 1.45) erro(`altura ${t.y.toFixed(2)} m — está de pé, não sentado`);
+    /*
+    O limiar era 1.45 m, calibrado quando o corpo tinha mais 10% de redução de
+    escala (`(1.8/5.5) * 0.9`). A escala do corpo passou a `1.8/5.5` — e o
+    adepto acompanha-a de propósito, porque agora lê a mesma constante
+    (`ESCALA_CORPO`, pose.js): um adepto que não cresça com os jogadores fica
+    do tamanho errado ao lado deles. A assinatura da pose é a mesma, 11% maior.
+    */
+    if (t.y > 1.60) erro(`altura ${t.y.toFixed(2)} m — está de pé, não sentado`);
     if (t.z < 0.45) erro(`profundidade ${t.z.toFixed(2)} m — as coxas não estão à frente`);
     if (t.y < 0.8) erro(`altura ${t.y.toFixed(2)} m — está agachado de mais`);
     console.log(`  (de pé seriam ~1.80 de altura e ~0.30 de profundidade)`);

@@ -2064,6 +2064,45 @@ function avancoLegalDeCorrida(avanco, offsideLimitDir) {
 }
 
 /*
+AVANCO DE UMA INFILTRACAO — ou null, se nao for para a frente.
+
+Infiltrar e ir para a frente, em direccao a baliza adversaria. O
+`destinoDeCorrida` (abaixo) ja o exigia, mas o `actInfiltrar` e o `actOverlap`
+calculam o alvo a mao e podiam po-lo ATRAS do jogador — pelo tecto do campo
+(quem ja esta junto a linha de fundo) ou pelo tecto do fora-de-jogo (quem esta
+em posicao irregular tem a linha atras de si). O resultado era um jogador em
+RUN_INTO_SPACE a correr para a PROPRIA baliza.
+
+Tudo em `avanco` (z * dirZ), como no resto do posicionamento:
+
+    `avancoActual`     onde ele esta
+    `avancoPedido`     onde a folha o queria por
+    `offsideLimitDir`  linha publicada pelo nivel 1, ou null/undefined
+    `ganhoMinimo`      metros que a corrida tem de ganhar para valer a pena
+
+Devolve o avanco do destino, ja cortado pelas linhas do campo e pelo
+fora-de-jogo, ou NULL quando o que sobra nao e uma infiltracao — e ai a folha
+nao deve mudar de estado nenhum.
+
+Pura: sem Match, sem THREE.
+*/
+function avancoDeInfiltracao(o) {
+    const MARGEM_LINHA = 2.0;
+    const ganhoMin = (typeof o.ganhoMinimo === 'number')
+        ? o.ganhoMinimo
+        : ((typeof RunIntoSpaceModel !== 'undefined' && RunIntoSpaceModel.ganhoMinimo) || 4.0);
+
+    let avanco = Math.min(o.avancoPedido, CAMPO_COMP / 2 - MARGEM_LINHA);
+
+    if (typeof avancoLegalDeCorrida === 'function') {
+        avanco = avancoLegalDeCorrida(avanco, o.offsideLimitDir);
+    }
+
+    if (avanco < o.avancoActual + ganhoMin) return null;
+    return avanco;
+}
+
+/*
 DESTINO DE UMA CORRIDA AO ESPACO.
 
 O candidato bruto vem do SpatialGrid (a celula mais vazia num raio a frente

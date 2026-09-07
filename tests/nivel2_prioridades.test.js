@@ -1,5 +1,16 @@
 /*
-AS REGRAS QUE A CAMADA POSICIONAL TEM DE CUMPRIR — ver docs/auditoria_nivel2.md.
+OS LIMITES DO POSICIONAMENTO — ver docs/auditoria_nivel2.md.
+
+ONDE ELES VIVEM, HOJE. A auditoria propôs um resolvedor de prioridades
+(js/bt/alvo.js: cada camada PROPÕE, o alvo resolve-se uma vez no fim). Esse
+módulo existe e não está ligado a nada — o posicionamento voltou a ser escrito
+em sequência, e os limites aplicam-se todos no tickFinal do team_bt.js, que é o
+último sítio por onde cada alvo passa.
+
+Este ficheiro fixava a FIAÇÃO do resolvedor (proporLimiteAvanco, AlvoPrio) e por
+isso ficou a falhar inteiro quando ela desapareceu — a descrever um jogo que já
+não existe. Passa a fixar o que interessa e continua verdadeiro: que os limites
+EXISTEM, com os números do config, e que nenhum deles prende quem vai à bola.
 
 Três regras novas desta sessão, e a razão de cada uma está medida no documento:
 
@@ -40,6 +51,13 @@ function extrairObjecto(src, nome, extras) {
 }
 const BlockShape = extrairObjecto(srcTac, 'BlockShape', { CAMPO_COMP: 106, CAMPO_LARG: 68 });
 
+// Onde os limites são aplicados: o último passo do posicionamento.
+const tickFinal = (() => {
+    const ini = srcTeam.indexOf('tickFinal: function (p, bb)');
+    assert.ok(ini > 0, 'o tickFinal mudou de nome — este ficheiro precisa de ser revisto');
+    return srcTeam.slice(ini, srcTeam.indexOf(LF + '    },' + LF, ini));
+})();
+
 test('o rest defense está ligado e é gente a sério', () => {
     const R = BlockShape.restDefense;
     assert.ok(R, 'o rest defense desapareceu do config');
@@ -47,13 +65,13 @@ test('o rest defense está ligado e é gente a sério', () => {
         `defesasAtrasDaBola=${R.defesasAtrasDaBola}: dois é o mínimo para haver cobertura, quatro já é não atacar`);
     assert.ok(R.medioAtrasDaBola >= 0 && R.medioAtrasDaBola <= 2, 'medioAtrasDaBola fora do razoável');
     assert.ok(R.recuoDaBola > 0, 'sem recuo, "ficar atrás da bola" é ficar em cima dela');
-    assert.ok(srcTeam.includes('BlockShape.restDefense'),
-        'a camada posicional não aplica o rest defense');
+    assert.ok(tickFinal.includes('B_LIM.restDefense'),
+        'o posicionamento não aplica o rest defense');
 });
 
 test('o rest defense escolhe pelo POSTO, e não pela posição do momento', () => {
-    const ini = srcTeam.indexOf('BlockShape.restDefense');
-    const corpo = srcTeam.slice(ini, ini + 2200);
+    const ini = tickFinal.indexOf('B_LIM.restDefense');
+    const corpo = tickFinal.slice(ini, ini + 1600);
     assert.ok(corpo.includes('sort'),
         'os que ficam em casa deviam ser escolhidos por profundidade, não pela ordem da lista');
     /*
@@ -63,50 +81,97 @@ test('o rest defense escolhe pelo POSTO, e não pela posição do momento', () =
     */
     assert.ok(corpo.includes('baseTarget'),
         'a escolha voltou a ser pela posição do momento — o limite deixa de se aguentar');
-    assert.ok(corpo.includes('bb.chaser !== p'),
-        'o rest defense está a prender quem vai à bola');
 });
 
-test('a separação lateral↔extremo é simétrica e não depende da ordem', () => {
+test('nenhum limite prende quem vai à bola', () => {
+    /*
+    Chaser, intercetor e bloqueador vão onde têm de ir. Um limite que os prenda
+    é uma equipa que não pressiona — era a primeira regra do resolvedor e
+    continua a ser a de agora, com uma bandeira só para os três.
+    */
+    assert.ok(tickFinal.includes('const temTarefaDeBola ='),
+        'a excepção de quem vai à bola desapareceu do posicionamento');
+    for (const papel of ['bb.chaser === p', 'bb.intercetor === p', 'bb.bloqueador === p']) {
+        assert.ok(tickFinal.includes(papel), papel + ' não entra na excepção');
+    }
+    const dali = tickFinal.slice(tickFinal.indexOf('const temTarefaDeBola ='));
+    for (const limite of ['B_LIM.restDefense', 'limiteFrenteDoBlocoSemBola', 'penduloParaABola']) {
+        assert.ok(dali.includes(limite),
+            limite + ' é aplicado ANTES da excepção — quem vai à bola fica preso');
+    }
+});
+
+test('a separação lateral↔extremo tem número e um lado que cede', () => {
     assert.ok(BlockShape.separacaoLateral >= 4 && BlockShape.separacaoLateral <= 10,
         `separacaoLateral=${BlockShape.separacaoLateral}: fora do que separa duas faixas`);
-    const ini = srcTeam.indexOf('BlockShape.separacaoLateral &&');
-    const corpo = srcTeam.slice(ini - 200, ini + 1800);
-    assert.ok(corpo.includes('souODeFora'),
-        'a regra deixou de decidir quem fica por fora — sem isso os dois cedem, ou nenhum');
-    assert.ok(corpo.includes('tacticalTarget'),
-        'a separação voltou a comparar com a POSIÇÃO do outro: os dois vão atrás um do outro');
+    /*
+    Quem cede é o LATERAL, por desenho: o meia dá a largura, o lateral fica por
+    dentro dele e `recuoDeApoio` metros atrás. Não é simétrico de propósito — se
+    os dois cedessem, os dois saíam da faixa.
+    */
+    assert.ok(srcTeam.includes('B_SEP.separacaoLateral'), 'a separação da ala já não é aplicada');
+    const ini = srcTeam.indexOf('B_SEP.separacaoLateral');
+    const corpo = srcTeam.slice(ini - 900, ini + 900);
+    assert.ok(corpo.includes("p.pos === 'LB'"),
+        'a regra deixou de dizer quem é que cede — sem isso os dois cedem, ou nenhum');
+    assert.ok(corpo.includes('recuoDeApoio'),
+        'o lateral deixou de ficar atrás do meia a dar apoio');
 });
 
-test('o fora-de-jogo é um LIMITE das leis do jogo, não um corte solto', () => {
+test('o fora-de-jogo é um LIMITE, e é o último a falar', () => {
     assert.strictEqual(BlockShape.cortarForaDeJogoNoAlvo, true,
         'o corte de fora-de-jogo está desligado');
-    // Deixou de ser uma função à parte no player_bt: é um limite proposto pela
-    // camada posicional e aplicado pelo resolvedor (js/bt/alvo.js).
     assert.ok(!srcPlayer.includes('function cortarForaDeJogo('),
-        'voltou a haver um corte de fora-de-jogo à parte, fora do resolvedor');
-    assert.ok(srcTeam.includes("proporLimiteAvanco(p, AlvoPrio.LEIS"),
-        'a camada posicional já não propõe o fora-de-jogo como lei do jogo');
-    assert.ok(srcTeam.includes('temTarefaDeBola(p, bb)'),
-        'o limite tem de deixar passar quem tem tarefa de bola');
+        'voltou a haver um corte de fora-de-jogo à parte, fora do posicionamento');
+    assert.ok(tickFinal.includes('bb.offsideLimitDir'),
+        'o posicionamento já não corta o alvo pela linha de fora-de-jogo');
+    assert.ok(tickFinal.includes('p.offsideBias'),
+        'o corte voltou a usar a linha EXACTA: sem erro de leitura não há impedimentos');
 });
 
-test('a árvore propõe, e a prioridade sai da TAREFA', () => {
-    assert.ok(srcPlayer.includes('proporOQueAArvoreEscreveu'),
-        'o nível 3 voltou a escrever o alvo directamente');
-    const ini = srcPlayer.indexOf('const proporOQueAArvoreEscreveu');
-    const corpo = srcPlayer.slice(ini, ini + 1800);
-    assert.ok(corpo.includes('AlvoPrio.BOLA') && corpo.includes('AlvoPrio.ACCAO'),
-        'as propostas da árvore deixaram de distinguir tarefa de bola de acção');
-    assert.ok(corpo.includes('tarefaDeBola'),
-        'quem vai à bola tem de propor sempre — o alvo dele não muda de frame para frame');
+test('sem bola ninguém passa à frente do bloco', () => {
+    assert.strictEqual(BlockShape.limiteFrenteDoBlocoSemBola, true,
+        'o limite da frente do bloco está desligado');
+    assert.ok(BlockShape.folgaFrenteDoBloco >= 0 && BlockShape.folgaFrenteDoBloco <= 5,
+        'a folga da frente do bloco saiu do razoável');
+    assert.ok(tickFinal.includes('limiteFrenteDoBlocoSemBola'),
+        'o posicionamento já não aplica o limite da frente do bloco');
 });
 
-test('o rest defense e a transição são LIMITES, não cortes locais', () => {
-    assert.ok(srcTeam.includes("proporLimiteAvanco(p, AlvoPrio.SEGURO"),
-        'o rest defense deixou de ser um limite: volta a ser furado pela árvore');
-    const n = srcTeam.split('AlvoPrio.SEGURO').length - 1;
-    assert.ok(n >= 2, `só ${n} limite(s) de SEGURO: falta o rest defense ou a transição defensiva`);
+test('sem bola, defesas e médios ficam do lado de cá da bola', () => {
+    assert.strictEqual(BlockShape.limiteAlemDaBolaSemBola, true,
+        'o limite do lado da bola está desligado');
+    assert.ok(BlockShape.folgaAlemDaBola >= 0 && BlockShape.folgaAlemDaBola <= 3,
+        `folgaAlemDaBola=${BlockShape.folgaAlemDaBola}: com folga a mais o limite deixa de morder`);
+    // Os avançados NÃO entram: são a saída da equipa.
+    assert.deepStrictEqual(BlockShape.recuamAlemDaBola.slice().sort(), ['def', 'mid'],
+        'se os avançados entrarem nesta regra, a equipa recupera a bola sem ninguém à frente');
+    assert.ok(tickFinal.includes('recuamAlemDaBola'),
+        'o posicionamento já não aplica o limite do lado da bola');
+});
+
+test('o resolvedor de prioridades continua desligado, e o ficheiro di-lo', () => {
+    /*
+    Meia-fiação é o pior dos dois mundos: metade dos limites propostos e metade
+    escritos em sequência, sem ninguém saber qual manda. Enquanto o alvo.js não
+    tiver chamadores, não pode ser carregado como se tivesse.
+    */
+    const srcAlvo = semCR(fs.readFileSync(path.join(raiz, 'js', 'bt', 'alvo.js'), 'utf8'));
+    const indexHtml = semCR(fs.readFileSync(path.join(raiz, 'index.html'), 'utf8'));
+    const ligado = [srcTeam, srcPlayer].some(
+        src => /[^.\w]resolverAlvo\s*\(/.test(src) || /proporLimiteAvanco\s*\(/.test(src));
+
+    if (!ligado) {
+        assert.ok(srcAlvo.includes('NÃO ESTÁ LIGADO'),
+            'o alvo.js não tem chamadores e o cabeçalho dele não o diz');
+        assert.ok(!indexHtml.includes('js/bt/alvo.js'),
+            'o index.html carrega um módulo que ninguém chama');
+    } else {
+        assert.ok(indexHtml.includes('js/bt/alvo.js'),
+            'o resolvedor voltou a ser chamado mas não está carregado');
+        assert.ok(!tickFinal.includes('B_LIM.restDefense'),
+            'os limites estão nos dois sítios ao mesmo tempo: escolhe um');
+    }
 });
 
 test('a auditoria e a sua ferramenta continuam no repositório', () => {
@@ -114,36 +179,4 @@ test('a auditoria e a sua ferramenta continuam no repositório', () => {
         'docs/auditoria_nivel2.md desapareceu');
     assert.ok(fs.existsSync(path.join(raiz, 'tools', 'headless', 'nivel2_auditoria.js')),
         'a ferramenta que produz os números da auditoria desapareceu');
-});
-
-/*
-SEM BOLA: dois limites novos, ambos de nível SEGURO — ver a secção 4 da
-auditoria e o relato "5 jogadores indo pra frente ao invés de retornar".
-
-Medido antes: 1,69 jogadores por frame com o alvo ALÉM DA BOLA a defender
-(38% médios, 10% defesas), pior caso nove. Depois: 1,09, e 82% do que sobra
-são avançados — que estão certos, são a saída da equipa.
-*/
-test('sem bola ninguém passa a frente do bloco', () => {
-    assert.strictEqual(BlockShape.limiteFrenteDoBlocoSemBola, true,
-        'o limite da frente do bloco está desligado');
-    assert.ok(srcTeam.includes("'frente do bloco'"),
-        'a camada posicional já não propõe o limite da frente do bloco');
-});
-
-test('sem bola, defesas e médios ficam do lado de cá da bola', () => {
-    assert.strictEqual(BlockShape.limiteAlemDaBolaSemBola, true,
-        'o limite do lado da bola está desligado');
-    assert.ok(BlockShape.folgaAlemDaBola >= 0 && BlockShape.folgaAlemDaBola <= 3,
-        `folgaAlemDaBola=${BlockShape.folgaAlemDaBola}: com folga a mais o limite deixa de morder ` +
-        '(medido: a 4 m ficava em 1,9 jogadores além da bola, a 1,5 m em 1,1)');
-    // Os avançados NÃO entram: são a saída da equipa.
-    assert.deepStrictEqual(BlockShape.recuamAlemDaBola.slice().sort(), ['def', 'mid'],
-        'se os avançados entrarem nesta regra, a equipa recupera a bola sem ninguém à frente');
-    assert.ok(srcTeam.includes("'do lado de ca da bola'"),
-        'a camada posicional já não propõe este limite');
-    const ini = srcTeam.indexOf("'do lado de ca da bola'");
-    const corpo = srcTeam.slice(ini - 900, ini + 200);
-    assert.ok(corpo.includes('bb.chaser !== p') && corpo.includes('bb.intercetor !== p'),
-        'o limite tem de ceder a quem vai à bola, senão ninguém pressiona');
 });

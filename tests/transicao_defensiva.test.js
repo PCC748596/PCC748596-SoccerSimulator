@@ -46,7 +46,12 @@ test('as constantes da regra estão no config', () => {
 });
 
 test('a camada posicional corta o alvo cru e o alvo alisado', () => {
-    const cortes = srcTeam.split('BlockShape.transicaoDefensivaRecuaSo').length - 1;
+    /*
+    Conta as APLICAÇÕES da regra, seja qual for o nome da variável por onde o
+    BlockShape entra (`B_LIM`, `B_TR`, ...): o que interessa é haver duas — uma
+    no alvo cru e outra depois do alisamento.
+    */
+    const cortes = (srcTeam.match(/\.transicaoDefensivaRecuaSo\b/g) || []).length;
     assert.ok(cortes >= 2,
         `só ${cortes} corte(s) no team_bt: falta o de depois do alisamento (o alvo ` +
         'alisado traz o valor da fase ofensiva durante mais de um segundo)');

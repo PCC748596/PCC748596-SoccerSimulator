@@ -37,6 +37,49 @@ patch_vis.js        nao muda nada — gasto
 Os quinze procuram texto que já não existe, ou que já está na forma final.
 Voltar a correr qualquer um é uma operação nula.
 
+### `patch_*.js`, `fix_carry.js`, `test_infiltracao_patch.js` — a segunda vaga (27 ficheiros)
+
+Vieram da raiz do projecto a 7 de Setembro de 2026, do trabalho do replay e da
+infiltração. São a mesma coisa que os de cima — codemods de um só uso — mas com
+uma diferença que importa:
+
+**DOZE DELES JÁ NÃO SÃO NULOS.** Corridos a seco (com o `writeFileSync`
+interceptado e o resultado comparado com o ficheiro em disco), estes voltariam
+a escrever:
+
+```
+patch_campoaberto.js         AINDA MUDA player_bt.js
+patch_carry.js               AINDA MUDA player_bt.js
+patch_findCross.js           AINDA MUDA player_bt.js
+patch_findCross_2.js         AINDA MUDA player_bt.js
+patch_index.js               AINDA MUDA index.html
+patch_jogadas.js             AINDA MUDA player_bt.js
+patch_log.js                 AINDA MUDA player_bt.js
+patch_main.js                AINDA MUDA main.js
+patch_pass_bonus.js          AINDA MUDA player.js
+patch_replay_snap.js         AINDA MUDA match_replay.js
+patch_replay_snap2.js        AINDA MUDA match_replay.js
+patch_touch.js               AINDA MUDA touch_controls.js
+patch_touch_bind.js          AINDA MUDA touch_controls.js
+patch_touch_state.js         AINDA MUDA touch_controls.js
+test_infiltracao_patch.js    AINDA MUDA player_bt.js
+```
+
+Nenhum deles é IDEMPOTENTE: o `replace` acrescenta o bloco novo ANTES do texto
+que procurou, portanto correr outra vez duplica o bloco em vez de o repor. Não
+os corras. Estão aqui como registo do que se fez, não como ferramenta.
+
+Os restantes doze (`patch_carry_aggro`, `patch_fsm`, `patch_fsm_banner`,
+`patch_infiltracao_offside`, `patch_infiltrar`, `patch_infiltrar_target`,
+`patch_infiltrar_wingers`, `patch_offside_cap`, `patch_replay_quat`,
+`patch_replay_touch`, `patch_through_ball`, `fix_carry`) não mudam nada — estão
+gastos como os da primeira vaga.
+
+### `original_team_bt.js`
+
+Outra cópia de segurança de um ficheiro de produção, irmã do
+`team_bt.js.current.txt`. Nada a lê.
+
 ### `test_*.js`, `find_bug.js`, `sim_offsets.js` — rascunhos de cálculo (8 ficheiros)
 
 Não são testes: são folhas de cálculo em JavaScript, escritas para explorar a

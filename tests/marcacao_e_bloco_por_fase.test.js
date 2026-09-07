@@ -185,12 +185,19 @@ console.log(LF + '3 — ao ganhar a bola, larga-se o homem');
     jogador das intercepções). Um homem atribuído a quem está a atacar é lixo
     de estado, da mesma família do `actionState` pendurado.
     */
+    /*
+    O `atribuirMarcacoesDaEquipa` ganhou entretanto uma segunda chamada
+    (`marcarQuemVaiReceber`, que marca o destinatário de um passe em voo). O
+    prelúdio tem de a trazer, senão o extracto rebenta com um ReferenceError e
+    o teste falha por causa do andaime, não do jogo.
+    */
     const preludio = `
         const MarkingModel = { raioSetor: 12.0, histerese: 1.0 };
         const Match = { delta: 0.016 };
         function atribuirMarcacoes(marcadores, adversarios, raio) {
             return marcadores.map(() => adversarios[0] || null);
         }
+        function marcarQuemVaiReceber(lista, bb) { /* fora do que aqui se mede */ }
     `;
     const mod = extrairFuncao(srcTeam, 'atribuirMarcacoesDaEquipa', preludio);
 

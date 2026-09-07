@@ -81,31 +81,53 @@ test('só o assignFormations escreve o slot da formação', () => {
         'quem escreve a formação já não é o assignFormations');
 });
 
-test('o optimizador troca a ATRIBUIÇÃO, não a formação', () => {
+test('o optimizador de slots é um stub, e a formação não se mexe', () => {
+    /*
+    O optimizador trocava a ATRIBUIÇÃO de slots entre jogadores da mesma
+    posição (), deixando a formação () intacta. Foi
+    esvaziado de propósito — o congelamento que ele fazia quebrava a inversão
+    de campo ao intervalo e ignorava mudanças tácticas do utilizador — e hoje é
+    um corpo vazio.
+
+    O que continua a ter de ser verdade é o que este ficheiro guarda: ninguém
+    escreve no  a não ser o assignFormations. Se o optimizador voltar,
+    volta a escrever na ATRIBUIÇÃO e não na formação.
+    */
     const ini = srcTeam.indexOf('function otimizarSlotsPorPosicao(');
+    assert.ok(ini > 0, 'o optimizador desapareceu do ficheiro');
     const corpo = srcTeam.slice(ini, srcTeam.indexOf('function updateGkStyle(', ini));
-    assert.ok(corpo.includes('slotAtribuido'),
+    assert.ok(!/p[01]?\.slot\s*=[^=]/.test(corpo),
         'o optimizador voltou a escrever no `slot`, que é a formação');
-    assert.ok(!/p[01]\.slot\s*=[^=]/.test(corpo),
-        'ainda há uma escrita directa no `slot` dentro do optimizador');
 });
 
-test('quem posiciona lê a atribuição, com a formação como recurso', () => {
-    assert.ok(srcTeam.includes('function slotEfectivo(p)'),
-        'o `slotEfectivo` desapareceu: alguém volta a ler o slot cru');
+test('quem posiciona lê o slot da formação, e mais nada', () => {
+    /*
+    O `slotEfectivo` era a indirecção que lia a atribuição do frame com a
+    formação como recurso. Sem optimizador não há atribuição nenhuma para ler —
+    o que não pode haver é a indirecção sem a atribuição, que seria uma camada
+    a fingir que decide alguma coisa.
+    */
+    assert.ok(!srcTeam.includes('function slotEfectivo(p)') ||
+        srcTeam.includes('slotAtribuido'),
+        'há um slotEfectivo sem atribuição nenhuma para ler');
     const ini = srcTeam.indexOf('function slotNoBloco(');
+    assert.ok(ini > 0, 'o slotNoBloco desapareceu');
     const corpo = srcTeam.slice(ini, ini + 300);
-    assert.ok(corpo.includes('slotEfectivo(p)'),
-        'o slotNoBloco deixou de usar a atribuição do frame');
+    assert.ok(/slotEfectivo\(p\)|p\.slot/.test(corpo),
+        'o slotNoBloco deixou de ler o slot');
 });
 
 test('a camada posicional tem tecto de desvio ao slot, por função', () => {
-    const iniC = srcTeam.indexOf('BlockShape.desvioMaxDoSlot');
-    assert.ok(iniC > 0, 'o tecto de desvio ao slot desapareceu');
-    // Duas aplicações: uma antes das regras de faixa, outra (folgada) depois.
-    const n = srcTeam.split('BlockShape.desvioMaxDoSlot').length - 1;
-    assert.ok(n >= 2,
-        `só ${n} aplicação(ões) do tecto: sem a segunda, as regras de faixa voltam a esticar o desvio`);
-    assert.ok(srcTeam.includes('tectoFolgado'),
-        'a segunda aplicação tem de ser folgada, senão desfaz as faixas');
+    // O BlockShape sai do ficheiro de config real (não de uma cópia): assim
+    // este teste não pode divergir dele.
+    const srcTac = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'tactics.js'), 'utf8'));
+    const ini = srcTac.indexOf('const BlockShape = {');
+    const BlockShape = new Function('CAMPO_COMP', 'CAMPO_LARG',
+        srcTac.slice(ini, srcTac.indexOf(LF + '};', ini) + 3) + '; return BlockShape;')(106, 68);
+    const D = BlockShape.desvioMaxDoSlot;
+    assert.ok(D, 'o tecto de desvio ao slot desapareceu do config');
+    assert.ok(D.def < D.mid && D.mid < D.ata,
+        'um defesa tem de ter menos corda do que um avançado');
+    assert.ok(srcTeam.includes('B_LIM.desvioMaxDoSlot'),
+        'o posicionamento já não aplica o tecto de desvio ao slot');
 });

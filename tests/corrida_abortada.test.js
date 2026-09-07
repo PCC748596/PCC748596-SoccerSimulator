@@ -63,23 +63,34 @@ test('quem pede RUN_INTO_SPACE põe também o runTimer', () => {
     }
 });
 
-test('runTimer e runTarget andam sempre juntos', () => {
-    /*
-    O `actRunIntoSpace` usa `runTimer > 0` como "corrida em curso" e a partir
-    daí lê o `runTarget` sem o voltar a criar — pôr um sem o outro rebenta com
-    "Cannot read properties of null (reading 'z')".
-    */
-    for (const nome of ['actEsperarDevolucao', 'actOverlap']) {
-        const corpo = corpoDaFuncao(srcBt, nome);
-        assert.ok(/p\.runTarget\s*=/.test(corpo),
-            `${nome} põe runTimer sem runTarget — o actRunIntoSpace rebenta ao ler runTarget.z`);
+/*
+O `runTarget` DEIXOU DE EXISTIR — e este teste guarda isso.
+
+A corrida ao espaço era criada pelo `actRunIntoSpace`, que fixava um destino em
+`p.runTarget` e o relia nos frames seguintes. Essa folha foi substituída pelo
+`actInfiltrar` (Setembro de 2026), que escreve o destino directamente no
+`dynamicTarget` e não guarda estado nenhum à parte. Se alguém voltar a pôr um
+`runTarget` sem o voltar a criar em TODAS as folhas, volta o
+"Cannot read properties of null (reading 'z')" que este ficheiro documenta.
+*/
+test('ninguém escreve nem lê um runTarget', () => {
+    for (const src of [srcBt, srcFsm]) {
+        assert.ok(!/runTarget/.test(src),
+            'voltou a haver runTarget: ou o põem todas as folhas, ou não o põe nenhuma');
     }
 });
 
-test('o actRunIntoSpace continua a ser quem cria a corrida normal', () => {
-    const corpo = corpoDaFuncao(srcBt, 'actRunIntoSpace');
-    assert.ok(/p\.runTimer = R\.duracao/.test(corpo),
-        'a corrida ao espaço deixou de ter prazo próprio');
-    assert.ok(/p\.runTarget = /.test(corpo),
-        'a corrida ao espaço deixou de fixar destino');
+/*
+QUEM CRIA A CORRIDA AO ESPAÇO É O `actInfiltrar`.
+
+Era o `actRunIntoSpace`, apagado com a folha `CorrerNoEspaco`. O prazo da
+corrida continua a ter de ser posto por quem a pede — é a condição de entrada
+do estado na FSM.
+*/
+test('a folha da corrida ao espaço põe prazo e destino', () => {
+    const corpo = corpoDaFuncao(srcBt, 'actInfiltrar');
+    assert.ok(/p\.runTimer = /.test(corpo), 'a corrida ao espaço deixou de ter prazo próprio');
+    assert.ok(/p\.dynamicTarget\.set\(/.test(corpo), 'a corrida ao espaço deixou de fixar destino');
+    assert.ok(/avancoDeInfiltracao/.test(corpo),
+        'e o destino tem de ser para a FRENTE (ver tests/infiltracao_para_a_frente.test.js)');
 });

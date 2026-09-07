@@ -71,10 +71,23 @@ console.log(LF + '1 — a ordem das folhas nao mudou');
         O mesmo para quem ultrapassa por fora: se o posicionamento normal
         falasse primeiro, a corrida nunca chegava a existir.
         */
-        'Desarme', 'Intercetar', 'IrABola', 'EsperarDevolucao', 'Overlap',
+        /*
+        SETEMBRO DE 2026: a ala de ataque mudou de folhas.
+
+        `CorrerNoEspaco` e `AtacarArea` saíram e no lugar delas está a
+        `Infiltracao` (podeInfiltrar/actInfiltrar), que é a corrida ao espaço de
+        hoje — o destino dela é sempre para a frente, ver
+        tests/infiltracao_para_a_frente.test.js. A `Tabelinha` passou a ser o
+        nome do ramo que era `EsperarDevolucao`.
+
+        A ORDEM é que continua a ser a coisa a guardar: quem decide primeiro
+        decide, e trocar duas destas linhas muda o jogo sem ninguém dar por
+        isso.
+        */
+        'Desarme', 'Intercetar', 'IrABola', 'Tabelinha', 'Overlap',
         'Receber', 'GuardaRedes',
         'Marcar', 'EsperarNaArea',
-        'ApoioDeCirculacao', 'CorrerNoEspaco', 'AtacarArea',
+        'Infiltracao', 'ApoioDeCirculacao',
         'ocuparPosicao'
     ];
     const contentores = ['SemBola', 'SemBolaDefendendo', 'SemBolaAtacando'];
@@ -146,10 +159,10 @@ console.log(LF + '4 — os ramos de cada fase estao na fase certa');
     if (!dentroDe('SemBolaDefendendo', 'Marcar')) erro('Marcar nao esta na arvore de defesa');
     else ok('Marcar: a defender');
 
-    for (const nome of ['ApoioDeCirculacao', 'CorrerNoEspaco', 'AtacarArea']) {
+    for (const nome of ['Infiltracao', 'ApoioDeCirculacao']) {
         if (!dentroDe('SemBolaAtacando', nome)) erro(nome + ' nao esta na arvore de ataque');
     }
-    ok('ApoioDeCirculacao, CorrerNoEspaco e AtacarArea: a atacar');
+    ok('Infiltracao e ApoioDeCirculacao: a atacar');
 }
 
 console.log(LF + (falhas === 0

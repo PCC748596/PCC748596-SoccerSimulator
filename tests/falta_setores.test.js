@@ -122,7 +122,20 @@ test('os critérios têm reserva quando não há quem os cumpra', () => {
     assert.strictEqual(U.batedorDaFalta([], 'naoDef', () => 0), null);
 });
 
-test('na própria defesa a equipa faz uma escada à frente da bola', () => {
+/*
+FALTA NA PRÓPRIA DEFESA — o desenho mudou, e este teste com ele.
+
+Era uma ESCADA de linhas a subir a partir da bola (centrais junto a ela,
+médios à frente, ataque mais à frente ainda), com todos os lugares medidos a
+partir da BOLA. Em Setembro de 2026 passou a ser o "deep free kick": a equipa
+sobe em bloco e os alvos são medidos a partir da BALIZA ADVERSÁRIA
+(`modo: 'baliza'`), para disputar a primeira bola e o ressalto na entrada da
+área — e os defesas ficam ATRÁS da bola, a segurar o contra-ataque.
+
+O que o teste guarda agora é o desenho novo, e o que nele não pode mudar: quem
+sobe, quem fica, e ninguém sem lugar.
+*/
+test('na própria defesa a equipa sobe em bloco e os defesas seguram atrás', () => {
     const av = -40, bolaZ = zDe(av);
     const eq = plantel();
     const lug = U.lugaresDaFalta(0, bolaZ, dir, eq, 'defesa');
@@ -133,10 +146,46 @@ test('na própria defesa a equipa faz uma escada à frente da bola', () => {
         return l.reduce((s, o) => s + o.z * dir, 0) / l.length;
     };
 
-    // A escada: centrais junto à bola, médios à frente, ataque mais à frente.
-    assert.ok(avancoDe('CB') < avancoDe('CM'), 'os médios têm de estar à frente dos centrais');
-    assert.ok(avancoDe('CM') < avancoDe('CF'), 'o ataque tem de estar à frente dos médios');
-    assert.ok(avancoDe('CF') - av > 25, 'o ataque tem de estar bem à frente da bola');
+    // Os que sobem: ataque à frente dos médios, e os dois no campo adversário.
+    /*
+    Ataque e médios sobem para a MESMA faixa (18 m da baliza) — é uma bola
+    disputada no ar, e quem a disputa está todo lá. Quem fica mais atrás dos
+    que sobem é o DM, no slot dos 26 m, à espera do ressalto.
+    */
+    assert.ok(avancoDe('CF') >= avancoDe('CM') - 0.01,
+        'o ataque não pode ficar atrás dos médios');
+    assert.ok(avancoDe('DM') < avancoDe('CM'),
+        'o DM é quem fica na segunda linha, para o ressalto');
+    assert.ok(avancoDe('CF') > 0, 'o ataque tem de subir para o campo adversário');
+    assert.ok(avancoDe('CM') > 0, 'os médios sobem com ele — é uma bola disputada, não um passe');
+
+    // Os que ficam: centrais e laterais atrás da bola, para o caso de a perder.
+    assert.ok(avancoDe('CB') < av, 'os centrais têm de ficar ATRÁS da bola');
+    assert.ok(avancoDe('LB') < av, 'os laterais também — é daí que se defende o contra-ataque');
+    assert.ok(avancoDe('CB') < avancoDe('CM'), 'e continuam a ser a linha mais recuada');
+});
+
+test('na própria defesa os alvos são medidos da baliza adversária, e ficam à sua frente', () => {
+    // É a diferença entre o desenho antigo e o novo: com a bola a 40 ou a 30 m
+    // da própria baliza, quem sobe vai para o MESMO sítio — a entrada da área
+    // adversária. Antes, os lugares andavam com a bola.
+    const eq1 = plantel(), eq2 = plantel();
+    const a = U.lugaresDaFalta(0, zDe(-40), dir, eq1, 'defesa');
+    const b = U.lugaresDaFalta(0, zDe(-30), dir, eq2, 'defesa');
+
+    const avancoCF = (lug) => {
+        const l = lug.filter(o => o.p.pos === 'CF');
+        return l.reduce((s, o) => s + o.z * dir, 0) / l.length;
+    };
+    assert.ok(Math.abs(avancoCF(a) - avancoCF(b)) < 0.01,
+        'os alvos do ataque têm de ser os mesmos: são medidos da baliza, não da bola');
+
+    const linhaFundo = dir * (CAMPO_COMP / 2);
+    for (const o of a.filter(o => o.p.pos === 'CF')) {
+        const d = Math.abs(linhaFundo - o.z);
+        assert.ok(d > 9.0 && d < 30.0,
+            `avançado a ${d.toFixed(1)} m da baliza — a disputa é na entrada da área`);
+    }
 });
 
 test('no meio-campo adversário os centrais ficam ATRÁS e a largura abre', () => {

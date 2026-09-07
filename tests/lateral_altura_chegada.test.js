@@ -124,9 +124,26 @@ test('a altura mirada é a que a recepção no peito espera', () => {
 });
 
 test('com receptor, o piso do alcanceMin já não atira por cima dele', () => {
+    /*
+    O piso de `alcanceMin` (9 m) só faz sentido a atirar para o ESPAÇO: com um
+    colega a 5 m forçava um lançamento quatro metros por cima dele.
+
+    O teste procurava a bandeira pelo nome `temReceptor`; ela chama-se
+    `temAlvo` — a asserção era sobre a grafia e não sobre o comportamento.
+    Agora verifica as três ligações que fazem a regra: existe a distinção, o
+    piso depende dela, e a faixa de elevação também (com destinatário a bola
+    sai a DESCER).
+    */
     const ini = srcPlayer.indexOf('lancarLateral() {');
     const fim = srcPlayer.indexOf(LF + '    }' + LF, ini);
     const corpo = srcPlayer.slice(ini, fim);
-    assert.ok(corpo.includes('temReceptor'),
+
+    assert.ok(/const temAlvo = /.test(corpo),
         'o alcance apontado tem de distinguir "há receptor" de "não há"');
+    assert.ok(/piso = temAlvo \?/.test(corpo),
+        'o piso do alcance voltou a ser o mesmo com e sem destinatário');
+    assert.ok(/temAlvo \? T\.elevAlvoMin/.test(corpo),
+        'com destinatário a bola tem de sair na faixa que DESCE (elevAlvo*)');
+    assert.ok(!/piso = T\.alcanceMin;/.test(corpo),
+        'o piso de alcanceMin voltou a ser incondicional');
 });

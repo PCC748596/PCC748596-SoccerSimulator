@@ -456,7 +456,7 @@ saber do outro, e batiam os dois no mesmo ponto.
 Veio do antigo nível 2, que só o tinha porque duas folhas o usavam. Quem o
 usa são os estilos, por isso vive aqui.
 */
-function melhorVaoX(p, bb, zAlvo, candidatosX) {
+function melhorVaoX(p, bb, zAlvo, candidatosX, bonusDe) {
     /*
     Lado preferido: o da JOGADA (bola), não o lado onde o jogador já está.
     Com a bola presa num lado, o vão "mais livre" no lado OPOSTO ganhava e o
@@ -484,6 +484,14 @@ function melhorVaoX(p, bb, zAlvo, candidatosX) {
         }
         let nota = minD;
         if (Math.sign(x) === meuLado) nota += 4.0;
+        /*
+        BÓNUS POR CANDIDATO — é assim que o Fox in the Box prefere o quadrado
+        central da área. Sem ele, o vão "mais livre" era muitas vezes junto ao
+        poste ou já fora dos ferros, e um Fox a 16 m do eixo não está onde os
+        golos se marcam. É um bónus e não um limite, de propósito: com o meio
+        tapado ele continua a poder sair de lá (ver PlayingStyleTuning.foxInTheBox).
+        */
+        if (typeof bonusDe === 'function') nota += (bonusDe(x) || 0);
         if (nota > melhorNota) { melhorNota = nota; melhorX = x; }
     }
 
@@ -679,7 +687,8 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
 
             if (targetZ * p.dirZ < zDesejado) targetZ = zDesejado * p.dirZ;
             targetX = melhorVaoX(p, bb, targetZ,
-                [-16, -11, -6.5, -2, 2, 6.5, 11, 16]);
+                [-16, -11, -6.5, -2, 2, 6.5, 11, 16],
+                x => (Math.abs(x) <= (F.meiaLarguraCentral || 0) ? (F.bonusCentral || 0) : 0));
         }
 
         /*
@@ -687,27 +696,56 @@ function aplicarEstiloPosicional(p, bb, targetX, targetZ) {
         e diagonal (puxa o zagueiro/marcador para a ponta/corredor), abrindo o
         corredor central para o condutor da bola ou jogadores de 2ª linha.
         */
-        if (est.atraiDefesa && p._dummyAtivo &&
-            bb && bb.isAttacking && bb.carrier && bb.carrier !== p) {
-            const ladoEst = Math.sign(p.baseTarget.x) || 1;
-            const carrierX = bb.carrier.model ? bb.carrier.model.position.x : 0;
-            const carrierZ = bb.carrier.model ? bb.carrier.model.position.z : 0;
+        if (est.atraiDefesa && p._dummyAtivo && bb && bb.isAttacking) {
+            /*
+            A REFERÊNCIA SOBREVIVE AO VOO DO PASSE.
 
-            // Desloca-se em X para o corredor lateral/meio-espaço para abrir o centro
-            if (Math.abs(carrierX) < 8.0) {
-                targetX = ladoEst * 15.0;
-            } else {
-                const fx = targetX - carrierX;
-                const fd = Math.abs(fx) || 1;
-                targetX += (fx / fd) * 7.0;
-            }
+            Era `bb.carrier`, e durante o voo de um passe não há portador
+            nenhum: a corrida de arrastamento morria a meio, que é justamente
+            quando ela serve para alguma coisa. Sem portador, a referência é a
+            BOLA — é onde a jogada está.
+            */
+            const refDummy = (bb.carrier && bb.carrier !== p && bb.carrier.model)
+                ? bb.carrier.model.position
+                : (typeof Match !== 'undefined' && Match.ball ? Match.ball.position : null);
+            if (!refDummy) return { x: targetX, z: targetZ };
+
+            const D = (typeof PlayingStyleTuning !== 'undefined' && PlayingStyleTuning.dummyRunner)
+                ? PlayingStyleTuning.dummyRunner
+                : { lateralDoPortador: 9.0, distanciaMax: 22.0, profundidadeMin: 6.0 };
+
+            const carrierX = refDummy.x;
+            const carrierZ = refDummy.z;
+
+            /*
+            A CORRIDA PUXA PARA O LADO DA JOGADA, não para a outra ponta.
+
+            Era `ladoEst * 15` — o lado do POSTO dele — com o portador no eixo:
+            com a jogada na direita e o posto à esquerda, arrancava para a
+            extrema esquerda. Puxava marcação, sim, mas para um sítio de onde
+            não participa e onde já não há linha de passe.
+
+            Agora corre `lateralDoPortador` para fora do lado ONDE A JOGADA
+            está, e `distanciaMax` é o tecto: mais longe do que isso a corrida
+            deixa de ser uma opção de passe, e o espaço que ela abre não serve
+            a ninguém.
+            */
+            const ladoJogada = Math.sign(carrierX) || Math.sign(p.baseTarget.x) || 1;
+            targetX = carrierX + ladoJogada * D.lateralDoPortador;
 
             // Evita colapso de múltiplos Dummy Runners no mesmo alvo usando a base natural do slot
             const espalhamentoExtra = p.slot ? (p.slot.u - 0.5) * 6.0 : ((p.id % 3) - 1) * 3.0;
             targetX += espalhamentoExtra;
 
+            // O tecto de afastamento, depois do espalhamento: é a distância à
+            // jogada que decide se ainda há passe para ele.
+            const foraX = targetX - carrierX;
+            if (Math.abs(foraX) > D.distanciaMax) {
+                targetX = carrierX + Math.sign(foraX) * D.distanciaMax;
+            }
+
             // Desloca-se em Z à frente da jogada/portador (profundidade de ataque)
-            const zAtkMin = (carrierZ * p.dirZ) + 6.0;
+            const zAtkMin = (carrierZ * p.dirZ) + (D.profundidadeMin || 6.0);
             let zAtk = Math.max(targetZ * p.dirZ, zAtkMin);
 
             // Respeita a linha de impedimento para arrastar a defesa sem ficar impedido

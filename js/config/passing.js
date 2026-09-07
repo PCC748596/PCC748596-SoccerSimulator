@@ -907,7 +907,33 @@ const RunIntoSpaceModel = {
     margemLinha: 2.0,
     duracao: 4.0,
     arrefecimento: 3.0,
-    ocupacaoMax: 0.35
+    ocupacaoMax: 0.35,
+
+    /*
+    INFILTRAR É PARA A FRENTE, E MAIS NADA.
+
+    Relato: "infiltração é somente o movimento para frente em direção ao gol
+    adversário; não existe infiltração em movimento para trás em direção ao
+    próprio gol".
+
+    O `destinoDeCorrida` (utils.js) já exigia isso — mas o `actInfiltrar` e o
+    `actOverlap` calculam o alvo deles à mão, e os dois podiam pô-lo ATRÁS do
+    jogador por duas vias:
+
+      1. o tecto do campo: `min(CAMPO_COMP/2 - 2, avanço + 20)` devolve um
+         ponto atrás de quem já está a menos de 2 m da linha de fundo;
+      2. o tecto do fora-de-jogo: quem está em posição irregular tem
+         `offsideLimitDir - 0.5` ATRÁS de si, e o alvo saía para lá.
+
+    Nos dois casos o jogador entrava em RUN_INTO_SPACE — com o banner
+    "INFILTRA" e tudo — a correr na direcção da PRÓPRIA baliza.
+
+    `ganhoMinimo` é o que a corrida tem de ganhar em direcção à baliza
+    adversária para ser uma infiltração. Não chegando lá, não há corrida: o
+    jogador fica no posicionamento normal, que é o que ele deve fazer quando
+    não há espaço à frente para atacar.
+    */
+    ganhoMinimo: 4.0
 };
 
 /*

@@ -405,12 +405,13 @@ const Crowd = {
     /*
     Uma geometria fundida por canal, para UMA pose, já à escala do jogo.
 
-    A escala é a mesma do `buildBody` — (1.8 / 5.5) * 0.9 — para o adepto ter o
-    tamanho de um jogador.
+    A escala é a do corpo dos jogadores, e vem de LÁ: `ESCALA_CORPO`, em
+    pose.js. Esteve escrita à mão aqui, e quando a do corpo mudou os adeptos
+    ficaram 10% mais pequenos do que toda a gente sem ninguém dar por isso.
     */
     _geometriasDaPose(pose) {
         const pecas = this._pecas(pose);
-        const escala = (1.8 / 5.5) * 0.9;
+        const escala = (typeof ESCALA_CORPO === 'number') ? ESCALA_CORPO : 1.8 / 5.5;
         const saida = {};
         for (const canal in pecas) {
             if (!pecas[canal].length) continue;
