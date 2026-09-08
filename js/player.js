@@ -384,51 +384,48 @@ class FootballPlayer {
     e assentar aí seria patinar.
     */
     /*
-    A CABEÇA BAIXA PARA A BOLA.
+    A CABEÇA NÃO APONTA PARA CIMA SEM NADA LÁ ESTAR.
 
-    O `lookAtBola` vira o CORPO para a bola e é giro puro — achata o Y de
-    propósito, para o boneco não deitar. Faltava a outra metade: a inclinação
-    da cabeça. O pescoço ficava a zero em todos os estados de jogo, e com a
-    bola aos pés (46 graus abaixo do horizonte) o jogador olhava para a linha
-    do horizonte — daí a leitura de "olhar para cima". Ver OlharParaBola.
+    Houve aqui um seguimento da bola — a cabeça baixava para ela — e foi
+    revertido a pedido: com a bola aos pés a 46 graus abaixo do horizonte,
+    ficava o campo inteiro de cabeça baixa. O que fica é o tecto.
 
-    Mede-se o olhar ACTUAL no mundo (o pescoço herda o tronco, que já está
-    inclinado pela passada) e corrige-se a diferença no pescoço. Assim a
-    correcção vale para qualquer pose, sem duplicar a inclinação do tronco.
+    Mede-se o olhar no MUNDO (o pescoço herda o tronco, que a passada já
+    inclina) e só se corrige quando ele passa acima do horizonte. Ver
+    OlharDaCabeca (config/gait.js).
     */
-    olharParaBola() {
-        const O = (typeof OlharParaBola !== 'undefined') ? OlharParaBola : null;
+    nivelarCabeca() {
+        const O = (typeof OlharDaCabeca !== 'undefined') ? OlharDaCabeca : null;
         if (!O || !O.activo || !this.rig || !this.rig.neck) return;
-        if (this.role === 'gk') return;                    // tem pose própria
+        if (this.role === 'gk') return;
         if (this.jumpTimer > 0) return;                    // o cabeceio escreve a cabeça
         const st = this.fsm ? this.fsm.currentState : null;
-        // Estados com a cabeça escrita à mão (clips e gestos).
         if (st === 'SHOOT' || st === 'LATERAL' || st === 'SLIDE_TACKLE' ||
             st === 'CHEST_CONTROL' || st === 'BALL_CONTROL_RIGHT') return;
-        if (typeof Match === 'undefined' || !Match.ball) return;
 
         const neck = this.rig.neck;
-        neck.getWorldPosition(_p_v3);
-        const dx = Match.ball.position.x - _p_v3.x;
-        const dy = Match.ball.position.y - _p_v3.y;
-        const dz = Match.ball.position.z - _p_v3.z;
-        const plano = Math.hypot(dx, dz);
+        this.model.updateMatrixWorld(true);
+        neck.getWorldQuaternion(_p_q);
+        _p_v3b.set(0, 0, 1).applyQuaternion(_p_q);
+        const olhar = Math.asin(THREE.MathUtils.clamp(_p_v3b.y, -1, 1));
 
-        // Longe, o ângulo é quase zero e baixar a cabeça seria olhar para o
-        // chão: volta ao horizonte.
-        let alvo = 0;
-        if (plano <= O.distMax) {
-            const anguloAteBola = Math.atan2(dy, plano);       // negativo = a bola está abaixo
-            this.model.updateMatrixWorld(true);
-            neck.getWorldQuaternion(_p_q);
-            _p_v3b.set(0, 0, 1).applyQuaternion(_p_q);
-            const olharActual = Math.asin(THREE.MathUtils.clamp(_p_v3b.y, -1, 1));
-            // No rig, mais `x` é olhar mais para BAIXO.
-            alvo = neck.rotation.x + (olharActual - anguloAteBola);
-        }
-        alvo = THREE.MathUtils.clamp(alvo, -O.subirMax, O.baixarMax);
+        /*
+        E VOLTA A ZERO quando não é preciso — foi o erro da primeira versão.
+
+        Ela só corrigia quando o olhar passava do horizonte, e somava a
+        correcção ao pescoço. Como a passada balança o tronco, o olhar passa o
+        horizonte em parte do ciclo, e a correcção ia-se acumulando sem nada a
+        desfazê-la: medido, a cabeça acabava 13 graus abaixo em todos os
+        estados, que é o oposto do que se pedia.
+
+        Com o repouso em zero, o pescoço fica como sempre esteve e o tecto só
+        aparece quando ele apontaria para cima.
+        */
+        const excesso = olhar - O.margemAcima;
+        const alvo = (excesso > 0) ? (neck.rotation.x + excesso) : 0;
         neck.rotation.x = lerpTo(neck.rotation.x, alvo, O.suavizacao);
     }
+
 
     assentarNoChao() {
         const A = (typeof AssentoNoChao !== 'undefined') ? AssentoNoChao : null;
@@ -4312,8 +4309,8 @@ class FootballPlayer {
             this.model.position.y = ALTURA_BASE_Y + P.ressalto - (P.descida || 0);
         }
 
-        // A pose já está escrita: falta a cabeça procurar a bola.
-        this.olharParaBola();
+        // A pose já está escrita: a cabeça não pode ficar a olhar para cima.
+        this.nivelarCabeca();
 
         // A pose já está escrita: agora o corpo desce até a bota tocar.
         this.assentarNoChao();

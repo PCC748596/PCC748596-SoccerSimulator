@@ -257,44 +257,30 @@ const AssentoNoChao = {
     suavizacao: 0.35
 };
 if (typeof window !== 'undefined') window.AssentoNoChao = AssentoNoChao;
-
 /*
 =============================================================================
-OLHAR PARA A BOLA — a cabeça baixa quando ela está no chão
+A CABEÇA NÃO OLHA PARA CIMA SEM NADA LÁ ESTAR
 =============================================================================
-Relato: "tem uns jogadores meio que olhando pra cima, sendo que a bola está em
-baixo".
+Isto já foi mais: chegou a haver um seguimento da bola, com a cabeça a baixar
+para ela. Foi revertido a pedido — "agora os modelos estão todos olhando para
+baixo, para a bola; não é pra fazer isso; deixa como estava antes". Com a bola
+aos pés (46 graus abaixo do horizonte) a cabeça baixava toda para o chão, e um
+campo inteiro de cabeças baixas lê pior do que um campo de cabeças ao nível.
 
-O pescoço (`rig.neck.rotation.x`) ficava a ZERO em todos os estados de jogo —
-média medida de 0.003 a 0.008 rad. Só o cabeceio e os clips de bola parada lhe
-mexiam. O corpo virava-se para a bola (`lookAtBola`, que é giro puro, sem
-inclinação) e a cabeça ficava ao nível do horizonte, sempre.
+O que fica é só o tecto: o pescoço nunca aponta ACIMA do horizonte, que era a
+outra metade do relato ("só não quero ninguém olhando pra cima sem nada a
+ver"). Medido antes, com o pescoço solto: 18.7% dos frames com o olhar entre 2
+e 7 graus acima da linha do horizonte, sem nada lá em cima.
 
-Medido em jogo, pelo ângulo entre o olhar e a direcção à bola:
-
-    distância à bola   ângulo ATÉ à bola   olhar   erro
-    0-3 m                       -46.4°      -6.7°   +39.6°  <- o do relato
-    3-8 m                        -9.9       -2.7     +7.2
-    8-15 m                       -4.8       -1.4     +3.4
-    15-30 m                      -2.6       -1.4     +1.2
-
-Com a bola aos pés ela está 46 graus abaixo do horizonte e a cabeça apontava
-para 7 acima. Daí a leitura de "olhar para cima": não era a cabeça a subir, era
-a bola a estar em baixo e ninguém a olhar para ela.
-
-`distMax` existe porque a partir de certa distância o ângulo é quase zero e
-baixar a cabeça não é olhar para a bola, é olhar para o chão. Os limites vêm do
-pescoço real (JointLimits.neck.x).
+Os gestos que apontam a cabeça de propósito ficam de fora — o cabeceio, o
+carrinho (em que se olha mesmo para cima ao cair), o remate, o lançamento e a
+matada no peito escrevem a cabeça eles próprios.
 =============================================================================
 */
-const OlharParaBola = {
+const OlharDaCabeca = {
     activo: true,
-    // Fora deste raio a cabeça fica ao nível do horizonte.
-    distMax: 25.0,
-    // Quanto pode baixar (rad, positivo = para baixo no rig) e subir.
-    baixarMax: 50 * Math.PI / 180,
-    subirMax: 25 * Math.PI / 180,
-    // Fracção por frame: a cabeça acompanha a bola, não salta para ela.
+    // Graus que ainda se toleram acima do horizonte, para não ficar rígido.
+    margemAcima: 2 * Math.PI / 180,
     suavizacao: 0.25
 };
-if (typeof window !== 'undefined') window.OlharParaBola = OlharParaBola;
+if (typeof window !== 'undefined') window.OlharDaCabeca = OlharDaCabeca;
