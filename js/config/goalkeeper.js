@@ -414,6 +414,72 @@ const GoalkeeperDive = {
         }
     },
 
+    /*
+    =========================================================================
+    OS BRAÇOS E O TRONCO DO MERGULHO
+    =========================================================================
+    Pedido: a sequência de um mergulho a sério — o passo de apoio com os
+    braços atrás, os dois a subir na saída, a extensão completa no ar, e a
+    aterragem de lado a escorregar com os braços à frente.
+
+    A máquina de estados já fazia as cinco fases (ler, impulso, voo, chão,
+    levantar, ver js/gk_dive.js) e a `sequenciaPernas` já desenhava as pernas
+    em três delas. Os braços não tinham desenho nenhum: iam os DOIS à bola
+    por IK do princípio ao fim, e o de trás ficava esticado a atravessar o
+    peito.
+
+    Quem manda no braço LÍDER (o do lado do mergulho) continua a ser o IK: é
+    ele que apanha a bola, e isso é jogo, não desenho. O de TRÁS é que passa
+    a seguir a coreografia — e só depois de `fracIKTraseiro` do voo, para o
+    instante do contacto continuar a ter as duas mãos na bola.
+
+    Convenções do rig: `x` do ombro leva o braço à FRENTE, `z` afasta-o do
+    tronco (a passada neutra usa ~0.20; PI/2 é o braço na horizontal). O
+    sinal do `z` é dado pelo lado, no gk_dive.js — aqui os números são
+    sempre positivos.
+    =========================================================================
+    */
+    sequenciaBracos: {
+        /*
+        IMPULSO — o passo de apoio. Os dois braços vão ATRÁS e para baixo, a
+        carregar o gesto; é o que dá a impressão de que ele se atira e não de
+        que cai. Escreve os dois: ainda não há contacto nenhum a proteger.
+        */
+        impulso: {
+            liderX: -0.55, liderZ: 0.55,
+            traseiroX: -0.70, traseiroZ: 0.35,
+            cotovelo: -0.55
+        },
+
+        /*
+        VOO — extensão. O braço de trás estica ao longo do corpo, aberto do
+        tronco, e não atravessado à frente do peito.
+        */
+        voo: {
+            traseiroX: -0.25, traseiroZ: 1.35,
+            cotovelo: -0.15,
+            // Antes disto os dois braços continuam a ir à bola.
+            fracIKTraseiro: 0.6
+        },
+
+        /*
+        CHÃO — aterrado de lado, a escorregar: os dois braços à frente, o de
+        cima a proteger a bola e o de baixo esticado no relvado.
+        */
+        chao: {
+            liderX: 0.95, liderZ: 0.85,
+            traseiroX: 0.75, traseiroZ: 0.55,
+            cotovelo: -0.35
+        }
+    },
+
+    /*
+    TORÇÃO DO TRONCO (chest.rotation.y), em radianos e para o lado do
+    mergulho. O corpo torce-se antes de sair do chão — é isso que faz o gesto
+    ler como um mergulho e não como um tombo lateral.
+    */
+    torcaoTronco: { impulso: 0.30, voo: 0.18, chao: 0.45 },
+
     pesoIK: 0.45           // suavização do IK dos braços por frame
 };
 

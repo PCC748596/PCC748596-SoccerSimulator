@@ -150,6 +150,9 @@ const GkDive = {
                 // E por cima disso a assimetria: a perna de baixo empurra o
                 // chão, a de cima já dobra para sair.
                 this.poseImpulso(rig, d, k);
+                // E os braços atrás, com o tronco já a torcer para o lado.
+                this.poseBracosImpulso(rig, d, k);
+                this.torcerTronco(rig, d, 'impulso', k);
                 // O corpo já começa a tombar antes de sair do chão.
                 d.ang = d.angMax * 0.18 * k;
                 if (d.t >= D.tempoImpulso) { d.fase = 'voo'; this.lancar(p); }
@@ -170,6 +173,10 @@ const GkDive = {
 
                 this.poseVoo(rig, d);
                 this.mirarBola(p, rig);
+                // Passado o instante do contacto, o braço de trás sai do IK
+                // e estica ao longo do corpo.
+                this.poseBracosVoo(rig, d, k);
+                this.torcerTronco(rig, d, 'voo');
 
                 if (corpo.position.y <= D.alturaDeitado) {
                     corpo.position.y = D.alturaDeitado;
@@ -191,6 +198,8 @@ const GkDive = {
 
                 this.poseChao(rig, d);
                 if (!d.agarrou) this.mirarBola(p, rig);
+                this.poseBracosChao(rig, d);
+                this.torcerTronco(rig, d, 'chao');
 
                 if (d.t >= D.tempoChao) { d.fase = 'levantar'; d.t = 0; }
                 break;
@@ -484,6 +493,83 @@ const GkDive = {
         }
     },
 
+    /*
+    QUAL É O BRAÇO LÍDER: o do lado do mergulho, que é o que vai à bola. O
+    outro é o de trás. Mesma lógica das pernas — sem isto a coreografia sairia
+    trocada em metade dos mergulhos.
+    */
+    bracos(rig, d) {
+        const paraDireita = (d && d.ladoLocal >= 0);
+        return paraDireita
+            ? { lider: rig.rArm, cotoveloLider: rig.rElbow, traseiro: rig.lArm, cotoveloTraseiro: rig.lElbow, sinal: 1 }
+            : { lider: rig.lArm, cotoveloLider: rig.lElbow, traseiro: rig.rArm, cotoveloTraseiro: rig.rElbow, sinal: -1 };
+    },
+
+    /*
+    Impulso: os dois braços atrás, a carregar o gesto. Escreve os dois — o
+    contacto com a bola ainda não existe nesta fase.
+    */
+    poseBracosImpulso(rig, d, k) {
+        const S = GoalkeeperDive.sequenciaBracos;
+        const P = S && S.impulso;
+        if (!P) return;
+        const B = this.bracos(rig, d);
+        const w = 0.3 * k;
+        B.lider.rotation.x = lerpTo(B.lider.rotation.x, P.liderX, w);
+        B.lider.rotation.z = lerpTo(B.lider.rotation.z, B.sinal * P.liderZ, w);
+        B.traseiro.rotation.x = lerpTo(B.traseiro.rotation.x, P.traseiroX, w);
+        B.traseiro.rotation.z = lerpTo(B.traseiro.rotation.z, -B.sinal * P.traseiroZ, w);
+        if (B.cotoveloLider) B.cotoveloLider.rotation.x = lerpTo(B.cotoveloLider.rotation.x, P.cotovelo, w);
+        if (B.cotoveloTraseiro) B.cotoveloTraseiro.rotation.x = lerpTo(B.cotoveloTraseiro.rotation.x, P.cotovelo, w);
+    },
+
+    /*
+    Voo: o líder fica no IK (é ele que apanha a bola); o de trás estica ao
+    longo do corpo, e só depois de `fracIKTraseiro` — até lá vão os dois à
+    bola, para o instante do contacto não perder uma mão.
+    */
+    poseBracosVoo(rig, d, k) {
+        const S = GoalkeeperDive.sequenciaBracos;
+        const P = S && S.voo;
+        if (!P) return;
+        const desde = (P.fracIKTraseiro !== undefined) ? P.fracIKTraseiro : 0.6;
+        if (k < desde) return;
+        const B = this.bracos(rig, d);
+        const w = 0.25;
+        B.traseiro.rotation.x = lerpTo(B.traseiro.rotation.x, P.traseiroX, w);
+        B.traseiro.rotation.z = lerpTo(B.traseiro.rotation.z, -B.sinal * P.traseiroZ, w);
+        if (B.cotoveloTraseiro) B.cotoveloTraseiro.rotation.x = lerpTo(B.cotoveloTraseiro.rotation.x, P.cotovelo, w);
+    },
+
+    // Chão: aterrado de lado, os dois braços à frente.
+    poseBracosChao(rig, d) {
+        const S = GoalkeeperDive.sequenciaBracos;
+        const P = S && S.chao;
+        if (!P) return;
+        const B = this.bracos(rig, d);
+        const w = 0.2;
+        B.traseiro.rotation.x = lerpTo(B.traseiro.rotation.x, P.traseiroX, w);
+        B.traseiro.rotation.z = lerpTo(B.traseiro.rotation.z, -B.sinal * P.traseiroZ, w);
+        if (B.cotoveloTraseiro) B.cotoveloTraseiro.rotation.x = lerpTo(B.cotoveloTraseiro.rotation.x, P.cotovelo, w);
+        // Com a bola já agarrada o líder também sai do IK: recolhe-a.
+        if (d.agarrou) {
+            B.lider.rotation.x = lerpTo(B.lider.rotation.x, P.liderX, w);
+            B.lider.rotation.z = lerpTo(B.lider.rotation.z, B.sinal * P.liderZ, w);
+        }
+    },
+
+    /*
+    A TORÇÃO DO TRONCO, para o lado do mergulho. É ela que faz o gesto ler
+    como um mergulho e não como um tombo de lado. Ver GoalkeeperDive.
+    */
+    torcerTronco(rig, d, fase, k) {
+        const T = GoalkeeperDive.torcaoTronco;
+        if (!T || T[fase] === undefined || !rig.chest) return;
+        const B = this.bracos(rig, d);
+        const alvo = B.sinal * T[fase] * ((k === undefined) ? 1 : k);
+        rig.chest.rotation.y = lerpTo(rig.chest.rotation.y, alvo, 0.25);
+    },
+
     poseLevantar(rig, s) {
         // Recolhe as pernas primeiro, estica no fim — é assim que se levanta.
         const dobra = Math.sin(s * Math.PI);
@@ -496,5 +582,7 @@ const GkDive = {
         rig.rArm.rotation.x = lerpTo(rig.rArm.rotation.x, 0.4 * dobra, 0.2);
         rig.lArm.rotation.z = lerpTo(rig.lArm.rotation.z, Math.PI / 16, 0.2);
         rig.rArm.rotation.z = lerpTo(rig.rArm.rotation.z, -Math.PI / 16, 0.2);
+        // E desfaz a torção do mergulho: quem se levanta fica de frente.
+        rig.chest.rotation.y = lerpTo(rig.chest.rotation.y, 0, 0.2);
     }
 };
