@@ -623,7 +623,9 @@ function executeShotGameplay(p) {
 
     if (bloqueado) {
         if (typeof MatchStats !== 'undefined' && MatchStats.registarRemateBloqueado) {
-            MatchStats.registarRemateBloqueado(bloqueador.team);
+            // Quem bloqueou, e quem rematou — são equipas diferentes e
+            // contadores diferentes (ver MatchStats.registarRemateBloqueado).
+            MatchStats.registarRemateBloqueado(bloqueador.team, p.team);
         }
         // Bola desviada, curta e fraca — não mira a baliza.
         pow = 4.0 + Math.random() * 2.4;
@@ -1238,7 +1240,22 @@ class PlayerFSM {
 
                 const perdemosABola = (Match.possessionTeam !== p.team);
                 const houvePasse = false; // Removido para nao abortar durante dribles intermitentes
-                const passeParaOutro = (Match.intendedReceiver && Match.intendedReceiver !== p);
+
+                /*
+                UM PASSE PARA OUTRO NÃO PÁRA QUEM CORRE.
+
+                `passeParaOutro` (Match.intendedReceiver existe e não sou eu)
+                matava TODAS as corridas em curso a cada passe da equipa — e a
+                equipa passa a toda a hora. Medido em 300 s: 805 abortos por
+                esta causa, a maior de todas, com a corrida a durar 0.40 s
+                quando pede 3.5.
+
+                É o contrário do que o movimento serve: a bola vai para outro
+                lado, e é enquanto ela circula que quem corre ganha as costas
+                da defesa. Perder a POSSE continua a abortar (`perdemosABola`),
+                e é essa a condição que faz sentido.
+                */
+                const passeParaOutro = false;
                 const chegou = p.dynamicTarget &&
                     p.model.position.distanceTo(p.dynamicTarget) < 1.5;
 

@@ -848,6 +848,49 @@ const JogadasCombinadas = {
         velocidadeArranque: 7.9
     },
 
+    /*
+    PASSE PARA QUEM INFILTRA — a jogada que não existia.
+
+    Medido: 1053 infiltrações por 90 min e 2% delas com um passe endereçado; o
+    `caraACara` das fichas dá 1 em 40 jogos. Quem corre para o espaço não é
+    servido, e por isso o simulador não tem a jogada que produz a chance
+    limpa — daí o xG por remate a um terço do real.
+
+    O overlap já tinha um ramo próprio no `tratarJogadaCombinada` (o
+    `overlapTimer` diz ao portador "sou opção"); a infiltração não tinha
+    nenhum. Este é o irmão dele:
+
+    `avancoDoPasse`   metros à frente do corredor, na direcção da corrida — a
+                      bola vai para onde ele VAI, não para onde está.
+    `distMin/Max`     a que distância do portador vale a pena servi-lo.
+    `margemLinha`     folga que a bola precisa para passar pelos adversários.
+    */
+    infiltracao: {
+        avancoDoPasse: 6.0,
+        distMin: 8.0,
+        distMax: 34.0,
+        margemLinha: 1.6,
+
+        /*
+        E TEM DE SER UMA JOGADA, NÃO O PASSE DE SEMPRE.
+
+        Com o ramo só na linha de passe, medido: 78% de TODOS os passes iam
+        para quem corria — a jogada excepcional virou a regra e a construção
+        desaparecia. Três filtros põem-na no sítio:
+
+        `ganhoMin`      metros que o corredor tem de estar À FRENTE de quem
+                        passa: servir alguém que corre ao lado não é romper
+                        linha nenhuma.
+        `avancoMin`     ele tem de estar no campo adversário (referencial de
+                        ataque), que é onde as costas da defesa existem.
+        `timerMin`      segundos de corrida que ainda faltam: passar para uma
+                        corrida que acaba no frame seguinte é perder a bola.
+        */
+        ganhoMin: 6.0,
+        avancoMin: 0.0,
+        timerMin: 1.0
+    },
+
     overlap: {
         // Quem passa por dentro corre por fora se o corredor do seu lado
         // estiver livre até esta distância.

@@ -1251,6 +1251,51 @@ function tratarJogadaCombinada(ctx) {
         return true;
     }
 
+    /*
+    5. PASSE PARA QUEM INFILTRA.
+
+    Irmão do ramo do overlap. Quem está em RUN_INTO_SPACE está a atacar as
+    costas da linha; se a linha de passe estiver limpa, é para lá que a bola
+    vai — à FRENTE dele, na direcção da corrida.
+
+    Sem isto, medido: 1053 infiltrações por 90 min e 2% com passe endereçado.
+    O movimento existia e não servia para nada.
+    */
+    const I = (typeof JogadasCombinadas !== 'undefined') ? JogadasCombinadas.infiltracao : null;
+    if (I) {
+        let melhor = null, melhorAvanco = -Infinity;
+        for (const mate of colegas) {
+            if (mate === p || !mate.model || !(mate.runTimer > (I.timerMin || 0))) continue;
+
+            const avancoMate = mate.model.position.z * p.dirZ;
+            const avancoEu = p.model.position.z * p.dirZ;
+            // À frente de quem passa, e no campo adversário: é aí que a corrida
+            // ataca costas de defesa.
+            if (avancoMate < avancoEu + (I.ganhoMin || 0)) continue;
+            if (avancoMate < (I.avancoMin || 0)) continue;
+
+            const d = p.model.position.distanceTo(mate.model.position);
+            if (d < I.distMin || d > I.distMax) continue;
+
+            // À frente dele, na direcção em que corre.
+            const alvo = {
+                x: mate.runAlvo ? mate.runAlvo.x : mate.model.position.x,
+                z: mate.model.position.z + p.dirZ * I.avancoDoPasse
+            };
+            if (!corredorLivre(Match.ball.position.x, Match.ball.position.z,
+                alvo.x, alvo.z, advs, I.margemLinha, true)) continue;
+
+            // Entre dois, o que ataca mais fundo.
+            const avanco = mate.model.position.z * p.dirZ;
+            if (avanco > melhorAvanco) { melhorAvanco = avanco; melhor = { mate, alvo }; }
+        }
+        if (melhor) {
+            aplicarMiraDoPasse(p, PassTypes.LEADING, melhor.alvo);
+            p.initiatePass(melhor.mate);
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -2048,7 +2093,29 @@ function podeInfiltrar(ctx) {
 
 function actInfiltrar(ctx) {
     const p = ctx.p;
-    
+
+    /*
+    O DESTINO TEM DE SER REESCRITO TODOS OS FRAMES.
+
+    O alvo era posto UMA vez, no frame do arranque — e no frame seguinte o
+    posicionamento (tickFinal, team_bt.js) reescreve o `dynamicTarget` de toda
+    a gente com o slot do bloco, que está a um ou dois metros dele. A FSM vê
+    `chegou` (menos de 1.5 m do alvo) e mata a corrida.
+
+    Medido, com os abortos contados dentro do `case 'RUN_INTO_SPACE'`: em 300 s
+    de jogo, 707 abortos por `chegou` — a segunda maior causa — e uma duração
+    média de 0.40 s numa corrida que pede 3.5 s. Era este o "RUN_INTO_SPACE
+    aborta em 0.41 s" que estava nos problemas conhecidos desde Agosto.
+
+    A ordem por frame é nível 1 -> 2 -> 3, portanto quem escreve por último
+    manda: reescrever aqui é o que faz a corrida existir.
+    */
+    if (p.fsm.currentState === 'RUN_INTO_SPACE' && p.runTimer > 0 && p.runAlvo) {
+        p.dynamicTarget.set(p.runAlvo.x, ALTURA_BASE_Y, p.runAlvo.z);
+        p.speedMult = p.sprintSpeed || (6.5 * 1.3);
+        return;
+    }
+
     if (p.fsm.currentState !== 'RUN_INTO_SPACE') {
         let targetX = p.model.position.x;
         
@@ -2088,6 +2155,7 @@ function actInfiltrar(ctx) {
         // posicionamento normal, e a árvore volta a perguntar no frame seguinte.
         if (avancoDestino === null) {
             p.runTimer = 0;
+            p.runAlvo = null;
             p.runCarrier = null;
             p.runCooldown = (typeof RunIntoSpaceModel !== 'undefined')
                 ? RunIntoSpaceModel.arrefecimento : 3.0;
@@ -2096,6 +2164,8 @@ function actInfiltrar(ctx) {
 
         p.runTimer = 3.5; // corre durante uns segundos
         p.runCarrier = Match.ballCarrier;
+        // Guardado para ser REESCRITO em cada frame da corrida (ver o topo).
+        p.runAlvo = { x: targetX, z: avancoDestino * p.dirZ };
         p.dynamicTarget.set(targetX, ALTURA_BASE_Y, avancoDestino * p.dirZ);
         p.speedMult = p.sprintSpeed || (6.5 * 1.3);
         p.fsm.changeState('RUN_INTO_SPACE');

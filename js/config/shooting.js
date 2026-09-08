@@ -267,6 +267,35 @@ const ShotModel = {
     */
     mira: {
         margemPoste: 0.85,
+
+        /*
+        NÃO SE MIRA SEMPRE O CANTO — e mirava-se.
+
+        Medido em 3000 remates: o ponto visado era `maxC` em 100% deles, ou
+        seja SEMPRE o mesmo ponto, a 0.85 m do poste. Duas consequências, e
+        as duas apareciam nos lotes:
+
+          o que fica no alvo é bola de canto, e o guarda-redes não lá chega:
+          52% dos remates enquadrados acabavam em golo (real ~32%);
+
+          o que se desvia um pouco sai pela linha: só 15-22% dos remates
+          ficavam enquadrados (real ~33%).
+
+        `fraccaoCanto` é a AMBIÇÃO da pontaria, em fracção da meia-baliza útil:
+        1.0 é o canto, 0 é o meio da baliza. Sorteia-se por remate dentro da
+        faixa do tipo — quem coloca procura o canto, quem bate com força mira
+        mais para dentro (é isso que a potência lhe custa), e um chapéu passa
+        por cima do guarda-redes, não pelo lado.
+
+        Isto NÃO é o erro de execução: esse continua a ser o `ShotModel.erro`,
+        que se soma por cima do ponto visado. Isto é onde o jogador APONTA.
+        */
+        fraccaoCanto: {
+            forca: { min: 0.30, max: 0.90 },
+            colocado: { min: 0.65, max: 1.00 },
+            rasteiro: { min: 0.55, max: 1.00 },
+            chapeu: { min: 0.10, max: 0.45 }
+        },
         alturaRasteira: 0.30,
         alturaMeia: 1.05,
         alturaAlta: 1.90,

@@ -2810,9 +2810,19 @@ function miraDeRemate(o) {
     else if (tipo === 'colocado') y = (r < 0.5) ? MI.alturaRasteira + 0.25 : MI.alturaAlta;
     else y = (r < 0.5) ? MI.alturaMeia : MI.alturaAlta;
 
-    // O chapéu não vai ao canto: vai por cima dele, ao centro da baliza.
-    const x = (tipo === 'chapeu') ? lado * maxC * 0.35 : lado * maxC;
-    return { x: x, y: y, lado: lado };
+    /*
+    A AMBIÇÃO DA PONTARIA — ver ShotModel.mira.fraccaoCanto.
+
+    Era `lado * maxC` para tudo menos o chapéu: TODOS os remates miravam o
+    mesmo ponto, a 0.85 m do poste. Agora a fracção sai da faixa do tipo, com
+    um sorteio próprio (`rndX`) para não ficar amarrada ao mesmo número que
+    escolheu o lado e a altura — se fosse o mesmo, um remate ao canto esquerdo
+    seria sempre também o mais alto.
+    */
+    const F = MI.fraccaoCanto && MI.fraccaoCanto[tipo];
+    const rx = (o.rndX === undefined) ? Math.random() : o.rndX;
+    const frac = F ? (F.min + rx * (F.max - F.min)) : ((tipo === 'chapeu') ? 0.35 : 1.0);
+    return { x: lado * maxC * frac, y: y, lado: lado };
 }
 
 /*

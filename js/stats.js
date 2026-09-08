@@ -96,9 +96,20 @@ function novoContadorEquipa() {
         */
 
         // --- FINALIZAÇÃO -------------------------------------------------
-        // `bloqueados`: o remate foi tocado por um jogador de linha da equipa
-        // que defende antes de chegar à baliza. Não conta como `noAlvo`.
+        /*
+        DOIS CONTADORES, E NÃO UM. Um bloqueio tem duas equipas:
+
+            `remateBloqueados`  remates DESTA equipa que foram bloqueados;
+            `bloqueiosFeitos`   bloqueios que ESTA equipa fez.
+
+        Havia um só, creditado ao BLOQUEADOR, e o resumo publicava-o nos dois
+        campos (`rematesBloqueados` e `bloqueios`). Daí os registos impossíveis
+        de um lote de 30 jogos: uma equipa com 6 remates e 7 "bloqueados", ou
+        com 3 e 4. E o `rematesForaDoAlvo`, que subtrai os bloqueados aos
+        tentados, estava a subtrair o número da OUTRA equipa.
+        */
         remateBloqueados: 0,
+        bloqueiosFeitos: 0,
         // Remates com xG acima de `StatsModel.limiarGrandeChance`.
         grandesChances: 0,
         // Quantas dessas acabaram em golo. Sem este contador a
@@ -317,9 +328,16 @@ const MatchStats = {
         if (s) s.cruzamentosCortadosGK++;
     },
 
-    registarRemateBloqueado: function (team) {
+    /*
+    `team` é quem BLOQUEOU; `equipaDoRemate` é quem rematou. Sem o segundo
+    argumento, credita-se só o bloqueio — melhor um número em falta do que um
+    número errado na coluna do outro.
+    */
+    registarRemateBloqueado: function (team, equipaDoRemate) {
         const s = this[team];
-        if (s) s.remateBloqueados++;
+        if (s) s.bloqueiosFeitos++;
+        const r = equipaDoRemate ? this[equipaDoRemate] : null;
+        if (r) r.remateBloqueados++;
     },
 
     registarAfastamento: function (team) {
@@ -935,7 +953,7 @@ const MatchStats = {
                 carrinhos: s.carrinhos.tentados + '/' + s.carrinhos.sucesso,
                 intercecoes: s.cortes,
                 afastamentos: s.afastamentos,
-                bloqueios: s.remateBloqueados,
+                bloqueios: s.bloqueiosFeitos,
                 duelos: s.duelos.ganhos + '/' + duelosTotais,
                 duelosAereos: s.duelosAereos.ganhos + '/' + aereosTotais,
                 recuperacoes: s.recuperacoes,
@@ -976,7 +994,15 @@ const MatchStats = {
                 eficienciaRemate: pct(s.remates.golos, s.remates.tentados) + '%',
                 eficienciaPasse: pct(s.passes.certos, s.passes.tentados) + '%',
                 eficienciaDefensiva: pct(s.duelos.ganhos, duelosTotais) + '%',
-                conversaoDeChances: pct(s.grandesChancesConvertidas, s.grandesChances) + '%',
+                /*
+                Sem grandes chances não há conversão nenhuma para medir — e
+                "0%" lê-se como "falhou todas". No lote de 30 jogos apareceu
+                "0%" em quase todos os registos, com golos marcados, só porque
+                o denominador era zero.
+                */
+                conversaoDeChances: s.grandesChances > 0
+                    ? pct(s.grandesChancesConvertidas, s.grandesChances) + '%'
+                    : '—',
 
                 // --- CHURN DOS ALVOS (calibração, não é ficha de jogo)
                 trocasChaser: s.trocasChaser,
