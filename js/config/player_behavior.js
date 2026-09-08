@@ -523,7 +523,14 @@ const BallControl = {
     Acelerar o passe sem acelerar o controlo não faz o jogo mais rápido, faz os
     receptores mais incompetentes.
     */
-    easySpeed: 10.66,     // abaixo disto domina-se sempre (a regra antiga)
+    /*
+    10.66 -> 8.5, a acompanhar o `PassModel.vChegadaRasteira` (8.25 -> 6.5).
+    Ele tinha subido "na mesma proporcao" que a forca do passe; com a bola a
+    chegar a ~7.5 m/s nos passes curtos, um limiar de 10.66 dava dominio
+    garantido a tudo o que e rasteiro e tirava a dificuldade as bolas altas,
+    que chegam a 11-16 m/s. Os dois numeros andam juntos.
+    */
+    easySpeed: 8.5,       // abaixo disto domina-se sempre (a regra antiga)
     hardSpeed: 30.0,      // acima disto é praticamente impossível dominar
 
     /*

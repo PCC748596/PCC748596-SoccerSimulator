@@ -287,16 +287,28 @@ const PassModel = {
     de 9.9.
 
     Subiu 25% (6.0 -> 7.5, e 2.8 -> 3.5 nos outros dois) e posteriormente +10%
-    (7.5 -> 8.25) para um ritmo mais ágil e veloz de circulação.
+    (7.5 -> 8.25) para um ritmo mais ágil e veloz de circulação — e passou do
+    ponto. Relato: "alguns passes directos estão muito fortes".
 
-    ISSO OBRIGOU A SUBIR O `BallControl.easySpeed` NA MESMA PROPORÇÃO, e a
-    razão está aqui: o `easySpeed` é a velocidade acima da qual o domínio deixa
-    de ser garantido, e o reforço do passe curto soma até +2.16 m/s
-    (`(12 - dist) * 0.18`). A 8.25 um passe de 3 m chega a **9.87 m/s**, e com
-    o easySpeed calibrado proporcionalmente (10.66 m/s), os passes curtos
-    mantêm o domínio seguro ao primeiro toque.
+    Medido em jogo, por faixa de distância (velocidade de CHEGADA, mediana):
+
+        vChegada/taxa    0-5m   5-8m   8-12m   12-15m   certo 0-12m
+        8.25 / 0.18       9.9    9.0     8.9      9.0      86-88%
+        6.50 / 0.10       7.3    7.4     7.7      7.8      85-100%
+        5.50 / 0.08       6.5    6.7     6.9      8.2      80-86%
+
+    Um passe de 4 m a chegar a 9.9 m/s é um tiro aos pés, e era o que se via.
+    A 5.5 a bola fica lenta o suficiente para ser cortada (18% de cortes na
+    faixa dos 5-8 m, contra 7-11% nas outras duas). 6.5 tira o tiro sem
+    perder o passe.
+
+    E O `BallControl.easySpeed` DESCE COM ELE (10.66 -> 8.5). Ele tinha sido
+    subido "na mesma proporção" precisamente para o domínio aguentar estas
+    chegadas; com o passe a chegar a 7.5 em vez de 9.9, um limiar de 10.66
+    tornava todo o domínio garantido e as bolas altas (que chegam a 11-16)
+    deixavam de ser difíceis. Os dois números andam juntos, sempre.
     */
-    vChegadaRasteira: 8.25,
+    vChegadaRasteira: 6.5,
 
     /*
     O REFORCO DO PASSE CURTO, que estava escrito a mao no utils.js.
@@ -308,7 +320,7 @@ const PassModel = {
     manipula de ritmo, nao uma constante da fisica.
     */
     reforcoCurtoDist: 12.0,
-    reforcoCurtoTaxa: 0.18,
+    reforcoCurtoTaxa: 0.10,
     vChegadaCruzamento: 3.85,
     /*
     O lancamento chega mais manso do que o passe aos pes, e de proposito: o
