@@ -139,6 +139,14 @@ Object.assign(Match, {
         {
             const BC = BarreiraCampo;
             const rB = BallPhysics.raio;
+            /*
+            Só abaixo do topo da rede. Sem isto uma bola a 15 m de altura
+            ressaltava contra o muro invisível no meio do ar; por cima da rede
+            ela sai do estádio, que é o que acontece num jogo.
+            */
+            const abaixoDaRede = (typeof BC.alturaMax !== 'number') ||
+                (this.ball.position.y - rB) <= BC.alturaMax;
+            if (abaixoDaRede) {
             if (this.ball.position.x > BC.x - rB) {
                 this.ball.position.x = BC.x - rB;
                 this.ballVel.x *= -BC.restituicao;
@@ -156,6 +164,7 @@ Object.assign(Match, {
                 this.ball.position.z = -BC.z + rB;
                 this.ballVel.z *= -BC.restituicao;
                 this.ballVel.x *= BC.atrito;
+            }
             }
         }
 

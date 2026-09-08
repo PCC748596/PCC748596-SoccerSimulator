@@ -187,6 +187,35 @@ const GoalkeeperPose = {
         bracoZ: 0.05,
         bracoX: -0.76,
         cotovelo: -1.82,
+
+        /*
+        A BOLA NAS MÃOS, E NÃO ao lado delas.
+
+        Relato: "a bola não está nas mãos do goleiro quando ele pega; os
+        braços têm que ficar um pouco mais fechados e a bola um pouco mais
+        pra cima". Medido nos 8 s de posse, em jogo:
+
+            distância da bola à mão mais perta   0.50 m de média, 3.46 no pior
+            altura da bola sobre os punhos      -0.36 m (bem ABAIXO deles)
+            distância entre os punhos            0.54 m (a bola tem 0.22)
+
+        Os punhos estavam a mais do dobro do diâmetro da bola — nenhuma mão
+        lhe tocava — e a bola ficava onde tinha sido apanhada, a arrastar-se
+        atrás dele enquanto andava.
+
+        `fecharPunhos` manda o mesmo fecho por bissecção do lançamento lateral
+        (`fecharMaosNaBola`, player.js) fechar os punhos até à distância de um
+        diâmetro, e `bolaAcima` levanta o centro da bola sobre eles — as mãos
+        seguram-na por baixo e pelos lados.
+
+        `bolaAcima` foi calibrado a medir, e não a olho, porque a pose continua
+        a convergir no frame seguinte ao da colagem: com 0.12 a bola ficava 0.09
+        m ABAIXO dos punhos, com 0.22 a 0.05 abaixo, e com 0.32 fica a 0.01 m
+        deles. Depois disto: 0.14 m da mão mais perta (eram 0.50) e punhos a
+        0.29 (eram 0.54).
+        */
+        fecharPunhos: true,
+        bolaAcima: 0.32,
         altura: 0.0
     }
 };

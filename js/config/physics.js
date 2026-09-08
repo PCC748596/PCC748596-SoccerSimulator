@@ -393,15 +393,33 @@ existe pela mesma razão nos estádios a sério.
 */
 const BarreiraCampo = {
     /*
-    A barreira lateral estava EM CIMA da linha (CAMPO_LARG/2), portanto a bola
-    ressaltava na linha lateral e nunca saía — não havia lateral nenhum no jogo.
-    Agora tem a mesma folga de 4 m que o lado da linha de fundo já tinha: a bola
-    sai, o lateral é assinalado, e a barreira só a trava depois disso.
+    A BARREIRA É A BANCADA, e não um muro invisível à frente dela.
+
+    Relato: "quando a bola sai ela bate numa barreira invisível atrás do gol;
+    pode deixar a bola bater na arquibancada mesmo".
+
+    Estava a 4 m das linhas. As bancadas (ver createField, match_setup.js)
+    começam a `CAMPO_LARG/2 + 4.5` de lado e a `CAMPO_COMP/2 + 5.5` atrás das
+    balizas — ou seja, a bola parava meio metro a um metro e meio ANTES do
+    primeiro degrau, no ar, sem nada lá. Agora bate onde a bancada está.
+
+    Os números vêm das mesmas contas do `createField`: se as bancadas se
+    mudarem, isto muda com elas.
     */
-    x: (CAMPO_LARG / 2) + 4.0,
-    z: (CAMPO_COMP / 2) + 4.0,
+    x: (CAMPO_LARG / 2) + 4.5,
+    z: (CAMPO_COMP / 2) + 5.5,
+
     alturaPainel: 1.1,      // muro de publicidade, opaco
     alturaRede: 4.5,        // rede de protecção por cima, translúcida
+
+    /*
+    E TEM ALTURA. Antes o teste era só em x/z: uma bola a 15 m de altura
+    ressaltava contra o mesmo muro invisível, no meio do ar. Acima da rede
+    passa por cima, como no estádio — e não se perde nada, porque a bola já
+    saiu e o lance é reposto pelo árbitro.
+    */
+    alturaMax: 1.1 + 4.5,
+
     restituicao: 0.35,      // ressalto seco: a bola morre ali, não volta ao meio
     atrito: 0.6             // perda na componente paralela ao embate
 };

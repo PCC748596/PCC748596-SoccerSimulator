@@ -504,7 +504,7 @@ class FootballPlayer {
     Encosta a bola ao ponto MÉDIO das duas mãos. Chamado pela pose de espera e
     por cada frame do gesto: as mãos seguem o clip, e a bola segue as mãos.
     */
-    colarBolaAsMaos() {
+    colarBolaAsMaos(acima) {
         const rig = this.rig;
         if (typeof Match === 'undefined' || !Match.ball) return;
         if (!rig || !rig.lHand || !rig.rHand) return;
@@ -520,8 +520,10 @@ class FootballPlayer {
         pelos lados, portanto o centro dela não está à altura deles. Sem isto
         ficava encaixada entre os punhos, meia enterrada nas mãos.
         */
-        _v1.y += (typeof LateralPose !== 'undefined' && LateralPose.bolaAcimaDasMaos)
-            ? LateralPose.bolaAcimaDasMaos : 0;
+        _v1.y += (typeof acima === 'number')
+            ? acima
+            : ((typeof LateralPose !== 'undefined' && LateralPose.bolaAcimaDasMaos)
+                ? LateralPose.bolaAcimaDasMaos : 0);
 
         Match.ball.position.copy(_v1);
         Match.ballVel.set(0, 0, 0);
@@ -5463,6 +5465,20 @@ class FootballPlayer {
             gkCorpo.position.y = lerpTo(gkCorpo.position.y, ALTURA_BASE_Y + P.altura, 0.25);
 
             /*
+            E A BOLA VAI ÀS MÃOS.
+
+            Medido nos 8 s de posse: a bola ficava a 0.50 m da mão mais perta
+            (3.46 no pior caso, a arrastar-se atrás dele enquanto andava),
+            0.36 m ABAIXO dos punhos, e os punhos a 0.54 m um do outro — mais
+            do dobro do diâmetro dela. Ninguém lhe tocava.
+
+            O fecho é o mesmo do lançamento lateral (`fecharMaosNaBola`, por
+            bissecção do `bracoZ` até os punhos ficarem a um diâmetro), e a
+            bola passa a seguir as mãos em vez de ficar onde foi apanhada.
+            Ver GoalkeeperPose.segurar.
+            */
+
+            /*
             Entra nesta fase com a rotação de onde quer que estivesse a
             defesa (mergulho de lado, apanhada de costas) — ninguém a
             corrigia durante os 8s de espera, e ficava de costas pro campo.
@@ -5558,6 +5574,18 @@ class FootballPlayer {
                 }
                 this.gkThrowTarget = null;
             }
+
+            /*
+            E A BOLA VAI ÀS MÃOS — no FIM do ramo, depois de ele andar.
+
+            A primeira tentativa colou-a logo a seguir à pose, e a seguir o
+            corpo movia-se à procura de linha de passe: a bola ficava para
+            trás. Medido, 0.16 m da mão mais perta e 0.10 m ABAIXO dos punhos
+            apesar do `bolaAcima` positivo — era o corpo a andar por baixo
+            dela.
+            */
+            if (P.fecharPunhos) this.fecharMaosNaBola(P.bracoZ);
+            this.colarBolaAsMaos(P.bolaAcima);
         } else if (this.gkEstado === 'chutando' || this.gkEstado === 'lancando') {
             const isThrow = (this.gkEstado === 'lancando');
             const isGroundKick = (!isThrow && this.gkKickTipo === 'chao');

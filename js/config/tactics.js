@@ -634,10 +634,15 @@ const BlockShape = {
     Largura do bloco. É a amplitude da equipa — a manípula que o senhor pediu:
     um número só, e todas as posições abrem ou fecham em proporção.
     */
+    /*
+    A largura do bloco, em fracção do campo. Subiu 10% em cada escalão com o
+    mesmo relato do `LineShape.fecho`: o bloco a 70% do campo (47.6 m) põe os
+    laterais a |x| 10 m. A 78% ficam a 12.8 — ver a medição lá.
+    */
     amplitude: {
-        short: 0.60,          // 60%
-        median: 0.70,         // 70%
-        large: 0.80           // 80%
+        short: 0.66,          // 66%
+        median: 0.78,         // 78%
+        large: 0.88           // 88%
     },
 
     /*
@@ -722,10 +727,31 @@ const LineShape = {
     Uma última linha fecha mais do que um meio-campo quando não tem a bola: é a
     diferença entre tapar o caminho da baliza e cobrir a largura toda.
     */
+    /*
+    ABERTO 0.78 -> 0.92 (def) e 0.88 -> 0.96 (mid), sem bola.
+
+    Relato: "os laterais e meias pelas laterais estão fechando muito pelo meio;
+    o jogo está embolando muito pelo meio". Medido em 600 s, o |x| do ALVO:
+
+                       antes    depois
+        lateral (LB)    10.7      12.6
+        lateral (RB)    10.4      12.8
+        médio ala (LM)  15.9      17.3
+        médio ala (RM)  16.0      17.6
+
+    Ganham-se dois metros por lateral e um e meio por médio de ala. Não chega
+    para os 18-24 m de um lateral a sério, e a razão está medida: o rectângulo
+    do bloco tem 47.6 m e o CENTRO dele acompanha a bola em X 1:1, portanto com
+    a bola numa ala o lado contrário é comprimido contra o eixo. Tentou-se
+    devolver a `basculacao` (o centro a seguir só uma fracção) e MEDIU-SE PIOR
+    — o alvo do lateral caiu de 11.5 para 10.2 — porque a banda deixa de
+    alcançar a ala onde a bola está e o clamp do campo faz o resto. Fica
+    anotado para não se repetir a tentativa.
+    */
     fecho: {
-        def: { comBola: 0.92, semBola: 0.78 },
-        mid: { comBola: 1.00, semBola: 0.88 },
-        atk: { comBola: 1.00, semBola: 0.80 }
+        def: { comBola: 0.96, semBola: 0.92 },
+        mid: { comBola: 1.00, semBola: 0.96 },
+        atk: { comBola: 1.00, semBola: 0.88 }
     }
 };
 
