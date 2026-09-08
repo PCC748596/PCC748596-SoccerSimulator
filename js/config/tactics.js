@@ -637,12 +637,14 @@ const BlockShape = {
     /*
     A largura do bloco, em fracção do campo. Subiu 10% em cada escalão com o
     mesmo relato do `LineShape.fecho`: o bloco a 70% do campo (47.6 m) põe os
-    laterais a |x| 10 m. A 78% ficam a 12.8 — ver a medição lá.
+    laterais a |x| 10 m. A 88%, com a mola de coesão afrouxada (ver
+    MolaDeCoesao, config/defense.js, que era a maior das três causas), ficam a
+    13.5 e os médios de ala a 19.
     */
     amplitude: {
-        short: 0.66,          // 66%
-        median: 0.78,         // 78%
-        large: 0.88           // 88%
+        short: 0.74,          // 74%
+        median: 0.88,         // 88%
+        large: 0.94           // 94%
     },
 
     /*

@@ -565,11 +565,32 @@ apagado. Ver molaParaABola em utils.js para o mecanismo e a razao.
 O guarda-redes fica de fora: a posicao dele sai do gkAnchor e nao do bloco.
 =============================================================================
 */
+/*
+A MOLA DE COESÃO — quanto é que toda a gente é puxada para a bola.
+
+Afrouxada (0.10 -> 0.03 sem bola, puxão 9.0 -> 4.5) a pedido: "os laterais e
+meias pelas laterais estão fechando muito pelo meio; o jogo está embolando
+muito pelo meio", e depois "pode ser uns 4 metros a menos" sobre a referência
+de 18-24 m de um lateral a sério.
+
+Ela era a maior das três causas medidas. |x| do ALVO dos laterais, em 400 s:
+
+    mola / puxão / amplitude      LB      RB     LM     RM
+    0.10 / 9.0 / 0.70 (origem)   10.7    10.4   15.9   16.0
+    0.10 / 9.0 / 0.78            11.6    12.0   16.7   17.7
+    0.04 / 5.0 / 0.86            13.6    13.9   18.2   18.7
+    0.03 / 4.5 / 0.88            13.5    13.4   19.1   18.7   <- aqui
+    0.02 / 4.0 / 0.92            13.7    14.6   18.6   19.3
+
+A partir daqui o ganho é de centímetros e o bloco fica com 60 m de largura
+num campo de 68 — deixa de ser um bloco. `forcaComBola` não se tocou: com a
+bola é ela que dá as opções de passe perto do portador.
+*/
 const MolaDeCoesao = {
     forcaComBola: 0.20,
-    forcaSemBola: 0.10,
+    forcaSemBola: 0.03,
     distMin: 12.0,
-    puxaoMax: 9.0
+    puxaoMax: 4.5
 };
 
 /*
