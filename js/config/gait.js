@@ -257,3 +257,44 @@ const AssentoNoChao = {
     suavizacao: 0.35
 };
 if (typeof window !== 'undefined') window.AssentoNoChao = AssentoNoChao;
+
+/*
+=============================================================================
+OLHAR PARA A BOLA — a cabeça baixa quando ela está no chão
+=============================================================================
+Relato: "tem uns jogadores meio que olhando pra cima, sendo que a bola está em
+baixo".
+
+O pescoço (`rig.neck.rotation.x`) ficava a ZERO em todos os estados de jogo —
+média medida de 0.003 a 0.008 rad. Só o cabeceio e os clips de bola parada lhe
+mexiam. O corpo virava-se para a bola (`lookAtBola`, que é giro puro, sem
+inclinação) e a cabeça ficava ao nível do horizonte, sempre.
+
+Medido em jogo, pelo ângulo entre o olhar e a direcção à bola:
+
+    distância à bola   ângulo ATÉ à bola   olhar   erro
+    0-3 m                       -46.4°      -6.7°   +39.6°  <- o do relato
+    3-8 m                        -9.9       -2.7     +7.2
+    8-15 m                       -4.8       -1.4     +3.4
+    15-30 m                      -2.6       -1.4     +1.2
+
+Com a bola aos pés ela está 46 graus abaixo do horizonte e a cabeça apontava
+para 7 acima. Daí a leitura de "olhar para cima": não era a cabeça a subir, era
+a bola a estar em baixo e ninguém a olhar para ela.
+
+`distMax` existe porque a partir de certa distância o ângulo é quase zero e
+baixar a cabeça não é olhar para a bola, é olhar para o chão. Os limites vêm do
+pescoço real (JointLimits.neck.x).
+=============================================================================
+*/
+const OlharParaBola = {
+    activo: true,
+    // Fora deste raio a cabeça fica ao nível do horizonte.
+    distMax: 25.0,
+    // Quanto pode baixar (rad, positivo = para baixo no rig) e subir.
+    baixarMax: 50 * Math.PI / 180,
+    subirMax: 25 * Math.PI / 180,
+    // Fracção por frame: a cabeça acompanha a bola, não salta para ela.
+    suavizacao: 0.25
+};
+if (typeof window !== 'undefined') window.OlharParaBola = OlharParaBola;
