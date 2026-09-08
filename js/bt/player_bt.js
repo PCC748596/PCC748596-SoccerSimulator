@@ -3245,6 +3245,21 @@ const PlayerBT = sel('PlayerRoot',
             // 7. Não tem passe viável e está sob pressão - chute para a lateral
             seq('ChuteLateral',
                 cond('semOpcoesSeguras', (ctx) => {
+                    /*
+                    NO TERÇO OFENSIVO NÃO SE ALIVIA.
+
+                    O `alvoDeAlivio` é a saída do PRÓPRIO perigo: da linha de
+                    fundo adversária devolve a lateral 12 m à frente, ou seja
+                    a bola fora pela linha de fundo. Era o ponta a chegar à
+                    linha e a mandá-la para fora em vez de cruzar. Ver
+                    ClearanceModel.avancoMaxParaAlivio.
+                    */
+                    const CA = (typeof ClearanceModel !== 'undefined') ? ClearanceModel : null;
+                    if (CA && typeof CA.avancoMaxParaAlivio === 'number') {
+                        const avanco = ctx.p.model.position.z * ctx.p.dirZ;
+                        if (avanco > CA.avancoMaxParaAlivio) return false;
+                    }
+
                     let timeThreshold = 1.2;
                     let isUnderPressure = ctx.underPressure;
                     

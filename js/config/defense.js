@@ -92,7 +92,24 @@ const ClearanceModel = {
     preferirFundo: 2.2,
     // Fora desta distancia a propria linha de fundo, o alivio e o de sempre:
     // para a lateral, que dai e mesmo a saida mais perto.
-    fundoMax: 32.0
+    fundoMax: 32.0,
+
+    /*
+    ATE ONDE E QUE ALIVIAR FAZ SENTIDO, em avanco (z * dirZ): 0 e o
+    meio-campo, +53 a linha de fundo ADVERSARIA.
+
+    Relato: "os pontas estao recebendo a bola, indo ate a linha de fundo e
+    chutando para o lado oposto ao gol". Era isto: o ramo `ChuteLateral`
+    (player_bt.js) dispara para QUALQUER jogador sob pressao sem passe, e o
+    `alvoDeAlivio` de um ponta encostado a linha de fundo adversaria devolve
+    a lateral mais 12 m PARA A FRENTE — ou seja, um alvo 9 a 11 m alem da
+    linha de fundo. Medido: de (x -30, z 50) o alvo saia em (-36, 62).
+
+    Aliviar e tirar a bola do proprio perigo. No terco ofensivo nao ha perigo
+    nenhum para aliviar: quem la esta cruza, remata ou segura a bola — e e
+    isso que o ramo seguinte (`conduzir`) faz quando este desiste.
+    */
+    avancoMaxParaAlivio: 10.0
 };
 
 if (typeof window !== 'undefined') window.ClearanceModel = ClearanceModel;

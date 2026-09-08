@@ -142,6 +142,9 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
 
         const footGeo = new THREE.BoxGeometry(u * 0.45, u * 0.4, u * 1.0); const p = footGeo.attributes.position; for (let i = 0; i < p.count; i++) { if (p.getZ(i) > 0 && p.getY(i) > 0) p.setY(i, p.getY(i) - u * 0.25); } footGeo.computeVertexNormals();
         const chuteira = criarPeca(footGeo, bootMat, true); chuteira.position.set(0, -0.2, u * 0.25); peG.add(chuteira);
+        // Guardada para o `assentarNoChao` (player.js) medir a SOLA: é a peça
+        // mais baixa do corpo e é por ela que o jogador toca no relvado.
+        peG.userData.chuteira = chuteira;
 
         const studGeo = new THREE.CylinderGeometry(u * 0.03, u * 0.02, u * 0.04, 8);
         const posTravas = [[-u * 0.12, u * 0.25], [u * 0.12, u * 0.25], [-u * 0.12, 0], [u * 0.12, 0], [-u * 0.12, -u * 0.3], [u * 0.12, -u * 0.3]];
@@ -155,7 +158,9 @@ function construirCorpo(corCamisa, corCalcao, aparencia) {
     const bracoEsq = criarBraco(0.8); rig.lArm = bracoEsq.raiz; rig.lElbow = bracoEsq.cotovelo; rig.lHand = bracoEsq.mao;
     const bracoDir = criarBraco(-0.8); rig.rArm = bracoDir.raiz; rig.rElbow = bracoDir.cotovelo; rig.rHand = bracoDir.mao;
     const pernaEsq = criarPerna(0.4); rig.lLeg = pernaEsq.raiz; rig.lKnee = pernaEsq.joelho; rig.lFoot = pernaEsq.pe;
+    rig.lBota = pernaEsq.pe.userData.chuteira;
     const pernaDir = criarPerna(-0.4); rig.rLeg = pernaDir.raiz; rig.rKnee = pernaDir.joelho; rig.rFoot = pernaDir.pe;
+    rig.rBota = pernaDir.pe.userData.chuteira;
 
     corpo.scale.set(ESCALA_CORPO, ESCALA_CORPO, ESCALA_CORPO); return { corpo, rig, backMat };
 }

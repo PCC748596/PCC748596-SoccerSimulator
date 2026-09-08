@@ -367,6 +367,53 @@ class FootballPlayer {
 
     Devolve o `bracoZ` final, para o chamador o poder reaplicar.
     */
+    /*
+    O PÉ ENCOSTA NO RELVADO.
+
+    A altura do corpo é `ALTURA_BASE_Y` mais o que a pose pedir, e a pose é que
+    dobra as pernas: cada grau de anca ou joelho levanta a sola sem nada a
+    compensar. Medido com o jogador parado, pela caixa do modelo: 4 a 5 cm de
+    média no ar, 24 cm no pior caso, e alguns centímetros ENTERRADO noutros
+    estados. Ver AssentoNoChao (config/gait.js).
+
+    Mede-se a bota mais baixa — os oito cantos da caixa dela, no mundo — e
+    desce-se o corpo o que falta. Só até ao trote: numa corrida há fase de voo
+    e assentar aí seria patinar.
+    */
+    assentarNoChao() {
+        const A = (typeof AssentoNoChao !== 'undefined') ? AssentoNoChao : null;
+        if (!A || !A.activo || !this.rig || !this.rig.lBota || !this.rig.rBota) return;
+        // Quem escreve a própria altura manda: saltos, mergulhos e carrinhos.
+        if (this.jumpTimer > 0 || this.peitoHopTimer > 0) return;
+        if (this.role === 'gk' && this.gkEstado && this.gkEstado !== 'idle') return;
+        const st = this.fsm ? this.fsm.currentState : null;
+        if (st === 'SLIDE_TACKLE') return;
+        if (this.velocity.length() > A.velMax) return;
+
+        const solaY = (bota) => {
+            const geo = bota.geometry;
+            if (!geo.boundingBox) geo.computeBoundingBox();
+            const b = geo.boundingBox;
+            bota.updateWorldMatrix(true, false);
+            let min = Infinity;
+            for (let ix = 0; ix < 2; ix++) {
+                for (let iy = 0; iy < 2; iy++) {
+                    for (let iz = 0; iz < 2; iz++) {
+                        _p_v3.set(ix ? b.max.x : b.min.x, iy ? b.max.y : b.min.y, iz ? b.max.z : b.min.z);
+                        _p_v3.applyMatrix4(bota.matrixWorld);
+                        if (_p_v3.y < min) min = _p_v3.y;
+                    }
+                }
+            }
+            return min;
+        };
+
+        const chao = Math.min(solaY(this.rig.lBota), solaY(this.rig.rBota));
+        if (!isFinite(chao)) return;
+        const correccao = THREE.MathUtils.clamp(-chao, -A.correccaoMax, A.correccaoMax);
+        this.model.position.y += correccao * A.suavizacao;
+    }
+
     fecharMaosNaBola(bracoZBase) {
         const rig = this.rig;
         const L = LateralPose;
@@ -4214,8 +4261,10 @@ class FootballPlayer {
             // levanta as duas pernas e o boneco fica no ar (ver GaitModel).
             this.model.position.y = ALTURA_BASE_Y + P.ressalto - (P.descida || 0);
         }
-    }
 
+        // A pose já está escrita: agora o corpo desce até a bota tocar.
+        this.assentarNoChao();
+    }
 
     /*
     O corpo mudou-se para o `construirCorpo` do js/pose.js: o editor de

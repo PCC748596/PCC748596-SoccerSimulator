@@ -220,3 +220,40 @@ uma MÉDIA de 0,109 por remate. É esse o número a olhar no painel — as ânco
 por distância só dizem que a forma da curva é plausível.
 =============================================================================
 */
+
+/*
+=============================================================================
+ASSENTO NO CHÃO — o pé encosta no relvado
+=============================================================================
+Relato: "alguns jogadores não estão encostando no chão".
+
+A altura do corpo é fixa (`ALTURA_BASE_Y`) e a pose é que dobra as pernas: cada
+grau de anca ou de joelho levanta a sola sem nada a compensar. Medido em jogo,
+pela caixa do modelo (a sola, não o tornozelo), com o jogador PARADO:
+
+    MARKING          0.04 m de média, 0.11 no pior caso
+    SET_PIECE_WAIT   0.05                0.24
+    SUPPORT_PASS     0.07                0.13
+    IDLE             0.01                0.21
+    BLOCKING        -0.05 (enterrado)
+
+A correcção mede a bota mais baixa e desce (ou sobe) o corpo o que falta. NÃO
+corre a correr: numa passada a alta velocidade há uma fase de VOO em que os
+dois pés estão no ar de propósito, e assentar aí colava o jogador ao chão como
+se patinasse. Por isso `velMax`: até ao trote assenta-se, acima disso manda a
+passada. E não corre em saltos, mergulhos nem carrinhos — esses escrevem a
+altura eles próprios.
+=============================================================================
+*/
+const AssentoNoChao = {
+    activo: true,
+    // Até esta velocidade (m/s) o pé tem de estar no chão. Acima é corrida,
+    // com fase de voo (ver GaitModel.trote/correr).
+    velMax: 4.0,
+    // Tecto da correcção por frame, em metros: uma pose estranha não pode
+    // teleportar o boneco.
+    correccaoMax: 0.35,
+    // Fracção da correcção aplicada por frame — sobe/desce em vez de saltar.
+    suavizacao: 0.35
+};
+if (typeof window !== 'undefined') window.AssentoNoChao = AssentoNoChao;

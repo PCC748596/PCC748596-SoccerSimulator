@@ -94,3 +94,44 @@ test('o actClearance usa a função e conta o afastamento', () => {
     assert.ok(!/const alvoZ = p\.model\.position\.z \+ p\.dirZ \* 12\.0;/.test(corpo),
         'ainda lá está o alvo fixo 12 m à frente');
 });
+
+/*
+E NO TERÇO OFENSIVO NÃO SE ALIVIA.
+
+Relato: "os pontas estão recebendo a bola, indo até a linha de fundo e chutando
+para o lado oposto ao gol". O ramo `ChuteLateral` dispara para QUALQUER jogador
+sob pressão sem passe, e o `alvoDeAlivio` de quem está encostado à linha de
+fundo ADVERSÁRIA devolve a lateral mais 12 m para a frente — um alvo para lá da
+linha. Aliviar é sair do PRÓPRIO perigo; à frente não há perigo nenhum.
+*/
+test('da linha de fundo adversária o alvo do alívio sai do campo', () => {
+    // Ponta do TeamA (ataca para +Z) encostado à linha de fundo adversária.
+    const a = alvoDeAlivio(-30, 50, 1, ClearanceModel);
+    assert.ok(a.z > LINHA_FUNDO,
+        'o cenário do relato tem de reproduzir o alvo fora do campo');
+});
+
+test('o ramo do chute para a lateral não dispara no terço ofensivo', () => {
+    assert.strictEqual(typeof ClearanceModel.avancoMaxParaAlivio, 'number',
+        'sem o limite de campo o ponta volta a mandar a bola fora');
+    assert.ok(ClearanceModel.avancoMaxParaAlivio < LINHA_FUNDO / 2,
+        'o limite tem de ficar bem aquém do terço ofensivo');
+
+    const ini = srcBT.indexOf("seq('ChuteLateral'");
+    assert.ok(ini > 0, 'o ramo ChuteLateral desapareceu');
+    const corpo = srcBT.slice(ini, ini + 2200);
+    assert.ok(corpo.includes('avancoMaxParaAlivio'),
+        'o ramo deixou de olhar para a posição no campo');
+    assert.ok(corpo.includes('avanco > CA.avancoMaxParaAlivio) return false'),
+        'a guarda tem de DESISTIR do ramo, não escolher outro alvo');
+});
+
+test('o alívio de perigo continua a ser só de quem defende, na sua zona', () => {
+    const ini = srcBT.indexOf("seq('AlivioDePerigo'");
+    assert.ok(ini > 0, 'o ramo do alívio imediato desapareceu');
+    const corpo = srcBT.slice(ini, ini + 900);
+    assert.ok(corpo.includes("ctx.p.role !== 'def'"),
+        'este ramo é de defesas e guarda-redes: um avançado não alivia');
+    assert.ok(corpo.includes('distanciaAoProprioFundo'),
+        'e é medido à PRÓPRIA linha de fundo');
+});
