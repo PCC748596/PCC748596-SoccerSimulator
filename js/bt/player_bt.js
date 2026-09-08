@@ -1112,18 +1112,27 @@ function procurarCaraACara(p) {
         if (distBaliza > C.distBalizaMax) continue;
 
         /*
-        Fora-de-jogo: o ponto não pode estar além da linha — da linha que o
-        PASSADOR julga que existe.
+        Fora-de-jogo: quem é julgado é o COMPANHEIRO, no instante do passe —
+        não o ponto onde a bola cai.
 
-        Com a linha exacta, o ciclo nunca fechava: o colega podia estar em
-        posição de impedimento (por erro de leitura dele, ver OffsideModel) que
-        o passe simplesmente não ia lá, e não havia infracção nenhuma. Também é
-        o que se vê num jogo — o passe para o fora-de-jogo acontece porque
-        quem passa também lê a linha mal, e é a mesma leitura que aqui se usa
-        (`p.offsideBias`).
+        Era o `ponto` que se comparava com a linha, e o ponto está 7 m à frente
+        dele (`avancoDoPasse`): um companheiro EM LINHA com o último defensor —
+        que é a definição do lance que se procura — dava sempre um ponto 7 m
+        além da linha, e a jogada era rejeitada por construção. Medido em 74
+        min de jogo: dos 52 pares que chegavam aqui, este filtro matava os 52.
+        Correr para lá da linha atrás da bola é legal; é isso um passe em
+        profundidade, e é assim que o `marcarPosicoesDeImpedimento` (officials)
+        julga a jogada — pela posição de quem recebe quando a bola SAI do pé.
+
+        A linha usada é a que o PASSADOR julga que existe: com a linha exacta
+        o ciclo nunca fechava, porque o colega podia estar em posição de
+        impedimento (por erro de leitura dele, ver OffsideModel) que o passe
+        simplesmente não ia lá, e não havia infracção nenhuma. Num jogo, o
+        passe para o fora-de-jogo acontece porque quem passa também lê a linha
+        mal — é a mesma leitura, o `p.offsideBias`.
         */
         if (bb && bb.offsideLimitDir !== null && bb.offsideLimitDir !== undefined &&
-            ponto.z * p.dirZ > bb.offsideLimitDir - 0.5 + (p.offsideBias || 0)) continue;
+            mz > bb.offsideLimitDir + (p.offsideBias || 0)) continue;
 
         /*
         Do ponto à baliza sem defensores. O guarda-redes NÃO conta: é

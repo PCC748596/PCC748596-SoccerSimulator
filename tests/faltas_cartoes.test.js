@@ -76,7 +76,7 @@ console.log(String.fromCharCode(10) + '1 — a gravidade da falta');
 
     const leve = g({ tipo: 'desarme', velocidade: 0, angulo: 0, travouAtaque: false });
     const tipico = g({ tipo: 'carrinho', velocidade: vCarrinho, angulo: Math.PI, travouAtaque: false });
-    const grave = g({ tipo: 'carrinho', velocidade: vPior, angulo: Math.PI, travouAtaque: true });
+    const grave = g({ tipo: 'carrinho', velocidade: vPior, angulo: Math.PI, forca: 95 });
     console.log(`  desarme de frente parado: ${leve.toFixed(2)}`);
     console.log(`  carrinho por trás a ${vCarrinho} m/s, sem travar ataque: ${tipico.toFixed(2)}`);
     console.log(`  carrinho por trás a ${vPior.toFixed(1)} m/s a travar ataque: ${grave.toFixed(2)}`);
@@ -101,8 +101,7 @@ console.log(String.fromCharCode(10) + '1 — a gravidade da falta');
     const parcelas = [
         ['tipo carrinho', { tipo: 'carrinho' }],
         ['velocidade', { velocidade: 8 }],
-        ['ângulo por trás', { angulo: Math.PI }],
-        ['travou ataque', { travouAtaque: true }]
+        ['ângulo por trás', { angulo: Math.PI }]
     ];
     for (const [nome, delta] of parcelas) {
         const antes = g(base);
@@ -111,7 +110,23 @@ console.log(String.fromCharCode(10) + '1 — a gravidade da falta');
             erro(`a parcela "${nome}" não aumentou a gravidade (${antes.toFixed(2)} -> ${depois.toFixed(2)})`);
         }
     }
-    ok('as quatro parcelas sobem a gravidade, isoladamente');
+    ok('as três parcelas do lance sobem a gravidade, isoladamente');
+
+    /*
+    E O TRAVAR O ATAQUE, ESSE, NÃO É GRAVIDADE.
+
+    Travar um ataque promissor é amarelo pela Lei 12 — não porque o lance seja
+    violento, mas porque tirou um ataque ao adversário. Somá-lo à gravidade
+    misturava as duas coisas: um carrinho por trás a travar um ataque passava
+    o limiar do VERMELHO por acumulação, e um empurrão táctico, que é o caso
+    típico do amarelo, nunca chegava ao amarelo porque a gravidade dele é
+    baixa por natureza. A regra vive agora no `decidirCartao`.
+    */
+    const semTravar = g({ tipo: 'desarme', velocidade: 2, angulo: 0.2, travouAtaque: false });
+    const comTravar = g({ tipo: 'desarme', velocidade: 2, angulo: 0.2, travouAtaque: true });
+    if (Math.abs(semTravar - comTravar) > 1e-9) {
+        erro('travar um ataque não pode mexer na GRAVIDADE do lance: é uma regra à parte');
+    } else ok('travar um ataque não entra na gravidade');
 
     // Um desarme banal não pode dar cartão, senão os 5,22 por jogo saltam.
     if (leve >= F.limiarAmarelo) {
@@ -160,25 +175,37 @@ console.log(String.fromCharCode(10) + '1 — a gravidade da falta');
     if (santo < 0) erro(`gravidade negativa (${santo.toFixed(2)})`);
     else ok('a gravidade nunca é negativa');
 
-    // E o defensor não pode escapar ao vermelho só por ser bom marcador,
-    // quando o lance é mesmo violento.
+    /*
+    O defensor não escapa ao castigo só por ser bom marcador.
+
+    Com o travar-o-ataque fora da gravidade, a `pesoMarcacao` chega para pôr
+    um carrinho lançado de um marcador de 95 (0.76) abaixo de um carrinho
+    banal de um jogador médio (0.83) — e isso é o modelo a funcionar, não um
+    defeito: o bom marcador leva mais bola do que perna. O que não pode
+    acontecer é a skill absolvê-lo quando o lance TRAVA um ataque.
+    */
     const brutoBomMarcador = g({
         tipo: 'carrinho', velocidade: vPior, angulo: Math.PI,
-        travouAtaque: true, marcacao: 95, forca: 50
+        marcacao: 95, forca: 50
     });
-    if (brutoBomMarcador < F.limiarAmarelo) {
-        erro(`um carrinho brutal de um bom marcador dá ${brutoBomMarcador.toFixed(2)}: ` +
-            'nem amarelo — a skill não pode absolver o lance');
-    } else ok('a marcação alivia, mas não absolve um lance brutal');
+    const carrinhoFrente = g({ tipo: 'carrinho', velocidade: vCarrinho, angulo: 0 });
+    if (!(brutoBomMarcador > carrinhoFrente)) {
+        erro(`um carrinho lançado por trás de um bom marcador (${brutoBomMarcador.toFixed(2)}) ` +
+            `não devia ficar abaixo de um carrinho de frente (${carrinhoFrente.toFixed(2)})`);
+    } else ok('a marcação alivia, mas o lance lançado por trás continua o mais grave');
+    if (Officials.decidirCartao(brutoBomMarcador, { temAmarelo: false }, true) !== 'amarelo') {
+        erro('um carrinho brutal que trava um ataque tem de dar amarelo, por melhor que o marcador seja');
+    } else ok('a skill não absolve o lance que trava um ataque');
 
-    // E o vermelho directo tem de ser RARO: o lance típico a travar um ataque
-    // fica em amarelo, não em vermelho.
-    const travou = g({ tipo: 'carrinho', velocidade: vCarrinho, angulo: Math.PI, travouAtaque: true });
-    if (travou >= F.limiarVermelho) {
-        erro(`carrinho típico a travar ataque dá ${travou.toFixed(2)}: vermelho directo ` +
-            'num lance corriqueiro');
-    } else if (travou < F.limiarAmarelo) {
-        erro(`carrinho por trás a travar ataque dá ${travou.toFixed(2)}: nem amarelo`);
+    // E o vermelho DIRECTO tem de ser raro: o carrinho por trás à velocidade
+    // normal do gesto não lá chega, nem quando trava um ataque — esse é
+    // amarelo, e é o `decidirCartao` que o dá.
+    const carrinhoNormal = g({ tipo: 'carrinho', velocidade: vCarrinho, angulo: Math.PI });
+    if (carrinhoNormal >= F.limiarVermelho) {
+        erro(`carrinho por trás banal dá ${carrinhoNormal.toFixed(2)}: vermelho directo num lance corriqueiro`);
+    } else ok('carrinho por trás banal não é vermelho directo');
+    if (Officials.decidirCartao(carrinhoNormal, { temAmarelo: false }, true) !== 'amarelo') {
+        erro('carrinho por trás a travar um ataque devia ser amarelo');
     } else ok('carrinho por trás a travar ataque: amarelo, e não vermelho');
 }
 
@@ -215,6 +242,32 @@ console.log(String.fromCharCode(10) + '2 — a decisão de cartão');
     if (Officials.decidirCartao(F.limiarAmarelo - 0.01, j) !== null) {
         erro('falta leve de quem tem amarelo não devia dar nada');
     } else ok('falta leve de quem já tem amarelo não dá cartão');
+
+    /*
+    A LEI 12: TRAVAR UM ATAQUE PROMISSOR É AMARELO, por leve que seja o lance.
+
+    É esta a fonte que faltava. A gravidade cobre a violência (o carrinho, a
+    velocidade, as costas) e nunca chega ao amarelo num empurrão — que é
+    precisamente o cartão mais comum num jogo a sério. Medido num lote de 30
+    jogos: 1.42 amarelos por jogo contra os 5.22 do alvo, com 68% das faltas a
+    serem contactos cujo tecto de gravidade (0.74) fica abaixo do limiar.
+    */
+    j = limpo();
+    if (Officials.decidirCartao(0.20, j, true) !== 'amarelo') {
+        erro('travar um ataque promissor devia ser amarelo, mesmo num lance leve');
+    } else ok('falta leve que trava um ataque: amarelo');
+
+    j = limpo();
+    if (Officials.decidirCartao(0.20, j, false) !== null) {
+        erro('a mesma falta leve, sem travar ataque, não devia dar nada');
+    } else ok('a mesma falta leve sem travar ataque: nada');
+
+    // Travar um ataque é AMARELO, nunca vermelho directo: quem já está
+    // advertido é que sai, e sai pelo segundo amarelo.
+    j = { temAmarelo: true, expulso: false };
+    if (Officials.decidirCartao(0.20, j, true) !== 'vermelho') {
+        erro('segundo amarelo por travar ataque devia dar vermelho');
+    } else ok('travar um ataque com amarelo em cima: segundo amarelo');
 }
 
 /*

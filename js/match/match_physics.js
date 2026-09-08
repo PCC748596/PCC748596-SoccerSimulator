@@ -177,24 +177,7 @@ Object.assign(Match, {
                     // zSinal < 0 é a baliza do TeamA, então quem levou o golo (e sai com a bola) é o TeamA
                     this.nextKickoffTeam = (zSinal < 0) ? 'TeamA' : 'TeamB';
 
-                    if (typeof MatchStats !== 'undefined' && MatchStats[this.lastTouchedTeam]) {
-                        MatchStats[this.lastTouchedTeam].remates.golos++;
-                        /*
-                        E do outro lado, o golo SOFRIDO. Quem o sofre sai da
-                        BALIZA em que a bola entrou (`zSinal`) e nao de 'o outro
-                        que nao marcou': num autogolo sao a mesma equipa, e a
-                        conta de marcados/sofridos deixava de fechar.
-                        */
-                        const sofreu = (zSinal < 0) ? 'TeamA' : 'TeamB';
-                        if (MatchStats.registarGoloSofrido) MatchStats.registarGoloSofrido(sofreu);
-                        // E a assistencia, que so aqui se confirma.
-                        if (MatchStats.registarAssistencia) MatchStats.registarAssistencia(this.lastTouchedTeam);
-                        // Idem para a grande chance: no instante do remate
-                        // ainda nao se sabia se ela ia dentro.
-                        if (MatchStats.confirmarGrandeChance) MatchStats.confirmarGrandeChance(this.lastTouchedTeam);
-                    }
-                    if (this.lastTouchedTeam === 'TeamA') this.placarA++; else if (this.lastTouchedTeam === 'TeamB') this.placarB++;
-                    this.updatePlacar();
+                    this.creditarGolo(zSinal);
 
                     const alerta = document.getElementById('alerta-golo');
                     alerta.style.opacity = '1'; alerta.style.transform = 'translate(-50%, -50%) scale(1.2)';
@@ -391,6 +374,42 @@ Object.assign(Match, {
                 this.resetPlay();
             }
         }
+    },
+
+    /*
+    QUEM MARCOU O GOLO É O DONO DA BALIZA OPOSTA, e não quem tocou por último.
+
+    O golo marcado e o placar seguiam o `lastTouchedTeam` enquanto o golo
+    sofrido já saía da BALIZA em que a bola entrou (`zSinal`). Num autogolo as
+    duas contas divergiam: a mesma equipa somava um marcado e um sofrido, e o
+    placar dava a vantagem a quem tinha marcado contra si. Num lote de 30
+    jogos, 10 partidas saíram com o placar errado — o jogo 26 publicou 4-0
+    sendo 3-1.
+
+    A assistência e a grande chance continuam a pertencer a quem tocou por
+    último, e por isso só contam quando esse toque foi da equipa que marcou:
+    num autogolo não há assistência nenhuma para confirmar.
+    */
+    creditarGolo: function (zSinal) {
+        // zSinal < 0 é a baliza do TeamA: quem lá sofre é o TeamA.
+        const sofreu = (zSinal < 0) ? 'TeamA' : 'TeamB';
+        const marcou = (sofreu === 'TeamA') ? 'TeamB' : 'TeamA';
+        const proprioGolo = (this.lastTouchedTeam === sofreu);
+
+        if (typeof MatchStats !== 'undefined' && MatchStats[marcou]) {
+            MatchStats[marcou].remates.golos++;
+            if (MatchStats.registarGoloSofrido) MatchStats.registarGoloSofrido(sofreu);
+            if (!proprioGolo) {
+                // A assistencia, que so aqui se confirma.
+                if (MatchStats.registarAssistencia) MatchStats.registarAssistencia(marcou);
+                // Idem para a grande chance: no instante do remate ainda nao
+                // se sabia se ela ia dentro.
+                if (MatchStats.confirmarGrandeChance) MatchStats.confirmarGrandeChance(marcou);
+            }
+        }
+
+        if (marcou === 'TeamA') this.placarA++; else this.placarB++;
+        this.updatePlacar();
     },
 
     resolveBallContact: function () {

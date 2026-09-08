@@ -254,7 +254,19 @@ const RefereeModel = {
             base: { carrinho: 0.35, desarme: 0.14, contacto: 0.10 },
             pesoVelocidade: 0.020,   // por m/s do contacto
             pesoAngulo: 0.30,        // × (angulo / π)
-            travarAtaque: 0.25,
+            /*
+            travarAtaque SAIU DAQUI (era 0.25).
+
+            Travar um ataque promissor e amarelo pela Lei 12 — nao por o lance
+            ser violento, mas por ter tirado um ataque ao adversario. Somado a
+            gravidade misturava as duas coisas, e das duas maneiras erradas: um
+            carrinho por tras a travar somava 1.08 e escorregava para o pe do
+            vermelho, e um empurrao tactico, que e o amarelo mais comum de um
+            jogo a serio, nunca chegava la porque a gravidade dele e baixa por
+            natureza. Num lote de 30 jogos: 1.42 amarelos contra 5.22, com 68%
+            das faltas a serem contactos cujo tecto (0.74) fica abaixo do
+            limiar. A regra esta agora no `decidirCartao`.
+            */
 
             /*
             O JOGADOR também conta, não só o lance.
@@ -285,16 +297,46 @@ const RefereeModel = {
 
         Agora, com o carrinho a deslizar a 9 m/s (SlideTackleModel):
 
-            carrinho de frente      0.35 + 0.18          = 0.53   nada
-            carrinho por trás       0.35 + 0.18 + 0.30   = 0.83   nada
-            por trás a travar       0.83 + 0.25          = 1.08   AMARELO
-            idem, a 12 m/s          0.35+0.24+0.30+0.25  = 1.14   VERMELHO
+            carrinho de frente       0.35 + 0.18            = 0.53   nada
+            carrinho por trás        0.35 + 0.18 + 0.30     = 0.83   nada
+            idem, lançado a 11.7     0.35 + 0.234 + 0.30    = 0.88   AMARELO
+            idem, de um forte (95)   0.88 + 0.108           = 0.99   VERMELHO
+
+        O limiar do vermelho desceu de 1.10 para 0.95 quando o `travarAtaque`
+        saiu da gravidade: sem essa parcela nenhum lance chegava a 1.10 e o
+        vermelho directo deixava de existir. Continua a exigir o pior gesto
+        possivel — carrinho lançado, pelas costas, de um jogador forte.
 
         O vermelho DIRECTO fica assim quase inalcançável — como deve ser:
         quase todos os vermelhos reais saem do segundo amarelo.
         */
         limiarAmarelo: 0.85,
-        limiarVermelho: 1.10
+        limiarVermelho: 0.95,
+
+        /*
+        Ate onde atras e que um ataque ainda conta como promissor, em metros a
+        contar do meio-campo para a propria baliza (referencial de quem ataca).
+        Uma falta a 40 m da baliza adversaria trava um ataque; a mesma falta a
+        cinco metros da propria area trava uma saida a jogar, que nao e o mesmo.
+        */
+        zMinAtaquePromissor: 15.0,
+
+        /*
+        Velocidade minima, em m/s, com que o portador tem de ir para a frente
+        para o ataque contar como promissor. E um jogador LANCADO, nao um a
+        andar com a bola: 3.0 e trote.
+
+        Calibrado pela FRACCAO de faltas carimbadas, que nao depende de o
+        simulador ter menos faltas que um jogo a serio: o real sao 5.22 cartoes
+        em 27.63 faltas, ou seja 18.9%. Varrido numa corrida de 148 min:
+
+            velMin 3.0   42.9% das faltas
+            velMin 4.0   28.6%
+            velMin 4.5   ~19%   <- aqui
+            velMin 5.0   11.4%
+            velMin 6.0    2.9%
+        */
+        velMinAtaquePromissor: 4.5
     },
 
     /*
@@ -1222,7 +1264,7 @@ const Officials = {
         let g = base;
         g += Math.max(0, o.velocidade || 0) * G.pesoVelocidade;
         g += (Math.abs(o.angulo || 0) / Math.PI) * G.pesoAngulo;
-        if (o.travouAtaque) g += G.travarAtaque;
+        // `travouAtaque` NAO entra aqui: e regra a parte, no decidirCartao.
 
         // O jogador: marcação alivia, força agrava. 50 é a média e não mexe.
         const marcacao = (typeof o.marcacao === 'number') ? o.marcacao : 50;
@@ -1241,10 +1283,17 @@ const Officials = {
     O SEGUNDO AMARELO é o que produz quase todos os vermelhos: o vermelho
     directo exige uma gravidade que quase nenhum lance atinge.
     */
-    decidirCartao: function (gravidade, jogador) {
+    decidirCartao: function (gravidade, jogador, travouAtaque) {
         const F = RefereeModel.faltas;
         if (gravidade >= F.limiarVermelho) return 'vermelho';
-        if (gravidade >= F.limiarAmarelo) {
+        /*
+        LEI 12: travar um ataque promissor e ADVERTENCIA, por leve que seja o
+        lance. E a fonte que faltava — os cartoes reais nao saem quase todos de
+        carrinhos violentos, saem de faltas tacticas que param um ataque.
+        Nunca e vermelho DIRECTO: quem ja esta advertido e que sai, e sai pelo
+        segundo amarelo.
+        */
+        if (gravidade >= F.limiarAmarelo || travouAtaque) {
             return (jogador && jogador.temAmarelo) ? 'vermelho' : 'amarelo';
         }
         return null;
@@ -1319,7 +1368,7 @@ const Officials = {
             MatchStats[vitima.team].faltas.sofridas++;
         }
 
-        const cartao = this.decidirCartao(gravidade, infractor);
+        const cartao = this.decidirCartao(gravidade, infractor, !!(dados && dados.travouAtaque));
         if (cartao === 'amarelo') {
             infractor.temAmarelo = true;
             if (typeof MatchStats !== 'undefined') MatchStats[infractor.team].cartoes.amarelos++;
@@ -1553,10 +1602,32 @@ const Officials = {
         return { marcacao: p.skillFor('MARKING'), forca: p.skillFor('STRENGTH') };
     },
 
-    // Falta táctica: a vítima ia em progressão para a baliza adversária.
+    /*
+    O ATAQUE ERA PROMISSOR? — a condicao da Lei 12 para a advertencia.
+
+    Era `velocidade para a frente > 3 m/s` da vitima, e mais nada: qualquer
+    jogador a trotar em frente, com a bola do outro lado do campo, contava como
+    ataque travado. Medido: 53% de TODAS as faltas, o que e cinco vezes o que
+    um jogo a serio tem. Um ataque promissor tem a bola: a vitima e o portador
+    (ou o destinatario de um passe em voo), vai para a frente, e vai a caminho
+    da baliza adversaria — uma falta na propria area de canto nao para ataque
+    nenhum.
+    */
     _ehAtaqueEmProgressao: function (vitima) {
         if (!vitima || !vitima.velocity) return false;
+        if (typeof Match === 'undefined' || !Match) return false;
+
+        // A bola tem de ser dela: portador, ou destinatario do passe em voo.
+        const temABola = (Match.ballCarrier === vitima) || (Match.intendedReceiver === vitima);
+        if (!temABola) return false;
+
+        // E tem de ir para a frente, no referencial de quem ataca.
         const vz = vitima.velocity.z * (vitima.dirZ || 1);
-        return vz > 3.0;
+        if (vz <= RefereeModel.faltas.velMinAtaquePromissor) return false;
+
+        // E ja na metade de quem ataca ou perto dela: um ataque que ainda vai
+        // no proprio meio-campo nao esta a ser travado a caminho do golo.
+        const z = vitima.model ? vitima.model.position.z * (vitima.dirZ || 1) : 0;
+        return z > -RefereeModel.faltas.zMinAtaquePromissor;
     }
 };

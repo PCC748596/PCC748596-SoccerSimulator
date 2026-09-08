@@ -655,7 +655,19 @@ const OffsideModel = {
     jogadores destes plantéis, que têm tacticknow 85, erravam no máximo 0.52 m e
     nunca chegavam lá: zero impedimentos em 74 minutos.
     */
-    erroMax: 2.4,
+
+    /*
+    2.4 -> 1.4, medido num lote de 30 jogos: 7.96 impedimentos por jogo contra
+    os 3.20 do alvo (249%). A tacticknow 85 dos planteis a amplitude era 1.00 m
+    e o vies de 0.45 punha ~30% das fases de ataque acima do limiar de 0.85 m;
+    com 1.4 a amplitude fica em 0.70 m e a fraccao em ~12%, que da os ~3.2.
+
+    O 1.4 e o mesmo numero da primeira calibracao acima, mas nao e a mesma
+    coisa: essa nao tinha `vies` (o sorteio era simetrico) e o `erroMin` era
+    0.15, e por isso dava zero impedimentos. E o vies que poe metade do
+    sorteio do lado arriscado.
+    */
+    erroMax: 1.4,
     erroMin: 0.40,
     /*
     Segundos ate dar por si em fora-de-jogo e voltar atras.
