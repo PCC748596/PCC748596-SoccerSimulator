@@ -91,6 +91,9 @@ class FootballPlayer {
         this.passAimPoint = null;
         this.passTipo = 'direct';
         this.overlapTimer = 0;
+        // Segundos que ainda falta ter o braço no ar a pedir a bola. Escrito
+        // pelo ramo do cara a cara (player_bt.js), gasto no update.
+        this.pedindoBola = 0;
         // Erro de leitura da linha de fora-de-jogo e tempo que leva a dar por
         // ele. Ver OffsideModel e Match.publicarLinhaDeForaDeJogo.
         this.offsideBias = 0;
@@ -2999,6 +3002,7 @@ class FootballPlayer {
     update(dt) {
         if (this.touchLock > 0) this.touchLock = Math.max(0, this.touchLock - dt);
         if (this.overlapTimer > 0) this.overlapTimer = Math.max(0, this.overlapTimer - dt);
+        if (this.pedindoBola > 0) this.pedindoBola = Math.max(0, this.pedindoBola - dt);
 
         /*
         JOGADAS COMBINADAS (ver JogadasCombinadas em config.js). Os dois pedidos
@@ -4182,6 +4186,29 @@ class FootballPlayer {
                 */
                 suavizacao: Math.min(1, speed / 0.5)
             });
+
+            /*
+            O BRAÇO NO AR, por cima da passada.
+
+            Quem está a atacar as costas da defesa pede a bola (ver o ramo do
+            cara a cara em player_bt.js e `PedidoDeBola` no config). Corre
+            DEPOIS da passada de propósito: a passada escreve os dois braços
+            no balanço e este reescreve UM. O outro continua a balançar, que
+            é como se corre a pedir — ninguém corre com os dois no ar.
+
+            O braço levantado é o do lado da BOLA: é para lá que ele olha e é
+            de lá que a bola vem.
+            */
+            if (this.pedindoBola > 0 && typeof PedidoDeBola !== 'undefined' && Match.ball) {
+                const G = PedidoDeBola;
+                const paraEsquerda = (Match.ball.position.x < this.model.position.x);
+                const braco = paraEsquerda ? rig.lArm : rig.rArm;
+                const cotovelo = paraEsquerda ? rig.lElbow : rig.rElbow;
+                const sinal = paraEsquerda ? 1 : -1;
+                braco.rotation.z = lerpTo(braco.rotation.z, sinal * G.z, G.suavizacao);
+                braco.rotation.x = lerpTo(braco.rotation.x, G.x, G.suavizacao);
+                if (cotovelo) cotovelo.rotation.x = lerpTo(cotovelo.rotation.x, G.cotovelo, G.suavizacao);
+            }
 
             // O `descida` baixa o corpo com a velocidade: a correr a pose
             // levanta as duas pernas e o boneco fica no ar (ver GaitModel).

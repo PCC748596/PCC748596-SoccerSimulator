@@ -191,3 +191,37 @@ test('quem está além da linha volta com o bónus de recuo', () => {
     assert.ok(trecho.includes('recuoDir > 0'),
         'acelerar sem o alvo estar atrás dele empurra-o para MAIS fora de jogo');
 });
+
+/*
+PEDIR A BOLA É DE QUEM CORRE, e durante a corrida.
+
+O pedido era marcado pelo ramo do cara a cara — ou seja, no instante em que o
+PORTADOR olhava para o companheiro. Medido: 7 episódios por 90 minutos e 4
+segundos de braço no ar, o gesto a aparecer meio segundo antes do passe. Com o
+pedido dentro da corrida: 302 episódios e 314 segundos por 90.
+*/
+test('quem corre pede a bola dentro da janela do lançamento', () => {
+    const corpo = extrairFuncao(srcBT, 'actInfiltrar');
+    assert.ok(corpo.includes('p.pedindoBola = PedidoDeBola.duracao'),
+        'a corrida deixou de levantar o braço a pedir');
+    assert.ok(corpo.includes('janelaAtrasDaLinha'),
+        'o pedido tem de estar preso à janela do lançamento, não a correr sempre');
+    const trecho = corpo.slice(corpo.indexOf('linhaPedido'));
+    assert.ok(trecho.includes('meu <= linhaPedido'),
+        'quem já está além da linha não está a pedir: está em fora-de-jogo');
+});
+
+test('a pose do pedido vive no config, com um braço só', () => {
+    const srcAnim = semCR(fs.readFileSync(path.join(raiz, 'js', 'config', 'animations.js'), 'utf8'));
+    assert.ok(/const PedidoDeBola = {/.test(srcAnim), 'PedidoDeBola desapareceu do config');
+    const G = new Function('window', srcAnim + '; return PedidoDeBola;')({});
+    assert.ok(G.duracao > 0, 'o pedido tem de durar mais do que um frame');
+    assert.ok(G.z > 1.0, 'o braço tem de ir acima do ombro (a passada neutra usa ~0.2)');
+
+    const srcPlayer = semCR(fs.readFileSync(path.join(raiz, 'js', 'player.js'), 'utf8'));
+    const i = srcPlayer.indexOf('O BRAÇO NO AR, por cima da passada');
+    assert.ok(i > 0, 'o player.js deixou de aplicar o braço do pedido');
+    const bloco = srcPlayer.slice(i, i + 1600);
+    assert.ok(bloco.includes('paraEsquerda ? rig.lArm : rig.rArm'),
+        'é UM braço que sobe — o outro continua no balanço da passada');
+});

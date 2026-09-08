@@ -1098,7 +1098,30 @@ function procurarCaraACara(p) {
         if (mate === p || mate.role === 'gk' || !mate.model) continue;
 
         const mz = mate.model.position.z * p.dirZ;
-        if (ultimoDef !== null && mz < ultimoDef - C.margemUltimoDefensor) continue;
+        /*
+        A JANELA DO LANÇAMENTO: ele está a chegar à linha, não em cima dela.
+
+        Era `mz < ultimoDef - 0.5 -> descarta`, ou seja exigia-se que já
+        estivesse em linha com o último defensor. Isso é o passe TARDE: no
+        instante em que ele emparelha com a defesa já não há costas para
+        atacar. Agora a janela são os `janelaAtrasDaLinha` metros AQUÉM dele
+        — o jogador sai a correr três ou quatro metros antes do central, e é
+        aí que a bola tem de sair.
+        */
+        if (ultimoDef !== null) {
+            if (mz > ultimoDef) continue;                              // já lá está: tarde
+            if (mz < ultimoDef - C.janelaAtrasDaLinha) continue;       // longe: não isola
+        }
+
+        /*
+        E TEM DE ESTAR LANÇADO. Um avançado parado encostado à linha não é
+        este lance — a bola vai para onde ele VAI, e sem arranque não vai a
+        lado nenhum. A velocidade conta na direcção da baliza.
+        */
+        const vMate = mate.velocity
+            ? (mate.velocity.z * p.dirZ)
+            : 0;
+        if (vMate < C.velMinDoArranque) continue;
 
         // O ponto do passe: à frente dele, na direcção da baliza.
         const dx = 0 - mate.model.position.x, dz = golZ - mate.model.position.z;
@@ -1146,6 +1169,18 @@ function procurarCaraACara(p) {
 
         if (typeof PassCandidates !== 'undefined' && PassCandidates.venceACorrida &&
             !PassCandidates.venceACorrida(mate, ponto.x, ponto.z, advs)) continue;
+
+        /*
+        E PEDE A BOLA. Quem chega aqui é um companheiro lançado, onside e com
+        o corredor limpo: no campo, é o gajo que levanta o braço. O pedido
+        vale por `PedidoDeBola.duracao` e o `player.js` levanta-lhe o braço
+        enquanto durar — não é enfeite, é o sinal que num jogo a sério faz o
+        portador olhar para ele.
+
+        Marca-se em TODOS os que passam os filtros, e não só no escolhido:
+        pedem todos, o portador é que serve um.
+        */
+        mate.pedindoBola = (typeof PedidoDeBola !== 'undefined') ? PedidoDeBola.duracao : 0.6;
 
         if (distBaliza < melhorDist) { melhorDist = distBaliza; melhor = { mate: mate, ponto: ponto }; }
     }
@@ -2148,6 +2183,25 @@ function actInfiltrar(ctx) {
             const legal = avancoLegalDeCorrida(p.runAlvo.z * p.dirZ, linhaLidaPor(p, true));
             p.runAlvo.z = legal * p.dirZ;
         }
+        /*
+        E PEDE A BOLA ENQUANTO CORRE.
+
+        O pedido era marcado pelo ramo do cara a cara, ou seja no instante em
+        que o PORTADOR olhava para ele: medido, 7 episódios por 90 minutos e
+        4 segundos de braço no ar — o gesto aparecia meio segundo antes do
+        passe e mais nada. Quem pede é ele, e pede durante a corrida: dentro
+        da janela do lançamento (`janelaAtrasDaLinha` metros aquém da linha
+        que lê) e a ir para a frente, o braço sobe.
+        */
+        const Cc = (typeof JogadasCombinadas !== 'undefined') ? JogadasCombinadas.caraACara : null;
+        const linhaPedido = linhaLidaPor(p);
+        if (Cc && linhaPedido !== null && typeof PedidoDeBola !== 'undefined') {
+            const meu = p.model.position.z * p.dirZ;
+            if (meu <= linhaPedido && meu >= linhaPedido - Cc.janelaAtrasDaLinha) {
+                p.pedindoBola = PedidoDeBola.duracao;
+            }
+        }
+
         p.dynamicTarget.set(p.runAlvo.x, ALTURA_BASE_Y, p.runAlvo.z);
         p.speedMult = p.sprintSpeed || (6.5 * 1.3);
         return;

@@ -993,9 +993,13 @@ function velocidadeRasteiraPara(dist, vChegada, opcoes) {
     */
     const reforcoCurto = !(opcoes && opcoes.reforcoCurto === false);
 
+    const distReforco = (typeof PassModel !== 'undefined' && PassModel.reforcoCurtoDist) || 12.0;
+    const taxaReforco = (typeof PassModel !== 'undefined' && typeof PassModel.reforcoCurtoTaxa === 'number')
+        ? PassModel.reforcoCurtoTaxa : 0.18;
+
     let vAlvo = vChegada;
-    if (dist < 12.0) {
-        if (reforcoCurto) vAlvo += (12.0 - dist) * 0.18;
+    if (dist < distReforco) {
+        if (reforcoCurto) vAlvo += (distReforco - dist) * taxaReforco;
     } else if (dist > 15.0) {
         vAlvo = Math.max(1.5, vChegada - (dist - 15.0) * 0.15);
     }

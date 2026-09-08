@@ -52,7 +52,7 @@ const GOL_Z = 53;
 Um cenário: TeamA ataca para z positivo. A defesa está toda em z = 30, e a
 linha de fora-de-jogo (que o passador lê) está no mesmo sítio.
 */
-function cenario({ mateZ, mateX, offsideLimitDir, defesaExtra }) {
+function cenario({ mateZ, mateX, offsideLimitDir, defesaExtra, mateVz }) {
     const jog = (team, x, z, role) => ({
         team, role: role || 'cf', dirZ: 1, targetGoalZ: GOL_Z, offsideBias: 0,
         model: { position: { x: x, z: z } }, velocity: { x: 0, z: 0 }
@@ -60,6 +60,8 @@ function cenario({ mateZ, mateX, offsideLimitDir, defesaExtra }) {
 
     const portador = jog('TeamA', 0, 5);
     const mate = jog('TeamA', mateX === undefined ? 0 : mateX, mateZ);
+    // Ele SAI A CORRER: a velocidade para a frente é parte do lance.
+    mate.velocity.z = (mateVz === undefined) ? 5.0 : mateVz;
     // Defesa: dois centrais afastados do corredor central, mais o guarda-redes.
     const advs = [
         Object.assign(jog('TeamB', 0, GOL_Z), { role: 'gk' }),
@@ -82,19 +84,55 @@ function cenario({ mateZ, mateX, offsideLimitDir, defesaExtra }) {
     return { resultado: fn(portador), mate: mate };
 }
 
-console.log(LF + '1 — o companheiro em linha com o último defensor');
+console.log(LF + '1 — o companheiro a arrancar ANTES da linha');
 {
-    // O lance que a jogada existe para encontrar: ele está em linha com a
-    // defesa (z = 30) e arranca para o espaço. O ponto do passe fica 7 m à
-    // frente — e é legal, porque quem é julgado é ele, não a bola.
-    const { resultado, mate } = cenario({ mateZ: 30, offsideLimitDir: 30 });
+    /*
+    O LANCE É ESTE, e o passe tem de sair ANTES de ele ficar impedido.
+
+    Ele arranca três ou quatro metros AQUÉM do último defensor, a pedir a
+    bola: quando ela sai do pé está onside, e é a correr que passa a linha —
+    que é legal, porque o árbitro julga a posição no instante do passe.
+    Exigir que ele já estivesse em linha com a defesa era pedir o passe tarde
+    de mais: o lote de 30 jogos deu 7 caras-a-cara, e as que davam eram as
+    que apanhavam o atacante no meio metro certo.
+    */
+    const { resultado, mate } = cenario({ mateZ: 27, offsideLimitDir: 30 });
     if (!resultado) {
-        erro('um companheiro em linha com o último defensor devia dar cara a cara');
+        erro('um companheiro a 3 m da linha, lançado, devia dar cara a cara');
     } else if (resultado.mate !== mate) {
         erro('devolveu outro jogador que não o companheiro isolado');
     } else if (!(resultado.ponto.z > mate.model.position.z)) {
         erro('o ponto do passe devia ficar à FRENTE dele, na direcção da baliza');
-    } else ok('companheiro em linha com a defesa: cara a cara, com o ponto à frente dele');
+    } else ok('companheiro lançado 3 m antes da linha: cara a cara, com o ponto à frente');
+}
+
+console.log(LF + '1b — e ele pede a bola com o braço');
+{
+    const { resultado, mate } = cenario({ mateZ: 27, offsideLimitDir: 30 });
+    if (!resultado) {
+        erro('o cenário do pedido tem de encontrar a jogada');
+    } else if (!(mate.pedindoBola > 0)) {
+        erro('quem está a fazer o movimento tem de levantar o braço a pedir');
+    } else ok('o companheiro fica a pedir bola (pedindoBola > 0)');
+}
+
+console.log(LF + '1c — parado não é um lançamento');
+{
+    // Sem arranque não há lance: é um avançado encostado à linha, não alguém
+    // a atacar as costas da defesa.
+    const { resultado } = cenario({ mateZ: 27, offsideLimitDir: 30, mateVz: 0 });
+    if (resultado) {
+        erro('um companheiro parado não devia dar cara a cara');
+    } else ok('companheiro parado: sem jogada');
+}
+
+console.log(LF + '1d — longe de mais da linha não é o lance');
+{
+    // A 12 m da defesa o passe não isola ninguém: dá tempo à linha de recuar.
+    const { resultado } = cenario({ mateZ: 18, offsideLimitDir: 30 });
+    if (resultado) {
+        erro('um companheiro 12 m atrás da defesa não devia dar cara a cara');
+    } else ok('companheiro longe da linha: sem jogada');
 }
 
 console.log(LF + '2 — o companheiro já em fora-de-jogo');
@@ -107,10 +145,10 @@ console.log(LF + '2 — o companheiro já em fora-de-jogo');
     } else ok('companheiro em fora-de-jogo: sem jogada');
 }
 
-console.log(LF + '3 — o companheiro atrás da defesa');
+console.log(LF + '3 — o companheiro muito atrás da defesa');
 {
     // Atrás do último defensor não há isolamento nenhum — é um passe normal.
-    const { resultado } = cenario({ mateZ: 20, offsideLimitDir: 30 });
+    const { resultado } = cenario({ mateZ: 12, offsideLimitDir: 30 });
     if (resultado) {
         erro('um companheiro atrás da defesa não devia dar cara a cara');
     } else ok('companheiro atrás da defesa: sem jogada');

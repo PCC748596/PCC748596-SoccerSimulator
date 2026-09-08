@@ -553,3 +553,35 @@ travar só quem corre.
     0.90     -10% sobre o ritmo original (pedido)
     0.90     definido para 0.9 no PC (pedido)
 */
+
+/*
+=============================================================================
+PEDIR A BOLA — o braço levantado de quem ataca as costas da defesa
+=============================================================================
+Pedido: "o jogador sai correndo uns 3 ou 4 metros antes do zagueiro com o
+braço levantado pedindo bola".
+
+Não é um clip: é uma sobreposição de UM braço por cima da passada, porque o
+jogador continua a correr enquanto pede. O outro braço mantém o balanço, que é
+o que se vê num jogo — ninguém corre com os dois braços no ar.
+
+`z` é a abdução no rig (o braço afasta-se do tronco; a passada neutra usa
+PI/16 ≈ 0.20). 1.75 rad são ~100°, o braço acima do ombro, apontado para o
+espaço. `x` puxa-o um pouco à frente do plano do tronco, que é como se aponta
+para onde se quer a bola. Dentro do limite do ombro (JointLimits.shoulder,
+180° nos dois eixos) e longe do tecto, onde o `clampOmbro` começa a ceder.
+
+`duracao` é quanto o pedido sobrevive ao frame em que foi marcado: o ramo do
+cara a cara reavalia a cada decisão de passe do portador, e sem esta memória o
+braço piscava. Meio segundo cobre a folga entre duas decisões.
+=============================================================================
+*/
+const PedidoDeBola = {
+    duracao: 0.6,
+    z: 1.75,
+    x: 0.35,
+    cotovelo: -0.25,
+    // Suavização por frame, para o braço subir em vez de saltar.
+    suavizacao: 0.35
+};
+if (typeof window !== 'undefined') window.PedidoDeBola = PedidoDeBola;

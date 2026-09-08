@@ -297,6 +297,18 @@ const PassModel = {
     mantêm o domínio seguro ao primeiro toque.
     */
     vChegadaRasteira: 8.25,
+
+    /*
+    O REFORCO DO PASSE CURTO, que estava escrito a mao no utils.js.
+
+    Uma bola de 3 m com a mesma chegada de uma de 20 sai a passo e parece que
+    o jogador nao quis passar — dai o reforco. Mas a taxa de 0.18 por metro
+    somava ate +2.16 m/s, e era ela que punha um passe de 4 m a chegar a 10.1
+    m/s (medido em jogo). E por isso que esta aqui e nao la dentro: e uma
+    manipula de ritmo, nao uma constante da fisica.
+    */
+    reforcoCurtoDist: 12.0,
+    reforcoCurtoTaxa: 0.18,
     vChegadaCruzamento: 3.85,
     /*
     O lancamento chega mais manso do que o passe aos pes, e de proposito: o
@@ -825,9 +837,29 @@ const JogadasCombinadas = {
         // Corredor entre ele e a baliza livre de defensores, com esta
         // meia-largura.
         corredorMeiaLargura: 3.5,
-        // E ele tem de estar À FRENTE de toda a defesa (ou a ganhar-lhe a
-        // corrida) — margem em metros sobre o último defensor.
-        margemUltimoDefensor: 0.5,
+        /*
+        A JANELA DO LANCAMENTO — quantos metros AQUEM do ultimo defensor o
+        companheiro tem de estar quando a bola sai do pe.
+
+        Pedido: "o lancamento tem que ser antes do jogador ficar impedido; o
+        jogador sai correndo uns 3 ou 4 metros antes do zagueiro com o braco
+        levantado pedindo bola".
+
+        Estava ao contrario: exigia-se que ele ja estivesse EM LINHA com o
+        ultimo defensor (`margemUltimoDefensor` 0.5), o que e pedir o passe
+        tarde de mais — no instante em que ele emparelha com a defesa ja nao
+        ha lance, ha um duelo. E era tambem a razao de o ramo quase nunca
+        disparar: 22 caras-a-cara em 30 jogos, e 7 depois de as corridas
+        passarem a respeitar a linha.
+
+        A posicao legal julga-se no instante do PASSE: ele esta onside quando
+        a bola sai e passa a linha a correr atras dela, que e o lance a
+        serio. O ponto do passe (`avancoDoPasse`) e que fica alem dela.
+        */
+        janelaAtrasDaLinha: 4.0,
+
+        // E tem de estar LANCADO: parado a espera nao e este lance.
+        velMinDoArranque: 2.0,
         // Ponto do passe: metros à frente dele, na direcção da baliza.
         avancoDoPasse: 7.0
     },
