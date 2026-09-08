@@ -3468,6 +3468,20 @@ class FootballPlayer {
                     this.jumpApex = subida;
                     this.jumpCooldown = S.duracao + S.cooldown;
                     this.hasHeaderedInJump = false;
+
+                    /*
+                    PARA QUE LADO VAI A BOLA — decidido AQUI, no arranque.
+
+                    A animação precisa do ângulo antes do contacto (é na
+                    subida que se arma o chicote), e no contacto já é tarde.
+                    A direcção pretendida é a mesma que o cabeceio vai usar:
+                    a baliza adversária se ele estiver em zona de finalizar,
+                    o contrário da própria baliza se estiver a aliviar.
+
+                    `cabeceioAnguloY` é o ângulo COM SINAL entre a frente do
+                    corpo e essa direcção: 0 é de frente, ±90° é para o lado.
+                    */
+                    this.cabeceioAnguloY = this.anguloDoDesvioDeCabeca();
                     this.headLeanTimer = 0;
 
                     // Vira de frente para onde a bola vai estar no pico do salto
@@ -3772,6 +3786,46 @@ class FootballPlayer {
         rig.rFoot.rotation.x = lerpTo(rig.rFoot.rotation.x, 0, 0.5);
     }
 
+    /*
+    O ÂNGULO DO DESVIO DE CABEÇA, com sinal, no referencial do corpo.
+
+    Positivo = a bola sai para a ESQUERDA da frente dele; negativo para a
+    direita. Serve a animação (ver a cabeçada de lado no bloco do salto) e é
+    calculado uma vez, no arranque, porque é na subida que o gesto se arma.
+
+    A direcção pretendida é a do cabeceio: a baliza adversária de dentro da
+    zona de finalização, o contrário da própria baliza fora dela — que é o
+    que o `executeHeader` faz a seguir.
+    */
+    anguloDoDesvioDeCabeca() {
+        if (typeof Match === 'undefined' || !Match.ball) return 0;
+
+        const zona = (typeof HeaderModel !== 'undefined' && HeaderModel.zonaFinalizacao)
+            ? HeaderModel.zonaFinalizacao : 30.0;
+        const naZona = (this.model.position.z * this.dirZ) > (Math.abs(this.targetGoalZ) - zona);
+
+        let alvoX, alvoZ;
+        if (naZona) {
+            alvoX = 0;
+            alvoZ = this.targetGoalZ;
+        } else {
+            // A aliviar: para longe da própria baliza e para a lateral mais
+            // perto — é a saída que um defesa procura de cabeça.
+            alvoX = Math.sign(this.model.position.x || 1) * (CAMPO_LARG / 2);
+            alvoZ = this.model.position.z + this.dirZ * 12.0;
+        }
+
+        const dx = alvoX - this.model.position.x;
+        const dz = alvoZ - this.model.position.z;
+        if (Math.hypot(dx, dz) < 0.001) return 0;
+
+        // Frente do corpo, no mundo.
+        const fx = Math.sin(this.model.rotation.y || 0);
+        const fz = Math.cos(this.model.rotation.y || 0);
+        // Ângulo com sinal entre a frente e a direcção do desvio.
+        return Math.atan2(fx * dz - fz * dx, fx * dx + fz * dz);
+    }
+
     animateBones(dt) {
         let speed = this.velocity.length(); let rig = this.rig;
 
@@ -3869,6 +3923,63 @@ class FootballPlayer {
                 chestX = 0.50 * (1 - k);
                 neckX = 0.60 * (1 - k);
                 armZ = 0.8 * (1 - k);
+            }
+
+            /*
+            CABEÇADA DE LADO — a bola vem de frente e sai a 60-90° para o lado.
+
+            As três fases acima são todas no plano sagital: recuar e chicotear
+            para a FRENTE. Um desvio lateral não é isso — torce-se o tronco e
+            vira-se a cabeça, e o chicote dá-se à volta do eixo VERTICAL.
+
+            Aqui não há um segundo gesto: o mesmo roda. `lat` é 0 num cabeceio
+            de frente e 1 num de 80°+ (ver SaltoCabeceio.deLado), e com ele:
+
+              - a torção (chest.y / neck.y) arma para o lado CONTRÁRIO na
+                subida e dispara para o lado do desvio no contacto;
+              - a inclinação lateral (chest.z) acompanha o desvio;
+              - o chicote frontal encolhe na mesma proporção, porque a energia
+                foi para a torção.
+
+            Os alvos ficam dentro dos limites anatómicos (JointLimits.chest.y
+            ±45°, neck.y ±80°, chest.z ±30°).
+            */
+            const DL = (typeof SaltoCabeceio !== 'undefined') ? SaltoCabeceio.deLado : null;
+            let lat = 0, ladoDesvio = 0;
+            if (DL) {
+                const ang = this.cabeceioAnguloY || 0;
+                ladoDesvio = Math.sign(ang) || 1;
+                const a = Math.abs(ang);
+                lat = THREE.MathUtils.clamp(
+                    (a - DL.anguloMin) / Math.max(0.01, DL.anguloCheio - DL.anguloMin), 0, 1);
+            }
+
+            if (lat > 0) {
+                // Fase: arma ao contrário na subida, dispara no contacto.
+                let torcao;
+                if (p < 0.45) {
+                    const k = THREE.MathUtils.clamp(p / 0.45, 0, 1);
+                    torcao = -DL.preparacao * k;
+                } else if (p < 0.58) {
+                    const k = THREE.MathUtils.clamp((p - 0.45) / 0.13, 0, 1);
+                    torcao = -DL.preparacao + (1 + DL.preparacao) * k;
+                } else {
+                    const k = THREE.MathUtils.clamp((p - 0.58) / 0.42, 0, 1);
+                    torcao = 1 - k;
+                }
+                const s = torcao * lat * ladoDesvio;
+                rig.chest.rotation.y = lerpTo(rig.chest.rotation.y,
+                    THREE.MathUtils.clamp(s * DL.torcaoTronco, -0.78, 0.78), 0.5);
+                if (rig.neck) {
+                    rig.neck.rotation.y = lerpTo(rig.neck.rotation.y,
+                        THREE.MathUtils.clamp(s * DL.torcaoPescoco, -1.39, 1.39), 0.5);
+                }
+                rig.chest.rotation.z = lerpTo(rig.chest.rotation.z,
+                    THREE.MathUtils.clamp(-ladoDesvio * lat * DL.inclinacao * Math.sin(p * Math.PI),
+                        -0.52, 0.52), 0.5);
+                // O chicote frontal cede o que a torção levou.
+                chestX *= (1 - 0.6 * lat);
+                neckX *= (1 - 0.6 * lat);
             }
 
             rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, chestX, 0.5);

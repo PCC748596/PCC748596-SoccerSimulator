@@ -147,6 +147,9 @@ const GkDive = {
                 const k = Math.min(1, d.t / D.tempoImpulso);
                 // Comprime e estende: o pico da compressão é a meio.
                 this.poseCarregar(rig, Math.sin(k * Math.PI) * 0.9);
+                // E por cima disso a assimetria: a perna de baixo empurra o
+                // chão, a de cima já dobra para sair.
+                this.poseImpulso(rig, d, k);
                 // O corpo já começa a tombar antes de sair do chão.
                 d.ang = d.angMax * 0.18 * k;
                 if (d.t >= D.tempoImpulso) { d.fase = 'voo'; this.lancar(p); }
@@ -165,7 +168,7 @@ const GkDive = {
                 const s = k * k * (3 - 2 * k);
                 d.ang = d.angMax * (0.18 + 0.82 * s);
 
-                this.poseVoo(rig);
+                this.poseVoo(rig, d);
                 this.mirarBola(p, rig);
 
                 if (corpo.position.y <= D.alturaDeitado) {
@@ -186,7 +189,7 @@ const GkDive = {
                 corpo.position.y = D.alturaDeitado;
                 d.ang = d.angMax;
 
-                this.poseChao(rig);
+                this.poseChao(rig, d);
                 if (!d.agarrou) this.mirarBola(p, rig);
 
                 if (d.t >= D.tempoChao) { d.fase = 'levantar'; d.t = 0; }
@@ -397,22 +400,88 @@ const GkDive = {
         rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, P.chest + 0.25 * k, 0.3);
     },
 
-    poseVoo(rig) {
-        const D = GoalkeeperDive;
-        rig.lLeg.rotation.x = lerpTo(rig.lLeg.rotation.x, D.coxaVoo, 0.25);
-        rig.rLeg.rotation.x = lerpTo(rig.rLeg.rotation.x, D.coxaVoo, 0.25);
-        rig.lKnee.rotation.x = lerpTo(rig.lKnee.rotation.x, D.joelhoVoo, 0.25);
-        rig.rKnee.rotation.x = lerpTo(rig.rKnee.rotation.x, D.joelhoVoo, 0.25);
-        rig.lLeg.rotation.z = lerpTo(rig.lLeg.rotation.z, D.aberturaVoo, 0.2);
-        rig.rLeg.rotation.z = lerpTo(rig.rLeg.rotation.z, -D.aberturaVoo, 0.2);
-        rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, -0.1, 0.2);
+    /*
+    QUAL É A PERNA DE BAIXO.
+
+    `d.ladoLocal` é o lado do mergulho no referencial do MODELO. A perna de
+    baixo é a desse lado; a de cima é a outra. Sem isto a assimetria sairia
+    trocada em metade dos mergulhos — os de um dos lados — e isso é pior do
+    que não a ter.
+    */
+    pernas(rig, d) {
+        const paraDireita = (d && d.ladoLocal >= 0);
+        return paraDireita
+            ? { coxaB: rig.rLeg, joelhoB: rig.rKnee, coxaC: rig.lLeg, joelhoC: rig.lKnee, sinal: 1 }
+            : { coxaB: rig.lLeg, joelhoB: rig.lKnee, coxaC: rig.rLeg, joelhoC: rig.rKnee, sinal: -1 };
     },
 
-    poseChao(rig) {
-        rig.lKnee.rotation.x = lerpTo(rig.lKnee.rotation.x, 1.0, 0.2);
-        rig.rKnee.rotation.x = lerpTo(rig.rKnee.rotation.x, 0.7, 0.2);
-        rig.lLeg.rotation.x = lerpTo(rig.lLeg.rotation.x, -0.35, 0.2);
-        rig.rLeg.rotation.x = lerpTo(rig.rLeg.rotation.x, -0.15, 0.2);
+    // Impulso: a de baixo estende-se a empurrar, a de cima dobra para sair.
+    poseImpulso(rig, d, k) {
+        const S = GoalkeeperDive.sequenciaPernas;
+        const P = S && S.impulso;
+        if (!P) return;
+        const L = this.pernas(rig, d);
+        const w = 0.25 * k;   // entra POR CIMA do agachamento, sem o apagar
+        L.coxaB.rotation.x = lerpTo(L.coxaB.rotation.x, P.coxaBaixo, w);
+        L.joelhoB.rotation.x = lerpTo(L.joelhoB.rotation.x, P.joelhoBaixo, w);
+        L.coxaC.rotation.x = lerpTo(L.coxaC.rotation.x, P.coxaCima, w);
+        L.joelhoC.rotation.x = lerpTo(L.joelhoC.rotation.x, P.joelhoCima, w);
+    },
+
+    /*
+    Voo: corpo na horizontal, pernas ATRÁS — a de cima esticada, a de baixo a
+    arrastar dobrada. É a linha do salto.
+    */
+    poseVoo(rig, d) {
+        const D = GoalkeeperDive;
+        const S = D.sequenciaPernas;
+        const P = S && S.voo;
+        const L = this.pernas(rig, d);
+        if (!P) {
+            // Sem a sequência configurada, o mergulho simétrico de antes.
+            L.coxaB.rotation.x = lerpTo(L.coxaB.rotation.x, D.coxaVoo, 0.25);
+            L.coxaC.rotation.x = lerpTo(L.coxaC.rotation.x, D.coxaVoo, 0.25);
+            L.joelhoB.rotation.x = lerpTo(L.joelhoB.rotation.x, D.joelhoVoo, 0.25);
+            L.joelhoC.rotation.x = lerpTo(L.joelhoC.rotation.x, D.joelhoVoo, 0.25);
+            rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, -0.1, 0.2);
+            return;
+        }
+        L.coxaB.rotation.x = lerpTo(L.coxaB.rotation.x, P.coxaBaixo, 0.25);
+        L.joelhoB.rotation.x = lerpTo(L.joelhoB.rotation.x, P.joelhoBaixo, 0.25);
+        L.coxaC.rotation.x = lerpTo(L.coxaC.rotation.x, P.coxaCima, 0.25);
+        L.joelhoC.rotation.x = lerpTo(L.joelhoC.rotation.x, P.joelhoCima, 0.25);
+
+        // A abertura separa as pernas de perfil; a de cima abre mais.
+        const ab = (P.abertura !== undefined) ? P.abertura : D.aberturaVoo;
+        L.coxaB.rotation.z = lerpTo(L.coxaB.rotation.z, L.sinal * ab * 0.4, 0.2);
+        L.coxaC.rotation.z = lerpTo(L.coxaC.rotation.z, -L.sinal * ab, 0.2);
+
+        rig.chest.rotation.x = lerpTo(rig.chest.rotation.x,
+            (P.chest !== undefined) ? P.chest : -0.1, 0.2);
+    },
+
+    /*
+    Chão: aterra de lado e RECOLHE as pernas — os dois joelhos sobem e o tronco
+    roda para a frente. É a rolagem do fim do mergulho.
+    */
+    poseChao(rig, d) {
+        const S = GoalkeeperDive.sequenciaPernas;
+        const P = S && S.chao;
+        const L = this.pernas(rig, d);
+        if (!P) {
+            L.joelhoB.rotation.x = lerpTo(L.joelhoB.rotation.x, 1.0, 0.2);
+            L.joelhoC.rotation.x = lerpTo(L.joelhoC.rotation.x, 0.7, 0.2);
+            L.coxaB.rotation.x = lerpTo(L.coxaB.rotation.x, -0.35, 0.2);
+            L.coxaC.rotation.x = lerpTo(L.coxaC.rotation.x, -0.15, 0.2);
+            return;
+        }
+        L.coxaB.rotation.x = lerpTo(L.coxaB.rotation.x, P.coxaBaixo, 0.2);
+        L.joelhoB.rotation.x = lerpTo(L.joelhoB.rotation.x, P.joelhoBaixo, 0.2);
+        L.coxaC.rotation.x = lerpTo(L.coxaC.rotation.x, P.coxaCima, 0.2);
+        L.joelhoC.rotation.x = lerpTo(L.joelhoC.rotation.x, P.joelhoCima, 0.2);
+        if (P.chest !== undefined) {
+            rig.chest.rotation.x = lerpTo(rig.chest.rotation.x, P.chest, 0.2);
+        }
     },
 
     poseLevantar(rig, s) {

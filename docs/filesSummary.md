@@ -5,6 +5,163 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 7 de Setembro de 2026 — os limites que ninguém lia, e três lotes
+
+Sessão de leitura de lotes com o código na mão. O padrão que se repetiu a
+sessão inteira, e que é o mais importante daqui: **havia números no config que
+código nenhum lia**. Não estavam errados — não existiam para o jogo. Cada um
+deles tinha a medição que o motivou escrita ao lado, e o comportamento que
+descreviam não acontecia há semanas.
+
+#### O alívio pela linha de fundo, e os escanteios a 8%
+
+`ClearanceModel` (zonaPerigo, preferirFundo, fundoMax) estava no config com a
+calibração medida — "20.0/1.6/26.0 dá 3.27 cantos e 2.9 afastamentos" — e o
+`actClearance` chutava SEMPRE para a lateral e para a frente
+(`z + dirZ * 12`), mesmo com o defensor encostado à própria linha de fundo. O
+ramo `AlivioDePerigo`, que punha o alívio ANTES dos ramos de passe, tinha sido
+apagado; sobrava o `ChuteLateral` em sétimo lugar, com 178 entradas em 30 jogos.
+
+Medido em 30 jogos: **0.84 escanteios por jogo** (alvo 9.92) e `afastamentos`
+a ZERO nos 60 registos. Com `alvoDeAlivio` (utils.js) e o ramo reposto:
+**3.74** no lote seguinte de 40 jogos, e 5.5 num lote headless de 8. Continua
+abaixo do alvo — o travão agora é a FREQUÊNCIA do gatilho (defensor com bola,
+sob pressão, dentro de 26 m da própria linha), não o destino do chuto.
+
+#### A infiltração que durava 0.4 segundos
+
+O `RUN_INTO_SPACE` abortava em 0.40 s de média com um prazo de 3.5 s — está
+nos problemas conhecidos desde Agosto, sem causa. Instrumentei o `case` da FSM
+para contar QUAL condição abortava. Em 300 s de jogo:
+
+    passeParaOutro   805 abortos    a maior causa
+    chegou           707 abortos
+    runTimer<=0       13 abortos
+
+Duas causas, as duas erradas:
+
+- **`passeParaOutro`** era "existe um destinatário e não sou eu" — ou seja,
+  **qualquer passe da equipa matava todas as corridas em curso**. É o contrário
+  do que o movimento serve: é enquanto a bola circula que quem corre ganha as
+  costas da defesa. Perder a POSSE continua a abortar.
+- **`chegou`**: o alvo da corrida era escrito UMA vez, no arranque, e no frame
+  seguinte o `tickFinal` reescrevia o `dynamicTarget` de toda a gente com o
+  slot do bloco — a um metro dele. O `actInfiltrar` passa a reescrever o
+  destino todos os frames (`p.runAlvo`); a ordem por frame é 1 -> 2 -> 3, e
+  quem escreve por último manda.
+
+Medido: duração **0.40 -> 1.43 s**, e jogadores que tocam na bola durante a
+corrida **0.8% -> 12.6%**.
+
+E acrescentou-se o ramo que faltava: **passe para quem infiltra**
+(`tratarJogadaCombinada`, irmão do ramo do overlap). Com ele só na linha de
+passe, 78% de TODOS os passes iam para quem corria — a excepção virava regra.
+Três filtros no `JogadasCombinadas.infiltracao` (`ganhoMin` 6 m à frente de
+quem passa, campo adversário, 1 s de corrida por gastar) põem-na no sítio.
+
+#### Mirava-se sempre o mesmo ponto
+
+O relatório de 40 jogos dava **2.71 golos (107% do alvo) com xG a 31%**: 5.1
+remates enquadrados por jogo e **53% deles em golo**, contra os ~32% reais. A
+suspeita era o guarda-redes. Não era.
+
+Medido em 3000 remates: o `miraDeRemate` devolvia `maxC` — o mesmo ponto, a
+0.85 m do poste — em **100%** dos remates. Isso explica os dois números tortos
+de uma vez: o que fica no alvo é sempre bola de canto (o guarda-redes não lá
+chega) e o que se desvia um pouco sai pela linha (só 15-22% enquadrados, contra
+33% reais).
+
+`ShotModel.mira.fraccaoCanto` passa a ser a AMBIÇÃO da pontaria, sorteada por
+remate dentro de uma faixa por tipo (colocado 0.65-1.00, força 0.30-0.90). Não
+é o erro de execução — esse é o `ShotModel.erro`, somado por cima. É onde o
+jogador APONTA. Medido em 4 jogos: enquadrados **15.2% -> 22.9%**, golos por
+enquadrado **64.7% -> 44.0%**, defesas 5.3 -> 7.0 por 90 min. Os 44% ainda
+estão longe dos 32%: a pontaria era uma causa, não a única.
+
+#### Contadores que mediam outra coisa
+
+- **`bloqueios` e `rematesBloqueados` eram o MESMO contador**, creditado ao
+  bloqueador e publicado nos dois campos. Daí os registos impossíveis nos
+  lotes: uma equipa com 6 remates e 7 "bloqueados". São dois contadores
+  (`remateBloqueados` para quem rematou, `bloqueiosFeitos` para quem bloqueou)
+  e o `rematesForaDoAlvo`, que os subtrai, deixa de subtrair o número da outra
+  equipa.
+- **`conversaoDeChances`** dava "0%" com golos marcados sempre que não houvesse
+  grandes chances (0/0). Passa a "—".
+
+#### Os limites do posicionamento, repostos
+
+O resolvedor de prioridades (`js/bt/alvo.js`) não tem chamadores: o
+posicionamento voltou a ser escrito em sequência. Os limites que ele propunha
+ficaram no config sem ninguém os aplicar, e voltam agora ao `tickFinal` do
+team_bt.js, que é o último sítio por onde cada alvo passa — todos com a mesma
+excepção, `temTarefaDeBola` (chaser, intercetor, bloqueador):
+
+    restDefense                 os mais recuados não passam a linha da bola,
+                                escolhidos pelo POSTO e não pela posição
+    limiteFrenteDoBlocoSemBola  sem bola ninguém passa à frente do bloco
+    limiteAlemDaBolaSemBola     sem bola, defesas e médios ficam do lado de cá
+    transicaoDefensivaRecuaSo   nos 3 s a seguir a perder, ninguém sobe
+    desvioMaxDoSlot             tecto de desvio ao slot, por função
+    penduloParaABola            ninguém fica na outra ponta do campo
+
+O `alvo.js` fica no repositório (a ideia e a medição valem), mas o
+`index.html` deixou de o carregar e o cabeçalho dele diz, em maiúsculas, que
+não está ligado. Há um teste que obriga as duas coisas a andar juntas.
+
+E o `BlockShape.linhas` — as três linhas do bloco — tinha **desaparecido do
+config**: o `computeBlock` usava o fallback `{0, 0.5, 1.0}`, que é o valor que
+deixa 21.8 m de buraco entre o meio-campo e o ataque numa 442.
+
+#### Regressões apanhadas pelos testes
+
+Três coisas que os testes guardavam e que tinham voltado atrás no
+`playing_styles.js`: o bónus central do **Fox in the Box** (o `melhorVaoX`
+perdeu o parâmetro do bónus), o **Dummy Runner** a correr para o lado do POSTO
+dele em vez do lado da jogada, e a referência da corrida a morrer no voo do
+passe. E um `console.log` por frame em produção, deixado por um dos
+`patch_*.js`.
+
+#### Ritmo: a medição que desmentiu a impressão
+
+O relato foi "o jogo tá estranho, meio sem objetivo, os times ficam trocando
+bola". Medido em lotes de 300 s, 4 corridas por versão:
+
+    versão                          trocas de posse/90   passes por posse
+    antes                                   101                3.27
+    +30% RepositionPace e GAME_SPEED 1.035  141                2.70
+    +15% e GAME_SPEED 0.9                   101                3.14
+
+Toda a gente a chegar 30% mais depressa é o DEFENSOR a chegar 30% mais
+depressa. Não era defeito de decisão — as árvores estavam iguais — era ritmo a
+mais para as distâncias do campo. As duas subidas foram revertidas a meio.
+
+#### Animação: o mergulho e a cabeçada de lado
+
+- **Mergulho do guarda-redes** (`GoalkeeperDive.sequenciaPernas`): as duas
+  pernas faziam o mesmo, e um mergulho com as pernas simétricas lê-se como um
+  boneco a deslizar de lado. Agora há perna de BAIXO (a do lado do mergulho,
+  que impulsiona e acaba por baixo do corpo) e de CIMA (esticada atrás, que dá
+  a linha do salto), com três fases: impulso, voo e a recolha no chão.
+- **Cabeçada de lado** (`SaltoCabeceio.deLado`): o gesto do salto tinha três
+  fases, todas no plano sagital — recuar e chicotear para a FRENTE. Um desvio
+  de 60-90° não é isso: torce-se o tronco e vira-se a cabeça, e o chicote é à
+  volta do eixo VERTICAL. Não há um segundo gesto; o mesmo roda, conforme o
+  `cabeceioAnguloY` medido no arranque do salto.
+
+#### O que fica por explicar
+
+- **`caraACara` continua a ser 0 ou 1 por lote de 40 jogos.** O passe que
+  isola não acontece, e é a explicação mais provável para o xG por remate estar
+  a um terço do real.
+- **Ataques totais a 34% do alvo**, com a bola pouco tempo no terço ofensivo.
+- **Golos por remate enquadrado em 44%** contra os ~32% reais: a pontaria
+  explicou parte, falta o resto.
+- **Um lote corrido no browser mede o código que a PÁGINA tem em memória.** Um
+  dos lotes desta sessão foi gerado depois das correcções e sem elas — Ctrl+F5
+  antes de medir, sempre. Reconhece-se pela tabela `ramos`: se um ramo novo
+  não aparece lá, o lote é de código velho.
+
 ### Sessão de 2 de Setembro de 2026 (tarde) — arbitragem, calibração e o fora-de-jogo
 
 Sessão de leitura de lotes: o relatório de 20 jogos na mão, a perguntar o que
@@ -5871,6 +6028,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Afinar quanto se conduz vs. passa | `config.js` → `CarryModel.espacoLivre` e `.distanciaMax` |
 | Afinar marcação e largura da última linha | `config.js` → `MarkingModel` |
 | Afinar cruzamentos | `config.js` → `CrossModel` |
+| Escanteios a menos / ninguém põe a bola fora pela linha de fundo | `config.js` → `ClearanceModel`; `utils.js` → `alvoDeAlivio`; `bt/player_bt.js` → ramo `AlivioDePerigo` |
 | Mudar quando um jogador remata em vez de passar | `bt/player_bt.js` → a árvore |
 | Remata-se de longe com o guarda-redes isolado à frente | `config.js` → `ShootingModel.frenteAFrente`; `utils.js` → `frenteAFrenteComGk` |
 | Alcance de remate / drible / lançamento | `config.js` → `ShootingModel`, `PassModel` |
@@ -5882,7 +6040,9 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Mudar como um remate é executado | `fsm.js` → `case 'SHOOT'` |
 | Tipo de remate (colocado/rasteiro/força/chapéu) e pontaria | `config.js` → `ShotModel.tipos`, `.mira`, `.erro`; funções em `utils.js` |
 | Mais/menos golos sem voltar a impor desfechos | `config.js` → `ShotModel.erro.escalaGlobal` |
+| Remata-se sempre ao mesmo canto / poucos remates enquadrados | `config.js` → `ShotModel.mira.fraccaoCanto` |
 | Guarda-redes agarra/espalma/roça, e para onde vai o rebote | `config.js` → `GkCatchModel`; `resolverDefesaGK` em `utils.js` |
+| A pose do mergulho do guarda-redes (pernas, fases) | `config.js` → `GoalkeeperDive.sequenciaPernas`; `gk_dive.js` → `poseImpulso`/`poseVoo`/`poseChao` |
 | Força de um passe no espaço ou lançamento | `config.js` → `PassModel.encontro`; `passeDeEncontro` em `utils.js` |
 | Altura/ângulo dos passes pelo alto | `config.js` → `PassModel.passeArco` (`elevMin/elevMax`, `apexMax`) |
 | Para onde o destinatário corre quando o passe sai | `bt/player_bt.js` → `actReceivePass` e `actChaseBall`; `config.js` → `PassModel.recepcao` |
@@ -5895,6 +6055,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Medir comportamento sem abrir o browser | `tools/headless/` |
 | O que há para arrumar no `config/` e no `match/` | [docs/auditoria_config_match.md](auditoria_config_match.md) |
 | Tabelinha, overlap, passe que isola com o guarda-redes | `config.js` → `JogadasCombinadas`; `bt/player_bt.js` → `tratarJogadaCombinada` |
+| Ninguém passa para quem corre ao espaço | `config.js` → `JogadasCombinadas.infiltracao`; `bt/player_bt.js` → `tratarJogadaCombinada` |
 | Quanto tempo o Dummy Runner corre, e onde o Fox espera | `config.js` → `PlayingStyleTuning` |
 | Quando um Playing Style está em vigor | `playing_styles.js` → `PlayingStyleTriggers` |
 | Quão recuado o bloco fica com cada Mentalidade | `config.js` → `MentalidadeModel.blocoZ` e `.pesoNaLinha` |
@@ -5997,6 +6158,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Força e forma do canto | `config.js` → `CrossModel.canto` (`elevacao`, `forca`); `fsm.js` → `case 'SET_PIECE_TAKER'` |
 | Marcação individual no canto e disputa aérea | `config.js` → `CornerDefenseModel`; `bt/player_bt.js` → `tratarMarcacaoNoCanto` |
 | Quando um jogador salta para cabecear | `player.js` → `avaliarSaltoDeCabeceio` (corre no `update`, NÃO no `animateBones`) |
+| Cabeçada que desvia a bola para o lado | `config.js` → `SaltoCabeceio.deLado`; `player.js` → `anguloDoDesvioDeCabeca` |
 | Quanto tempo a marcação do canto dura | `config.js` → `CornerDefenseModel.prazo`; `match/match_loop.js` → ramo `cantoVivo` |
 | Quem bate a falta, por zona do campo | `config.js` → `FreeKickModel.batedorPorSetor`; `utils.js` → `batedorDaFalta` |
 | Onde a equipa se põe numa falta | `config.js` → `FreeKickModel.formacaoPorSetor`; `utils.js` → `lugaresDaFalta` |
@@ -6008,6 +6170,7 @@ padrão de fluxograma pro PositionBT/PlayerBT.
 | Jogador a vibrar parado / passada a baixa velocidade | `config.js` → `GaitModel.parado`; `pose.js` → `aplicarPosePassada` (`suavizacao`) |
 | Jogador a sair do campo em linha recta | `fsm.js` → o aborto do `case 'RUN_INTO_SPACE'`; medir com `tools/headless/fora_do_campo.js` |
 | Jogador a "infiltrar" na direcção da própria baliza | `utils.js` → `avancoDeInfiltracao`; `config.js` → `RunIntoSpaceModel.ganhoMinimo` |
+| A corrida ao espaço morre logo a seguir a arrancar | `bt/player_bt.js` → `actInfiltrar` (o `runAlvo` reescrito por frame); `fsm.js` → o `case RUN_INTO_SPACE` |
 | Guarda-redes a relançar uma bola que já não é dele | `player.js` → guardas no topo do `puntBall`/`releaseFromHands` |
 
 ### Sessão de 26 de Agosto de 2026 (continuação 7) — afinações nos penáltis

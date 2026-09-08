@@ -131,7 +131,41 @@ const SaltoCabeceio = {
     quando ela está mesmo fora de alcance parado.
     */
     alturaSemPulo: 0.30,
-    cooldown: 1.5         // era 10 s — impedia dois saltos na mesma jogada
+    cooldown: 1.5,        // era 10 s — impedia dois saltos na mesma jogada
+
+    /*
+    =====================================================================
+    CABEÇADA DE LADO — a bola vem de frente e sai para o lado
+    =====================================================================
+    O gesto do salto tinha três fases mas todas no plano SAGITAL: o tronco e
+    o pescoço recuavam e chicoteavam para a FRENTE (chest.x, neck.x). Uma
+    cabeçada que desvia a bola 60-90° para o lado não é isso — quem a faz
+    torce o tronco e vira a cabeça, e o chicote acontece à volta do eixo
+    vertical, não do horizontal.
+
+    O ângulo do desvio é medido no arranque do salto (`cabeceioAnguloY`, em
+    player.js): é o ângulo com sinal entre a frente do corpo e a direcção
+    para onde a bola vai sair. Quanto mais lateral, mais o gesto passa de
+    frontal para torcido — não há dois gestos, há um que roda.
+
+    `anguloMin`      a partir daqui já conta como cabeçada de lado (rad).
+    `anguloCheio`    daqui para cima a torção é a máxima.
+    `torcaoTronco`   rotação do tronco no contacto (rad; o limite anatómico
+                     do chest.y são 45°, ver joint_limits.js).
+    `torcaoPescoco`  o mesmo para o pescoço, que roda mais do que o tronco.
+    `preparacao`     fracção da torção que ele faz para o LADO CONTRÁRIO na
+                     subida — é o armar do chicote.
+    `inclinacao`     inclinação lateral do tronco (chest.z) para o lado do
+                     desvio, que é o que dá o "atirar-se" à bola.
+    */
+    deLado: {
+        anguloMin: 45 * Math.PI / 180,
+        anguloCheio: 80 * Math.PI / 180,
+        torcaoTronco: 0.60,
+        torcaoPescoco: 0.85,
+        preparacao: 0.45,
+        inclinacao: 0.30
+    }
 };
 
 /*

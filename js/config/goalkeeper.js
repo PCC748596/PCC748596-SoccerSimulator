@@ -362,6 +362,58 @@ const GoalkeeperDive = {
     // Pose das pernas em voo: estendidas e ligeiramente abertas.
     coxaVoo: -0.25, joelhoVoo: 0.55, aberturaVoo: 0.18,
 
+    /*
+    =====================================================================
+    A SEQUÊNCIA DO MERGULHO — as pernas, fase a fase
+    =====================================================================
+    Referência: a sequência de um mergulho a sério, seis instantes. O que lá
+    está e não estava aqui é a ASSIMETRIA. As duas pernas faziam o mesmo
+    (`coxaVoo`/`joelhoVoo` iguais nos dois lados), e um mergulho com as duas
+    pernas na mesma posição lê-se como um boneco a deslizar de lado.
+
+    Num mergulho há sempre uma perna de BAIXO — a do lado para onde ele se
+    atira, que dá o impulso e acaba por baixo do corpo — e uma de CIMA, a de
+    trás, que fica esticada no ar e é o que dá a linha do salto.
+
+    Convenção dos sinais, a mesma do resto do rig: `coxa` negativo leva a
+    perna para TRÁS, `joelho` positivo DOBRA (calcanhar para trás).
+
+    São números para se afinarem a olho, com o jogo aberto: o mergulho é o
+    gesto mais visto do guarda-redes.
+    */
+    sequenciaPernas: {
+        /*
+        IMPULSO. A perna de baixo estende-se a empurrar o chão (joelho quase
+        a zero); a de cima já vai a dobrar para arrancar.
+        */
+        impulso: {
+            coxaBaixo: -0.10, joelhoBaixo: 0.10,
+            coxaCima: -0.30, joelhoCima: 0.95
+        },
+
+        /*
+        VOO. Corpo na horizontal, pernas atrás: a de cima esticada e a de
+        baixo a arrastar dobrada. A abertura separa-as, para não ficarem
+        coladas de perfil.
+        */
+        voo: {
+            coxaBaixo: -0.45, joelhoBaixo: 0.70,
+            coxaCima: -0.70, joelhoCima: 0.15,
+            abertura: 0.22, chest: -0.12
+        },
+
+        /*
+        CHÃO. Aterra de lado e as pernas RECOLHEM: os dois joelhos dobram
+        para cima e o tronco roda um pouco para a frente — é isso que dá a
+        rolagem. Antes ficava esticado como uma tábua.
+        */
+        chao: {
+            coxaBaixo: -0.25, joelhoBaixo: 1.45,
+            coxaCima: -0.15, joelhoCima: 1.15,
+            chest: 0.22
+        }
+    },
+
     pesoIK: 0.45           // suavização do IK dos braços por frame
 };
 
