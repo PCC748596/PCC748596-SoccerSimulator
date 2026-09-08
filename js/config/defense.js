@@ -657,15 +657,24 @@ const OffsideModel = {
     */
 
     /*
-    2.4 -> 1.4, medido num lote de 30 jogos: 7.96 impedimentos por jogo contra
-    os 3.20 do alvo (249%). A tacticknow 85 dos planteis a amplitude era 1.00 m
-    e o vies de 0.45 punha ~30% das fases de ataque acima do limiar de 0.85 m;
-    com 1.4 a amplitude fica em 0.70 m e a fraccao em ~12%, que da os ~3.2.
+    2.4 -> 1.4, e A MUDANCA NAO FEZ NADA — fica escrito porque o raciocinio
+    que a motivou estava errado e e facil repeti-lo.
 
-    O 1.4 e o mesmo numero da primeira calibracao acima, mas nao e a mesma
-    coisa: essa nao tinha `vies` (o sorteio era simetrico) e o `erroMin` era
-    0.15, e por isso dava zero impedimentos. E o vies que poe metade do
-    sorteio do lado arriscado.
+    O lote de 30 jogos dava 7.96 impedimentos por jogo (alvo 3.20). A conta
+    dizia: a tacticknow 85 a amplitude e 1.00 m, o vies de 0.45 poe ~30% das
+    fases acima do limiar de 0.85 m, logo baixar a amplitude para 0.70 corta
+    a fraccao para ~12%. Com 1.4 o lote seguinte deu 8.27 — nada.
+
+    O que a medicao mostrou: quem estava em fora-de-jogo nao estava la por
+    meio metro de erro de leitura, estava por 2.8 m de mediana, com 37% dos
+    casos em RUN_INTO_SPACE e alvos de corrida 7 a 24 m alem da linha. O erro
+    de leitura nunca foi o mecanismo. Varrido depois de o corrigir, com o
+    alvo da corrida ja cortado pela linha: 1.4, 2.4 e 3.6 deram 0.37, 0.36 e
+    0.72 impedimentos por 90 — a amplitude continua a nao ser a alavanca.
+
+    Quem decide a frequencia e o `RunIntoSpaceModel.riscoAlemDaLinha`, que e
+    quanto a corrida aposta alem da linha que ele le. Este numero so decide o
+    ERRO DE QUEM LE, e vale a pena mante-lo pequeno.
     */
     erroMax: 1.4,
     erroMin: 0.40,

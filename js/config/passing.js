@@ -953,6 +953,38 @@ const RunIntoSpaceModel = {
     ocupacaoMax: 0.35,
 
     /*
+    QUANTO É QUE UMA CORRIDA ARRISCA ALÉM DA LINHA, em metros.
+
+    O alvo da infiltração ignorava a linha de fora-de-jogo por completo, e
+    medido no lote de 30 jogos ficava 7 a 24 m além dela: 8.27 impedimentos
+    por jogo contra os 3.20 do alvo. Passar a cortar o alvo na linha que ele
+    lê resolveu-o de mais — 0.37 por jogo — porque acabou com a jogada que
+    produz o fora-de-jogo real: o avançado arranca ANTES do passe e aposta
+    que a bola sai a tempo.
+
+    Esta margem é essa aposta. Zero é o avançado que nunca arrisca (e nunca
+    é apanhado); alto de mais é a corrida cega que se acabou de corrigir. O
+    corte da `avancoLegalDeCorrida` desconta-lhe 0.5 m, portanto o avanço
+    real além da linha lida é `riscoAlemDaLinha - 0.5`.
+
+    Sensível: o erro de leitura (OffsideModel.erroMax) quase não mexe no
+    número — 1.4, 2.4 e 3.6 deram 0.37, 0.36 e 0.72 impedimentos por 90 —
+    porque o alvo converge para a linha LIDA e o erro só conta no instante
+    do passe. É esta margem que decide a frequência.
+
+    Varrido em corridas headless de 123 a 148 min de relogio (impedimentos
+    por equipa por 90, alvo 3.20; o lote do browser da ~1.9x o headless):
+
+        0.0   0.37      a corrida nunca arrisca
+        1.5   0.36
+        3.0   0.73
+        4.5   2.42 e 2.11   <- aqui
+        6.0   4.27
+        9.0   4.55      volta a ser a corrida cega
+    */
+    riscoAlemDaLinha: 4.5,
+
+    /*
     INFILTRAR É PARA A FRENTE, E MAIS NADA.
 
     Relato: "infiltração é somente o movimento para frente em direção ao gol

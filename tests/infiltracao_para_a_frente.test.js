@@ -120,3 +120,74 @@ test('a FSM aborta uma corrida cujo alvo esteja atrás', () => {
     assert.ok(corpo.includes('* p.dirZ) < -1.0'),
         'o teste do alvo atrás tem de ser no referencial de ataque do jogador');
 });
+
+/*
+A LINHA DE FORA-DE-JOGO DEIXOU DE FICAR DE FORA.
+
+O `actInfiltrar` passava `offsideLimitDir: null` de propósito — 'quem infiltra
+está a tentar romper a linha e o risco é do lance'. Medido num lote de 30
+jogos: 8.27 impedimentos por jogo contra os 3.20 do alvo, com o alvo de quem
+corria 7 a 24 m ALÉM da linha no instante do passe. O risco fica, mas na linha
+que ELE lê: `linhaLidaPor` soma o `offsideBias` da tacticknow dele.
+*/
+test('a infiltração respeita a linha que ele lê, e não um null', () => {
+    for (const nome of ['actInfiltrar', 'podeInfiltrar']) {
+        const corpo = extrairFuncao(srcBT, nome);
+        assert.ok(corpo.includes('offsideLimitDir: linhaLidaPor(p, true)'),
+            nome + ' voltou a ignorar a linha de fora-de-jogo');
+        assert.ok(!corpo.includes('offsideLimitDir: null'),
+            nome + ' ainda passa null como linha');
+    }
+});
+
+test('a linha lida é a publicada mais o erro de leitura dele', () => {
+    const TeamAI = { get: () => ({ offsideLimitDir: 20 }) };
+    const RunIntoSpaceModel = { riscoAlemDaLinha: 4.5 };
+    const fabricar = (ai) => new Function('TeamAI', 'RunIntoSpaceModel',
+        extrairFuncao(srcBT, 'linhaLidaPor') + '; return linhaLidaPor;')(ai, RunIntoSpaceModel);
+    const linhaLidaPor = fabricar(TeamAI);
+
+    assert.strictEqual(linhaLidaPor({ team: 'TeamA', offsideBias: 0.8 }), 20.8);
+    assert.strictEqual(linhaLidaPor({ team: 'TeamA' }), 20, 'sem erro, a linha exacta');
+
+    /*
+    A APOSTA É SÓ DE QUEM CORRE. Quem volta ao sítio (actHoldPosition) chama
+    sem ela: acelerar para uma linha 4.5 m à frente era mandá-lo para mais
+    fora-de-jogo, que é o contrário do que a recuperação serve.
+    */
+    assert.strictEqual(linhaLidaPor({ team: 'TeamA' }, true), 24.5,
+        'a corrida arrisca RunIntoSpaceModel.riscoAlemDaLinha além da linha lida');
+
+    // Sem linha publicada (a equipa não tem a posse) não há nada a cortar.
+    const semLinha = fabricar({ get: () => ({}) });
+    assert.strictEqual(semLinha({ team: 'TeamA' }), null);
+    assert.strictEqual(semLinha({ team: 'TeamA' }, true), null);
+});
+
+/*
+E A CORRIDA É REVALIDADA POR FRAME: a corrida dura 3.5 s e a última linha sobe
+durante ela. Sem isto, um alvo legal no arranque fica ilegal a meio e o jogador
+corre para lá na mesma — que é o defeito que o `actRunIntoSpace` já tinha
+corrigido do seu lado.
+*/
+test('o alvo da corrida é cortado pela linha em cada frame', () => {
+    const corpo = extrairFuncao(srcBT, 'actInfiltrar');
+    const reescrita = corpo.slice(corpo.indexOf('p.runAlvo'));
+    assert.ok(reescrita.includes('avancoLegalDeCorrida(p.runAlvo.z * p.dirZ, linhaLidaPor(p, true))'),
+        'a reescrita por frame do alvo deixou de o cortar pela linha');
+});
+
+/*
+VOLTAR DE UMA POSIÇÃO IRREGULAR É PRESSA, não passeio: no lote, jogadores com o
+alvo já legal estavam 7 a 10 m em fora-de-jogo, a voltar ao ritmo do escalão da
+distância (trote curto abaixo dos 10 m, andar abaixo dos 2).
+*/
+test('quem está além da linha volta com o bónus de recuo', () => {
+    const corpo = extrairFuncao(srcBT, 'actHoldPosition');
+    assert.ok(corpo.includes('linhaLidaPor(p)'),
+        'o ritmo de recuperação deixou de olhar para a linha');
+    const trecho = corpo.slice(corpo.indexOf('const linha = linhaLidaPor(p)'));
+    assert.ok(trecho.includes('bonusRecuo'), 'o bónus de recuo não é aplicado');
+    assert.ok(trecho.includes('recuoDir > 0'),
+        'acelerar sem o alvo estar atrás dele empurra-o para MAIS fora de jogo');
+});

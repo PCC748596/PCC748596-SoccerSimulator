@@ -2086,7 +2086,7 @@ function podeInfiltrar(ctx) {
     */
     if (typeof avancoDeInfiltracao === 'function' &&
         avancoDeInfiltracao({ avancoActual: meuAvanco, avancoPedido: meuAvanco + 20.0,
-            offsideLimitDir: null }) === null) {
+            offsideLimitDir: linhaLidaPor(p, true) }) === null) {
         return false;
     }
 
@@ -2098,6 +2098,23 @@ function podeInfiltrar(ctx) {
     if (Math.random() < chance) return true;
 
     return false;
+}
+
+/*
+A LINHA DE FORA-DE-JOGO COMO ELE A LÊ, para quem calcula um alvo de corrida.
+
+É a publicada pelo nível 1 (`bb.offsideLimitDir`) mais o erro de leitura dele
+(`offsideBias`, sorteado por fase de ataque a partir da tacticknow — ver
+OffsideModel). Devolve null quando não há linha publicada, que é o que a
+`avancoDeInfiltracao` espera para não cortar nada.
+*/
+function linhaLidaPor(p, risco) {
+    const bb = (typeof TeamAI !== 'undefined') ? TeamAI.get(p.team) : null;
+    if (!bb || typeof bb.offsideLimitDir !== 'number') return null;
+    const extra = risco
+        ? ((typeof RunIntoSpaceModel !== 'undefined' && RunIntoSpaceModel.riscoAlemDaLinha) || 0)
+        : 0;
+    return bb.offsideLimitDir + (p.offsideBias || 0) + extra;
 }
 
 function actInfiltrar(ctx) {
@@ -2120,6 +2137,17 @@ function actInfiltrar(ctx) {
     manda: reescrever aqui é o que faz a corrida existir.
     */
     if (p.fsm.currentState === 'RUN_INTO_SPACE' && p.runTimer > 0 && p.runAlvo) {
+        /*
+        E O ALVO É REVALIDADO CONTRA A LINHA, todos os frames.
+
+        A corrida dura 3.5 s e a última linha sobe durante ela: um alvo legal
+        no arranque deixa de o ser a meio. É a mesma revalidação por frame que
+        o `actRunIntoSpace` já faz (ver `avancoLegalDeCorrida`, utils.js).
+        */
+        if (typeof avancoLegalDeCorrida === 'function') {
+            const legal = avancoLegalDeCorrida(p.runAlvo.z * p.dirZ, linhaLidaPor(p, true));
+            p.runAlvo.z = legal * p.dirZ;
+        }
         p.dynamicTarget.set(p.runAlvo.x, ALTURA_BASE_Y, p.runAlvo.z);
         p.speedMult = p.sprintSpeed || (6.5 * 1.3);
         return;
@@ -2147,16 +2175,25 @@ function actInfiltrar(ctx) {
         entrava em RUN_INTO_SPACE, com o banner "INFILTRA", a correr na
         direcção da própria baliza. Ver `avancoDeInfiltracao` (utils.js).
 
-        O limite de fora-de-jogo continua de fora, de propósito: quem infiltra
-        está a tentar romper a linha e o risco de ficar em posição irregular é
-        do lance. O que não pode é o tecto pô-lo a andar para trás.
+        E O LIMITE DE FORA-DE-JOGO ENTRA AQUI — passou a entrar.
+
+        Estava de fora de propósito ('quem infiltra está a tentar romper a
+        linha e o risco é do lance'), e o lote de 30 jogos mostrou o preço:
+        8.27 impedimentos por jogo contra os 3.20 do alvo. Medido no instante
+        do passe, o alvo de quem corria estava 7 a 24 m ALÉM da linha, e não
+        um ou dois: não era um risco de tempo, era uma corrida que ignorava a
+        linha e só parava ao fim de 3.5 s.
+
+        O risco continua lá, mas onde ele existe num jogo a sério: a linha que
+        se respeita é a que ELE lê (`linhaLidaPor`, com o erro da tacticknow
+        dele), e não a exacta. Quem lê mal arranca cedo — e é apanhado.
         */
         const meuAvanco = p.model.position.z * p.dirZ;
         const avancoDestino = (typeof avancoDeInfiltracao === 'function')
             ? avancoDeInfiltracao({
                 avancoActual: meuAvanco,
                 avancoPedido: meuAvanco + 20.0,
-                offsideLimitDir: null
+                offsideLimitDir: linhaLidaPor(p, true)
             })
             : meuAvanco + 20.0;
 
@@ -2227,6 +2264,26 @@ function actHoldPosition(ctx) {
         */
         const recuoDir = (p.model.position.z - p.dynamicTarget.z) * p.dirZ;
         if (recuoDir > (RepositionPace.recuoMinimo || 4.0)) {
+            p.speedMult *= (RepositionPace.bonusRecuo || 1.0);
+        }
+
+        /*
+        E VOLTAR DE UMA POSIÇÃO IRREGULAR TAMBÉM É PRESSA.
+
+        Medido no lote de 30 jogos, no instante de cada passe: quem estava em
+        fora-de-jogo estava-o por 2.8 m de mediana, e alguns por 7 a 10 m, com
+        o ALVO já legal — ou seja, a árvore mandava-o voltar e ele voltava a
+        passo, porque o ritmo sai da distância que falta e 3 m é o escalão do
+        trote curto. Enquanto anda, é ele que faz o fora-de-jogo do lance
+        seguinte.
+
+        Usa o mesmo `bonusRecuo` do recuo defensivo, mas SEM o `recuoMinimo`:
+        aqui a urgência não vem da distância, vem de ele estar do lado errado
+        da linha. A linha é a que ELE lê (`linhaLidaPor`).
+        */
+        const linha = linhaLidaPor(p);
+        if (linha !== null && (p.model.position.z * p.dirZ) > linha &&
+            recuoDir > 0 && recuoDir <= (RepositionPace.recuoMinimo || 4.0)) {
             p.speedMult *= (RepositionPace.bonusRecuo || 1.0);
         }
     } else {
