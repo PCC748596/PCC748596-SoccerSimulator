@@ -5,6 +5,234 @@ Consulta este ficheiro para saber **onde** mexer antes de abrir o código.
 
 ## Últimas Actualizações (Agosto 2026)
 
+### Sessão de 8 de Setembro de 2026 — quatro lotes, e o preço de calibrar por modelo
+
+Sessão longa, com o utilizador a mandar lotes e capturas de ecrã e a corrigir a
+pontaria a cada passo. O que fica dela, antes de qualquer número:
+
+**Calibrei duas vezes por um modelo em vez de por uma medição, e as duas vezes
+o número que mexi não era a alavanca.** Está escrito nos dois sítios onde
+aconteceu (`OffsideModel.erroMax` e o primeiro tecto do `alcanceMax`), porque é
+o erro mais caro da sessão: gasta um lote inteiro a confirmar que nada mudou.
+
+E o inverso também: **três coisas que pareciam desenho eram medições que
+faltavam** — a bola a 50 cm das mãos do guarda-redes, o pé 4 cm acima do
+relvado, o remate de 36 m com o alcance a dizer 25.
+
+#### O autogolo que ia para o marcador errado
+
+`match_physics.js` creditava o golo e o placar ao `lastTouchedTeam`, enquanto o
+`golosSofridos` já saía da BALIZA em que a bola entrou. Num autogolo a mesma
+equipa somava um marcado e um sofrido, e o placar dava a vantagem a quem tinha
+marcado contra si. Medido num lote de 30 jogos: **10 partidas com o placar
+publicado errado** — o jogo 26 dizia 4-0 sendo 3-1.
+
+`Match.creditarGolo(zSinal)` passa a decidir tudo pela baliza; a assistência e a
+grande chance só contam quando o toque foi de quem marcou. Teste:
+`tests/autogolo.test.js`.
+
+#### Cartões: a Lei 12 em vez de um limiar
+
+O lote dava 1.42 amarelos por jogo (27% do alvo) com as faltas a 83%. Medido em
+148 min de relógio, a gravidade de cada falta:
+
+    carrinho  n  5  | travou 80% | gravidade media 0.863
+    desarme   n  6  | travou 50% | gravidade media 0.411
+    contacto  n 23  | travou 48% | gravidade media 0.530
+
+**O contacto — 68% das faltas — não podia dar cartão por construção**: o tecto
+dele é 0.742 e o amarelo estava em 0.85. Baixar o limiar até lá apanhava metade
+de todas as faltas (real: 19%).
+
+Travar um ataque promissor passou a ser **regra própria** no `decidirCartao`, e
+saiu da gravidade — que fica só para a violência do lance. E o
+`_ehAtaqueEmProgressao`, que era `velocidade para a frente > 3 m/s` e mais nada
+(53% de TODAS as faltas contavam como ataque travado), passou a exigir que a
+vítima tenha a bola, a `velMinAtaquePromissor` e o ataque já perto do
+meio-campo. O `limiarVermelho` desceu de 1.10 para 0.95: sem a parcela do
+travar, nenhum lance chegava a 1.10 e o vermelho directo deixava de existir.
+
+Medido: 6.2% → 21% das faltas com cartão, contra os 18.9% reais.
+
+#### Fora-de-jogo: o erro de leitura nunca foi a alavanca
+
+O lote dava 7.96 impedimentos por jogo (249%). Baixei o `OffsideModel.erroMax`
+de 2.4 para 1.4 por uma conta de probabilidade — e o lote seguinte deu **8.27**.
+Nada.
+
+O que a medição mostrou, no instante de cada passe: quem estava em fora-de-jogo
+não estava lá por meio metro de erro de leitura, estava por **2.8 m de mediana**,
+com 37% dos casos em `RUN_INTO_SPACE` e alvos de corrida **7 a 24 m além da
+linha**. O `actInfiltrar` passava `offsideLimitDir: null` ao `avancoDeInfiltracao`
+— de propósito, com uma nota a dizer que o risco era do lance.
+
+Agora a corrida respeita a linha que ELE lê (`linhaLidaPor`, com o
+`offsideBias` da tacticknow dele), é revalidada todos os frames, e quem está do
+lado errado da linha volta com o `bonusRecuo` em vez de a passo. Cortar por
+completo levou os impedimentos a 0.37 — matou a jogada. O
+`RunIntoSpaceModel.riscoAlemDaLinha` (4.5 m) é a aposta do avançado que arranca
+antes do passe, e é ele que decide a frequência:
+
+    risco  impedimentos/90 headless
+    0.0    0.37
+    3.0    0.73
+    4.5    2.42 / 2.11 / 1.84   <- escolhido
+    6.0    4.27
+    9.0    4.55
+
+Lote seguinte: **3.48 (109% do alvo)**, e 3.28 no lote de 60.
+
+#### Cara a cara: o lance julgado no sítio errado, e depois no tempo errado
+
+O `caraACara` dava 0 em 30 jogos. O filtro de fora-de-jogo do ramo julgava **o
+ponto onde a bola cai**, 7 m à frente do companheiro: um companheiro em linha
+com o último defensor dava sempre um ponto 7 m além da linha, e a jogada era
+rejeitada por construção. Dos 52 pares que chegavam ao filtro em 74 min,
+matava os 52.
+
+Corrigido (julga-se o companheiro, como o árbitro faz), passou a 22 em 30 jogos.
+Depois o utilizador afinou o lance: *"o lançamento tem que ser antes do jogador
+ficar impedido; o jogador sai correndo uns 3 ou 4 metros antes do zagueiro com o
+braço levantado pedindo bola"*. A `janelaAtrasDaLinha` (4 m) inverteu a
+condição — era preciso estar EM LINHA com a defesa, que é o passe tarde — e a
+`velMinDoArranque` exige que ele esteja lançado.
+
+O braço: `PedidoDeBola` (config/animations.js) sobrepõe UM braço à passada, e
+quem pede é ele durante a corrida. Marcado pelo ramo do portador dava **7
+episódios e 4 segundos de braço no ar por 90 minutos**; dentro da corrida, 302
+episódios e 314 segundos.
+
+#### Passes fortes de mais, e o `easySpeed` que os tapava
+
+Relato: *"alguns passes directos estão muito fortes"*. Medido, a velocidade de
+CHEGADA por faixa:
+
+    vChegada / taxa    0-5m   5-8m   8-12m   12-15m   certo 0-12m
+    8.25 / 0.18         9.9    9.0     8.9      9.0      86-88%
+    6.50 / 0.10         7.3    7.4     7.7      7.8      85-100%   <- aqui
+    5.50 / 0.08         6.5    6.7     6.9      8.2      80-86%
+
+Um passe de 4 m a chegar a 9.9 m/s é um tiro aos pés. E havia um segundo
+sintoma escondido: o `BallControl.easySpeed` tinha sido subido para 10.66 "na
+mesma proporção" — com esse limiar tudo o que é rasteiro se dominava de olhos
+fechados e as bolas altas (11-16 m/s) deixavam de ser difíceis. Os dois números
+andam juntos e desceram juntos (6.5 e 8.5). O reforço do passe curto saiu do
+`utils.js` para o config (`reforcoCurtoDist`/`reforcoCurtoTaxa`).
+
+#### O que se via no ecrã
+
+**O pé não encostava no relvado.** A altura do corpo é fixa e a pose é que dobra
+as pernas. Medido pela caixa do modelo, com o jogador parado: 4-5 cm de média no
+ar, 24 cm no pior caso, e alguns centímetros ENTERRADO noutros estados.
+`assentarNoChao` (player.js) mede a bota mais baixa e desce o corpo; não corre a
+correr (a passada tem fase de voo), nem em saltos, mergulhos ou carrinhos.
+Depois: 0.00, 0.04, −0.02, 0.01.
+
+**A cabeça.** Primeiro relato: "olhando pra cima". Medido, o olhar estava a
+0°/−5° e a bola aos pés a −46° — ninguém olhava para ela. Fiz o seguimento da
+bola; o relato seguinte foi *"agora estão todos olhando para baixo; deixa como
+estava antes, só não quero ninguém olhando pra cima sem nada a ver"*. Revertido:
+fica só o tecto (`nivelarCabeca`, `OlharDaCabeca`). **A primeira versão do tecto
+somava a correcção sem repouso** e, como a passada balança o tronco acima do
+horizonte em parte do ciclo, a cabeça acabava 13° ABAIXO — o oposto do pedido.
+O repouso tem de ser zero, e está guardado como cenário próprio no teste.
+
+**A bola não estava nas mãos do guarda-redes.** Medido nos 8 s de posse: 0.50 m
+da mão mais perta (3.46 no pior caso, a arrastar-se atrás dele), 0.36 m abaixo
+dos punhos, e os punhos a 0.54 m um do outro para uma bola de 0.22.
+`GoalkeeperPose.segurar` fecha os punhos com a bissecção do lançamento lateral e
+a bola segue as mãos, colada no FIM do ramo (colá-la antes de ele andar deixava-a
+para trás). Depois: 0.14 m e punhos a 0.29.
+
+**A barreira invisível.** Estava a 4 m das linhas; as bancadas começam a 4.5 m de
+lado e 5.5 m atrás das balizas, e o teste era só em x/z — uma bola a 15 m de
+altura ressaltava no ar. Agora a barreira é a bancada e só trava abaixo do topo
+da rede.
+
+**O ponta que chutava para fora na linha de fundo.** O ramo `ChuteLateral`
+dispara para qualquer jogador sob pressão sem passe e chama o `actClearance`, e o
+`alvoDeAlivio` de quem está longe da SUA linha de fundo devolve a lateral mais
+12 m à frente: de (x −30, z 50) o alvo saía em (−36, 62), fora do campo. O
+`ClearanceModel.avancoMaxParaAlivio` (10 m de avanço) desiste do ramo no terço
+ofensivo e a decisão cai no `conduzir`.
+
+#### O mergulho do guarda-redes
+
+A máquina já fazia as cinco fases (`ler`, `impulso`, `voo`, `chão`, `levantar`) e
+a `sequenciaPernas` desenhava as pernas em três. Os braços não tinham desenho:
+iam os DOIS à bola por IK do princípio ao fim. `sequenciaBracos` e
+`torcaoTronco` (config/goalkeeper.js) põem os dois atrás no impulso, o de trás
+esticado no voo e os dois à frente no chão. **O líder nunca sai do IK** — é ele
+que apanha a bola — e o de trás só sai depois de `fracIKTraseiro` do voo, para o
+instante do contacto não perder uma mão.
+
+#### Remates de 30 m com campo à frente
+
+Relato: *"os jogadores com campo à frente estão chutando de mais de 25 metros ao
+invés de progredir com a bola"*. Medido em jogo corrido (fora bola parada e
+pontapés do guarda-redes): **54% dos remates de mais de 25 m e 32% de mais de
+30** (real: 10-15% acima de 25).
+
+Duas causas. A regra que faltava — o `frenteAFrente` já mandava conduzir com o
+corredor limpo até à baliza, mas só apanhava o duelo com o guarda-redes;
+`ShootingModel.progredirComEspaco` generaliza-a para a baliza ainda longe. E o
+tecto: pus o `alcanceMax` dentro do `shootingRange` e o número **não mexeu** —
+continuavam a sair remates de 36 m com o alcance a dizer 25.0, porque a
+condição multiplica o alcance pela `tendenciaDeAccao` DEPOIS de o ler. O tecto
+tem de ser o último a falar.
+
+Depois: zero remates de mais de 25 m em jogo corrido.
+
+#### A largura, e o que ela custou
+
+Relato: *"os laterais e meias pelas laterais estão fechando muito pelo meio"*.
+Medido, o |x| do ALVO: laterais a 10.4-10.7 m contra os 15.9 do slot da
+formação.
+
+Três tentativas, por esta ordem:
+
+1. **`BlockShape.basculacao`** (o centro do bloco a seguir só uma fracção do x da
+   bola, em vez de 1:1). **Mediu PIOR** — o alvo do lateral caiu de 11.5 para
+   10.2, porque a banda deixa de alcançar a ala onde a bola está e o limite do
+   campo faz o resto. Anotado no config para não se repetir.
+2. **`LineShape.fecho` e `BlockShape.amplitude`** — deram +2 m e saturaram.
+3. **`MolaDeCoesao`** — era a maior das três: 0.10 → 0.03 e puxão 9 → 4.5 puseram
+   os laterais a 13.5 e os médios de ala a 19.
+
+**E o lote de 60 jogos mostrou o preço: 4.36 golos por jogo (173% do alvo) e
+36.0 remates (138%).** Reproduzido headless e varrido com a largura ocupada pela
+equipa ao lado:
+
+    mola / puxao / amplitude    golos/90    largura da equipa
+    0.03 / 4.5 / 0.88             4.63          36.0 m
+    0.06 / 6.5 / 0.80             3.68          34.5 m
+    0.08 / 7.5 / 0.76             1.82          33.7 m   <- ficou aqui
+    0.10 / 9.0 / 0.70 (origem)    1.82          31.9 m
+
+**Os golos escalam com o espalhamento, e não devagar: dois metros de largura de
+equipa valeram um golo por jogo.** O 0.08/7.5/0.76 guarda quase toda a largura
+que o pedido queria e devolve a solidez.
+
+#### O lote de 60 jogos, e o que fica por explicar
+
+    golos          4.36 (173%)   <- antes do recuo da mola
+    remates       36.04 (138%)
+    impedimentos   3.28 (103%)   <- no alvo
+    cantos          6.80 (69%)
+    faltas         18.88 (68%)
+    amarelos        0.95 (18%)
+    ataques totais 69.20 (39%)
+    xG por remate  0.049 (45%)
+
+- **Os cartões caíram com as faltas** (0.95 contra os 3.34 do lote anterior): com
+  o bloco espalhado há menos contacto, e a regra da Lei 12 depende de haver
+  faltas. Volta a medir-se depois do recuo da mola.
+- **`rematar` deu 1953 entradas em 60 jogos** — 16 por equipa por jogo — mas o
+  contador de `remates` diz 36. **Metade dos "remates" não vem do ramo de
+  remate**, e ninguém foi ainda ver de onde vêm. É o próximo fio a puxar.
+- Ataques totais a 39% e xG por remate a 45% continuam onde estavam desde
+  Setembro.
+
 ### Sessão de 7 de Setembro de 2026 — os limites que ninguém lia, e três lotes
 
 Sessão de leitura de lotes com o código na mão. O padrão que se repetiu a

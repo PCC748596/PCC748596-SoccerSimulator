@@ -585,12 +585,27 @@ Ela era a maior das três causas medidas. |x| do ALVO dos laterais, em 400 s:
 A partir daqui o ganho é de centímetros e o bloco fica com 60 m de largura
 num campo de 68 — deixa de ser um bloco. `forcaComBola` não se tocou: com a
 bola é ela que dá as opções de passe perto do portador.
+E DEPOIS VOLTOU PARA TRAS: 0.03 -> 0.08, puxao 4.5 -> 7.5.
+
+O lote de 60 jogos com 0.03/4.5/0.88 deu 4.36 GOLOS por jogo (173% do alvo)
+e 36.0 remates (138%). Reproduzido headless e varrido, com a largura ocupada
+pela equipa ao lado:
+
+    mola / puxao / amplitude    golos/90    largura da equipa
+    0.03 / 4.5 / 0.88             4.63          36.0 m
+    0.06 / 6.5 / 0.80             3.68          34.5 m
+    0.08 / 7.5 / 0.76             1.82          33.7 m   <- aqui
+    0.10 / 9.0 / 0.70 (origem)    1.82          31.9 m
+
+Os golos escalam com o espalhamento, e nao devagar: dois metros de largura de
+equipa valeram um golo por jogo. O 0.08/7.5/0.76 guarda quase toda a largura
+que o pedido queria (33.7 contra os 31.9 do inicio) e devolve a solidez.
 */
 const MolaDeCoesao = {
     forcaComBola: 0.20,
-    forcaSemBola: 0.03,
+    forcaSemBola: 0.08,
     distMin: 12.0,
-    puxaoMax: 4.5
+    puxaoMax: 7.5
 };
 
 /*

@@ -637,14 +637,16 @@ const BlockShape = {
     /*
     A largura do bloco, em fracção do campo. Subiu 10% em cada escalão com o
     mesmo relato do `LineShape.fecho`: o bloco a 70% do campo (47.6 m) põe os
-    laterais a |x| 10 m. A 88%, com a mola de coesão afrouxada (ver
-    MolaDeCoesao, config/defense.js, que era a maior das três causas), ficam a
-    13.5 e os médios de ala a 19.
+    laterais a |x| 10 m. A 88%, com a mola de coesão afrouxada, ficavam a 13.5 e
+    os médios de ala a 19 — mas isso custou 4.36 golos por jogo (173% do alvo)
+    num lote de 60. A 76%, com a mola de volta a 0.08 (ver MolaDeCoesao), a
+    equipa ocupa 33.7 m de largura contra os 31.9 do início e os golos voltam
+    aos 1.82 por 90 medidos headless.
     */
     amplitude: {
-        short: 0.74,          // 74%
-        median: 0.88,         // 88%
-        large: 0.94           // 94%
+        short: 0.66,          // 66%
+        median: 0.76,         // 76%
+        large: 0.84           // 84%
     },
 
     /*
