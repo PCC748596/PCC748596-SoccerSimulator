@@ -58,6 +58,45 @@ const ShootingModel = {
     defenderFactor: 0.55,
 
     /*
+    TECTO DO ALCANCE, em metros à baliza.
+
+    O `shootingRange` sai de `baseRange + skill` (10.5 + 10 no máximo) e depois
+    é MULTIPLICADO pelo peso `remate` do playing style — e é por aí que aparecem
+    alcances de 25 a 27 m. Medido: os remates de mais de 30 m vinham de
+    jogadores com 25.3 m de alcance médio.
+
+    Um remate de 30 m é um lance de excepção, não uma decisão de rotina. O tecto
+    corta-os sem mexer no que o estilo faz dentro da faixa normal.
+    */
+    alcanceMax: 25.0,
+
+    /*
+    COM O CAMINHO ABERTO E A BALIZA LONGE, PROGRIDE-SE.
+
+    Relato: "os jogadores com campo à frente estão chutando de mais de 25
+    metros de distância ao invés de progredir com a bola". Medido em 900 s:
+    54% dos remates saíam de mais de 25 m, e 32% de mais de 30 m — num jogo a
+    sério os de mais de 25 m andam pelos 10-15%.
+
+    O `shootingRange` sozinho não o explicava (base 10.5 + 10 pela skill), mas
+    o peso `remate` do playing style multiplica-o: os que remataram de 30 m+
+    tinham alcance médio de 25.3 m.
+
+    A regra é a mesma ideia do `frenteAFrente`, que já existia para o duelo
+    com o guarda-redes: com o corredor limpo, cada metro conduzido melhora o
+    remate. `distMin` é a distância à baliza a partir da qual isto vale;
+    abaixo dela remata-se com as regras de sempre. E cai assim que alguém
+    entra no caminho — aí o remate volta a ser a melhor opção que resta.
+    */
+    progredirComEspaco: {
+        distMin: 25.0,
+        // O mesmo cone do `livreAFrente10m20g` da condução: 20 m à frente,
+        // 45 graus de abertura.
+        alcanceCone: 20.0,
+        anguloCone: 45.0
+    },
+
+    /*
     DENTRO DA GRANDE ÁREA REMATA-SE, PONTO.
 
     O alcance acima é uma distância ao CENTRO DA BALIZA, e não cobria a área:

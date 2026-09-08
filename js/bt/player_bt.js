@@ -2575,6 +2575,27 @@ function emZonaDeRemate(ctx) {
     }
 
     /*
+    E DE LONGE, COM O CAMINHO ABERTO, TAMBÉM SE PROGRIDE.
+
+    O `frenteAFrente` acima só apanha o duelo com o guarda-redes — corredor
+    limpo ATÉ À BALIZA. Faltava o caso comum: campo aberto à frente, a baliza
+    ainda longe, e o jogador a bater de 30 m. Medido: 54% dos remates de mais
+    de 25 m, 32% de mais de 30. Ver ShootingModel.progredirComEspaco.
+
+    Cai sozinha assim que alguém entra no cone: com um adversário à frente,
+    conduzir deixa de ser progredir e o remate volta a ser opção.
+    */
+    const PE = ShootingModel.progredirComEspaco;
+    if (PE && typeof semMarcacaoAFrente === 'function') {
+        _v1.set(0, 0, p.targetGoalZ);
+        const distBaliza = p.model.position.distanceTo(_v1);
+        if (distBaliza > PE.distMin &&
+            semMarcacaoAFrente(p, ctx.opponents, PE.alcanceCone, PE.anguloCone)) {
+            return false;
+        }
+    }
+
+    /*
     DENTRO DA GRANDE ÁREA remata-se, e mais nada tem voto.
 
     O `shootingRange` é uma distância ao CENTRO DA BALIZA e não cobria a área:
@@ -2601,7 +2622,17 @@ function emZonaDeRemate(ctx) {
     if (ctx.zoneAhead <= 15) return false;
     _v1.set(0, 0, p.targetGoalZ);
     const dist = p.model.position.distanceTo(_v1);
-    const range = p.shootingRange() * mult;
+    /*
+    O TECTO APLICA-SE DEPOIS DA TENDÊNCIA.
+
+    O `alcanceMax` estava só dentro do `shootingRange`, e aqui multiplicava-se
+    por `mult` (tendenciaDeAccao) — que passa de 1. Medido: remates de 36 m com
+    o alcance a dizer 25.0, porque a tendência o esticava a 37. O tecto tem de
+    ser o último a falar.
+    */
+    const rangeBruto = p.shootingRange() * mult;
+    const range = (typeof ShootingModel.alcanceMax === 'number')
+        ? Math.min(rangeBruto, ShootingModel.alcanceMax) : rangeBruto;
     const maxOffset = ShootingModel.maxOffsetX * mult;
     if (!(dist < range && Math.abs(p.model.position.x) < maxOffset)) return false;
 

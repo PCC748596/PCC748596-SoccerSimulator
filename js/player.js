@@ -2418,7 +2418,12 @@ class FootballPlayer {
         // Peso `remate` do playing style: um Fox in the Box remata de onde um
         // Cross Specialist ainda estaria a procurar quem cruzar.
         const porEstilo = (Config.usePlayingStyles && typeof estiloAtivoDe === 'function') ? estiloAtivoDe(this).remate : 1.0;
-        return base * porFuncao * porEstilo * (ShootingModel.angleFloor + (1 - ShootingModel.angleFloor) * centralidade);
+        const alcance = base * porFuncao * porEstilo *
+            (ShootingModel.angleFloor + (1 - ShootingModel.angleFloor) * centralidade);
+        // Tecto: o peso do estilo levava isto a 25-27 m e daí saíam os remates
+        // de 30 m. Ver ShootingModel.alcanceMax.
+        return (typeof ShootingModel.alcanceMax === 'number')
+            ? Math.min(alcance, ShootingModel.alcanceMax) : alcance;
     }
 
     initiatePass(targetPlayer) {
